@@ -195,6 +195,17 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - Replacement plan `/assets/replacement` → `createReplacementBoqAction` (`boq.edit`) makes a draft BOQ on the rule-less standard set
   `HPAMS-REPLACEMENT`, one manual line per department and device type with "Replaces <tags>" as its explanation.
 
+## 3D package (wave 3)
+- Live data: `twinLive(facilityId)` in `src/lib/assets/twin-live.ts` → `/assets/3d/live?facilityId=` (compact `LiveRow` tuples, see
+  `twin/types.ts`); the view polls every minute and on tab focus. Problem layers are pure in `twin/layers.ts`.
+- Actions from the model (`src/app/assets/3d/actions.ts`, return a result, no redirect): `twinMoveAction` and `twinPlaceAction`
+  (`assets.move`; the spot must be inside the room outline; same posX/posY the 2D map uses), `saveViewAction` / `deleteViewAction`.
+- Shapes: `deviceKind(groupCode, categoryCode)` in `twin/geometry.ts`; shapes within 75 m of the camera target, dots beyond.
+- Saved views: table `twin_views` (private unless shared; author or admin deletes). View links `?v=` encode camera, floor, layer,
+  grouping, spacing and filters (`twin/view-state.ts`, decoded defensively).
+- CAD room names are cleaned of DWG formatting codes (`cleanCadText` in `scripts/seed/cad.ts`, `clean_text` in `tools/cad/build.py`,
+  migration 0011 for existing data).
+
 ## Building heights
 - La Plaza floors are 5 m floor to floor (`seed-data/cad/la-plaza.json`, `tools/cad/floors.json`; migration 0007 moves floors still on
   the old 4.5 m spacing). The 3D view draws walls 3.3 m high (`WALL_HEIGHT` in `src/components/assets/twin/scene.ts`).

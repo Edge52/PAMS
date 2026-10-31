@@ -1,7 +1,7 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, rooms } from "@/db/schema";
+import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, rooms, twinViews } from "@/db/schema";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { DEPARTMENT_PALETTE, rectPoly } from "@/components/assets/twin/geometry";
 import { TwinView } from "@/components/assets/twin/twin-view";
@@ -69,5 +69,9 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     departments: deptRows.map((d, i) => ({ ...d, color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] })),
     assets: assetRows,
   };
-  return <TwinView data={data} live={await twinLive(facility.id)} />;
+  const views = await db.select().from(twinViews)
+    .where(sql`${twinViews.facilityId} = ${facility.id} and (${twinViews.shared} or ${twinViews.createdById} = ${me.id})`).orderBy(asc(twinViews.name));
+  return <TwinView data={data} live={await twinLive(facility.id)}
+    views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName }))}
+    canManageViews={can(me.role, "users.manage")} />;
 }

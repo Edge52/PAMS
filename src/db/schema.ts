@@ -776,6 +776,19 @@ export const disposals = pgTable("disposals", {
   updatedAt: updatedAt(),
 }, (t) => [index("disposals_asset_idx").on(t.assetId), index("disposals_facility_idx").on(t.facilityId)]);
 
+/** A named camera view of a hospital's 3D model (wave 3). Private to its author unless shared. */
+export const twinViews = pgTable("twin_views", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  /** Encoded view (see src/components/assets/twin/view-state.ts). */
+  state: text("state").notNull(),
+  shared: boolean("shared").notNull().default(false),
+  createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name"),
+  createdAt: createdAt(),
+}, (t) => [index("twin_views_facility_idx").on(t.facilityId)]);
+
 /* ───────────────────── Documents & activity log ───────────────────── */
 
 /** Generic attachment for any entity (offer PDFs, datasheets, PO scans, certificates...). */

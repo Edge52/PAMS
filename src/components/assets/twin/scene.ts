@@ -550,6 +550,46 @@ export class TwinScene {
 
   setBloom(on: boolean) { this.bloom.enabled = on; }
 
+  /* ───────────── Saved views and snapshots ───────────── */
+
+  getCamera(): { cam: [number, number, number]; tgt: [number, number, number] } {
+    const c = this.camera.position, t = this.controls.target;
+    return { cam: [c.x, c.y, c.z], tgt: [t.x, t.y, t.z] };
+  }
+
+  setCamera(cam: [number, number, number], tgt: [number, number, number], animate = true) {
+    const to = new THREE.Vector3(...cam), target = new THREE.Vector3(...tgt);
+    if (!animate || this.reducedMotion) { this.flight = null; this.camera.position.copy(to); this.controls.target.copy(target); this.controls.update(); return; }
+    this.flight = { from: this.camera.position.clone(), to, tFrom: this.controls.target.clone(), tTo: target, t0: performance.now(), dur: 1100 };
+    this.idleSince = Infinity;
+  }
+
+  /**
+   * High-resolution PNG of the current view (up to 4096 px on the long side), with a caption band for reports and
+   * tender files. Renders once at the higher resolution, copies the canvas, then restores the normal size.
+   */
+  async snapshot(scale: number, caption: string[]): Promise<Blob> {
+    const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1;
+    const before = this.renderer.getPixelRatio();
+    const ratio = Math.max(1, Math.min(scale, 4096 / Math.max(w, h)));
+    this.renderer.setPixelRatio(ratio); this.composer.setPixelRatio(ratio); this.resize();
+    this.composer.render();
+    const src = this.renderer.domElement;
+    const band = Math.round(28 * ratio) * Math.max(1, caption.length);
+    const out = document.createElement("canvas");
+    out.width = src.width; out.height = src.height + band;
+    const ctx = out.getContext("2d")!;
+    ctx.drawImage(src, 0, 0);
+    ctx.fillStyle = "#030a14"; ctx.fillRect(0, src.height, out.width, band);
+    ctx.fillStyle = "#d6f3ff"; ctx.font = `${Math.round(14 * ratio)}px system-ui, sans-serif`; ctx.textBaseline = "middle";
+    caption.forEach((line, i) => ctx.fillText(line, Math.round(14 * ratio), src.height + Math.round(28 * ratio) * (i + 0.5)));
+    this.renderer.setPixelRatio(before); this.composer.setPixelRatio(before); this.resize();
+    return new Promise((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error("snapshot failed"))), "image/png"));
+  }
+
+  /** Floor currently shown on its own (null = whole building). */
+  isolatedFloor() { return this.isolated; }
+
   /* ───────────── Picking ───────────── */
 
   private bindPointer() {

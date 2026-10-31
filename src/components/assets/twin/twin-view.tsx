@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
-import { twinMoveAction, twinPlaceAction, type TwinActionState } from "@/app/assets/3d/actions";
+import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { deleteViewAction, saveViewAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
+import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { PickResult, TwinScene } from "./scene";
@@ -23,7 +24,9 @@ function decodeLive(p: LivePayload): Map<number, LiveMetrics> {
  * HUD layout follows the view's own width (see hud-state): side columns of collapsible panels (folded by default
  * below 1100 px), or on phones one bottom sheet with tabs.
  */
-export function TwinView({ data, live: initialLive }: { data: TwinData; live: LivePayload }) {
+export function TwinView({ data, live: initialLive, views: initialViews, canManageViews }: {
+  data: TwinData; live: LivePayload; views: SavedView[]; canManageViews: boolean;
+}) {
   const router = useRouter();
   const host = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -50,6 +53,16 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
   const [assetList, setAssetList] = useState(data.assets);
   const [placingId, setPlacingId] = useState<number | null>(null);
   const [toast, setToast] = useState<{ ok?: string; error?: string } | null>(null);
+  const [views, setViews] = useState(initialViews);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [snapping, setSnapping] = useState(false);
+  const [viewState, viewAction, viewPending] = useActionState(async (prev: ViewActionState, fd: FormData) => {
+    const res = fd.get("op") === "delete" ? await deleteViewAction(prev, fd) : await saveViewAction(prev, fd);
+    if (res?.view) setViews((v) => [...v, res.view!].sort((a, b) => a.name.localeCompare(b.name)));
+    if (res?.deletedId) setViews((v) => v.filter((x) => x.id !== res.deletedId));
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+    return res;
+  }, null);
   const [moveState, moveAction, movePending] = useActionState(async (prev: TwinActionState, fd: FormData) => {
     const res = await twinMoveAction(prev, fd);
     if (res?.ok && res.assetId && res.roomId) applyMove(res.assetId, res.roomId, null, null);
@@ -175,11 +188,59 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
     if (!ready) return;
     const sp = new URLSearchParams(window.location.search);
     const a = Number(sp.get("assetId")), r = Number(sp.get("roomId")), f = Number(sp.get("floorId"));
-    if (a && assetById.has(a)) focus({ kind: "asset", id: a });
+    const v = decodeView(sp.get("v"));
+    if (v) applyView(v, false);
+    else if (a && assetById.has(a)) focus({ kind: "asset", id: a });
     else if (r && roomById.has(r)) focus({ kind: "room", id: r });
     else if (f && floorById.has(f)) chooseFloor(f);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
+
+  /** The view on screen, as data (camera, floor, layer, filters). */
+  function currentView(): ViewState | null {
+    const cam = sceneRef.current?.getCamera(); if (!cam) return null;
+    return { ...cam, floor: floorId, layer, scope, explode, statuses: [...statuses], cats: [...cats] };
+  }
+  function applyView(v: ViewState, animate = true) {
+    const fl = v.floor != null && floorById.has(v.floor) ? v.floor : null;
+    setFloorId(fl); sceneRef.current?.isolateFloor(fl, false);
+    setLayer(v.layer); setScope(v.scope); setExplode(v.explode);
+    setStatuses(new Set(v.statuses)); setCats(new Set(v.cats));
+    sceneRef.current?.setExplode(v.explode);
+    sceneRef.current?.setCamera(v.cam, v.tgt, animate);
+  }
+  function viewLink(): string | null {
+    const v = currentView(); if (!v) return null;
+    return `${window.location.origin}/assets/3d?facilityId=${data.facility.id}&v=${encodeView(v)}`;
+  }
+  async function copyLink() {
+    const link = viewLink(); if (!link) return;
+    try { await navigator.clipboard.writeText(link); setShareLink(null); setToast({ ok: "Link to this view copied." }); }
+    catch { setShareLink(link); } // no clipboard access: show it to copy by hand
+  }
+  function saveView(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const v = currentView(); if (!v) return;
+    const fd = new FormData(e.currentTarget); fd.set("state", encodeView(v)); fd.set("facilityId", String(data.facility.id));
+    startTransition(() => viewAction(fd));
+    e.currentTarget.reset();
+  }
+  async function downloadImage() {
+    const s = sceneRef.current; if (!s) return;
+    setSnapping(true);
+    try {
+      const v = currentView()!;
+      const caption = [`${data.facility.name} · ${describeView(v, floorId != null ? floorById.get(floorId)?.name ?? null : null, LAYER_INFO[layer].label)}`,
+        `Hospital PAMS 3D view · ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`];
+      const blob = await s.snapshot(2, caption);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = `${data.facility.code}-3d-${new Date().toISOString().slice(0, 10)}.png`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch { setToast({ error: "The image couldn't be made. Try again with the glow switched off." }); }
+    finally { setSnapping(false); }
+  }
 
   function applyMove(assetId: number, roomId: number, posX: number | null, posY: number | null) {
     setAssetList((list) => list.map((a) => (a.id === assetId ? { ...a, roomId, posX, posY } : a)));
@@ -327,6 +388,45 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
           ) : <p className="mt-2 text-[13px] text-[#3cf5a6]">Nothing to show — no room is affected.</p>}
         </>
       )}
+    </div>
+  );
+  const viewsPanel = (
+    <div>
+      {views.length === 0 ? <p className="text-xs text-[#8fb6cc]">No saved views yet. Set up the model, then save it with a name.</p> : (
+        <ul className="space-y-0.5">
+          {views.map((v) => {
+            const st = decodeView(v.state);
+            return (
+              <li key={v.id} className="flex items-center gap-1">
+                <button type="button" onClick={() => st && applyView(st)} disabled={!st} className="min-w-0 flex-1 rounded px-1.5 py-1 text-left text-[13px] hover:bg-[#0c2a40]">
+                  <span className="block truncate text-white">{v.name}</span>
+                  <span className="block truncate text-[11px] text-[#8fb6cc]">{v.shared ? `Shared${v.by && !v.mine ? ` by ${v.by}` : ""}` : "Only you"}{st ? ` · ${describeView(st, st.floor != null ? floorById.get(st.floor)?.name ?? null : null, LAYER_INFO[st.layer].label)}` : ""}</span>
+                </button>
+                {(v.mine || canManageViews) && (
+                  <form action={viewAction}>
+                    <input type="hidden" name="op" value="delete" /><input type="hidden" name="viewId" value={v.id} />
+                    <button type="submit" className="px-1 text-xs text-[#8fb6cc] hover:text-[#ff8a96]" aria-label={`Delete view ${v.name}`}>✕</button>
+                  </form>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <form onSubmit={saveView} className="mt-2 space-y-1.5">
+        <label className="sr-only" htmlFor="twin-view-name">Name for this view</label>
+        <input id="twin-view-name" name="name" required maxLength={80} placeholder="Name this view, e.g. 4th floor ICUs" className="twin-input" />
+        <div className="flex items-center justify-between gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-[#8fb6cc]"><input type="checkbox" name="shared" className="accent-[#2fd3ff]" /> Share with the team</label>
+          <button type="submit" disabled={viewPending} className="twin-act">Save view</button>
+        </div>
+        {viewState?.error && <p role="alert" className="text-xs text-[#ff8a96]">{viewState.error}</p>}
+      </form>
+      <div className="mt-2 flex flex-wrap gap-1.5 border-t border-[#123a55] pt-2">
+        <button type="button" onClick={copyLink} className="twin-act">Copy link</button>
+        <button type="button" onClick={downloadImage} disabled={snapping} className="twin-act">{snapping ? "Making image…" : "Download image"}</button>
+      </div>
+      {shareLink && <input readOnly value={shareLink} onFocus={(e) => e.currentTarget.select()} aria-label="Link to this view" className="twin-input mt-2 text-xs" />}
     </div>
   );
   const liveTime = new Date(liveAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
@@ -501,6 +601,9 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
               open={panels.isOpen("find")} onToggle={() => panels.toggle("find")}>
               {findBox}
             </HudPanel>
+            <HudPanel title="Views" summary={views.length ? `${views.length} saved` : undefined} open={panels.isOpen("views")} onToggle={() => panels.toggle("views")} bodyClassName="max-h-[35vh] overflow-y-auto">
+              {viewsPanel}
+            </HudPanel>
             {hasSelection ? (
               <section className="twin-card pointer-events-auto min-h-0 shrink overflow-y-auto" aria-label={selAsset ? "Selected device" : "Selected room"}>
                 <div className="flex items-start justify-between gap-2">
@@ -542,7 +645,7 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
           {!sheetTab && <p className="px-3 pb-2 pt-1 text-xs text-[#8fb6cc]">{floorName}{filterCount ? ` · ${filterCount} filter${filterCount === 1 ? "" : "s"} on` : ""} · tap a device for details</p>}
           {sheetTab && (
             <div id="twin-sheet" role="tabpanel" aria-labelledby={`twin-tab-${sheetTab}`} className="max-h-[45dvh] overflow-y-auto px-3 pb-4 pt-2">
-              {sheetTab === "floors" && <div className="space-y-3">{floorList}{viewControls}</div>}
+              {sheetTab === "floors" && <div className="space-y-3">{floorList}{viewControls}<section><h2 className="twin-h">Views</h2>{viewsPanel}</section></div>}
               {sheetTab === "filters" && (
                 <div className="space-y-3">
                   <section><h2 className="twin-h">Problem layer</h2>{layerPanel}</section>

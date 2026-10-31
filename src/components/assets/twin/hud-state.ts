@@ -16,7 +16,7 @@ export function hudMode(width: number): HudMode {
   return "wide";
 }
 
-export type PanelId = "floors" | "view" | "status" | "find" | "types" | "layers";
+export type PanelId = "floors" | "view" | "status" | "find" | "types" | "layers" | "views";
 export type PanelPrefs = Partial<Record<string, boolean>>;
 
 /** Preferences are remembered separately for compact and wide layouts, so a panel opened on a big screen still starts folded on a laptop. */
