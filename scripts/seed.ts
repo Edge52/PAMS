@@ -10,9 +10,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { closeDb, db, type DB } from "../src/db";
-import { boqRules, departmentTypes, deviceTypes, exchangeRates, standardSets } from "../src/db/schema";
+import { boqRules, departmentTypes, deviceCompanions, deviceTypes, exchangeRates, standardSets } from "../src/db/schema";
 
 const root = path.resolve(__dirname, "..");
 const readJson = <T>(rel: string): T => JSON.parse(readFileSync(path.join(root, rel), "utf8")) as T;
@@ -76,7 +76,42 @@ export async function seedReference(d: DB) {
     const v = { standardSetId: sId, departmentTypeCode: r.departmentTypeCode, deviceTypeId: dId, basis: r.basis, ratio: r.ratio,
       minQty: r.minQty ?? 0, maxQty: r.maxQty ?? null, rounding: r.rounding ?? "CEIL", tier: r.tier ?? "ESSENTIAL",
       confidence: r.confidence ?? "DRAFT", sourceRef: r.sourceRef ?? null, notes: r.notes ?? null } as const;
-    await d.insert(boqRules).values(v).onConflictDoUpdate({ target: [boqRules.standardSetId, boqRules.departmentTypeCode, boqRules.deviceTypeId], set: v });
+    await d.insert(boqRules).values(v).onConflictDoUpdate({ target: [boqRules.standardSetId, boqRules.departmentTypeCode, boqRules.deviceTypeId, boqRules.condition], set: v });
+  }
+
+  // BOQ quick start (wave 3): throughput rates, conditional rules and companion items.
+  const qsFile = path.join(root, "seed-data", "boq-quickstart.json");
+  if (existsSync(qsFile)) {
+    type Q = {
+      throughput: { dept: string; device: string; param: string; per: number; note?: string }[];
+      conditional: { dept: string; device: string; condition: string; basis: StandardsFile["rules"][number]["basis"]; ratio: number; tier?: "ESSENTIAL" | "RECOMMENDED" | "OPTIONAL"; note?: string }[];
+      companions: { device: string; companion: string; ratio: number; note?: string }[];
+    };
+    const q = readJson<Q>("seed-data/boq-quickstart.json");
+    let tp = 0, cond = 0, comp = 0;
+    for (const sId of setId.values()) {
+      for (const t of q.throughput) {
+        const dId = idByCode.get(t.device); if (!dId) continue;
+        const res = await d.update(boqRules).set({ param: t.param, paramRatio: 1 / t.per })
+          .where(and(eq(boqRules.standardSetId, sId), eq(boqRules.departmentTypeCode, t.dept), eq(boqRules.deviceTypeId, dId), eq(boqRules.condition, "")))
+          .returning({ id: boqRules.id });
+        tp += res.length;
+      }
+      for (const c of q.conditional) {
+        const dId = idByCode.get(c.device); if (!dId) continue;
+        const v = { standardSetId: sId, departmentTypeCode: c.dept, deviceTypeId: dId, basis: c.basis, ratio: c.ratio, minQty: 0, maxQty: null,
+          rounding: "CEIL" as const, tier: c.tier ?? "ESSENTIAL", confidence: "DRAFT" as const, notes: c.note ?? null, condition: c.condition };
+        await d.insert(boqRules).values(v).onConflictDoUpdate({ target: [boqRules.standardSetId, boqRules.departmentTypeCode, boqRules.deviceTypeId, boqRules.condition], set: v });
+        cond++;
+      }
+    }
+    for (const c of q.companions) {
+      const a = idByCode.get(c.device), b = idByCode.get(c.companion); if (!a || !b) continue;
+      await d.insert(deviceCompanions).values({ deviceTypeId: a, companionTypeId: b, ratio: c.ratio, note: c.note ?? null })
+        .onConflictDoUpdate({ target: [deviceCompanions.deviceTypeId, deviceCompanions.companionTypeId], set: { ratio: c.ratio, note: c.note ?? null } });
+      comp++;
+    }
+    console.log(`quick start: ${tp} throughput rates, ${cond} conditional rules, ${comp} companion pairs`);
   }
 
   // Exchange rates (indicative — edit in the app)

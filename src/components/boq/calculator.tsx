@@ -58,7 +58,7 @@ export function StandardCalculator({ rules, deptTypes, initialDept }: {
         ) : (
           <ul className="divide-y divide-line rounded-[var(--radius-control)] border border-line">
             {lines.map((l) => {
-              const r = byId.get(l.ruleId)!;
+              const r = byId.get(l.ruleId!)!; // no companions here, so every line has a rule
               return (
                 <li key={l.ruleId} className="px-3 py-2 text-sm">
                   <div className="flex items-baseline justify-between gap-2">

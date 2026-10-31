@@ -1,0 +1,53 @@
+{
+  "_about": "BOQ quick start reference data (wave 3). Draft planning figures for review, like the ratio standards: throughput rates attach to existing rules (used when a department answers the question), conditional rules apply when the BOQ has the feature, companions top up equipment that comes with another.",
+  "throughput": [
+    { "dept": "RAD", "device": "IMG-CT-64", "param": "ctExams", "per": 15000, "note": "About 15,000 exams a year per 64-slice CT (≈ 60 a day)." },
+    { "dept": "RAD", "device": "IMG-ACC-CTINJ", "param": "ctExams", "per": 15000 },
+    { "dept": "RAD", "device": "IMG-MRI-15T", "param": "mriExams", "per": 6000, "note": "About 6,000 exams a year per 1.5 T scanner (≈ 24 a day)." },
+    { "dept": "RAD", "device": "IMG-ACC-MRINJ", "param": "mriExams", "per": 6000 },
+    { "dept": "RAD", "device": "IMG-XR-DR", "param": "xrayExams", "per": 20000, "note": "About 20,000 exams a year per digital radiography room." },
+    { "dept": "RAD", "device": "IMG-US-GEN", "param": "usExams", "per": 6000 },
+    { "dept": "LDR", "device": "OBG-DEL-BED", "param": "deliveries", "per": 400, "note": "About 400 deliveries a year per delivery bed." },
+    { "dept": "LDR", "device": "OBG-FET-CTG", "param": "deliveries", "per": 400 },
+    { "dept": "LDR", "device": "LIF-NEO-RW", "param": "deliveries", "per": 400 },
+    { "dept": "ENDO", "device": "END-FLX-GI", "param": "procedures", "per": 2500 },
+    { "dept": "CATH", "device": "IMG-ANG-SP", "param": "procedures", "per": 1200 },
+    { "dept": "LAB", "device": "LAB-CHE-AUTO", "param": "tests", "per": 400000 }
+  ],
+  "conditional": [
+    { "dept": "RAD", "device": "IMG-CT-128", "condition": "trauma", "basis": "FIXED", "ratio": 1, "tier": "ESSENTIAL", "note": "Dedicated trauma CT next to the emergency department." },
+    { "dept": "ER", "device": "LIF-THM-RIF", "condition": "trauma", "basis": "FIXED", "ratio": 2, "tier": "ESSENTIAL" },
+    { "dept": "ER", "device": "LIF-VEN-TRN", "condition": "trauma", "basis": "FIXED", "ratio": 2, "tier": "ESSENTIAL" },
+    { "dept": "ER", "device": "IMG-XR-MDR", "condition": "trauma", "basis": "FIXED", "ratio": 1, "tier": "RECOMMENDED" },
+    { "dept": "NICU", "device": "LIF-VEN-HFO", "condition": "nicuLevel3", "basis": "PER_BED", "ratio": 0.125, "tier": "ESSENTIAL", "note": "One HFO ventilator per 8 level III cots." },
+    { "dept": "NICU", "device": "LIF-THM-TTM", "condition": "nicuLevel3", "basis": "PER_DEPARTMENT", "ratio": 1, "tier": "ESSENTIAL", "note": "Therapeutic hypothermia for HIE." },
+    { "dept": "OR", "device": "CAR-CVS-HLM", "condition": "cardiacSurgery", "basis": "FIXED", "ratio": 2, "tier": "ESSENTIAL" },
+    { "dept": "OR", "device": "CAR-CVS-HCU", "condition": "cardiacSurgery", "basis": "FIXED", "ratio": 2, "tier": "ESSENTIAL" },
+    { "dept": "OR", "device": "CAR-CVS-CSV", "condition": "cardiacSurgery", "basis": "FIXED", "ratio": 1, "tier": "ESSENTIAL" },
+    { "dept": "ICU", "device": "CAR-CVS-ECMO", "condition": "cardiacSurgery", "basis": "FIXED", "ratio": 1, "tier": "RECOMMENDED" },
+    { "dept": "RAD", "device": "RTH-EBT-LINAC", "condition": "oncology", "basis": "FIXED", "ratio": 2, "tier": "ESSENTIAL" },
+    { "dept": "RAD", "device": "IMG-CT-DS", "condition": "oncology", "basis": "FIXED", "ratio": 1, "tier": "RECOMMENDED", "note": "CT simulator for radiotherapy planning." },
+    { "dept": "RAD", "device": "IMG-US-GEN", "condition": "teaching", "basis": "FIXED", "ratio": 1, "tier": "RECOMMENDED", "note": "Extra system for training lists." },
+    { "dept": "ENDO", "device": "END-FLX-GI", "condition": "teaching", "basis": "FIXED", "ratio": 1, "tier": "OPTIONAL" },
+    { "dept": "RAD", "device": "IMG-CT-128", "condition": "stroke", "basis": "FIXED", "ratio": 1, "tier": "ESSENTIAL", "note": "Round-the-clock CT with perfusion for stroke." }
+  ],
+  "companions": [
+    { "device": "IMG-CT-16", "companion": "IMG-ACC-CTINJ", "ratio": 1 },
+    { "device": "IMG-CT-32", "companion": "IMG-ACC-CTINJ", "ratio": 1 },
+    { "device": "IMG-CT-64", "companion": "IMG-ACC-CTINJ", "ratio": 1 },
+    { "device": "IMG-CT-128", "companion": "IMG-ACC-CTINJ", "ratio": 1 },
+    { "device": "IMG-CT-DS", "companion": "IMG-ACC-CTINJ", "ratio": 1 },
+    { "device": "IMG-MRI-15T", "companion": "IMG-ACC-MRINJ", "ratio": 1 },
+    { "device": "IMG-MRI-15T", "companion": "MON-PAT-MRI", "ratio": 1 },
+    { "device": "IMG-MRI-30T", "companion": "IMG-ACC-MRINJ", "ratio": 1 },
+    { "device": "IMG-MRI-30T", "companion": "MON-PAT-MRI", "ratio": 1 },
+    { "device": "IMG-ANG-SP", "companion": "IMG-ACC-ANGINJ", "ratio": 1 },
+    { "device": "IMG-ANG-BP", "companion": "IMG-ACC-ANGINJ", "ratio": 1 },
+    { "device": "LIF-VEN-ICU", "companion": "LIF-RES-HUM", "ratio": 1, "note": "Heated humidifier per invasive ventilator." },
+    { "device": "LIF-VEN-NEO", "companion": "LIF-RES-HUM", "ratio": 1 },
+    { "device": "OBG-DEL-BED", "companion": "OBG-FET-CTG", "ratio": 1 },
+    { "device": "OBG-DEL-BED", "companion": "LIF-NEO-RW", "ratio": 1 },
+    { "device": "CAR-CVS-HLM", "companion": "CAR-CVS-HCU", "ratio": 1 },
+    { "device": "RTH-EBT-LINAC", "companion": "IMG-CT-DS", "ratio": 0.5 }
+  ]
+}

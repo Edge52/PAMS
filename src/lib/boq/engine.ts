@@ -10,7 +10,14 @@
  *   raw = basis count × ratio  →  rounding (CEIL / ROUND / FLOOR)  →  clamp to [minQty, maxQty]
  * then × instances (a department with instances = 2 is two identical units, each needing its own equipment).
  * Lines whose final quantity is 0 are dropped.
+ *
+ * Wave 3 additions (all optional, so older callers behave as before):
+ *  - throughput: a rule with `param` uses the department's answer to that question instead of its basis
+ *    ("18,000 CT exams × 1 per 15,000 = 1.2, rounded up → 2");
+ *  - conditions: a rule with a `condition` applies only when the BOQ has that feature (e.g. trauma centre);
+ *  - companions: equipment that comes with another (a CT brings its injector) is topped up in the same department.
  */
+import { featureLabel, paramUnit } from "./questions";
 
 export const HOSPITAL_WIDE = "HOSP";
 
@@ -40,7 +47,14 @@ export interface RuleInput {
   maxQty: number | null;
   rounding: Rounding;
   tier: Tier;
+  /** Throughput question this rule answers to (e.g. "ctExams"), and quantity per unit of it. */
+  param?: string | null;
+  paramRatio?: number | null;
+  /** Feature that must be on for the rule to apply ('' or undefined = always). */
+  condition?: string | null;
 }
+
+export interface CompanionInput { deviceTypeId: number; companionTypeId: number; ratio: number }
 
 export interface DepartmentInput {
   id: number;
@@ -49,6 +63,8 @@ export interface DepartmentInput {
   beds: number;
   rooms: number;
   instances: number;
+  /** Answers to the department's planning questions, e.g. { ctExams: 18000 }. */
+  params?: Record<string, number> | null;
 }
 
 export interface EngineInput {
@@ -57,12 +73,18 @@ export interface EngineInput {
   /** Total hospital beds used by PER_HOSPITAL_BEDS rules. 0 → falls back to the sum of department beds. */
   totalHospitalBeds: number;
   includeTiers: readonly Tier[];
+  /** Hospital features that switch on conditional rules. */
+  features?: readonly string[];
+  companions?: CompanionInput[];
+  /** Device names for companion explanations ("With 2 × CT scanner, 64-slice"). */
+  deviceName?: (id: number) => string;
 }
 
 export interface CalculatedLine {
   boqDepartmentId: number;
   deviceTypeId: number;
-  ruleId: number;
+  /** Null for companion top-ups. */
+  ruleId: number | null;
   tier: Tier;
   calculatedQty: number;
   explanation: string;
@@ -155,6 +177,10 @@ export interface QuantityResult {
  * Hospital-wide (HOSP) departments use the hospital bed count for PER_BED rules when their own beds are 0.
  */
 export function calculateQuantity(rule: RuleInput, dept: DepartmentInput, hospitalBeds: number): QuantityResult {
+  const answer = rule.param ? dept.params?.[rule.param] : undefined;
+  if (rule.param && rule.paramRatio != null && rule.paramRatio > 0 && answer != null && answer > 0) {
+    return throughputQuantity(rule, dept, answer);
+  }
   const ratio = rule.ratio;
   let count: number;
   let expr: string;
@@ -211,6 +237,25 @@ export function calculateQuantity(rule: RuleInput, dept: DepartmentInput, hospit
   return { perInstance, qty, explanation: text };
 }
 
+/**
+ * Throughput quantity: the department's yearly answer × the rule's rate. The answer is for the whole department, so
+ * instances don't multiply it.
+ */
+function throughputQuantity(rule: RuleInput, dept: DepartmentInput, answer: number): QuantityResult {
+  const rate = rule.paramRatio!;
+  const r = reciprocal(rate);
+  const unit = paramUnit(rule.param!, dept.departmentTypeCode);
+  const raw = clean(answer * rate);
+  const rounded = applyRounding(raw, rule.rounding);
+  let text = `${fmt(answer)} ${unit} a year × ${r ? `1 per ${fmt(r)}` : `${fmt(rate)} each`} = ${fmt(raw)}`;
+  if (rounded !== raw) text += `, ${rule.rounding === "CEIL" ? "rounded up" : rule.rounding === "FLOOR" ? "rounded down" : "rounded"} → ${fmt(rounded)}`;
+  let qty = rounded;
+  const min = Math.max(0, rule.minQty || 0);
+  if (qty < min) { qty = min; text += `, minimum ${fmt(min)} → ${fmt(min)}`; }
+  if (rule.maxQty != null && qty > rule.maxQty) { qty = Math.max(0, rule.maxQty); text += `, maximum ${fmt(rule.maxQty)} → ${fmt(qty)}`; }
+  return { perInstance: qty, qty, explanation: text };
+}
+
 /** Bases whose quantity is for the whole hospital rather than for each department. */
 export function isHospitalScale(basis: Basis): boolean {
   return basis === "PER_HOSPITAL_BEDS" || basis === "FIXED";
@@ -226,8 +271,10 @@ export function needsHospitalWideDepartment(input: Pick<EngineInput, "rules" | "
 export function generateLines(input: EngineInput): CalculatedLine[] {
   const hospitalBeds = effectiveHospitalBeds(input.totalHospitalBeds, input.departments);
   const byType = new Map<string, RuleInput[]>();
+  const features = new Set(input.features ?? []);
   for (const r of input.rules) {
     if (!input.includeTiers.includes(r.tier)) continue;
+    if (r.condition && !features.has(r.condition)) continue;
     const list = byType.get(r.departmentTypeCode) ?? [];
     list.push(r);
     byType.set(r.departmentTypeCode, list);
@@ -255,11 +302,49 @@ export function generateLines(input: EngineInput): CalculatedLine[] {
       const res = calculateQuantity(rule, hospitalScale ? { ...d, instances: 1 } : d, hospitalBeds);
       if (res.qty <= 0) continue;
       const shared = hospitalScale && ((deptsOfType.get(d.departmentTypeCode) ?? 1) > 1 || d.instances > 1);
+      const why = shared ? `${res.explanation} (hospital-wide quantity, listed once for all ${d.departmentTypeCode} departments)` : res.explanation;
       out.push({
         boqDepartmentId: d.id, deviceTypeId: rule.deviceTypeId, ruleId: rule.id, tier: rule.tier, calculatedQty: res.qty,
-        explanation: shared ? `${res.explanation} (hospital-wide quantity, listed once for all ${d.departmentTypeCode} departments)` : res.explanation,
+        explanation: rule.condition ? `${featureLabel(rule.condition)}: ${why}` : why,
       });
     }
+  }
+  return input.companions?.length ? [...out, ...companionLines(out, input.companions, input.deviceName)] : out;
+}
+
+/**
+ * Companion top-ups: for every line whose device has companions, the department needs ⌈qty × ratio⌉ of each
+ * companion. What the rules (or earlier top-ups) already planned there counts; only the shortfall is added.
+ * Companions of companions are not followed.
+ */
+export function companionLines(lines: CalculatedLine[], companions: CompanionInput[], deviceName: (id: number) => string = (id) => `device #${id}`): CalculatedLine[] {
+  const byMain = new Map<number, CompanionInput[]>();
+  for (const c of companions) if (c.ratio > 0 && c.companionTypeId !== c.deviceTypeId) byMain.set(c.deviceTypeId, [...(byMain.get(c.deviceTypeId) ?? []), c]);
+  if (!byMain.size) return [];
+  const planned = new Map<string, number>(); // dept:device → qty already in the BOQ
+  for (const l of lines) planned.set(`${l.boqDepartmentId}:${l.deviceTypeId}`, (planned.get(`${l.boqDepartmentId}:${l.deviceTypeId}`) ?? 0) + l.calculatedQty);
+  // Several main devices in one department can need the same companion: add up their needs first.
+  const need = new Map<string, { dept: number; companion: number; qty: number; parts: string[]; tier: Tier }>();
+  for (const l of lines) {
+    for (const c of byMain.get(l.deviceTypeId) ?? []) {
+      const k = `${l.boqDepartmentId}:${c.companionTypeId}`;
+      const q = Math.ceil(clean(l.calculatedQty * c.ratio));
+      const cur = need.get(k) ?? { dept: l.boqDepartmentId, companion: c.companionTypeId, qty: 0, parts: [], tier: l.tier };
+      cur.qty += q;
+      cur.parts.push(`${fmt(l.calculatedQty)} × ${deviceName(l.deviceTypeId)}${c.ratio !== 1 ? ` (${fmt(c.ratio)} each)` : ""}`);
+      if (TIERS.indexOf(l.tier) < TIERS.indexOf(cur.tier)) cur.tier = l.tier;
+      need.set(k, cur);
+    }
+  }
+  const out: CalculatedLine[] = [];
+  for (const [k, n] of need) {
+    const have = planned.get(k) ?? 0;
+    const add = n.qty - have;
+    if (add <= 0) continue;
+    out.push({
+      boqDepartmentId: n.dept, deviceTypeId: n.companion, ruleId: null, tier: n.tier, calculatedQty: add,
+      explanation: `Comes with ${n.parts.join(" and ")} = ${fmt(n.qty)}${have ? `; ${fmt(have)} already planned → ${fmt(add)} more` : ""}`,
+    });
   }
   return out;
 }

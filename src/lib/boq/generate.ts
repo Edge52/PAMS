@@ -5,13 +5,13 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import type { DB } from "@/db";
 import {
-  boqDepartments, boqLines, boqRules, boqs, departments, deviceTypes, rooms,
+  boqDepartments, boqLines, boqRules, boqs, departments, deviceCompanions, deviceTypes, rooms,
 } from "@/db/schema";
 import {
   generateLines, HOSPITAL_WIDE, mergeRegeneration, needsHospitalWideDepartment, summarizeMerge,
-  type ExistingLine, type MergePlan, type RuleInput, type Tier,
+  type CompanionInput, type ExistingLine, type MergePlan, type RuleInput, type Tier,
 } from "./engine";
-import { midpointUsd } from "./pricing";
+import { tierPriceUsd, type PriceTier } from "./pricing";
 
 /** Signature of convert() from @/lib/server-utils — injected so this module stays free of server-only imports. */
 export type ConvertFn = (amount: number, from: string, to: string) => Promise<number | null>;
@@ -51,20 +51,28 @@ export async function loadRules(d: DB, standardSetId: number): Promise<RuleInput
   return rows.map((r) => ({
     id: r.id, departmentTypeCode: r.departmentTypeCode, deviceTypeId: r.deviceTypeId, basis: r.basis, ratio: r.ratio,
     minQty: r.minQty, maxQty: r.maxQty, rounding: r.rounding, tier: r.tier,
+    param: r.param, paramRatio: r.paramRatio, condition: r.condition,
   }));
+}
+
+/** Companion pairs for these main devices (catalogue-wide). */
+export async function loadCompanions(d: DB, deviceTypeIds: number[]): Promise<CompanionInput[]> {
+  if (!deviceTypeIds.length) return [];
+  return d.select({ deviceTypeId: deviceCompanions.deviceTypeId, companionTypeId: deviceCompanions.companionTypeId, ratio: deviceCompanions.ratio })
+    .from(deviceCompanions).where(inArray(deviceCompanions.deviceTypeId, [...new Set(deviceTypeIds)]));
 }
 
 export interface PriceResult { price: string | null; usdFallback: boolean }
 
 /** Default unit price per device type: midpoint of the USD band converted to `currency` (USD kept if no rate). */
-export async function defaultUnitPrices(d: DB, deviceTypeIds: number[], currency: string, convert: ConvertFn) {
+export async function defaultUnitPrices(d: DB, deviceTypeIds: number[], currency: string, convert: ConvertFn, tier: PriceTier = "STANDARD") {
   const out = new Map<number, PriceResult>();
   if (deviceTypeIds.length === 0) return out;
   const rows = await d.select({ id: deviceTypes.id, min: deviceTypes.priceMinUsd, max: deviceTypes.priceMaxUsd })
     .from(deviceTypes).where(inArray(deviceTypes.id, [...new Set(deviceTypeIds)]));
   const rate = currency === "USD" ? 1 : await convert(1, "USD", currency);
   for (const r of rows) {
-    const mid = midpointUsd(r.min, r.max);
+    const mid = tierPriceUsd(r.min, r.max, tier);
     if (mid === null) { out.set(r.id, { price: null, usdFallback: false }); continue; }
     if (rate === null) { out.set(r.id, { price: mid.toFixed(2), usdFallback: true }); continue; }
     out.set(r.id, { price: (Math.round(mid * rate * 100) / 100).toFixed(2), usdFallback: false });
@@ -95,7 +103,15 @@ export async function regenerateBoq(d: DB, boqId: number, convert: ConvertFn): P
     depts = await d.select().from(boqDepartments).where(eq(boqDepartments.boqId, boqId)).orderBy(boqDepartments.id);
   }
 
-  const calculated = generateLines({ rules, departments: depts, totalHospitalBeds: boq.totalHospitalBeds, includeTiers });
+  const companions = await loadCompanions(d, rules.map((r) => r.deviceTypeId));
+  const nameRows = companions.length
+    ? await d.select({ id: deviceTypes.id, name: deviceTypes.name }).from(deviceTypes).where(inArray(deviceTypes.id, [...new Set(companions.map((c) => c.deviceTypeId))]))
+    : [];
+  const mainNames = new Map(nameRows.map((r) => [r.id, r.name]));
+  const calculated = generateLines({
+    rules, departments: depts, totalHospitalBeds: boq.totalHospitalBeds, includeTiers,
+    features: boq.features, companions, deviceName: (id) => mainNames.get(id) ?? `device #${id}`,
+  });
   const existingRows = await d.select().from(boqLines).where(eq(boqLines.boqId, boqId));
   const existing: ExistingLine[] = existingRows.map((l) => ({
     id: l.id, boqDepartmentId: l.boqDepartmentId, deviceTypeId: l.deviceTypeId, ruleId: l.ruleId, tier: l.tier,
@@ -108,13 +124,20 @@ export async function regenerateBoq(d: DB, boqId: number, convert: ConvertFn): P
     ...plan.inserts.map((i) => i.deviceTypeId),
     ...existingRows.filter((l) => unpricedIds.has(l.id)).map((l) => l.deviceTypeId),
   ];
-  const prices = await defaultUnitPrices(d, needPrice, boq.currency, convert);
+  // Price at each line's tier: the department's, else the BOQ's (one lookup per tier in use).
+  const deptTier = new Map(depts.map((x) => [x.id, (x.priceTier ?? boq.priceTier) as PriceTier]));
+  const tierOfDept = (id: number | null) => (id != null ? deptTier.get(id) : undefined) ?? (boq.priceTier as PriceTier);
+  const priceByTier = new Map<PriceTier, Awaited<ReturnType<typeof defaultUnitPrices>>>();
+  for (const t of new Set([...plan.inserts.map((i) => tierOfDept(i.boqDepartmentId)), ...existingRows.filter((l) => unpricedIds.has(l.id)).map((l) => (l.priceTier as PriceTier | null) ?? tierOfDept(l.boqDepartmentId))])) {
+    priceByTier.set(t, await defaultUnitPrices(d, needPrice, boq.currency, convert, t));
+  }
+  const prices = { get: (deviceTypeId: number, t: PriceTier) => priceByTier.get(t)?.get(deviceTypeId) };
 
   await d.transaction(async (tx) => {
     if (plan.deletes.length) await tx.delete(boqLines).where(inArray(boqLines.id, plan.deletes));
     for (const u of plan.updates) {
       const row = existingRows.find((l) => l.id === u.id)!;
-      const p = unpricedIds.has(u.id) ? prices.get(row.deviceTypeId) : undefined;
+      const p = unpricedIds.has(u.id) ? prices.get(row.deviceTypeId, (row.priceTier as PriceTier | null) ?? tierOfDept(row.boqDepartmentId)) : undefined;
       await tx.update(boqLines).set({
         calculatedQty: u.calculatedQty, quantity: u.quantity, tier: u.tier, ruleId: u.ruleId, calcExplanation: u.calcExplanation,
         ...(p?.price ? { unitPriceEstimate: p.price } : {}),
@@ -123,7 +146,7 @@ export async function regenerateBoq(d: DB, boqId: number, convert: ConvertFn): P
     }
     if (plan.inserts.length) {
       await tx.insert(boqLines).values(plan.inserts.map((c) => {
-        const p = prices.get(c.deviceTypeId);
+        const p = prices.get(c.deviceTypeId, tierOfDept(c.boqDepartmentId));
         return {
           boqId, boqDepartmentId: c.boqDepartmentId, deviceTypeId: c.deviceTypeId, ruleId: c.ruleId, tier: c.tier,
           calculatedQty: c.calculatedQty, quantity: c.calculatedQty, isOverridden: false, isManual: false,

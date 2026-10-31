@@ -2,8 +2,9 @@ import { Button, Field, FormGrid, Input, Panel, Select, Textarea } from "@/compo
 import { CURRENCIES, formatNumber } from "@/lib/format";
 import type { BoqWorkspace } from "@/lib/boq/queries";
 import {
-  deleteDepartment, importFacilityDepartments, regenerate, saveDepartment, updateBoqSettings,
+  deleteDepartment, importFacilityDepartments, regenerate, saveDepartment, saveDepartmentAnswers, updateBoqSettings,
 } from "@/app/boq/actions";
+import { DEPARTMENT_QUESTIONS, FEATURES } from "@/lib/boq/questions";
 
 type Opt = { value: string | number; label: string };
 
@@ -110,6 +111,28 @@ export function ScopeTab({ ws, locked, deptTypes, facilities, projects, realDepa
         )}
       </Panel>
 
+      {depts.some((d) => DEPARTMENT_QUESTIONS[d.departmentTypeCode]) && (
+        <Panel title="Planning questions">
+          <p className="mb-3 text-sm text-muted">Throughput sizes the big items more accurately than beds alone (e.g. one CT per 15,000 exams a year). Leave blank to use the bed and room ratios. Regenerate after saving.</p>
+          <div className="space-y-4">
+            {depts.filter((d) => DEPARTMENT_QUESTIONS[d.departmentTypeCode]).map((d) => (
+              <form key={d.id} action={saveDepartmentAnswers} className="rounded-[var(--radius-control)] border border-line p-3">
+                <input type="hidden" name="boqId" value={boq.id} /><input type="hidden" name="deptId" value={d.id} />
+                <p className="mb-2 text-sm font-semibold">{d.label}</p>
+                <div className="flex flex-wrap items-end gap-3">
+                  {DEPARTMENT_QUESTIONS[d.departmentTypeCode].map((q) => (
+                    <Field key={q.key} label={q.label} hint={q.hint} className="w-56">
+                      <Input name={`param_${q.key}`} type="number" min={0} step={1} defaultValue={d.params?.[q.key] ?? ""} placeholder="Not answered" {...disabled} />
+                    </Field>
+                  ))}
+                  {!locked && <Button variant="secondary">Save answers</Button>}
+                </div>
+              </form>
+            ))}
+          </div>
+        </Panel>
+      )}
+
       <Panel title="BOQ settings">
         <form action={updateBoqSettings}>
           <input type="hidden" name="boqId" value={boq.id} />
@@ -131,6 +154,21 @@ export function ScopeTab({ ws, locked, deptTypes, facilities, projects, realDepa
                   <label key={t.value} className="flex items-center gap-1.5 text-sm">
                     <input type="checkbox" name="includeTiers" value={t.value} defaultChecked={tiers.includes(t.value)} className="accent-[var(--color-primary)]" {...disabled} />
                     {t.label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <Field label="Target budget" hint={`Optional, in ${boq.currency}. Shown against the total.`}>
+              <Input name="targetBudget" type="number" min={0} step="1000" defaultValue={boq.targetBudget ?? ""} {...disabled} />
+            </Field>
+            <fieldset className="sm:col-span-2 lg:col-span-3">
+              <legend className="mb-1 text-sm font-semibold">Hospital features</legend>
+              <p className="mb-2 text-xs text-muted">Each switches on extra rules in the standard (marked with the feature in the line explanation). Regenerate after changing.</p>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {FEATURES.map((f) => (
+                  <label key={f.key} className="flex items-start gap-1.5 text-sm">
+                    <input type="checkbox" name="features" value={f.key} defaultChecked={(boq.features ?? []).includes(f.key)} className="mt-1 accent-[var(--color-primary)]" {...disabled} />
+                    <span>{f.label}<span className="block text-xs text-muted">{f.hint}</span></span>
                   </label>
                 ))}
               </div>

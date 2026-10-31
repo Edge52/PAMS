@@ -8,6 +8,7 @@ import { boqDepartments, boqLines, boqs, departmentTypes, deviceTypes, facilitie
 import { CURRENCIES, num } from "@/lib/format";
 import { convert, float, int, logActivity, str } from "@/lib/server-utils";
 import { TIERS } from "@/lib/boq/engine";
+import { cleanFeatures, cleanParams, featureLabel, paramUnit } from "@/lib/boq/questions";
 import { defaultUnitPrices, facilityScope as facilityDepartmentScope, regenerateBoq } from "@/lib/boq/generate";
 import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { cancelApproval, pendingRequest, startApproval } from "@/lib/approvals/server";
@@ -129,6 +130,8 @@ const settingsSchema = z.object({
   projectId: z.number().int().positive().nullable(),
   facilityId: z.number().int().positive().nullable(),
   notes: z.string().nullable(),
+  features: z.array(z.string()),
+  targetBudget: z.string().nullable(),
 });
 
 export async function updateBoqSettings(fd: FormData) {
@@ -140,6 +143,8 @@ export async function updateBoqSettings(fd: FormData) {
     name: str(fd, "name") ?? "", totalHospitalBeds: int(fd, "totalHospitalBeds") ?? 0, contingencyPct: float(fd, "contingencyPct") ?? 0,
     includeTiers: fd.getAll("includeTiers").map(String), currency: str(fd, "currency") ?? boq.currency,
     projectId: int(fd, "projectId"), facilityId: int(fd, "facilityId"), notes: str(fd, "notes"),
+    features: cleanFeatures(fd.getAll("features").map(String)),
+    targetBudget: (() => { const t = float(fd, "targetBudget"); return t != null && t > 0 ? t.toFixed(2) : null; })(),
   });
   if (!parsed.success) fail(back, parsed.error.issues[0]?.message ?? "Check the settings");
   const v = parsed.data;
@@ -158,9 +163,11 @@ export async function updateBoqSettings(fd: FormData) {
   if (v.currency !== boq.currency) changed.push(`currency ${boq.currency} → ${v.currency}`);
   if (v.contingencyPct !== boq.contingencyPct) changed.push(`contingency ${boq.contingencyPct}% → ${v.contingencyPct}%`);
   if (v.includeTiers.join() !== (boq.includeTiers as string[]).join()) changed.push(`tiers ${v.includeTiers.join(", ").toLowerCase()}`);
+  const featuresChanged = [...v.features].sort().join() !== [...(boq.features ?? [])].sort().join();
+  if (featuresChanged) changed.push(`features ${v.features.length ? v.features.map(featureLabel).join(", ").toLowerCase() : "none"}`);
   await logActivity("boq", id, "updated", changed.length ? `Settings changed: ${changed.join("; ")}.` : "Settings saved.");
   revalidatePath(`/boq/${id}`);
-  const needsRegen = v.totalHospitalBeds !== boq.totalHospitalBeds || v.includeTiers.join() !== (boq.includeTiers as string[]).join();
+  const needsRegen = v.totalHospitalBeds !== boq.totalHospitalBeds || v.includeTiers.join() !== (boq.includeTiers as string[]).join() || featuresChanged;
   redirect(`${back}&notice=${enc(needsRegen ? "Settings saved. Regenerate from the standard to apply the new beds or tiers." : "Settings saved.")}`);
 }
 
@@ -311,9 +318,11 @@ export async function updateLine(_prev: FormState, fd: FormData): Promise<FormSt
   const quantity = reset ? line.calculatedQty : v.quantity;
   const isOverridden = !line.isManual && quantity !== line.calculatedQty;
 
+  const newPrice = v.unitPrice === null ? null : v.unitPrice.toFixed(2);
+  // A price changed by hand is kept when the BOQ is repriced at another tier; clearing it hands it back to the catalogue.
+  const priceManual = newPrice === null ? false : num(newPrice) !== num(line.unitPriceEstimate) ? true : line.priceManual;
   await db.update(boqLines).set({
-    quantity, isOverridden,
-    unitPriceEstimate: v.unitPrice === null ? null : v.unitPrice.toFixed(2),
+    quantity, isOverridden, unitPriceEstimate: newPrice, priceManual,
     notes: v.notes,
   }).where(eq(boqLines.id, lineId));
   await db.update(boqs).set({ updatedAt: new Date() }).where(eq(boqs.id, line.boqId));
@@ -401,6 +410,25 @@ export async function saveDepartment(fd: FormData) {
   }
   revalidatePath(`/boq/${boqId}`);
   redirect(`${back}&notice=${enc(`Saved "${v.label}". Regenerate from the standard to update the lines.`)}`);
+}
+
+/** Answers to a department's planning questions (throughput); blank clears an answer. */
+export async function saveDepartmentAnswers(fd: FormData) {
+  const me = await requirePermission("boq.edit");
+  const boqId = int(fd, "boqId") ?? 0;
+  const back = `/boq/${boqId}?tab=scope`;
+  await loadEditableBoq(boqId, back, me);
+  const id = int(fd, "deptId") ?? 0;
+  const [dept] = await db.select().from(boqDepartments).where(and(eq(boqDepartments.id, id), eq(boqDepartments.boqId, boqId)));
+  if (!dept) fail(back, "That department was removed.");
+  const raw: Record<string, unknown> = {};
+  for (const [k, v] of fd.entries()) if (k.startsWith("param_") && typeof v === "string") raw[k.slice(6)] = v.trim();
+  const params = cleanParams(dept.departmentTypeCode, raw);
+  await db.update(boqDepartments).set({ params }).where(eq(boqDepartments.id, id));
+  const said = Object.entries(params).map(([k, n]) => `${n.toLocaleString("en-US")} ${paramUnit(k, dept.departmentTypeCode)}`).join(", ");
+  await logActivity("boq", boqId, "scope_changed", `${dept.label}: ${said ? `planning answers ${said} a year` : "planning answers cleared"}.`);
+  revalidatePath(`/boq/${boqId}`);
+  redirect(`${back}&notice=${enc(`Saved the answers for "${dept.label}". Regenerate from the standard to resize the lines.`)}`);
 }
 
 export async function deleteDepartment(fd: FormData) {

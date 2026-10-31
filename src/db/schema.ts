@@ -69,6 +69,8 @@ export const rounding = pgEnum("rounding", ["CEIL", "ROUND", "FLOOR"]);
 export const boqTier = pgEnum("boq_tier", ["ESSENTIAL", "RECOMMENDED", "OPTIONAL"]);
 export const ruleConfidence = pgEnum("rule_confidence", ["SOURCED", "INDUSTRY_PRACTICE", "DRAFT"]);
 export const boqStatus = pgEnum("boq_status", ["DRAFT", "UNDER_REVIEW", "APPROVED", "SUPERSEDED"]);
+/** Price tier for BOQ estimates (wave 3): bottom, middle or top of the catalogue price band. */
+export const priceTier = pgEnum("price_tier", ["BASIC", "STANDARD", "PREMIUM"]);
 
 export const assetStatus = pgEnum("asset_status", [
   "IN_STOCK", "INSTALLED", "IN_SERVICE", "UNDER_MAINTENANCE", "OUT_OF_SERVICE", "DISPOSED",
@@ -299,7 +301,15 @@ export const boqRules = pgTable("boq_rules", {
   confidence: ruleConfidence("confidence").notNull().default("DRAFT"),
   sourceRef: varchar("source_ref", { length: 64 }),   // id within standardSets.sources
   notes: text("notes"),
-}, (t) => [uniqueIndex("boq_rules_uq").on(t.standardSetId, t.departmentTypeCode, t.deviceTypeId)]);
+  /**
+   * Throughput (wave 3): when the BOQ department answers this question (e.g. "ctExams" a year), quantity =
+   * answer × paramRatio instead of the basis above (e.g. 1 CT per 15,000 exams → 1/15000).
+   */
+  param: varchar("param", { length: 32 }),
+  paramRatio: doublePrecision("param_ratio"),
+  /** Conditional rule (wave 3): applies only when the BOQ has this feature (e.g. "trauma"); '' = always. */
+  condition: varchar("condition", { length: 32 }).notNull().default(""),
+}, (t) => [uniqueIndex("boq_rules_uq").on(t.standardSetId, t.departmentTypeCode, t.deviceTypeId, t.condition)]);
 
 /* ───────────────────────── Procurement projects ───────────────────────── */
 
@@ -330,6 +340,11 @@ export const boqs = pgTable("boqs", {
   currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   contingencyPct: real("contingency_pct").notNull().default(0),
   includeTiers: boqTier("include_tiers").array().notNull().default(sql`ARRAY['ESSENTIAL','RECOMMENDED']::boq_tier[]`),
+  /** Hospital features that switch on conditional rules (wave 3), e.g. {trauma, teaching}. */
+  features: text("features").array().notNull().default(sql`'{}'::text[]`),
+  priceTier: priceTier("price_tier").notNull().default("STANDARD"),
+  /** Budget the planner is aiming for (shown against the total). */
+  targetBudget: money("target_budget"),
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -345,6 +360,10 @@ export const boqDepartments = pgTable("boq_departments", {
   beds: integer("beds").notNull().default(0),
   rooms: integer("rooms").notNull().default(0),
   instances: integer("instances").notNull().default(1),
+  /** Answers to the department's planning questions (wave 3), e.g. { ctExams: 18000 }. */
+  params: jsonb("params").$type<Record<string, number>>().notNull().default({}),
+  /** Price tier for this department; null = the BOQ's. */
+  priceTier: priceTier("price_tier"),
 });
 
 export const boqLines = pgTable("boq_lines", {
@@ -361,7 +380,22 @@ export const boqLines = pgTable("boq_lines", {
   unitPriceEstimate: money("unit_price_estimate"),
   calcExplanation: text("calc_explanation"),                    // e.g. "12 beds × 1.0 per bed = 12"
   notes: text("notes"),
+  /** Price tier for this line; null = the department's, then the BOQ's (wave 3). */
+  priceTier: priceTier("price_tier"),
+  /** The unit price was typed by hand: repricing by tier leaves it alone. */
+  priceManual: boolean("price_manual").notNull().default(false),
 }, (t) => [index("boq_lines_boq_idx").on(t.boqId)]);
+
+/**
+ * Companion items (wave 3): equipment that comes with another, e.g. a CT scanner brings a CT injector. BOQ generation
+ * adds `ratio` companions per unit of the main device, topping up what the rules already planned in that department.
+ */
+export const deviceCompanions = pgTable("device_companions", {
+  deviceTypeId: integer("device_type_id").notNull().references(() => deviceTypes.id, { onDelete: "cascade" }),
+  companionTypeId: integer("companion_type_id").notNull().references(() => deviceTypes.id, { onDelete: "cascade" }),
+  ratio: doublePrecision("ratio").notNull().default(1),
+  note: text("note"),
+}, (t) => [primaryKey({ columns: [t.deviceTypeId, t.companionTypeId] })]);
 
 /* ───────────────────────── Specifications ───────────────────────── */
 
