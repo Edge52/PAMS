@@ -48,6 +48,7 @@ const sections: { title: string; links: NavLink[] }[] = [
       { href: "/assets/3d", label: "3D view", need: "assets.view" },
       { href: "/assets/work-orders", label: "Work orders", need: "assets.view" },
       { href: "/assets/maintenance", label: "Maintenance", need: "assets.view" },
+      { href: "/assets/contracts", label: "Service contracts", need: "assets.view" },
     ],
   },
   {

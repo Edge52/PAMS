@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, departments, deviceTypes, maintenanceEvents, rooms, suppliers } from "@/db/schema";
+import { assets, departments, deviceTypes, maintenanceEvents, rooms, suppliers, workOrders } from "@/db/schema";
 import { Badge, Button, EmptyState, Field, FormGrid, Input, LinkButton, PageHeader, Panel, Stat, StatusBadge, TabLinks, Textarea } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { enumOptions, NativeSelect, Notice } from "@/components/assets/bits";
@@ -12,6 +12,8 @@ import { locationTree } from "@/lib/assets/queries";
 import { CURRENCIES, formatDate, formatNumber, todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
 import { completeEventAction, generatePpmAction, logMaintenanceAction } from "../actions";
+import { createPpmWorkOrdersAction } from "../work-orders/actions";
+import { assignableUsers, assignableUsersAll } from "@/lib/assets/work-order-server";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere, type Scope } from "@/lib/assets/access";
@@ -148,8 +150,10 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
       id: maintenanceEvents.id, type: maintenanceEvents.type, status: maintenanceEvents.status, scheduledDate: maintenanceEvents.scheduledDate,
       completedDate: maintenanceEvents.completedDate, performedBy: maintenanceEvents.performedBy, findings: maintenanceEvents.findings,
       assetId: assets.id, tag: assets.assetTag, typeName: deviceTypes.name, departmentName: departments.name, roomCode: rooms.code,
+      woId: workOrders.id, woNumber: workOrders.number,
     }).from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId)).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
       .leftJoin(departments, eq(departments.id, assets.departmentId)).leftJoin(rooms, eq(rooms.id, assets.roomId))
+      .leftJoin(workOrders, eq(workOrders.plannedEventId, maintenanceEvents.id))
       .where(and(gte(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`, from), lte(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`, to),
         deptId ? eq(assets.departmentId, deptId) : undefined, q ? sql`${assets.assetTag} ilike ${"%" + q + "%"}` : undefined, scopeWhere(assets.facilityId, scope)))
       .orderBy(asc(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`), asc(assets.assetTag)).limit(3000),
@@ -159,6 +163,8 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
       .where(and(eq(maintenanceEvents.id, completeId), scopeWhere(assets.facilityId, scope))) : Promise.resolve([]),
   ]);
   const months = groupByMonth(events, (e) => e.completedDate ?? e.scheduledDate);
+  // People who can take PPM jobs: everyone with maintenance rights in the user's hospitals (deduplicated).
+  const people = canMaint ? [...new Map((await Promise.all((scope ?? [null]).map((f) => (f === null ? assignableUsersAll() : assignableUsers(f))))).flat().map((u) => [u.id, u])).values()] : [];
   const c = completing[0];
   return (
     <div className="space-y-5">
@@ -183,6 +189,16 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
           </ActionForm>
         </Panel>
       )}
+      {canMaint && <Panel title="Create work orders for scheduled visits">
+        <ActionForm action={createPpmWorkOrdersAction} className="flex flex-wrap items-end gap-3">
+          <Field label="Visits from"><Input type="date" name="from" defaultValue={today} required /></Field>
+          <Field label="to"><Input type="date" name="to" defaultValue={endOfMonth(today)} required /></Field>
+          <Field label="Department"><NativeSelect name="departmentId" options={depts.map((d) => ({ value: d.id, label: d.name }))} value={deptId} placeholder="All departments" /></Field>
+          <Field label="Assign to"><NativeSelect name="assigneeId" options={people.map((u) => ({ value: u.id, label: u.name }))} placeholder="Leave unassigned" /></Field>
+          <Button>Create work orders</Button>
+          <p className="w-full text-xs text-muted">One job per scheduled visit that doesn&apos;t have one yet, with the device type&apos;s PPM checklist. Completing the job completes the visit.</p>
+        </ActionForm>
+      </Panel>}
       {canMaint && <Panel title="Generate scheduled PPM visits">
         <ActionForm action={generatePpmAction} className="flex flex-wrap items-end gap-3">
           <Field label="From"><Input type="date" name="from" defaultValue={today} required /></Field>
@@ -213,9 +229,17 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
                     <Link href={`/assets/${e.assetId}`} className="font-mono text-[13px] font-semibold text-primary hover:underline">{e.tag}</Link>
                     <span className="hidden min-w-0 truncate sm:block">{maintenanceTypeLabel(e.type)} · {e.typeName}<span className="text-muted"> · {e.departmentName ?? "—"} {e.roomCode ?? ""}</span></span>
                     <span className="hidden sm:block"><StatusBadge value={st} /></span>
-                    <span className="text-right">{canMaint && st !== "COMPLETED" && st !== "CANCELLED"
-                      ? <Link href={`${returnPath}&from=${from}&to=${to}&complete=${e.id}#complete`} className="font-semibold text-primary hover:underline">Complete</Link>
-                      : <span className="text-xs text-muted">{e.performedBy ?? ""}</span>}</span>
+                    <span className="flex items-center justify-end gap-3 text-right">
+                      {e.woId ? <Link href={`/assets/work-orders/${e.woId}`} className="font-mono text-[13px] text-primary hover:underline">{e.woNumber}</Link>
+                        : canMaint && st !== "COMPLETED" && st !== "CANCELLED" && (
+                          <ActionForm action={createPpmWorkOrdersAction} className="inline">
+                            <input type="hidden" name="eventIds" value={e.id} />
+                            <button className="text-primary hover:underline">Create job</button>
+                          </ActionForm>)}
+                      {!e.woId && canMaint && st !== "COMPLETED" && st !== "CANCELLED"
+                        ? <Link href={`${returnPath}&from=${from}&to=${to}&complete=${e.id}#complete`} className="font-semibold text-primary hover:underline">Complete</Link>
+                        : !e.woId && <span className="text-xs text-muted">{e.performedBy ?? ""}</span>}
+                    </span>
                   </li>
                 );
               })}

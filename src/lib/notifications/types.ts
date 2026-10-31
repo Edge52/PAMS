@@ -21,6 +21,7 @@ export const KIND_LABELS: Record<string, string> = {
   work_order_reported: "Fault reported",
   work_order_assigned: "Job assigned",
   work_order_completed: "Job completed",
+  contract_ending: "Contract ending",
   test: "Test",
 };
 

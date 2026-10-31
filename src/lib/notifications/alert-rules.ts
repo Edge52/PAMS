@@ -210,8 +210,32 @@ export function acceptanceNoticeAlerts(rows: AwardRow[], today: string): Alert[]
   return out;
 }
 
+/* ── Service contracts ending (wave 3): biomedical and procurement decide to renew or re-tender ── */
+
+export type ContractRow = { id: number; number: string; title: string; endDate: string; facilityId: number; supplierName: string; devices: number };
+/** Contracts get a longer warning than warranties: renewing or re-tendering takes time. */
+export const CONTRACT_WARN_DAYS = 60;
+
+export function contractAlerts(rows: ContractRow[], today: string, warnDays = CONTRACT_WARN_DAYS): Alert[] {
+  const out: Alert[] = [];
+  for (const c of rows) {
+    const d = daysBetween(today, c.endDate);
+    if (d < 0 || d > warnDays) continue;
+    const n = {
+      kind: "contract_ending",
+      title: `Service contract ${c.number} ends ${inDays(d)}`,
+      body: `${c.title} with ${c.supplierName} covers ${plural(c.devices, "device")} and ends ${fmt(c.endDate)}. Renew it or start a new tender.`,
+      href: `/assets/contracts/${c.id}`,
+      dedupeKey: `contract_ending:${c.id}:${c.endDate}`,
+    };
+    out.push({ role: "BIOMEDICAL", facilityId: c.facilityId, n }, { role: "PROCUREMENT", facilityId: c.facilityId, n });
+  }
+  return out;
+}
+
 export type AlertData = {
   offers: OfferRow[]; rfqs: RfqRow[]; pos: PoRow[]; warranties: WarrantyRow[]; maintenance: MaintenanceRow[]; awards: AwardRow[];
+  contracts?: ContractRow[];
 };
 
 export function collectAlerts(data: AlertData, today: string, w: AlertWindows): Alert[] {
@@ -222,6 +246,7 @@ export function collectAlerts(data: AlertData, today: string, w: AlertWindows): 
     ...acceptanceNoticeAlerts(data.awards, today),
     ...warrantyAlerts(data.warranties, today, w.warrantyWarnDays),
     ...maintenanceAlerts(data.maintenance, today, w.maintenanceDueDays),
+    ...contractAlerts(data.contracts ?? [], today),
   ];
 }
 

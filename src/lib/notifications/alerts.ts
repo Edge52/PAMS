@@ -10,13 +10,13 @@ import "server-only";
 import { and, eq, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  assets, departments, deviceTypes, facilities, maintenanceEvents, offers, projects, purchaseOrders, rfqs, suppliers,
+  assets, departments, deviceTypes, facilities, maintenanceEvents, offers, projects, purchaseOrders, rfqs, serviceContracts, suppliers,
 } from "@/db/schema";
 import type { Role } from "@/lib/auth/permissions";
 import { addDaysISO, todayISO } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
 import { notifyUsers, usersWithRole } from "./index";
-import { collectAlerts, digestAlerts, MAINTENANCE_DUE_DAYS, type AlertData, type AlertWindows } from "./alert-rules";
+import { collectAlerts, CONTRACT_WARN_DAYS, digestAlerts, MAINTENANCE_DUE_DAYS, type AlertData, type AlertWindows } from "./alert-rules";
 
 export type AlertRunResult = {
   startedAt: string; finishedAt: string; ms: number;
@@ -57,7 +57,8 @@ async function loadData(today: string, w: AlertWindows): Promise<AlertData> {
   const warrantyHorizon = addDaysISO(today, w.warrantyWarnDays);
   const maintHorizon = addDaysISO(today, w.maintenanceDueDays);
 
-  const [offerRows, rfqRows, poRows, warrantyRows, maintRows, awardRows] = await Promise.all([
+  const contractHorizon = addDaysISO(today, CONTRACT_WARN_DAYS);
+  const [offerRows, rfqRows, poRows, warrantyRows, maintRows, awardRows, contractRows] = await Promise.all([
     db.select({
       id: offers.id, reference: offers.reference, status: offers.status, validUntil: offers.validUntil,
       supplierName: suppliers.name, projectCode: projects.code, facilityId: projects.facilityId,
@@ -95,8 +96,14 @@ async function loadData(today: string, w: AlertWindows): Promise<AlertData> {
       supplierName: suppliers.name, projectCode: projects.code, facilityId: projects.facilityId,
     }).from(offers).innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).innerJoin(projects, eq(projects.id, offers.projectId))
       .where(and(eq(offers.status, "AWARDED"), lt(offers.complaintUntil, today), isNull(offers.acceptedOn))),
+    db.select({
+      id: serviceContracts.id, number: serviceContracts.number, title: serviceContracts.title, endDate: serviceContracts.endDate,
+      facilityId: serviceContracts.facilityId, supplierName: suppliers.name,
+      devices: sql<number>`(select count(*) from service_contract_assets x where x.contract_id = ${serviceContracts.id})::int`,
+    }).from(serviceContracts).innerJoin(suppliers, eq(suppliers.id, serviceContracts.supplierId))
+      .where(sql`${serviceContracts.endDate} between ${today} and ${contractHorizon}`),
   ]);
-  return { offers: offerRows, rfqs: rfqRows, pos: poRows, warranties: warrantyRows, maintenance: maintRows, awards: awardRows };
+  return { offers: offerRows, rfqs: rfqRows, pos: poRows, warranties: warrantyRows, maintenance: maintRows, awards: awardRows, contracts: contractRows };
 }
 
 async function doRun(trigger: string): Promise<AlertRunResult> {

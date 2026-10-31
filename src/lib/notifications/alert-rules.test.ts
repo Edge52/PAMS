@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   digestAlerts, isoWeek,
-  acceptanceNoticeAlerts, collectAlerts, latePoAlerts, maintenanceAlerts, offerExpiryAlerts, rfqClosingAlerts, warrantyAlerts,
+  acceptanceNoticeAlerts, collectAlerts, contractAlerts, latePoAlerts, maintenanceAlerts, offerExpiryAlerts, rfqClosingAlerts, warrantyAlerts,
   type AlertData,
 } from "./alert-rules";
 import { absoluteLink, notificationEmail, safeHref } from "./types";
@@ -191,5 +191,19 @@ describe("digestAlerts", () => {
     expect(isoWeek("2026-10-30")).toBe("2026-W44");
     expect(isoWeek("2027-01-01")).toBe("2026-W53");
     expect(isoWeek("2026-01-01")).toBe("2026-W01");
+  });
+});
+
+describe("contractAlerts", () => {
+  const row = { id: 7, number: "SC-2026-0007", title: "ICU ventilators", endDate: "2026-12-01", facilityId: 1, supplierName: "Delta", devices: 12 };
+  it("warns biomedical and procurement within 60 days, once per end date", () => {
+    const a = contractAlerts([row], "2026-10-15");
+    expect(a.map((x) => x.role)).toEqual(["BIOMEDICAL", "PROCUREMENT"]);
+    expect(a[0].n).toMatchObject({ kind: "contract_ending", href: "/assets/contracts/7", dedupeKey: "contract_ending:7:2026-12-01" });
+    expect(a[0].n.body).toContain("12 devices");
+  });
+  it("is silent outside the window and after the end", () => {
+    expect(contractAlerts([row], "2026-09-01")).toEqual([]);
+    expect(contractAlerts([row], "2026-12-02")).toEqual([]);
   });
 });

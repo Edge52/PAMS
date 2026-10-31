@@ -4,7 +4,9 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, boqRules, departments, departmentTypes, deviceTypes, facilities, standardSets } from "@/db/schema";
 import { Badge, Details, EmptyState, LinkButton, PageHeader, Panel, Stat, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
-import { Ar, Crumbs } from "@/components/assets/bits";
+import { Ar, Crumbs, Notice } from "@/components/assets/bits";
+import { ChecklistPanel } from "@/components/assets/checklist-panel";
+import { defaultChecklist, effectiveChecklist } from "@/lib/assets/checklists";
 import { DEFAULT_PPM_INTERVAL_MONTHS } from "@/lib/assets/maintenance";
 import { formatMoney, formatNumber } from "@/lib/format";
 import { humanize } from "@/lib/status";
@@ -20,7 +22,7 @@ export async function generateMetadata({ params }: { params: Promise<{ code: str
   return { title: decodeURIComponent(code).toUpperCase() };
 }
 
-export default async function DeviceTypePage({ params }: { params: Promise<{ code: string }> }) {
+export default async function DeviceTypePage({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const me = await requirePermission("assets.view");
   const scope = await facilityScope(me);
   const canAdd = can(me.role, "assets.edit");
@@ -38,6 +40,10 @@ export default async function DeviceTypePage({ params }: { params: Promise<{ cod
     chain.unshift(p);
     parentId = p.parentId;
   }
+  const sp = await searchParams;
+  const ck = effectiveChecklist(dt.ppmChecklist, chain.at(-1)?.ppmChecklist, chain.at(-2)?.ppmChecklist,
+    () => defaultChecklist([dt.code, ...chain.map((c) => c.code).reverse()], { requiresCalibration: dt.requiresCalibration }));
+  const checklist = <ChecklistPanel code={dt.code} items={ck.items} source={ck.source} canEdit={can(me.role, "catalogue.edit")} own={!!dt.ppmChecklist?.length} />;
   const crumbs = [{ label: "Catalogue", href: "/catalogue" }, ...chain.map((c) => ({ label: c.name, href: `/catalogue/${c.code}` })), { label: dt.name }];
 
   if (dt.level < 3) {
@@ -48,6 +54,7 @@ export default async function DeviceTypePage({ params }: { params: Promise<{ cod
     return (
       <>
         <div className="mb-2"><Crumbs items={crumbs} /></div>
+        <Notice sp={sp} />
         <PageHeader title={dt.name} description={<>{dt.nameAr && <Ar>{dt.nameAr}</Ar>} <span className="font-mono text-sm">{dt.code}</span> · {dt.level === 1 ? "Category" : "Group"} with {children.length} {dt.level === 1 ? "groups" : "device types"}</>} />
         <Table>
           <THead><tr><Th>Code</Th><Th>Name</Th><Th>Arabic name</Th>{dt.level === 2 && <Th>Criticality</Th>}<Th align="right">Assets</Th></tr></THead>
@@ -63,6 +70,7 @@ export default async function DeviceTypePage({ params }: { params: Promise<{ cod
             ))}
           </tbody>
         </Table>
+        <div className="mt-6">{checklist}</div>
       </>
     );
   }
@@ -93,6 +101,7 @@ export default async function DeviceTypePage({ params }: { params: Promise<{ cod
   return (
     <>
       <div className="mb-2"><Crumbs items={crumbs} /></div>
+      <Notice sp={sp} />
       <PageHeader
         title={dt.name}
         description={<>{dt.nameAr && <><Ar className="text-ink">{dt.nameAr}</Ar><br /></>}<span className="font-mono text-sm">{dt.code}</span>{dt.gmdnTerm && <> · GMDN: {dt.gmdnTerm}</>}</>}
@@ -108,7 +117,7 @@ export default async function DeviceTypePage({ params }: { params: Promise<{ cod
         <Stat label="Planning rules" value={rules.length} hint="BOQ standards that include it" />
       </div>
       <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <Panel title="About this device type">
             {dt.description && <p className="mb-4 max-w-prose text-[15px]">{dt.description}</p>}
             <Details items={[
@@ -123,14 +132,15 @@ export default async function DeviceTypePage({ params }: { params: Promise<{ cod
               { label: "GMDN term", value: dt.gmdnTerm },
             ]} />
           </Panel>
+          {checklist}
           <Panel title="Specification template" padded={false}>
             {!dt.specTemplate?.length ? <p className="p-4 text-sm text-muted">No key parameters listed for this type yet.</p> : (
-              <table className="w-full text-[14px]">
+              <div className="overflow-x-auto"><table className="w-full text-[14px]">
                 <thead className="bg-sunken text-left text-[13px] text-muted"><tr><th className="px-4 py-2 font-semibold">Parameter</th><th className="px-4 py-2 font-semibold">Unit</th><th className="px-4 py-2 font-semibold">Guidance</th></tr></thead>
                 <tbody>{dt.specTemplate.map((s, i) => (
                   <tr key={i} className="border-t border-line"><td className="px-4 py-2 font-semibold">{s.name}</td><td className="px-4 py-2 text-muted">{s.unit && s.unit !== "text" ? s.unit : "—"}</td><td className="px-4 py-2 text-muted">{s.hint ?? ""}</td></tr>
                 ))}</tbody>
-              </table>
+              </table></div>
             )}
           </Panel>
           <Panel title="BOQ planning standards" actions={<Link href="/boq/standards" className="text-sm text-primary hover:underline">All standards</Link>} padded={false}>

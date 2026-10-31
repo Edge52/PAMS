@@ -19,6 +19,11 @@ const updatedAt = () =>
   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date());
 const money = (name: string) => numeric(name, { precision: 14, scale: 2 });
 
+/** One line of a PPM checklist: a yes/no check, or a measurement with an optional pass range. */
+export type ChecklistItem = { text: string; unit?: string; min?: number; max?: number };
+/** The answer recorded on a work order for one checklist line. */
+export type ChecklistResult = ChecklistItem & { result: "PASS" | "FAIL" | "NA" | null; value?: number | null; note?: string | null };
+
 /* ───────────────────────────── Enums ───────────────────────────── */
 
 export const userRole = pgEnum("user_role", [
@@ -75,6 +80,9 @@ export const maintenanceStatus = pgEnum("maintenance_status", ["SCHEDULED", "IN_
 // added in wave 3 (work orders)
 export const workOrderStatus = pgEnum("work_order_status", ["OPEN", "ASSIGNED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CLOSED", "CANCELLED"]);
 export const workOrderPriority = pgEnum("work_order_priority", ["URGENT", "HIGH", "NORMAL", "LOW"]);
+export const workOrderCoverage = pgEnum("work_order_coverage", ["NONE", "WARRANTY", "CONTRACT"]);
+export const claimStatus = pgEnum("claim_status", ["NOT_CLAIMED", "SUBMITTED", "ACCEPTED", "REJECTED"]);
+export const contractType = pgEnum("contract_type", ["FULL_SERVICE", "PREVENTIVE", "PARTS_ONLY", "LABOUR_ONLY", "WARRANTY_EXTENSION"]);
 
 /* ───────────────────────────── People ───────────────────────────── */
 
@@ -224,6 +232,8 @@ export const deviceTypes = pgTable("device_types", {
   priceMaxUsd: money("price_max_usd"),
   /** Key technical parameters a spec sheet for this type should cover, e.g. [{"name":"Slices","unit":""}]. */
   specTemplate: jsonb("spec_template").$type<{ name: string; unit?: string; hint?: string }[]>(),
+  /** PPM checklist for this type (wave 3). Null → inherited from the group/category, else the built-in default. */
+  ppmChecklist: jsonb("ppm_checklist").$type<ChecklistItem[]>(),
   active: boolean("active").notNull().default(true),
 }, (t) => [index("device_types_parent_idx").on(t.parentId)]);
 
@@ -619,14 +629,52 @@ export const workOrders = pgTable("work_orders", {
   cost: money("cost"),
   currency: varchar("currency", { length: 3 }),
   maintenanceEventId: integer("maintenance_event_id").references(() => maintenanceEvents.id, { onDelete: "set null" }),
+  /** The scheduled PPM visit this job carries out (completing the job completes that visit). */
+  plannedEventId: integer("planned_event_id").references(() => maintenanceEvents.id, { onDelete: "set null" }),
+  checklist: jsonb("checklist").$type<ChecklistResult[]>(),
+  /** Cover when the job was raised: warranty, a service contract, or none. */
+  coverage: workOrderCoverage("coverage").notNull().default("NONE"),
+  contractId: integer("contract_id").references((): AnyPgColumn => serviceContracts.id, { onDelete: "set null" }),
+  claimStatus: claimStatus("claim_status").notNull().default("NOT_CLAIMED"),
+  claimReference: text("claim_reference"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
+  uniqueIndex("work_orders_planned_event_uq").on(t.plannedEventId),
   index("work_orders_asset_idx").on(t.assetId),
   index("work_orders_status_idx").on(t.status),
   index("work_orders_assignee_idx").on(t.assignedToId),
   index("work_orders_facility_idx").on(t.facilityId),
 ]);
+
+/** Service contract with a vendor covering a set of assets (wave 3). */
+export const serviceContracts = pgTable("service_contracts", {
+  id: serial("id").primaryKey(),
+  number: varchar("number", { length: 24 }).notNull().unique(),      // SC-2026-0001
+  facilityId: integer("facility_id").notNull().references(() => facilities.id),
+  supplierId: integer("supplier_id").notNull().references(() => suppliers.id),
+  title: text("title").notNull(),
+  type: contractType("type").notNull().default("FULL_SERVICE"),
+  vendorReference: text("vendor_reference"),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  value: money("value"),
+  currency: varchar("currency", { length: 3 }),
+  /** Promised on-site response, hours. */
+  responseHours: integer("response_hours"),
+  ppmVisitsPerYear: integer("ppm_visits_per_year"),
+  includesParts: boolean("includes_parts").notNull().default(false),
+  contactName: text("contact_name"),
+  contactPhone: varchar("contact_phone", { length: 48 }),
+  notes: text("notes"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index("service_contracts_facility_idx").on(t.facilityId), index("service_contracts_end_idx").on(t.endDate)]);
+
+export const serviceContractAssets = pgTable("service_contract_assets", {
+  contractId: integer("contract_id").notNull().references(() => serviceContracts.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+}, (t) => [primaryKey({ columns: [t.contractId, t.assetId] }), index("service_contract_assets_asset_idx").on(t.assetId)]);
 
 /* ───────────────────── Documents & activity log ───────────────────── */
 
@@ -924,4 +972,13 @@ export const workOrdersRelations = relations(workOrders, ({ one }) => ({
   asset: one(assets, { fields: [workOrders.assetId], references: [assets.id] }),
   facility: one(facilities, { fields: [workOrders.facilityId], references: [facilities.id] }),
   maintenanceEvent: one(maintenanceEvents, { fields: [workOrders.maintenanceEventId], references: [maintenanceEvents.id] }),
+}));
+export const serviceContractsRelations = relations(serviceContracts, ({ one, many }) => ({
+  facility: one(facilities, { fields: [serviceContracts.facilityId], references: [facilities.id] }),
+  supplier: one(suppliers, { fields: [serviceContracts.supplierId], references: [suppliers.id] }),
+  assets: many(serviceContractAssets),
+}));
+export const serviceContractAssetsRelations = relations(serviceContractAssets, ({ one }) => ({
+  contract: one(serviceContracts, { fields: [serviceContractAssets.contractId], references: [serviceContracts.id] }),
+  asset: one(assets, { fields: [serviceContractAssets.assetId], references: [assets.id] }),
 }));

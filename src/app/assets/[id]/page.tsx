@@ -16,6 +16,8 @@ import { ASSET_CONDITIONS, ASSET_STATUSES, MAINTENANCE_TYPES } from "@/lib/asset
 import { displayEventStatus, dueState, lifecycle, nextPpmDue, warrantyState, maintenanceTypeLabel } from "@/lib/assets/maintenance";
 import { cat, grp, locationTree, miniMapData } from "@/lib/assets/queries";
 import { isActive, isLate } from "@/lib/assets/work-orders";
+import { contractsForAsset } from "@/lib/assets/work-order-server";
+import { CONTRACT_TYPE_LABELS, contractState, type ContractType } from "@/lib/assets/contracts";
 import { CURRENCIES, formatDate, formatDateTime, formatMoney, formatNumber, todayISO } from "@/lib/format";
 import { getActivity } from "@/lib/server-utils";
 import { humanize } from "@/lib/status";
@@ -69,7 +71,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   const canReport = can(me.role, "workorders.report");
   const today = todayISO();
 
-  const [trail, events, moves, components, activity, tree, vendors, mini, jobs] = await Promise.all([
+  const [trail, events, moves, components, activity, tree, vendors, mini, jobs, contracts] = await Promise.all([
     x.poLineId ? db.select({
       poId: purchaseOrders.id, poNumber: purchaseOrders.number, poStatus: purchaseOrders.status, issueDate: purchaseOrders.issueDate, unitPrice: poLines.unitPrice, currency: purchaseOrders.currency,
       offerId: offers.id, offerRef: offers.reference, projectId: projects.id, projectCode: projects.code, projectTitle: projects.title,
@@ -91,7 +93,9 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
     a.floorId ? miniMapData(a.floorId) : Promise.resolve(null),
     db.select({ wo: workOrders, assigneeName: woAssignee.name }).from(workOrders).leftJoin(woAssignee, eq(woAssignee.id, workOrders.assignedToId))
       .where(eq(workOrders.assetId, assetId)).orderBy(desc(workOrders.reportedAt)).limit(20),
+    contractsForAsset(assetId),
   ]);
+  const liveContracts = contracts.filter((c) => contractState(c, today).state !== "EXPIRED");
   const openJobs = jobs.filter((j) => isActive(j.wo.status));
   const nowTs = new Date();
   const po = trail[0];
@@ -276,6 +280,18 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                     </span>
                     <span className="text-muted"> · {w.state === "EXPIRED" ? `${-(w.days ?? 0)} days ago` : `${w.days} days left`}</span>
                   </>}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted">Service contract</dt>
+                <dd className="mt-0.5">
+                  {liveContracts.length === 0 ? <span className="text-muted">{contracts.length ? `None running (last ended ${formatDate(contracts[0].endDate)})` : "None"}</span>
+                    : liveContracts.map((c) => (
+                      <span key={c.id} className="block">
+                        <Link href={`/assets/contracts/${c.id}`} className="font-semibold text-primary hover:underline">{c.number}</Link> {c.supplierName} until {formatDate(c.endDate)}
+                        <span className="block text-xs text-muted">{CONTRACT_TYPE_LABELS[c.type as ContractType]}{c.responseHours ? ` · response ${c.responseHours} h` : ""}{c.contactPhone ? ` · ${c.contactPhone}` : ""}</span>
+                      </span>
+                    ))}
                 </dd>
               </div>
               <div>

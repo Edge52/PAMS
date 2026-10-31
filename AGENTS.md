@@ -163,6 +163,17 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - **Inside a transaction always pass the actor to `logActivity(..., me.name, tx)`.** Without it, `logActivity` looks up the signed-in
   user through the global `db`, which deadlocks on PGlite's single connection.
 
+## PPM checklists and service contracts (biomedical package, step 2a)
+- Checklists: `device_types.ppm_checklist` (type → group → category → built-in default by taxonomy code); pure rules in
+  `src/lib/assets/checklists.ts`; edited on `/catalogue/[code]` (`catalogue.edit`). Text form: `description | unit | min | max`.
+- PPM jobs: `createPpmWorkOrdersAction` turns scheduled visits into work orders (`work_orders.planned_event_id`, unique). The job
+  carries a copy of the checklist; completing it fills the checklist (`ck_result_<i>`, `ck_value_<i>`, `ck_note_<i>`) and
+  completes the visit; reopening puts the visit back to scheduled; cancelling releases it.
+- Contracts: `service_contracts` + `service_contract_assets`, routes `/assets/contracts`, `/assets/contracts/new`,
+  `/assets/contracts/[id]`, permission `contracts.edit` (admin, biomedical, procurement), attachments entity `contract`.
+- Cover: `coverOn()` in `src/lib/assets/contracts.ts` — warranty first, then the running contract. Stored on each work order
+  (`coverage`, `contract_id`) with `claim_status` / `claim_reference`. Alert `contract_ending` 60 days ahead.
+
 ## Building heights
 - La Plaza floors are 5 m floor to floor (`seed-data/cad/la-plaza.json`, `tools/cad/floors.json`; migration 0007 moves floors still on
   the old 4.5 m spacing). The 3D view draws walls 3.3 m high (`WALL_HEIGHT` in `src/components/assets/twin/scene.ts`).
