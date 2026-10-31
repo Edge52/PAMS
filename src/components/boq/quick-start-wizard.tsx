@@ -47,10 +47,10 @@ export function QuickStartWizard({ facilities, currencies }: { facilities: { val
 
   const money = (v: number | undefined) => (v == null ? "—" : formatMoney(v, a.currency, { compact: v >= 1e6 }));
   const nf = (label: string, value: number, onChange: (v: number) => void, hint?: string, max = 5000) => (
-    <Field label={label} hint={hint}><Input type="number" min={0} max={max} inputMode="numeric" value={value} onChange={(e) => onChange(num(e.target.value))} /></Field>
+    <Field key={label} label={label} hint={hint}><Input type="number" min={0} max={max} inputMode="numeric" value={value} onChange={(e) => onChange(num(e.target.value))} /></Field>
   );
   const check = (label: string, checked: boolean, onChange: (v: boolean) => void, hint?: string) => (
-    <label className="flex items-start gap-2 text-sm">
+    <label key={label} className="flex items-start gap-2 text-sm">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-1 accent-[var(--color-primary)]" />
       <span>{label}{hint && <span className="block text-xs text-muted">{hint}</span>}</span>
     </label>
