@@ -36,10 +36,32 @@ function connect(): Clients {
 }
 
 // One client per process (also across dev hot reloads). PGlite must never be opened twice on the same folder.
-const clients = globalForDb.hpamsDb ?? connect();
-globalForDb.hpamsDb = clients;
+//
+// The client is opened on first use, never at import. `next dev` forks short-lived helper processes that import
+// page modules without serving requests (the static-paths worker for dynamic routes like /assets/[id], re-forked
+// after every revalidatePath). Opening PGlite at import made each of them open the live data folder from a second
+// process: it either PANICked ("Unhandled Rejection: RuntimeError: Aborted()") or ran crash recovery on the folder
+// while the server was writing to it, which can corrupt it. Postgres pools connect lazily, so they were unaffected.
+function clients(): Clients {
+  return (globalForDb.hpamsDb ??= connect());
+}
 
-export const db = clients.db;
-/** Close the connection (scripts call this before exiting so PGlite flushes to disk). */
-export const closeDb = clients.close;
+/** The Drizzle client. Connects on first query, not when imported. */
+export const db: DB = new Proxy({} as DB, {
+  get(_target, prop) {
+    if (prop === "then") return undefined; // `await db` / returning db from an async function must not connect
+    const real = clients().db;
+    const value = Reflect.get(real, prop, real);
+    return typeof value === "function" ? value.bind(real) : value;
+  },
+  has: (_target, prop) => prop in clients().db,
+});
+
+/** Close the connection if one was opened (scripts call this before exiting so PGlite flushes to disk). */
+export async function closeDb(): Promise<void> {
+  const open = globalForDb.hpamsDb;
+  if (!open) return;
+  globalForDb.hpamsDb = undefined;
+  await open.close();
+}
 export { schema };
