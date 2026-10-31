@@ -40,7 +40,6 @@ export default async function RecallPage({ params, searchParams }: {
   ]);
   const prog = recallProgress(devices.map((d) => d.ra));
   const withoutJob = devices.filter((d) => d.ra.status === "PENDING" && !d.ra.workOrderId).length;
-  const p = `/assets/recalls/${r.id}`;
   const multi = scope === null || scope.length > 1;
 
   return (
