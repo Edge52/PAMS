@@ -10,7 +10,8 @@ import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { DB } from "../../src/db";
 import {
-  activityLog, assets, deviceTypes, facilities, maintenanceEvents, serviceContractAssets, serviceContracts, suppliers, users, workOrders,
+  activityLog, assets, deviceTypes, facilities, maintenanceEvents, partTransactions, recallAssets, recalls, serviceContractAssets, serviceContracts,
+  spareParts, suppliers, users, workOrders,
 } from "../../src/db/schema";
 import { responseDue, suggestedPriority, type WorkOrderPriority } from "../../src/lib/assets/work-orders";
 import { blankResults, defaultChecklist } from "../../src/lib/assets/checklists";
@@ -171,6 +172,64 @@ export default async function seed(db: DB) {
     log.push({ entityType: "work_order", entityId: wo.id, action: "reported", summary: `Raised from the maintenance schedule (visit due ${v.date})`, actor: lead?.name ?? null, at });
     created++;
   }
+  // Spare parts in the main hospital's store; some used on closed jobs, a few low or out of stock.
+  let parts = 0, recallCount = 0;
+  if (fac) {
+    const typeId = async (code: string) => (await db.select({ id: deviceTypes.id }).from(deviceTypes).where(eq(deviceTypes.code, code)))[0]?.id ?? null;
+    const PARTS: [string, string, string | null, string, number, number, number][] = [
+      ["MS-SPO2-A01", "SpO2 sensor, adult, reusable", "MON-PAT-HIGH", "Shelf A1", 650, 6, 3],
+      ["MS-NIBP-CUF-M", "NIBP cuff, adult medium", "MON-PAT-MID", "Shelf A1", 420, 12, 5],
+      ["MS-ECG-5L", "ECG trunk cable, 5 lead", "MON-PAT-HIGH", "Shelf A2", 1800, 2, 3],
+      ["VN-O2CELL", "Oxygen sensor cell", "LIF-VEN-ICU", "Shelf B1", 3900, 1, 2],
+      ["VN-EXP-VALVE", "Expiratory valve assembly", "LIF-VEN-ICU", "Shelf B1", 7600, 3, 1],
+      ["VN-FLT-HEPA", "Bacterial/viral filter (box of 50)", "LIF-VEN-ICU", "Shelf B2", 2100, 0, 2],
+      ["IP-BAT-LI", "Infusion pump battery pack", "INF-PMP-VOL", "Shelf C1", 1450, 8, 4],
+      ["IP-DOOR-ASSY", "Pump door assembly", "INF-PMP-VOL", "Shelf C1", 980, 2, 1],
+      ["DF-PADS-AD", "Defibrillator pads, adult", "LIF-DEF-AED", "Shelf D1", 760, 10, 6],
+      ["DF-BAT", "Defibrillator battery", "LIF-DEF-MAN", "Shelf D1", 5200, 1, 1],
+      ["GN-FUSE-T2A", "Fuse T2A 250V (pack of 10)", null, "Drawer E", 45, 40, 10],
+      ["GN-MAINS-C13", "Mains lead IEC C13, 2 m", null, "Drawer E", 120, 15, 5],
+    ];
+    const issued = await db.select({ id: workOrders.id }).from(workOrders).where(and(eq(workOrders.status, "CLOSED"), eq(workOrders.facilityId, fac.id))).limit(12);
+    for (const [k, [pn, name, code, loc, cost, stock, min]] of PARTS.entries()) {
+      const [part] = await db.insert(spareParts).values({
+        facilityId: fac.id, partNumber: pn, name, deviceTypeId: code ? await typeId(code) : null, location: `BME store, ${loc}`,
+        unitCost: String(cost), currency: "EGP", stockQty: stock, minQty: min, supplierId: sups[k % Math.max(1, sups.length)]?.id ?? null,
+      }).returning({ id: spareParts.id });
+      const txns: (typeof partTransactions.$inferInsert)[] = [{ partId: part.id, kind: "RECEIPT", quantity: stock + 2, unitCost: String(cost), note: "Opening stock", actor: lead?.name ?? null, at: new Date(now - 100 * 24 * H) }];
+      const job = issued[k % Math.max(1, issued.length)];
+      if (job) txns.push({ partId: part.id, kind: "ISSUE", quantity: -2, unitCost: String(cost), workOrderId: job.id, actor: tech?.name ?? null, at: new Date(now - 20 * 24 * H) });
+      else txns[0].quantity = stock;
+      await db.insert(partTransactions).values(txns);
+      parts++;
+    }
+
+    // Recalls: one urgent notice on the commonest ventilator model (half dealt with), one advisory on infusion pumps.
+    const commonest = async (prefix: string) => (await db.select({ man: assets.manufacturer, model: assets.model, typeId: assets.deviceTypeId, n: sql<number>`count(*)::int` })
+      .from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
+      .where(and(like(deviceTypes.code, `${prefix}-%`), sql`${assets.model} is not null`, sql`${assets.status} <> 'DISPOSED'`))
+      .groupBy(assets.manufacturer, assets.model, assets.deviceTypeId).orderBy(sql`count(*) desc`).limit(1))[0];
+    const notices = [
+      { prefix: "LIF-VEN", title: "Risk of unexpected shutdown after battery calibration", action: "SOFTWARE_UPDATE" as const, urgent: true, done: 0.5, ref: "FSN-2026-014" },
+      { prefix: "INF-PMP", title: "Updated cleaning instructions for the door mechanism", action: "ADVISORY" as const, urgent: false, done: 0, ref: "FSN-2026-022" },
+    ];
+    for (const nt of notices) {
+      const m = await commonest(nt.prefix);
+      if (!m) continue;
+      const hits = await db.select({ id: assets.id }).from(assets)
+        .where(and(eq(assets.deviceTypeId, m.typeId), sql`${assets.manufacturer} is not distinct from ${m.man}`, eq(assets.model, m.model!), sql`${assets.status} <> 'DISPOSED'`));
+      const [rc] = await db.insert(recalls).values({
+        number: `FSCA-${new Date(now).getFullYear()}-${String(++recallCount).padStart(4, "0")}`, reference: nt.ref, source: "Manufacturer",
+        title: nt.title, description: `${m.man ?? "The manufacturer"} has issued a field safety notice for ${m.model}. Follow the attached instructions.`,
+        manufacturer: m.man, deviceTypeId: m.typeId, modelPattern: m.model, action: nt.action, urgent: nt.urgent, issuedDate: shift(-12), dueDate: shift(18),
+      }).returning({ id: recalls.id });
+      await db.insert(recallAssets).values(hits.map((h, j) => {
+        const done = j < Math.floor(hits.length * nt.done);
+        return { recallId: rc.id, assetId: h.id, status: done ? "ACTIONED" as const : "PENDING" as const, actionedAt: done ? new Date(now - 3 * 24 * H) : null, note: done ? "Software updated by vendor engineer" : null };
+      }));
+    }
+  }
   for (let i = 0; i < log.length; i += 500) await db.insert(activityLog).values(log.slice(i, i + 500));
+  console.log(`  workorders: ${parts} spare parts, ${recallCount} recalls`);
   console.log(`  workorders: ${created} created (${down.length} open for devices that are down, ${visits.length} PPM jobs with checklists), ${contracts} service contracts`);
 }

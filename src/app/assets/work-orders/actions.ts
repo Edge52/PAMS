@@ -9,7 +9,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, deviceTypes, maintenanceEvents, users, workOrders } from "@/db/schema";
+import { assets, deviceTypes, maintenanceEvents, recallAssets, users, workOrders } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { firstError, formObject, isoDate, num, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
@@ -235,6 +235,9 @@ export async function completeWorkOrderAction(_: FormState, fd: FormData): Promi
     else eventId = (await tx.insert(maintenanceEvents).values({ ...event, assetId: wo.assetId, type: wo.type, scheduledDate: todayISO(wo.reportedAt) })
       .returning({ id: maintenanceEvents.id }))[0].id;
     await tx.update(workOrders).set({ maintenanceEventId: eventId }).where(eq(workOrders.id, wo.id));
+    // A recall job done = that device is actioned for the recall.
+    await tx.update(recallAssets).set({ status: "ACTIONED", actionedAt: now, note: `Done under ${wo.number}` })
+      .where(and(eq(recallAssets.workOrderId, wo.id), eq(recallAssets.status, "PENDING")));
     await logActivity("work_order", wo.id, "completed", `Completed by ${me.name}: ${resolution.slice(0, 200)}${failed ? ` — ${failed} checklist item${failed === 1 ? "" : "s"} failed` : ""}${wo.deviceDown ? (d.returnToService ? " — back in service" : " — still out of use") : ""}`, me.name, tx);
     await logActivity("asset", wo.assetId, "maintenance", `${wo.number} completed — ${resolution.slice(0, 120)}`, me.name, tx);
     await applyAssetEffect("complete", wo, { returnToService: d.returnToService, actor: me.name }, tx);
@@ -281,7 +284,10 @@ export async function signOffWorkOrderAction(_: FormState, fd: FormData): Promis
     }
     await logActivity("work_order", wo.id, step === "close" ? "closed" : "reopened",
       step === "close" ? `Signed off by ${me.name}${note ? ` — ${note}` : ""}` : `Reopened by ${me.name} — ${note}`, me.name, tx);
-    if (step === "reopen") await applyAssetEffect("start", wo, { actor: me.name }, tx);
+    if (step === "reopen") {
+      await applyAssetEffect("start", wo, { actor: me.name }, tx);
+      await tx.update(recallAssets).set({ status: "PENDING", actionedAt: null }).where(and(eq(recallAssets.workOrderId, wo.id), eq(recallAssets.status, "ACTIONED")));
+    }
     return true;
   });
   if (!ok) return { error: RACE };
@@ -309,6 +315,8 @@ export async function cancelWorkOrderAction(_: FormState, fd: FormData): Promise
     // A cancelled PPM job lets go of its scheduled visit, so a new job can be raised for it.
     if (!(await guardedUpdate(tx, wo, { status: next, closedAt: now, downtimeEnd: wo.deviceDown ? wo.downtimeEnd ?? now : wo.downtimeEnd, plannedEventId: null }))) return false;
     await logActivity("work_order", wo.id, "cancelled", `Cancelled by ${me.name} — ${p.data.reason}`, me.name, tx);
+    // A cancelled recall job lets go of the device, so a new job can be raised for it.
+    await tx.update(recallAssets).set({ workOrderId: null }).where(and(eq(recallAssets.workOrderId, wo.id), eq(recallAssets.status, "PENDING")));
     await applyAssetEffect("cancel", wo, { actor: me.name }, tx);
     return true;
   });

@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, departments, deviceTypes, facilities, floors, rooms, serviceContracts, suppliers, users, workOrders, type ChecklistResult } from "@/db/schema";
+import {
+  assets, departments, deviceTypes, facilities, floors, partTransactions, rooms, serviceContracts, spareParts, suppliers, users, workOrders, type ChecklistResult,
+} from "@/db/schema";
+import { partsUsed } from "@/lib/assets/parts";
+import { jobPartsAction } from "../../parts/actions";
 import { Badge, Button, Details, Field, FormGrid, Input, LinkButton, PageHeader, Panel, StatusBadge, Textarea } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents-panel";
 import { ActionForm } from "@/components/assets/action-form";
@@ -40,7 +44,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
   if (!/^\d+$/.test(id)) notFound();
   const [r] = await db.select({
     wo: workOrders, tag: assets.assetTag, assetStatus: assets.status, criticality: assets.criticality, manufacturer: assets.manufacturer, model: assets.model,
-    serial: assets.serialNumber, typeName: deviceTypes.name, typeCode: deviceTypes.code, roomId: rooms.id, roomCode: rooms.code, roomName: rooms.name,
+    serial: assets.serialNumber, typeName: deviceTypes.name, deviceTypeId: assets.deviceTypeId, typeCode: deviceTypes.code, roomId: rooms.id, roomCode: rooms.code, roomName: rooms.name,
     floorId: floors.id, floorName: floors.name, departmentName: departments.name, facilityName: facilities.name,
     assigneeName: assignee.name, assigneePhone: assignee.phone, warrantyEnd: assets.warrantyEnd,
     contractNumber: serviceContracts.number, contractEnd: serviceContracts.endDate, contractResponse: serviceContracts.responseHours,
@@ -56,10 +60,23 @@ export default async function WorkOrderPage({ params, searchParams }: {
   const now = new Date();
   const canAssign = can(me.role, "workorders.assign"), canWork = can(me.role, "maintenance.edit");
   const actions = new Set(allowedActions(wo, { id: me.id, canAssign, canWork }));
-  const [activity, people] = await Promise.all([
+  const partsOpen = canWork && (["ASSIGNED", "IN_PROGRESS", "ON_HOLD", "COMPLETED"] as string[]).includes(wo.status);
+  const [activity, people, partTxns, stock] = await Promise.all([
     getActivity("work_order", wo.id, 50),
     actions.has("assign") ? assignableUsers(wo.facilityId) : Promise.resolve([]),
+    db.select({ partId: partTransactions.partId, kind: partTransactions.kind, quantity: partTransactions.quantity, unitCost: partTransactions.unitCost,
+      name: spareParts.name, partNumber: spareParts.partNumber, currency: spareParts.currency })
+      .from(partTransactions).innerJoin(spareParts, eq(spareParts.id, partTransactions.partId)).where(eq(partTransactions.workOrderId, wo.id)),
+    partsOpen ? db.select({ id: spareParts.id, name: spareParts.name, partNumber: spareParts.partNumber, stockQty: spareParts.stockQty, fits: spareParts.deviceTypeId })
+      .from(spareParts).where(and(eq(spareParts.facilityId, wo.facilityId), eq(spareParts.active, true)))
+      .orderBy(sql`(${spareParts.deviceTypeId} = ${r.deviceTypeId}) desc nulls last`, asc(spareParts.name)).limit(400) : Promise.resolve([]),
   ]);
+  const used = partsUsed(partTxns);
+  const usedRows = [...used.byPart.entries()].filter(([, v]) => v.qty !== 0).map(([partId, v]) => {
+    const t = partTxns.find((x) => x.partId === partId)!;
+    return { partId, qty: v.qty, cost: v.cost, name: t.name, partNumber: t.partNumber, currency: t.currency };
+  });
+  const partsCurrency = usedRows[0]?.currency ?? "EGP";
   const late = isLate(wo, now);
   const hasChecklist = !!wo.checklist?.length;
   const completeInMain = actions.has("complete") && hasChecklist;
@@ -101,7 +118,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
                 <input type="hidden" name="workOrderId" value={wo.id} />
                 <ChecklistInputs items={wo.checklist!} />
                 <p className="text-xs text-muted">A reading outside its range is recorded as failed. The checklist comes from the device type in the catalogue.</p>
-                <CompletionFields deviceDown={wo.deviceDown} optionalResolution />
+                <CompletionFields deviceDown={wo.deviceDown} optionalResolution partsCost={used.total} />
               </ActionForm>
             </Panel>
           )}
@@ -137,6 +154,43 @@ export default async function WorkOrderPage({ params, searchParams }: {
             ]} />
             {r.floorId && <p className="mt-3 text-sm"><Link href={`/assets/map?floorId=${r.floorId}&assetId=${wo.assetId}`} className="text-primary hover:underline">Find it on the floor map</Link></p>}
           </Panel>
+
+          {(usedRows.length > 0 || partsOpen) && (
+            <Panel title={<span id="parts">Parts used</span>} padded={false}
+              actions={used.total > 0 && <span className="text-sm text-muted">Total {formatMoney(used.total, partsCurrency)}</span>}>
+              {usedRows.length === 0 ? <p className="p-4 text-sm text-muted">No parts booked to this job.</p> : (
+                <ul className="divide-y divide-line">{usedRows.map((u) => (
+                  <li key={u.partId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
+                    <span><Link href={`/assets/parts/${u.partId}`} className="font-semibold text-primary hover:underline">{u.name}</Link> <span className="font-mono text-xs text-muted">{u.partNumber}</span></span>
+                    <span className="flex items-center gap-3"><span>{u.qty} ×</span><span className="text-muted">{formatMoney(u.cost, u.currency ?? "EGP")}</span>
+                      {partsOpen && (
+                        <ActionForm action={jobPartsAction} className="inline">
+                          <input type="hidden" name="workOrderId" value={wo.id} /><input type="hidden" name="partId" value={u.partId} />
+                          <input type="hidden" name="step" value="return" /><input type="hidden" name="quantity" value={1} />
+                          <button className="text-xs text-primary hover:underline">Return one</button>
+                        </ActionForm>
+                      )}</span>
+                  </li>
+                ))}</ul>
+              )}
+              {partsOpen && (
+                <div className="border-t border-line p-4">
+                  {stock.length === 0 ? <p className="text-sm text-muted">No parts are stocked in this hospital yet. <Link href="/assets/parts" className="text-primary hover:underline">Spare parts</Link></p> : (
+                    <ActionForm action={jobPartsAction} className="flex flex-wrap items-end gap-2">
+                      <input type="hidden" name="workOrderId" value={wo.id} /><input type="hidden" name="step" value="issue" />
+                      <Field label="Part" className="min-w-56 flex-1">
+                        <NativeSelect name="partId" required placeholder="Choose a part…"
+                          options={stock.map((s) => ({ value: s.id, label: `${s.fits === r.deviceTypeId ? "★ " : ""}${s.name} — ${s.partNumber} (${s.stockQty} in stock)` }))} />
+                      </Field>
+                      <Field label="Quantity"><Input type="number" name="quantity" min={1} defaultValue={1} className="w-24" /></Field>
+                      <Button variant="secondary">Book part</Button>
+                      <p className="w-full text-xs text-muted">★ fits this device type. Booking takes the part out of stock and adds its cost to the job.</p>
+                    </ActionForm>
+                  )}
+                </div>
+              )}
+            </Panel>
+          )}
 
           <Panel title="Warranty and service contract">
             {wo.coverage === "NONE" ? <p className="text-sm text-muted">No warranty or service contract covered this device when the job was raised{r.warrantyEnd ? ` (warranty ended ${r.warrantyEnd})` : ""}. The hospital pays for parts and labour.</p> : (
@@ -206,7 +260,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
             <Panel title="Complete the job">
               <ActionForm action={completeWorkOrderAction} className="space-y-3">
                 <input type="hidden" name="workOrderId" value={wo.id} />
-                <CompletionFields deviceDown={wo.deviceDown} />
+                <CompletionFields deviceDown={wo.deviceDown} partsCost={used.total} />
               </ActionForm>
             </Panel>
           )}
@@ -274,7 +328,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
   );
 }
 
-function CompletionFields({ deviceDown, optionalResolution }: { deviceDown: boolean; optionalResolution?: boolean }) {
+function CompletionFields({ deviceDown, optionalResolution, partsCost = 0 }: { deviceDown: boolean; optionalResolution?: boolean; partsCost?: number }) {
   return (
     <div className="space-y-3">
       <Field label={optionalResolution ? "What was done (optional)" : "What was done"} hint={optionalResolution ? "Left blank, the checklist result is recorded." : undefined}>
@@ -283,7 +337,9 @@ function CompletionFields({ deviceDown, optionalResolution }: { deviceDown: bool
       <FormGrid cols={2}>
         <Field label="Root cause"><Input name="rootCause" placeholder="e.g. user error, wear, power surge" /></Field>
         <Field label="Labour hours"><Input name="laborHours" type="number" min={0} step="0.25" inputMode="decimal" /></Field>
-        <Field label="Parts and service cost"><Input name="cost" type="number" min={0} step="0.01" inputMode="decimal" /></Field>
+        <Field label="Parts and service cost" hint={partsCost > 0 ? "Includes the parts booked to this job." : undefined}>
+          <Input name="cost" type="number" min={0} step="0.01" inputMode="decimal" defaultValue={partsCost > 0 ? partsCost : undefined} />
+        </Field>
         <Field label="Currency"><NativeSelect name="currency" value="EGP" options={CURRENCIES.map((c) => ({ value: c, label: c }))} /></Field>
       </FormGrid>
       {deviceDown && (

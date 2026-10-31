@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import {
   assetMovements, assets, buildings, departments, deviceTypes, facilities, floors, maintenanceEvents, offers, poLines, projects, purchaseOrders, rooms, suppliers,
-  users, workOrders,
+  recallAssets, recalls, users, workOrders,
 } from "@/db/schema";
 import { Badge, Button, Details, Field, FormGrid, Input, LinkButton, PageHeader, Panel, StatusBadge, Textarea } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents-panel";
@@ -71,7 +71,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   const canReport = can(me.role, "workorders.report");
   const today = todayISO();
 
-  const [trail, events, moves, components, activity, tree, vendors, mini, jobs, contracts] = await Promise.all([
+  const [trail, events, moves, components, activity, tree, vendors, mini, jobs, contracts, openRecalls] = await Promise.all([
     x.poLineId ? db.select({
       poId: purchaseOrders.id, poNumber: purchaseOrders.number, poStatus: purchaseOrders.status, issueDate: purchaseOrders.issueDate, unitPrice: poLines.unitPrice, currency: purchaseOrders.currency,
       offerId: offers.id, offerRef: offers.reference, projectId: projects.id, projectCode: projects.code, projectTitle: projects.title,
@@ -94,6 +94,9 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
     db.select({ wo: workOrders, assigneeName: woAssignee.name }).from(workOrders).leftJoin(woAssignee, eq(woAssignee.id, workOrders.assignedToId))
       .where(eq(workOrders.assetId, assetId)).orderBy(desc(workOrders.reportedAt)).limit(20),
     contractsForAsset(assetId),
+    db.select({ id: recalls.id, number: recalls.number, title: recalls.title, urgent: recalls.urgent }).from(recallAssets)
+      .innerJoin(recalls, eq(recalls.id, recallAssets.recallId))
+      .where(and(eq(recallAssets.assetId, assetId), eq(recallAssets.status, "PENDING"), eq(recalls.status, "OPEN"))),
   ]);
   const liveContracts = contracts.filter((c) => contractState(c, today).state !== "EXPIRED");
   const openJobs = jobs.filter((j) => isActive(j.wo.status));
@@ -128,6 +131,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
         {x.criticality && <Badge tone={x.criticality === "LIFE_SUPPORT" ? "danger" : "neutral"}>{humanize(x.criticality)} criticality</Badge>}
         {w.state === "EXPIRING" && <Badge tone="warn">Warranty ends in {w.days} days</Badge>}
         {ppmState === "OVERDUE" && <Badge tone="danger">PPM overdue</Badge>}
+        {openRecalls.map((rc) => <Link key={rc.id} href={`/assets/recalls/${rc.id}`} title={rc.title}><Badge tone="danger">{rc.urgent ? "Urgent recall" : "Recall"} {rc.number}</Badge></Link>)}
         {openJobs.length > 0 && <Badge tone="warn">{openJobs.length} open work order{openJobs.length === 1 ? "" : "s"}</Badge>}
         {life.state === "BEYOND" && <Badge tone="danger">Beyond life expectancy</Badge>}
       </div>

@@ -83,6 +83,10 @@ export const workOrderPriority = pgEnum("work_order_priority", ["URGENT", "HIGH"
 export const workOrderCoverage = pgEnum("work_order_coverage", ["NONE", "WARRANTY", "CONTRACT"]);
 export const claimStatus = pgEnum("claim_status", ["NOT_CLAIMED", "SUBMITTED", "ACCEPTED", "REJECTED"]);
 export const contractType = pgEnum("contract_type", ["FULL_SERVICE", "PREVENTIVE", "PARTS_ONLY", "LABOUR_ONLY", "WARRANTY_EXTENSION"]);
+export const partTxnKind = pgEnum("part_txn_kind", ["RECEIPT", "ISSUE", "RETURN", "ADJUSTMENT"]);
+export const recallAction = pgEnum("recall_action", ["INSPECT", "SOFTWARE_UPDATE", "MODIFY", "REPLACE_PART", "REMOVE_FROM_USE", "ADVISORY"]);
+export const recallStatus = pgEnum("recall_status", ["OPEN", "CLOSED"]);
+export const recallAssetStatus = pgEnum("recall_asset_status", ["PENDING", "ACTIONED", "NOT_AFFECTED"]);
 
 /* ───────────────────────────── People ───────────────────────────── */
 
@@ -675,6 +679,72 @@ export const serviceContractAssets = pgTable("service_contract_assets", {
   contractId: integer("contract_id").notNull().references(() => serviceContracts.id, { onDelete: "cascade" }),
   assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
 }, (t) => [primaryKey({ columns: [t.contractId, t.assetId] }), index("service_contract_assets_asset_idx").on(t.assetId)]);
+
+/** Spare part held in a hospital's biomedical store (wave 3). Stock moves only through part_transactions. */
+export const spareParts = pgTable("spare_parts", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id),
+  partNumber: varchar("part_number", { length: 64 }).notNull(),
+  name: text("name").notNull(),
+  manufacturer: text("manufacturer"),
+  /** Device type the part fits (optional; null = general purpose). */
+  deviceTypeId: integer("device_type_id").references(() => deviceTypes.id, { onDelete: "set null" }),
+  supplierId: integer("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+  unitCost: money("unit_cost"),
+  currency: varchar("currency", { length: 3 }),
+  stockQty: integer("stock_qty").notNull().default(0),
+  minQty: integer("min_qty").notNull().default(0),
+  location: text("location"),
+  active: boolean("active").notNull().default(true),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex("spare_parts_facility_number_uq").on(t.facilityId, t.partNumber), index("spare_parts_type_idx").on(t.deviceTypeId)]);
+
+/** Every stock movement. quantity is signed: receipts and returns add, issues subtract, adjustments either way. */
+export const partTransactions = pgTable("part_transactions", {
+  id: serial("id").primaryKey(),
+  partId: integer("part_id").notNull().references(() => spareParts.id, { onDelete: "cascade" }),
+  kind: partTxnKind("kind").notNull(),
+  quantity: integer("quantity").notNull(),
+  unitCost: money("unit_cost"),
+  workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "set null" }),
+  note: text("note"),
+  actor: text("actor"),
+  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("part_txn_part_idx").on(t.partId), index("part_txn_wo_idx").on(t.workOrderId)]);
+
+/** Field safety corrective action / recall notice from a manufacturer or regulator (wave 3). Not tied to one hospital. */
+export const recalls = pgTable("recalls", {
+  id: serial("id").primaryKey(),
+  number: varchar("number", { length: 24 }).notNull().unique(),          // FSCA-2026-0001
+  reference: text("reference"),                                          // manufacturer's FSN reference
+  source: text("source"),                                                // e.g. "Manufacturer", "EDA", "FDA"
+  title: text("title").notNull(),
+  description: text("description"),
+  manufacturer: text("manufacturer"),
+  deviceTypeId: integer("device_type_id").references(() => deviceTypes.id, { onDelete: "set null" }),
+  /** Model text to match (case-insensitive, contained in the asset's model). */
+  modelPattern: text("model_pattern"),
+  /** Affected serial numbers; empty = every serial of the matching model. */
+  serialNumbers: text("serial_numbers").array(),
+  action: recallAction("action").notNull().default("INSPECT"),
+  urgent: boolean("urgent").notNull().default(false),
+  issuedDate: date("issued_date"),
+  dueDate: date("due_date"),
+  status: recallStatus("status").notNull().default("OPEN"),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const recallAssets = pgTable("recall_assets", {
+  recallId: integer("recall_id").notNull().references(() => recalls.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  status: recallAssetStatus("status").notNull().default("PENDING"),
+  workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "set null" }),
+  actionedAt: timestamp("actioned_at", { withTimezone: true }),
+  note: text("note"),
+}, (t) => [primaryKey({ columns: [t.recallId, t.assetId] }), index("recall_assets_asset_idx").on(t.assetId), index("recall_assets_wo_idx").on(t.workOrderId)]);
 
 /* ───────────────────── Documents & activity log ───────────────────── */
 

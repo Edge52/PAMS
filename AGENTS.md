@@ -174,6 +174,17 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - Cover: `coverOn()` in `src/lib/assets/contracts.ts` — warranty first, then the running contract. Stored on each work order
   (`coverage`, `contract_id`) with `claim_status` / `claim_reference`. Alert `contract_ending` 60 days ahead.
 
+## Spare parts and recalls (biomedical package, step 2b)
+- Parts: `spare_parts` (stock per hospital, unique part number per hospital) + `part_transactions` (signed quantities).
+  Stock changes **only** through `applyMovement()` in `src/lib/assets/parts-server.ts` (atomic, never below zero). Pure rules in
+  `src/lib/assets/parts.ts`. Routes `/assets/parts`, `/assets/parts/new`, `/assets/parts/[id]`; permission `parts.edit` (admin,
+  biomedical). Technicians book parts to jobs on the work order page (`maintenance.edit`); cost totals on the job.
+  Notification `part_low_stock` when a movement crosses the minimum.
+- Recalls: `recalls` + `recall_assets` (FSCA-YYYY-NNNN). Matching in `src/lib/assets/recalls.ts` (type, manufacturer, model,
+  serial list — every given criterion must match). Routes `/assets/recalls`, `/assets/recalls/new`, `/assets/recalls/[id]`;
+  permission `recalls.edit` (admin, biomedical). Recall jobs are INSPECTION work orders linked via `recall_assets.work_order_id`;
+  completing marks the device ACTIONED, reopening puts it back to PENDING, cancelling unlinks it.
+
 ## Building heights
 - La Plaza floors are 5 m floor to floor (`seed-data/cad/la-plaza.json`, `tools/cad/floors.json`; migration 0007 moves floors still on
   the old 4.5 m spacing). The 3D view draws walls 3.3 m high (`WALL_HEIGHT` in `src/components/assets/twin/scene.ts`).

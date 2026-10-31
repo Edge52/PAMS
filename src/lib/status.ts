@@ -24,6 +24,8 @@ const map: Record<string, Tone> = {
   OPEN: "danger", ASSIGNED: "info", ON_HOLD: "warn", URGENT: "danger", NORMAL: "info",
   // claims and contracts (APPROVED/REJECTED above)
   NOT_CLAIMED: "neutral", SUBMITTED: "info", ACCEPTED: "ok", ACTIVE: "ok", EXPIRING: "warn", EXPIRED: "danger", FUTURE: "info",
+  // recalls (OPEN above)
+  PENDING: "warn", ACTIONED: "ok", NOT_AFFECTED: "neutral",
 };
 
 export function statusTone(value: string | null | undefined): Tone {

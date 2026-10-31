@@ -24,6 +24,12 @@ describe("permissions", () => {
     expect(can("PROCUREMENT", "contracts.edit")).toBe(true);
     expect(can("TECHNICIAN", "contracts.edit")).toBe(false);
   });
+  it("parts stock and recalls are managed by biomedical", () => {
+    expect(can("BIOMEDICAL", "parts.edit")).toBe(true);
+    expect(can("BIOMEDICAL", "recalls.edit")).toBe(true);
+    expect(can("TECHNICIAN", "parts.edit")).toBe(false);
+    expect(can("PROCUREMENT", "recalls.edit")).toBe(false);
+  });
   it("technicians move assets and log maintenance but don't edit them", () => {
     expect(can("TECHNICIAN", "assets.move")).toBe(true);
     expect(can("TECHNICIAN", "maintenance.edit")).toBe(true);
