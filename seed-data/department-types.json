@@ -1,0 +1,226 @@
+[
+ {
+  "code": "ER",
+  "name": "Emergency department",
+  "nameAr": "الطوارئ",
+  "category": "CLINICAL",
+  "sortOrder": 0
+ },
+ {
+  "code": "ICU",
+  "name": "Adult intensive care",
+  "nameAr": "العناية المركزة للبالغين",
+  "category": "CRITICAL_CARE",
+  "sortOrder": 10
+ },
+ {
+  "code": "CCU",
+  "name": "Coronary care unit",
+  "nameAr": "العناية المركزة للقلب",
+  "category": "CRITICAL_CARE",
+  "sortOrder": 20
+ },
+ {
+  "code": "NICU",
+  "name": "Neonatal intensive care",
+  "nameAr": "العناية المركزة لحديثي الولادة",
+  "category": "CRITICAL_CARE",
+  "sortOrder": 30
+ },
+ {
+  "code": "PICU",
+  "name": "Paediatric intensive care",
+  "nameAr": "العناية المركزة للأطفال",
+  "category": "CRITICAL_CARE",
+  "sortOrder": 40
+ },
+ {
+  "code": "OR",
+  "name": "Operating theatres",
+  "nameAr": "غرف العمليات",
+  "category": "SURGICAL",
+  "sortOrder": 50
+ },
+ {
+  "code": "PACU",
+  "name": "Recovery (PACU)",
+  "nameAr": "الإفاقة",
+  "category": "SURGICAL",
+  "sortOrder": 60
+ },
+ {
+  "code": "DAYSURG",
+  "name": "Day surgery",
+  "nameAr": "جراحة اليوم الواحد",
+  "category": "SURGICAL",
+  "sortOrder": 70
+ },
+ {
+  "code": "WARD-MED",
+  "name": "Medical inpatient ward",
+  "nameAr": "القسم الداخلي - باطنة",
+  "category": "INPATIENT",
+  "sortOrder": 80
+ },
+ {
+  "code": "WARD-SURG",
+  "name": "Surgical inpatient ward",
+  "nameAr": "القسم الداخلي - جراحة",
+  "category": "INPATIENT",
+  "sortOrder": 90
+ },
+ {
+  "code": "WARD-PED",
+  "name": "Paediatric ward",
+  "nameAr": "القسم الداخلي - أطفال",
+  "category": "INPATIENT",
+  "sortOrder": 100
+ },
+ {
+  "code": "WARD-OBS",
+  "name": "Obstetrics & gynaecology ward",
+  "nameAr": "قسم النساء والتوليد",
+  "category": "INPATIENT",
+  "sortOrder": 110
+ },
+ {
+  "code": "LDR",
+  "name": "Labour & delivery",
+  "nameAr": "الولادة",
+  "category": "CLINICAL",
+  "sortOrder": 120
+ },
+ {
+  "code": "ISO",
+  "name": "Isolation unit",
+  "nameAr": "العزل",
+  "category": "INPATIENT",
+  "sortOrder": 130
+ },
+ {
+  "code": "BURN",
+  "name": "Burns unit",
+  "nameAr": "الحروق",
+  "category": "CRITICAL_CARE",
+  "sortOrder": 140
+ },
+ {
+  "code": "RAD",
+  "name": "Radiology & imaging",
+  "nameAr": "الأشعة",
+  "category": "DIAGNOSTIC",
+  "sortOrder": 150
+ },
+ {
+  "code": "CATH",
+  "name": "Cardiac catheterisation lab",
+  "nameAr": "القسطرة القلبية",
+  "category": "DIAGNOSTIC",
+  "sortOrder": 160
+ },
+ {
+  "code": "ENDO",
+  "name": "Endoscopy",
+  "nameAr": "المناظير",
+  "category": "DIAGNOSTIC",
+  "sortOrder": 170
+ },
+ {
+  "code": "LAB",
+  "name": "Clinical laboratory",
+  "nameAr": "المعمل",
+  "category": "DIAGNOSTIC",
+  "sortOrder": 180
+ },
+ {
+  "code": "BLOOD",
+  "name": "Blood bank",
+  "nameAr": "بنك الدم",
+  "category": "DIAGNOSTIC",
+  "sortOrder": 190
+ },
+ {
+  "code": "DIAL",
+  "name": "Haemodialysis",
+  "nameAr": "الغسيل الكلوي",
+  "category": "CLINICAL",
+  "sortOrder": 200
+ },
+ {
+  "code": "ONC",
+  "name": "Oncology day care",
+  "nameAr": "علاج الأورام النهاري",
+  "category": "CLINICAL",
+  "sortOrder": 210
+ },
+ {
+  "code": "OPD",
+  "name": "Outpatient clinics",
+  "nameAr": "العيادات الخارجية",
+  "category": "CLINICAL",
+  "sortOrder": 220
+ },
+ {
+  "code": "REHAB",
+  "name": "Physiotherapy & rehabilitation",
+  "nameAr": "العلاج الطبيعي",
+  "category": "CLINICAL",
+  "sortOrder": 230
+ },
+ {
+  "code": "DENT",
+  "name": "Dental clinic",
+  "nameAr": "الأسنان",
+  "category": "CLINICAL",
+  "sortOrder": 240
+ },
+ {
+  "code": "OPH",
+  "name": "Ophthalmology",
+  "nameAr": "الرمد",
+  "category": "CLINICAL",
+  "sortOrder": 250
+ },
+ {
+  "code": "ENT",
+  "name": "Ear, nose & throat",
+  "nameAr": "الأنف والأذن والحنجرة",
+  "category": "CLINICAL",
+  "sortOrder": 260
+ },
+ {
+  "code": "PHARM",
+  "name": "Pharmacy",
+  "nameAr": "الصيدلية",
+  "category": "SUPPORT",
+  "sortOrder": 270
+ },
+ {
+  "code": "CSSD",
+  "name": "Central sterile services",
+  "nameAr": "التعقيم المركزي",
+  "category": "SUPPORT",
+  "sortOrder": 280
+ },
+ {
+  "code": "MORT",
+  "name": "Mortuary",
+  "nameAr": "ثلاجة الموتى",
+  "category": "SUPPORT",
+  "sortOrder": 290
+ },
+ {
+  "code": "BIOMED",
+  "name": "Biomedical engineering workshop",
+  "nameAr": "الهندسة الطبية",
+  "category": "SUPPORT",
+  "sortOrder": 300
+ },
+ {
+  "code": "HOSP",
+  "name": "Hospital-wide (shared)",
+  "nameAr": "مشترك على مستوى المستشفى",
+  "category": "SUPPORT",
+  "sortOrder": 310
+ }
+]

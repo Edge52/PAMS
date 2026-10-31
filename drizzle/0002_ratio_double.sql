@@ -1,0 +1,1 @@
+ALTER TABLE "boq_rules" ALTER COLUMN "ratio" SET DATA TYPE double precision;

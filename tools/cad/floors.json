@@ -1,0 +1,18 @@
+{
+  "building": "La Plaza Hospital",
+  "facilityCode": "LPH",
+  "output": "seed-data/cad/la-plaza.json",
+  "floorToFloorMetres": 4.5,
+  "referenceFloor": "GR",
+  "floors": [
+    { "code": "B2", "name": "Basement 2", "level": -2, "file": "SKT-LP-101-T-Basement 2 Floor Plan.dwg" },
+    { "code": "B1", "name": "Basement 1", "level": -1, "file": "SKT-LP-102-T-Basement 1 Floor Plan.dwg" },
+    { "code": "GF", "name": "Garden floor", "level": 0, "file": "SKT-LP-103-T-Garden Floor Plan.dwg" },
+    { "code": "GR", "name": "Ground floor", "level": 1, "file": "SKT-LP-104-T-Ground Floor Plan.dwg" },
+    { "code": "F1", "name": "First floor", "level": 2, "file": "SKT-LP-105-T-First Floor Plan.dwg" },
+    { "code": "F2", "name": "Second floor", "level": 3, "file": "SKT-LP-106-T-Second Floor Plan.dwg" },
+    { "code": "F3", "name": "Third floor", "level": 4, "file": "SKT-LP-107-T-Third Floor Plan.dwg" },
+    { "code": "F4", "name": "Fourth floor", "level": 5, "file": "SKT-LP-108-T-Fourth Floor Plan.dwg" },
+    { "code": "F5", "name": "Fifth floor", "level": 6, "file": "SKT-LP-109-T-Fifth Floor Plan.dwg" }
+  ]
+}

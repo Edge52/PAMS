@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Use the Tailwind utilities they generate (bg-surface, text-ink, border-line,
+ * text-primary, bg-tag ...) rather than raw hex values, so the whole app stays consistent.
+ *
+ * Palette rationale: porcelain base, ink near-black-green for text, operating-theatre green
+ * as the primary action colour, asset-tag amber reserved for location pins and highlights.
+ */
+@theme {
+  --color-canvas: #f3f5f4;      /* page background — cool porcelain */
+  --color-surface: #ffffff;     /* panels, tables */
+  --color-sunken: #e9eeec;      /* table headers, wells */
+  --color-ink: #16201e;         /* primary text */
+  --color-muted: #5a6865;       /* secondary text */
+  --color-faint: #8b9794;       /* placeholders, disabled */
+  --color-line: #d6dedb;        /* borders */
+  --color-primary: #1d5c4d;     /* theatre green — primary actions, active nav */
+  --color-primary-strong: #144437;
+  --color-primary-soft: #e2efeb;
+  --color-tag: #e0a526;         /* asset-tag amber — pins, highlights */
+  --color-tag-soft: #fbf1d9;
+  --color-ok: #2f7d4f;
+  --color-ok-soft: #e3f2e8;
+  --color-warn: #a86a00;
+  --color-warn-soft: #fbefd6;
+  --color-danger: #b4362b;
+  --color-danger-soft: #f8e3e0;
+  --color-info: #2c5aa0;
+  --color-info-soft: #e3ebf7;
+
+  --font-sans: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-arabic: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+
+  --radius-control: 6px;
+  --radius-panel: 10px;
+}
+
+html { background: var(--color-canvas); }
+body {
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1; /* tabular figures everywhere: quantities, prices, tags */
+  -webkit-font-smoothing: antialiased;
+}
+
+[lang="ar"], .font-arabic { font-family: var(--font-arabic); }
+
+:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Scroll containers must contain absolutely positioned children (e.g. .sr-only labels in table cells);
+   otherwise those escape the scroller and widen the whole page on phones. */
+.overflow-x-auto, .overflow-auto { position: relative; }
+
+/* ── 3D view HUD (dark "digital twin" surface; deliberately its own palette) ── */
+.twin-card { border: 1px solid #123a55; background: rgb(4 18 31 / 0.82); backdrop-filter: blur(8px); border-radius: 10px; padding: 12px; box-shadow: 0 0 24px rgb(47 211 255 / 0.06), inset 0 1px 0 rgb(95 214 255 / 0.08); }
+.twin-h { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; color: #5fd6ff; }
+.twin-ctl { border: 1px solid #1d4f6d; background: rgb(4 18 31 / 0.85); color: #d6f3ff; border-radius: 6px; padding: 6px 10px; font-size: 13px; font-weight: 600; backdrop-filter: blur(6px); }
+.twin-ctl:hover { border-color: #2fd3ff; color: #fff; }
+.twin-floor { display: flex; width: 100%; justify-content: space-between; border-radius: 6px; padding: 5px 8px; font-size: 13px; color: #b7d9ea; font-variant-numeric: tabular-nums; }
+.twin-floor:hover { background: #0c2a40; color: #fff; }
+.twin-floor[aria-pressed="true"] { background: linear-gradient(90deg, rgb(47 211 255 / 0.22), rgb(47 211 255 / 0.04)); color: #fff; box-shadow: inset 2px 0 0 #2fd3ff; }
+.twin-chip { display: flex; width: 100%; align-items: center; gap: 8px; border-radius: 6px; padding: 4px 6px; font-size: 13px; color: #d6f3ff; }
+.twin-chip:hover { background: #0c2a40; }
+.twin-chip[aria-pressed="true"] { background: rgb(47 211 255 / 0.14); }
+.twin :focus-visible { outline: 2px solid #2fd3ff; outline-offset: 2px; }

@@ -1,0 +1,105 @@
+/** Pure geometry helpers for the 3D view (no three.js), so they can be unit-tested. */
+
+export type Pt = [number, number];
+
+export function pointInPolygon([x, y]: Pt, poly: Pt[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+export function polygonArea(poly: Pt[]): number {
+  let a = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) a += (poly[j][0] + poly[i][0]) * (poly[j][1] - poly[i][1]);
+  return Math.abs(a / 2);
+}
+
+export function centroid(poly: Pt[]): Pt {
+  let cx = 0, cy = 0, a = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const f = poly[j][0] * poly[i][1] - poly[i][0] * poly[j][1];
+    cx += (poly[j][0] + poly[i][0]) * f; cy += (poly[j][1] + poly[i][1]) * f; a += f;
+  }
+  if (Math.abs(a) < 1e-9) {
+    const n = poly.length || 1;
+    return [poly.reduce((s, p) => s + p[0], 0) / n, poly.reduce((s, p) => s + p[1], 0) / n];
+  }
+  return [cx / (3 * a), cy / (3 * a)];
+}
+
+/** A point guaranteed inside the polygon (the centroid when it is inside, else the most central lattice point). */
+export function interiorPoint(poly: Pt[]): Pt {
+  const c = centroid(poly);
+  if (pointInPolygon(c, poly)) return c;
+  const pts = latticeInside(poly, 12);
+  if (!pts.length) return c;
+  return pts.reduce((best, p) => (dist2(p, c) < dist2(best, c) ? p : best), pts[0]);
+}
+
+const dist2 = (a: Pt, b: Pt) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
+
+/** Lattice points inside the polygon, about `perSide` across its bounding box, kept away from the walls. */
+export function latticeInside(poly: Pt[], perSide: number): Pt[] {
+  const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const step = Math.max((x1 - x0), (y1 - y0)) / (perSide + 1);
+  const out: Pt[] = [];
+  if (!(step > 0)) return out;
+  for (let y = y0 + step / 2; y < y1; y += step) {
+    for (let x = x0 + step / 2; x < x1; x += step) {
+      if (pointInPolygon([x, y], poly) && pointInPolygon([x + step / 3, y], poly) && pointInPolygon([x - step / 3, y], poly)
+        && pointInPolygon([x, y + step / 3], poly) && pointInPolygon([x, y - step / 3], poly)) out.push([x, y]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Positions for `n` devices inside a room: evenly spread over a lattice inside its outline, centre-out,
+ * so 1 device sits in the middle and a full ICU bay fans out. Returns plan coordinates.
+ */
+export function spreadInRoom(poly: Pt[], n: number): Pt[] {
+  if (n <= 0) return [];
+  const centre = interiorPoint(poly);
+  if (n === 1) return [centre];
+  let lattice: Pt[] = [];
+  for (let k = Math.max(3, Math.ceil(Math.sqrt(n)) + 1); k <= 40 && lattice.length < n; k += 2) lattice = latticeInside(poly, k);
+  if (lattice.length < n) {
+    // Tiny or very thin room: stack the leftovers around the centre.
+    return Array.from({ length: n }, (_, i) => lattice[i] ?? centre);
+  }
+  lattice.sort((a, b) => dist2(a, centre) - dist2(b, centre));
+  // Take every k-th point of the centre-sorted lattice so devices spread across the room instead of clumping.
+  const stride = Math.max(1, Math.floor(lattice.length / n));
+  return Array.from({ length: n }, (_, i) => lattice[Math.min(lattice.length - 1, i * stride)]);
+}
+
+/** Rectangle (x, y, w, h) → polygon. */
+export const rectPoly = (x: number, y: number, w: number, h: number): Pt[] => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+
+/** Wall segments from room outlines (used for floors without CAD linework). Shared edges are emitted once. */
+export function wallsFromRooms(polys: Pt[][]): number[] {
+  const seen = new Set<string>(); const out: number[] = [];
+  const key = (a: Pt, b: Pt) => {
+    const r = (v: number) => Math.round(v * 2) / 2;
+    const [p, q] = [a, b].sort((u, v) => u[0] - v[0] || u[1] - v[1]);
+    return `${r(p[0])},${r(p[1])},${r(q[0])},${r(q[1])}`;
+  };
+  for (const poly of polys) {
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const k = key(a, b); if (seen.has(k)) continue;
+      seen.add(k); out.push(a[0], a[1], b[0], b[1]);
+    }
+  }
+  return out;
+}
+
+/** Department colours: distinct hues on a dark background. */
+export const DEPARTMENT_PALETTE = [
+  "#2fd3ff", "#7c6bff", "#ff6fb5", "#ffb547", "#4ff0a5", "#ff6b5b", "#5aa8ff", "#c56bff", "#f5e65b", "#43e0c9",
+  "#ff8f3f", "#8fd14f", "#e85bd2", "#5b7bff", "#ffd27a", "#3ad9a0",
+];
