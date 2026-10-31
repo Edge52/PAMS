@@ -37,6 +37,20 @@ const HOLD = ["Waiting for a spare part from the vendor", "Vendor engineer visit
 const H = 3_600_000;
 
 export default async function seed(db: DB) {
+  // The CAD fit-out (La Plaza, a new hospital) has no maintenance schedule yet: plan each device's first PPM visit,
+  // some already overdue, so the 3D "overdue maintenance" layer and the planner have something to show (demo data).
+  const unplanned = await db.select({ id: assets.id }).from(assets)
+    .where(and(sql`${assets.status} in ('IN_SERVICE', 'INSTALLED')`, sql`not exists (select 1 from maintenance_events m where m.asset_id = ${assets.id})`));
+  if (unplanned.length) {
+    const rnd = rng(7);
+    const visits = unplanned.map((b) => ({
+      assetId: b.id, type: "PPM" as const, status: "SCHEDULED" as const,
+      // −45 … +120 days: about a quarter already overdue.
+      scheduledDate: new Date(Date.now() + Math.round(-45 + rnd() * 165) * 86_400_000).toISOString().slice(0, 10),
+    }));
+    for (let i = 0; i < visits.length; i += 500) await db.insert(maintenanceEvents).values(visits.slice(i, i + 500));
+  }
+
   const down = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, status: assets.status, criticality: assets.criticality, notes: assets.notes })
     .from(assets).where(inArray(assets.status, ["OUT_OF_SERVICE", "UNDER_MAINTENANCE"])).orderBy(assets.id);
   const working = await db.select({ id: assets.id, facilityId: assets.facilityId, criticality: assets.criticality })

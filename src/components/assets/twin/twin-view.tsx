@@ -6,7 +6,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { PickResult, TwinScene } from "./scene";
-import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type TwinData } from "./types";
+import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinData } from "./types";
+import { bucketOf, colorFor, LAYER_INFO, LAYERS, legendFor, NEUTRAL, roomValues, type LayerId, type LiveMetrics, type Scope } from "./layers";
+
+const LIVE_EVERY_MS = 60_000;
+
+function decodeLive(p: LivePayload): Map<number, LiveMetrics> {
+  return new Map(p.rows.map(([id, status, openJobs, ppm, life, downtimeHours, valueEgp, recall]) =>
+    [id, { status, openJobs, overduePpm: ppm === 1, beyondLife: life === 1, downtimeHours, valueEgp, recall: recall === 1 }]));
+}
 
 /**
  * Hospital digital twin: interactive 3D building with every tracked device in its room.
@@ -14,7 +22,7 @@ import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type TwinData } from 
  * HUD layout follows the view's own width (see hud-state): side columns of collapsible panels (folded by default
  * below 1100 px), or on phones one bottom sheet with tabs.
  */
-export function TwinView({ data }: { data: TwinData }) {
+export function TwinView({ data, live: initialLive }: { data: TwinData; live: LivePayload }) {
   const router = useRouter();
   const host = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -33,6 +41,11 @@ export function TwinView({ data }: { data: TwinData }) {
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<PickResult>(null);
   const [hover, setHover] = useState<{ p: PickResult; x: number; y: number } | null>(null);
+  const [live, setLive] = useState(() => decodeLive(initialLive));
+  const [liveAt, setLiveAt] = useState(initialLive.at);
+  const [liveError, setLiveError] = useState(false);
+  const [layer, setLayer] = useState<LayerId>("department");
+  const [scope, setScope] = useState<Scope>("room");
 
   const roomById = useMemo(() => new Map(data.rooms.map((r) => [r.id, r])), [data.rooms]);
   const assetById = useMemo(() => new Map(data.assets.map((a) => [a.id, a])), [data.assets]);
@@ -44,9 +57,10 @@ export function TwinView({ data }: { data: TwinData }) {
     for (const a of placed) { const c = m.get(a.categoryCode) ?? { code: a.categoryCode, name: a.category, n: 0 }; c.n++; m.set(a.categoryCode, c); }
     return [...m.values()].sort((a, b) => b.n - a.n);
   }, [placed]);
+  const statusOf = (id: number, fallback: string) => live.get(id)?.status ?? fallback;
   const statusCounts = useMemo(() => {
-    const m = new Map<string, number>(); for (const a of placed) m.set(a.status, (m.get(a.status) ?? 0) + 1); return m;
-  }, [placed]);
+    const m = new Map<string, number>(); for (const a of placed) { const st = live.get(a.id)?.status ?? a.status; m.set(st, (m.get(st) ?? 0) + 1); } return m;
+  }, [placed, live]);
   const perFloor = useMemo(() => {
     const m = new Map<number, number>(); for (const a of placed) { const f = roomById.get(a.roomId!)!.floorId; m.set(f, (m.get(f) ?? 0) + 1); } return m;
   }, [placed, roomById]);
@@ -89,8 +103,53 @@ export function TwinView({ data }: { data: TwinData }) {
   }, [query, placed, roomById]);
   useEffect(() => {
     const s = sceneRef.current; if (!s || !ready) return;
-    s.setVisibleAssets(new Set(placed.filter((a) => (!cats.size || cats.has(a.categoryCode)) && (!statuses.size || statuses.has(a.status))).map((a) => a.id)));
-  }, [cats, statuses, placed, ready]);
+    s.setVisibleAssets(new Set(placed.filter((a) => (!cats.size || cats.has(a.categoryCode)) && (!statuses.size || statuses.has(live.get(a.id)?.status ?? a.status))).map((a) => a.id)));
+  }, [cats, statuses, placed, ready, live]);
+
+  // Live status: refresh every minute and when the tab comes back into view.
+  useEffect(() => {
+    let stop = false;
+    const pull = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch(`/assets/3d/live?facilityId=${data.facility.id}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(String(res.status));
+        const p = (await res.json()) as LivePayload;
+        if (stop) return;
+        setLive(decodeLive(p)); setLiveAt(p.at); setLiveError(false);
+      } catch { if (!stop) setLiveError(true); }
+    };
+    const t = window.setInterval(pull, LIVE_EVERY_MS);
+    const onVis = () => { if (document.visibilityState === "visible") void pull(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop = true; window.clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [data.facility.id]);
+  useEffect(() => {
+    if (!ready) return;
+    sceneRef.current?.setStatuses(new Map([...live].map(([id, m]) => [id, m.status])));
+  }, [live, ready]);
+
+  // Problem layer → room colours.
+  const layerValues = useMemo(() => roomValues(layer, scope, data.rooms, placed.map((a) => ({ roomId: a.roomId, metrics: live.get(a.id) }))), [layer, scope, data.rooms, placed, live]);
+  const legend = useMemo(() => legendFor(layer, scope === "department" ? [...new Map(data.rooms.filter((r) => layerValues.has(r.id)).map((r) => [r.departmentId ?? -r.id, layerValues.get(r.id)!])).values()] : [...layerValues.values()]), [layer, scope, layerValues, data.rooms]);
+  useEffect(() => {
+    if (!ready) return;
+    sceneRef.current?.setRoomTint(layer === "department" || !legend ? null
+      : new Map([...layerValues].map(([id, v]) => [id, { color: colorFor(v, legend) ?? NEUTRAL, level: bucketOf(v, legend.breaks) }])), NEUTRAL);
+  }, [layer, layerValues, legend, ready]);
+  // The worst places, for the legend panel (rooms, or departments when grouped).
+  const worst = useMemo(() => {
+    if (layer === "department") return [];
+    if (scope === "department") {
+      const seen = new Map<number, { id: number; name: string; v: number; roomId: number }>();
+      for (const r of data.rooms) {
+        const v = layerValues.get(r.id); if (!v || r.departmentId == null || seen.has(r.departmentId)) continue;
+        seen.set(r.departmentId, { id: r.departmentId, name: deptById.get(r.departmentId)?.name ?? "Department", v, roomId: r.id });
+      }
+      return [...seen.values()].sort((a, b) => b.v - a.v).slice(0, 5);
+    }
+    return [...layerValues].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, v]) => ({ id, name: `${roomById.get(id)?.name ?? "Room"} · ${roomById.get(id)?.code ?? ""}`, v, roomId: id }));
+  }, [layer, scope, layerValues, data.rooms, deptById, roomById]);
   useEffect(() => { if (ready) sceneRef.current?.setHighlight(new Set(matches.map((a) => a.id))); }, [matches, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setExplode(explode); }, [explode, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setBloom(bloom); }, [bloom, ready]);
@@ -175,6 +234,54 @@ export function TwinView({ data }: { data: TwinData }) {
       {cats.size > 0 && <button type="button" onClick={() => setCats(new Set())} className="mt-1 text-xs text-[#5fd6ff] hover:underline">Show all types</button>}
     </div>
   );
+  const layerPanel = (
+    <div>
+      <div role="radiogroup" aria-label="Colour rooms by">
+        {LAYERS.map((l) => (
+          <label key={l} className="twin-chip cursor-pointer">
+            <input type="radio" name="twin-layer" value={l} checked={layer === l} onChange={() => setLayer(l)} className="accent-[#2fd3ff]" />
+            <span className="flex-1 text-left">{LAYER_INFO[l].label}</span>
+          </label>
+        ))}
+      </div>
+      {layer !== "department" && (
+        <>
+          <div className="mt-2 flex gap-1 text-xs" role="group" aria-label="Group by">
+            {(["room", "department"] as const).map((sc) => (
+              <button key={sc} type="button" aria-pressed={scope === sc} onClick={() => setScope(sc)}
+                className={`flex-1 rounded-md border px-2 py-1 ${scope === sc ? "border-[#2fd3ff] bg-[#0c2a40] text-white" : "border-[#1d4f6d] text-[#8fb6cc]"}`}>
+                By {sc}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-[#8fb6cc]">{scope === "department" ? LAYER_INFO[layer].help.replace("each room", "each department") : LAYER_INFO[layer].help} Taller blocks mean more.</p>
+          {legend && (
+            <ul className="mt-2 space-y-1 text-[13px]" aria-label="Legend">
+              {legend.labels.map((lab, i) => (
+                <li key={lab} className="flex items-center gap-2">
+                  <span className="size-3 rounded-sm" style={{ background: legend.colors[i], boxShadow: `0 0 6px ${legend.colors[i]}` }} />
+                  <span className="flex-1">{lab}</span><span className="text-[#8fb6cc]">{legend.counts[i]}</span>
+                </li>
+              ))}
+              <li className="flex items-center gap-2"><span className="size-3 rounded-sm" style={{ background: NEUTRAL }} /><span className="flex-1 text-[#8fb6cc]">None</span></li>
+            </ul>
+          )}
+          {worst.length > 0 ? (
+            <div className="mt-3">
+              <p className="text-xs text-[#8fb6cc]">Most affected</p>
+              {worst.map((w) => (
+                <button key={w.id} type="button" onClick={() => focus({ kind: "room", id: w.roomId })} className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[13px] hover:bg-[#0c2a40]">
+                  <span className="size-2 shrink-0 rounded-full" style={{ background: colorFor(w.v, legend) ?? NEUTRAL }} />
+                  <span className="min-w-0 flex-1 truncate">{w.name}</span><span className="text-[#8fb6cc]">{LAYER_INFO[layer].unit(w.v)}</span>
+                </button>
+              ))}
+            </div>
+          ) : <p className="mt-2 text-[13px] text-[#3cf5a6]">Nothing to show — no room is affected.</p>}
+        </>
+      )}
+    </div>
+  );
+  const liveTime = new Date(liveAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   const findBox = (
     <div>
       <label htmlFor="twin-search" className="sr-only">Find a device or room</label>
@@ -202,7 +309,13 @@ export function TwinView({ data }: { data: TwinData }) {
       {selAsset && (
         <div className="space-y-1.5 text-sm">
           <p className="text-base font-semibold text-white">{selAsset.deviceType}</p>
-          <p className="flex items-center gap-2"><span className="size-2.5 rounded-full" style={{ background: STATUS_COLORS[selAsset.status] }} />{STATUS_LABELS[selAsset.status] ?? selAsset.status}</p>
+          <p className="flex items-center gap-2"><span className="size-2.5 rounded-full" style={{ background: STATUS_COLORS[statusOf(selAsset.id, selAsset.status)] }} />{STATUS_LABELS[statusOf(selAsset.id, selAsset.status)] ?? selAsset.status}</p>
+          {(() => {
+            const m = live.get(selAsset.id); if (!m) return null;
+            const flags = [m.openJobs ? `${m.openJobs} open job${m.openJobs === 1 ? "" : "s"}` : null, m.overduePpm ? "maintenance overdue" : null,
+              m.beyondLife ? "past service life" : null, m.recall ? "open recall" : null].filter(Boolean);
+            return flags.length ? <p className="text-[13px] text-[#ffb08a]">{flags.join(" · ")}</p> : null;
+          })()}
           <dl className="grid grid-cols-[6rem_1fr] gap-x-2 gap-y-1 text-[13px]">
             <dt className="text-[#8fb6cc]">Tag</dt><dd className="break-all font-mono">{selAsset.tag}</dd>
             <dt className="text-[#8fb6cc]">Make</dt><dd>{[selAsset.manufacturer, selAsset.model].filter(Boolean).join(" ") || "—"}</dd>
@@ -222,7 +335,7 @@ export function TwinView({ data }: { data: TwinData }) {
                 {roomAssets.map((a) => (
                   <li key={a.id}>
                     <button type="button" onClick={() => focus({ kind: "asset", id: a.id })} className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-[#0c2a40]">
-                      <span className="size-2 shrink-0 rounded-full" style={{ background: STATUS_COLORS[a.status] }} />
+                      <span className="size-2 shrink-0 rounded-full" style={{ background: STATUS_COLORS[statusOf(a.id, a.status)] }} />
                       <span className="flex-1">{a.deviceType}</span><span className="font-mono text-xs text-[#8fb6cc]">{a.tag.split("-").pop()}</span>
                     </button>
                   </li>
@@ -271,6 +384,10 @@ export function TwinView({ data }: { data: TwinData }) {
               {data.facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           )}
+          <span className="twin-ctl flex items-center gap-1.5" role="status" title={liveError ? "Couldn't refresh; retrying every minute" : "Statuses refresh every minute"}>
+            <span className={`size-2 rounded-full ${liveError ? "bg-[#ff4f62]" : "bg-[#3cf5a6] motion-safe:animate-pulse"}`} />
+            {liveError ? "Offline" : "Live"} · {liveTime}
+          </span>
           <Link href="/assets/map" className="twin-ctl">2D map</Link>
           <button type="button" onClick={() => sceneRef.current?.frameAll()} className="twin-ctl">Reset view</button>
         </div>
@@ -282,6 +399,9 @@ export function TwinView({ data }: { data: TwinData }) {
           <div className={`pointer-events-none absolute bottom-4 left-4 flex flex-col gap-2 overflow-y-auto ${compact ? "top-32 w-52" : "top-28 w-60"}`}>
             <HudPanel title="Floors" summary={floorName} open={panels.isOpen("floors")} onToggle={() => panels.toggle("floors")} bodyClassName="max-h-[45vh] overflow-y-auto">
               {floorList}
+            </HudPanel>
+            <HudPanel title="Problem layer" summary={LAYER_INFO[layer].label} open={panels.isOpen("layers")} onToggle={() => panels.toggle("layers")} bodyClassName="max-h-[50vh] overflow-y-auto">
+              {layerPanel}
             </HudPanel>
             <HudPanel title="Floor spacing" summary={`${explode.toFixed(1)}×`} open={panels.isOpen("view")} onToggle={() => panels.toggle("view")}>
               {viewControls}
@@ -341,6 +461,7 @@ export function TwinView({ data }: { data: TwinData }) {
               {sheetTab === "floors" && <div className="space-y-3">{floorList}{viewControls}</div>}
               {sheetTab === "filters" && (
                 <div className="space-y-3">
+                  <section><h2 className="twin-h">Problem layer</h2>{layerPanel}</section>
                   <section><h2 className="twin-h">Status</h2>{statusList}</section>
                   <section><h2 className="twin-h">Equipment types</h2>{typeList}</section>
                 </div>

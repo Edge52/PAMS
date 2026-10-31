@@ -67,3 +67,10 @@ export const STATUS_LABELS: Record<string, string> = {
   IN_SERVICE: "In service", INSTALLED: "Installed", IN_STOCK: "In stock",
   UNDER_MAINTENANCE: "Under maintenance", OUT_OF_SERVICE: "Out of service", DISPOSED: "Disposed",
 };
+
+/**
+ * Live per-device metrics, sent as compact tuples (≈1,500 devices per hospital, refreshed every minute):
+ * [assetId, status, openJobs, overduePpm 0|1, beyondLife 0|1, downtimeHours, valueEgp, recall 0|1]
+ */
+export type LiveRow = [number, string, number, 0 | 1, 0 | 1, number, number, 0 | 1];
+export type LivePayload = { at: string; rows: LiveRow[] };

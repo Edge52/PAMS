@@ -9,6 +9,7 @@ import type { TwinData } from "@/components/assets/twin/types";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/assets/access";
+import { twinLive } from "@/lib/assets/twin-live";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "3D view" };
@@ -67,5 +68,5 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     departments: deptRows.map((d, i) => ({ ...d, color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] })),
     assets: assetRows,
   };
-  return <TwinView data={data} />;
+  return <TwinView data={data} live={await twinLive(facility.id)} />;
 }

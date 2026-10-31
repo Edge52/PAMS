@@ -8,6 +8,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { spreadInRoom, wallsFromRooms, type Pt } from "./geometry";
 import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinRoom } from "./types";
 
@@ -20,6 +21,9 @@ type FloorView = {
   group: THREE.Group;
   roomsMesh: THREE.Mesh | null;
   roomIndexByFace: number[];   // triangle index → room id
+  roomRanges: Map<number, [number, number]>; // room id → [first vertex, vertex count] in roomsMesh
+  roomBase: Map<number, THREE.Color>;        // room id → department colour
+  heat: THREE.Mesh | null;                   // problem-layer blocks over affected rooms
   wallMesh: THREE.Mesh | null;
   wallLines: THREE.LineSegments | null;
   extras: THREE.Object3D[];
@@ -102,7 +106,7 @@ export class TwinScene {
     this.scene.add(this.selectionRing);
 
     for (const r of data.rooms) this.roomFloor.set(r.id, r.floorId);
-    for (const a of data.assets) this.assetsById.set(a.id, a);
+    for (const a of data.assets) this.assetsById.set(a.id, { ...a }); // own copies: live updates change status in place
 
     this.resizeObs = new ResizeObserver(() => this.resize());
     this.resizeObs.observe(container);
@@ -159,9 +163,12 @@ export class TwinScene {
     // Rooms: one merged mesh, coloured by department; face → room for picking.
     let roomsMesh: THREE.Mesh | null = null;
     const roomIndexByFace: number[] = [];
+    const roomRanges = new Map<number, [number, number]>();
+    const roomBase = new Map<number, THREE.Color>();
     if (rooms.length) {
       const pos: number[] = [], col: number[] = [];
       for (const r of rooms) {
+        const first = pos.length / 3;
         const shape = new THREE.Shape(r.poly.map(([x, y]) => new THREE.Vector2(x * s, y * s)));
         const g = new THREE.ShapeGeometry(shape);
         const p = g.getAttribute("position"); const idx = g.getIndex();
@@ -174,6 +181,8 @@ export class TwinScene {
           }
           roomIndexByFace.push(r.id);
         }
+        roomRanges.set(r.id, [first, pos.length / 3 - first]);
+        roomBase.set(r.id, c);
         g.dispose();
       }
       const geom = new THREE.BufferGeometry();
@@ -230,7 +239,7 @@ export class TwinScene {
 
     this.scene.add(group);
     const center = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
-    this.floors.set(f.id, { floor: f, group, roomsMesh, roomIndexByFace, wallMesh, wallLines, extras, slab, center, size: Math.max(x1 - x0, z1 - z0, 20) });
+    this.floors.set(f.id, { floor: f, group, roomsMesh, roomIndexByFace, roomRanges, roomBase, heat: null, wallMesh, wallLines, extras, slab, center, size: Math.max(x1 - x0, z1 - z0, 20) });
   }
 
   private floorY(f: TwinFloor) {
@@ -339,9 +348,86 @@ export class TwinScene {
       v.group.visible = on || this.isolated == null;
       const fade = on ? 1 : 0;
       (v.slab.material as THREE.MeshBasicMaterial).opacity = 0.5 * fade;
-      if (v.roomsMesh) (v.roomsMesh.material as THREE.MeshBasicMaterial).opacity = this.isolated === id ? 0.26 : 0.13;
+      if (v.roomsMesh) (v.roomsMesh.material as THREE.MeshBasicMaterial).opacity = this.tinted ? (this.isolated === id ? 0.62 : 0.45) : this.isolated === id ? 0.26 : 0.13;
       v.group.visible = on;
     }
+  }
+
+  private tinted = false;
+
+  /**
+   * Problem layer: colour rooms by value (hex per room id); rooms not in the map go dark so the trouble stands out.
+   * `null` restores department colours.
+   */
+  setRoomTint(tints: Map<number, { color: string; level: number }> | null, neutral = "#1c3346") {
+    this.tinted = tints != null;
+    const colors = tints ? new Map([...tints].map(([id, t]) => [id, t.color])) : null;
+    const n = new THREE.Color(neutral);
+    for (const v of this.floors.values()) {
+      if (!v.roomsMesh) continue;
+      const attr = v.roomsMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+      for (const [roomId, [first, count]] of v.roomRanges) {
+        const hex = colors?.get(roomId);
+        const c = colors ? (hex ? new THREE.Color(hex) : n) : v.roomBase.get(roomId)!;
+        for (let i = first; i < first + count; i++) attr.setXYZ(i, c.r, c.g, c.b);
+      }
+      attr.needsUpdate = true;
+      this.buildHeat(v, tints);
+      // Walls step back while a layer is on, so the coloured rooms read through them.
+      if (v.wallMesh) {
+        const m = v.wallMesh.material as THREE.MeshBasicMaterial;
+        if (m.userData.baseOpacity == null) m.userData.baseOpacity = m.opacity;
+        m.opacity = this.tinted ? Math.min(m.userData.baseOpacity as number, 0.22) : (m.userData.baseOpacity as number);
+        m.depthWrite = !this.tinted && (m.userData.baseOpacity as number) > 0.5;
+        m.needsUpdate = true;
+      }
+    }
+    this.applyFloorVisibility();
+  }
+
+  /** Glowing blocks over affected rooms; taller = worse (level 0–3). */
+  private buildHeat(v: FloorView, tints: Map<number, { color: string; level: number }> | null) {
+    if (v.heat) { v.group.remove(v.heat); v.heat.geometry.dispose(); (v.heat.material as THREE.Material).dispose(); v.heat = null; }
+    if (!tints) return;
+    const s = this.u(v.floor);
+    const parts: THREE.BufferGeometry[] = [];
+    for (const r of this.data.rooms) {
+      if (r.floorId !== v.floor.id || r.poly.length < 3) continue;
+      const t = tints.get(r.id); if (!t) continue;
+      const shape = new THREE.Shape(r.poly.map(([x, y]) => new THREE.Vector2(x * s, -y * s)));
+      const g = new THREE.ExtrudeGeometry(shape, { depth: 0.5 + t.level * 0.6, bevelEnabled: false });
+      g.rotateX(-Math.PI / 2); // extrude upwards; plan y maps to world z
+      const c = new THREE.Color(t.color);
+      const n = g.getAttribute("position").count;
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      g.deleteAttribute("uv"); g.deleteAttribute("normal");
+      parts.push(g);
+    }
+    if (!parts.length) return;
+    const merged = mergeGeometries(parts, false);
+    for (const p of parts) p.dispose();
+    if (!merged) return;
+    v.heat = new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+    v.heat.renderOrder = 4;
+    v.group.add(v.heat);
+  }
+
+  /** Live refresh: new statuses for devices (colours and fault pulsing follow). */
+  setStatuses(statuses: Map<number, string>) {
+    if (!this.deviceMesh) return;
+    let changed = false;
+    for (let i = 0; i < this.deviceIds.length; i++) {
+      const a = this.assetsById.get(this.deviceIds[i])!;
+      const st = statuses.get(a.id);
+      if (!st || st === a.status) continue;
+      a.status = st;
+      this.deviceMesh.setColorAt(i, new THREE.Color(STATUS_COLORS[st] ?? "#cfe8ff").multiplyScalar(2.0));
+      changed = true;
+    }
+    if (changed && this.deviceMesh.instanceColor) this.deviceMesh.instanceColor.needsUpdate = true;
+    if (changed) this.positionDevices(this.clock.getElapsedTime());
   }
 
   /** Which assets to show (filters). */
