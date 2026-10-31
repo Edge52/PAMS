@@ -7,7 +7,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approvals" };
 
-const KIND: Record<string, string> = { PO: "Purchase order", BOQ: "BOQ", AWARD: "Award" };
+const KIND: Record<string, string> = { PO: "Purchase order", BOQ: "BOQ", AWARD: "Award", DISPOSAL: "Disposal" };
 const REQ_TONE: Record<string, Tone> = { PENDING: "warn", APPROVED: "ok", REJECTED: "danger", CANCELLED: "neutral" };
 const REQ_TEXT: Record<string, string> = { PENDING: "In progress", APPROVED: "Approved", REJECTED: "Rejected", CANCELLED: "Withdrawn" };
 

@@ -26,6 +26,8 @@ const map: Record<string, Tone> = {
   NOT_CLAIMED: "neutral", SUBMITTED: "info", ACCEPTED: "ok", ACTIVE: "ok", EXPIRING: "warn", EXPIRED: "danger", FUTURE: "info",
   // recalls (OPEN above)
   PENDING: "warn", ACTIONED: "ok", NOT_AFFECTED: "neutral",
+  // replacement bands
+  REPLACE: "danger", PLAN: "warn", KEEP: "ok",
 };
 
 export function statusTone(value: string | null | undefined): Tone {

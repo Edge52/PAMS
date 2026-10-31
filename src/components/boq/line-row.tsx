@@ -37,6 +37,8 @@ export function LineRow({ line, currency, locked, showWhy, updateAction, deleteA
     return res;
   }, undefined);
   const why = line.calcExplanation ?? "";
+  // Lines created from the replacement plan list the assets they replace (lib/assets/lifecycle → replacement BOQ).
+  const replacement = line.isManual && why.startsWith("Replaces ");
 
   return (
     <>
@@ -44,8 +46,8 @@ export function LineRow({ line, currency, locked, showWhy, updateAction, deleteA
         <td className="border-b border-line px-3 py-2 align-top">
           <span className="font-semibold">{line.deviceName}</span>
           <span className="ml-1.5 font-mono text-xs text-muted">{line.deviceCode}</span>
-          {line.isManual && <span className="ml-1.5"><Badge tone="info">Added by hand</Badge></span>}
-          {showWhy && why && !line.isManual && <span className="mt-0.5 block text-xs text-muted">{why}</span>}
+          {line.isManual && <span className="ml-1.5"><Badge tone="info">{replacement ? "Replacement" : "Added by hand"}</Badge></span>}
+          {showWhy && why && (!line.isManual || replacement) && <span className="mt-0.5 block text-xs text-muted">{why}</span>}
           {line.notes && <span className="mt-0.5 block text-xs text-ink/80">Note: {line.notes}</span>}
         </td>
         <td className="border-b border-line px-3 py-2 align-top"><Badge tone={TIER_TONE[line.tier] ?? "neutral"}>{TIER_LABEL[line.tier] ?? line.tier}</Badge></td>

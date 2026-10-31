@@ -185,6 +185,16 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   permission `recalls.edit` (admin, biomedical). Recall jobs are INSPECTION work orders linked via `recall_assets.work_order_id`;
   completing marks the device ACTIONED, reopening puts it back to PENDING, cancelling unlinks it.
 
+## Disposal, replacement plan and device KPIs (biomedical package, step 2c)
+- Disposal: `disposals` (DSP-YYYY-NNNN), routes `/assets/disposals`, `/assets/disposals/new?assetId=`, `/assets/disposals/[id]`;
+  permission `assets.dispose` (admin, biomedical). Approval goes through the approvals engine as entity `DISPOSAL` (default rule:
+  director; editable under Approval rules). Approval effect: asset OUT_OF_SERVICE + CONDEMNED. Recording the disposal needs no open
+  work orders and sets the asset DISPOSED; pending recall rows become NOT_AFFECTED.
+- Device KPIs and replacement score: pure in `src/lib/assets/lifecycle-kpis.ts`, DB side in `src/lib/assets/lifecycle-server.ts`
+  (money converted to EGP with stored rates). Shown on the asset page ("Performance and cost").
+- Replacement plan `/assets/replacement` → `createReplacementBoqAction` (`boq.edit`) makes a draft BOQ on the rule-less standard set
+  `HPAMS-REPLACEMENT`, one manual line per department and device type with "Replaces <tags>" as its explanation.
+
 ## Building heights
 - La Plaza floors are 5 m floor to floor (`seed-data/cad/la-plaza.json`, `tools/cad/floors.json`; migration 0007 moves floors still on
   the old 4.5 m spacing). The 3D view draws walls 3.3 m high (`WALL_HEIGHT` in `src/components/assets/twin/scene.ts`).

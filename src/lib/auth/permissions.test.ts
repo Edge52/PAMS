@@ -30,6 +30,11 @@ describe("permissions", () => {
     expect(can("TECHNICIAN", "parts.edit")).toBe(false);
     expect(can("PROCUREMENT", "recalls.edit")).toBe(false);
   });
+  it("only biomedical and admins propose disposals; the director decides them through approvals", () => {
+    expect(can("BIOMEDICAL", "assets.dispose")).toBe(true);
+    expect(can("TECHNICIAN", "assets.dispose")).toBe(false);
+    expect(can("DIRECTOR", "assets.dispose")).toBe(false);
+  });
   it("technicians move assets and log maintenance but don't edit them", () => {
     expect(can("TECHNICIAN", "assets.move")).toBe(true);
     expect(can("TECHNICIAN", "maintenance.edit")).toBe(true);

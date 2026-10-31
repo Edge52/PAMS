@@ -5,8 +5,11 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import {
   assetMovements, assets, buildings, departments, deviceTypes, facilities, floors, maintenanceEvents, offers, poLines, projects, purchaseOrders, rooms, suppliers,
-  recallAssets, recalls, users, workOrders,
+  disposals, recallAssets, recalls, users, workOrders,
 } from "@/db/schema";
+import { assetLifecycle } from "@/lib/assets/lifecycle-server";
+import { BAND_LABEL } from "@/lib/assets/lifecycle-kpis";
+import { formatHours } from "@/lib/assets/work-orders";
 import { Badge, Button, Details, Field, FormGrid, Input, LinkButton, PageHeader, Panel, StatusBadge, Textarea } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents-panel";
 import { ActionForm } from "@/components/assets/action-form";
@@ -71,7 +74,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   const canReport = can(me.role, "workorders.report");
   const today = todayISO();
 
-  const [trail, events, moves, components, activity, tree, vendors, mini, jobs, contracts, openRecalls] = await Promise.all([
+  const [trail, events, moves, components, activity, tree, vendors, mini, jobs, contracts, openRecalls, perf, disposal] = await Promise.all([
     x.poLineId ? db.select({
       poId: purchaseOrders.id, poNumber: purchaseOrders.number, poStatus: purchaseOrders.status, issueDate: purchaseOrders.issueDate, unitPrice: poLines.unitPrice, currency: purchaseOrders.currency,
       offerId: offers.id, offerRef: offers.reference, projectId: projects.id, projectCode: projects.code, projectTitle: projects.title,
@@ -97,7 +100,13 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
     db.select({ id: recalls.id, number: recalls.number, title: recalls.title, urgent: recalls.urgent }).from(recallAssets)
       .innerJoin(recalls, eq(recalls.id, recallAssets.recallId))
       .where(and(eq(recallAssets.assetId, assetId), eq(recallAssets.status, "PENDING"), eq(recalls.status, "OPEN"))),
+    assetLifecycle(assetId),
+    db.select({ id: disposals.id, number: disposals.number, status: disposals.status }).from(disposals).where(eq(disposals.assetId, assetId))
+      .orderBy(desc(disposals.createdAt)).limit(1),
   ]);
+  const lastDisposal = disposal[0];
+  const disposalOpen = lastDisposal && ["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(lastDisposal.status);
+  const canDispose = can(me.role, "assets.dispose") && x.status !== "DISPOSED" && !disposalOpen;
   const liveContracts = contracts.filter((c) => contractState(c, today).state !== "EXPIRED");
   const openJobs = jobs.filter((j) => isActive(j.wo.status));
   const nowTs = new Date();
@@ -120,6 +129,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
         actions={<>
           {canReport && x.status !== "DISPOSED" && <LinkButton href={`/assets/work-orders/new?assetId=${x.id}`} variant="danger">Report a fault</LinkButton>}
           <LinkButton href={`/assets/labels?ids=${x.id}`}>Print label</LinkButton>
+          {canDispose && <LinkButton href={`/assets/disposals/new?assetId=${x.id}`} variant="ghost">Propose disposal</LinkButton>}
           {x.roomId && <LinkButton href={`/assets/3d?facilityId=${x.facilityId}&assetId=${x.id}`}>Show in 3D</LinkButton>}
           {x.roomId && <LinkButton href={`/assets/map?assetId=${x.id}`} variant="primary">Show on floor map</LinkButton>}
         </>}
@@ -132,6 +142,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
         {w.state === "EXPIRING" && <Badge tone="warn">Warranty ends in {w.days} days</Badge>}
         {ppmState === "OVERDUE" && <Badge tone="danger">PPM overdue</Badge>}
         {openRecalls.map((rc) => <Link key={rc.id} href={`/assets/recalls/${rc.id}`} title={rc.title}><Badge tone="danger">{rc.urgent ? "Urgent recall" : "Recall"} {rc.number}</Badge></Link>)}
+        {lastDisposal && lastDisposal.status !== "CANCELLED" && <Link href={`/assets/disposals/${lastDisposal.id}`}><Badge tone={lastDisposal.status === "REJECTED" ? "neutral" : "danger"}>Disposal {lastDisposal.number}: {humanize(lastDisposal.status).toLowerCase()}</Badge></Link>}
         {openJobs.length > 0 && <Badge tone="warn">{openJobs.length} open work order{openJobs.length === 1 ? "" : "s"}</Badge>}
         {life.state === "BEYOND" && <Badge tone="danger">Beyond life expectancy</Badge>}
       </div>
@@ -273,6 +284,23 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
         </div>
 
         <aside className="space-y-5">
+          {perf && x.status !== "IN_STOCK" && (
+            <Panel title="Performance and cost" actions={<Link href={`/assets/replacement?facilityId=${x.facilityId}${x.departmentId ? `&departmentId=${x.departmentId}` : ""}`} className="text-sm text-primary hover:underline">Replacement plan</Link>}>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                <div><dt className="text-xs text-muted">Uptime ({perf.kpis.windowDays} days)</dt><dd className={`text-lg font-semibold ${perf.kpis.uptimePct < 95 ? "text-danger" : perf.kpis.uptimePct < 99 ? "text-warn" : "text-ok"}`}>{perf.kpis.uptimePct} %</dd></div>
+                <div><dt className="text-xs text-muted">Failures</dt><dd className="text-lg font-semibold">{perf.kpis.failures}</dd></div>
+                <div><dt className="text-xs text-muted">Mean time between failures</dt><dd>{perf.kpis.mtbfDays != null ? `${perf.kpis.mtbfDays} days` : "—"}</dd></div>
+                <div><dt className="text-xs text-muted">Mean time to repair</dt><dd>{formatHours(perf.kpis.mttrHours)}</dd></div>
+                <div><dt className="text-xs text-muted">Maintenance spend</dt><dd>{formatMoney(perf.cost.maintenance + perf.cost.contracts, "EGP")}{perf.cost.contracts > 0 && <span className="block text-xs text-muted">incl. {formatMoney(perf.cost.contracts, "EGP")} contract share</span>}</dd></div>
+                <div><dt className="text-xs text-muted">Cost of ownership</dt><dd>{formatMoney(perf.cost.total, "EGP")}{perf.cost.maintenancePct != null && <span className="block text-xs text-muted">upkeep {perf.cost.maintenancePct} % of price</span>}</dd></div>
+              </dl>
+              <div className="mt-4 border-t border-line pt-3 text-sm">
+                <p>Replacement score <strong>{perf.score.score}</strong> <Badge tone={perf.score.band === "REPLACE" ? "danger" : perf.score.band === "PLAN" ? "warn" : "ok"}>{BAND_LABEL[perf.score.band]}</Badge></p>
+                {perf.score.reasons.length > 0 && <p className="mt-1 text-xs text-muted">{perf.score.reasons.join(" · ")}</p>}
+              </div>
+            </Panel>
+          )}
+
           <Panel title="Warranty and lifecycle">
             <dl className="space-y-4 text-sm">
               <div>

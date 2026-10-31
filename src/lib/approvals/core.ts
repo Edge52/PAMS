@@ -10,7 +10,7 @@
  */
 import type { Role } from "@/lib/auth/permissions";
 
-export type ApprovalEntity = "PO" | "BOQ" | "AWARD";
+export type ApprovalEntity = "PO" | "BOQ" | "AWARD" | "DISPOSAL";
 export type StepStatus = "WAITING" | "PENDING" | "APPROVED" | "REJECTED" | "SKIPPED";
 export type RequestStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 export type Quorum = "all" | "majority";
@@ -35,7 +35,7 @@ export type StepState = {
 export function policyApplies(p: Policy, entity: ApprovalEntity, amountEgp: number | null, facilityId: number | null): boolean {
   if (!p.active || p.entity !== entity) return false;
   if (p.facilityId != null && p.facilityId !== facilityId) return false;
-  if (entity !== "PO") return true; // BOQ and award policies have no amounts
+  if (entity !== "PO") return true; // BOQ, award and disposal policies have no amounts
   const amount = amountEgp ?? 0;
   if (amount < p.minAmountEgp) return false;
   if (p.maxAmountEgp != null && amount >= p.maxAmountEgp) return false;

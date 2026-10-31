@@ -12,12 +12,13 @@ import { saveSettings, savePolicy, togglePolicy } from "./actions";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approval rules & settings" };
 
-const ENTITY_LABEL: Record<string, string> = { PO: "Purchase orders", BOQ: "BOQs", AWARD: "Award recommendations" };
-const ENTITY_LOWER: Record<string, string> = { PO: "purchase orders", BOQ: "BOQs", AWARD: "award recommendations" };
+const ENTITY_LABEL: Record<string, string> = { PO: "Purchase orders", BOQ: "BOQs", AWARD: "Award recommendations", DISPOSAL: "Device disposals" };
+const ENTITY_LOWER: Record<string, string> = { PO: "purchase orders", BOQ: "BOQs", AWARD: "award recommendations", DISPOSAL: "device disposals" };
 const ENTITY_HELP: Record<string, string> = {
   PO: "Every rule whose amount range contains the order's value (converted to EGP when submitted) becomes a step. Steps run in order; rules with the same order are decided in parallel.",
   BOQ: "Steps a BOQ goes through after the planner submits it. Amounts don't apply.",
   AWARD: "After every voting member of the adjudication committee signs, these steps follow. The last one is the competent authority (Law 182/2018 art. 35). The committee chair can never decide them (art. 28).",
+  DISPOSAL: "Steps a request to condemn and dispose of a device goes through after biomedical engineering submits it. Amounts don't apply.",
 };
 const roleOptions = ROLES.filter((r) => r !== "VIEWER").map((r) => ({ value: r, label: ROLE_LABELS[r] }));
 
@@ -37,7 +38,7 @@ export default async function SettingsPage() {
         description="Who approves purchase orders, BOQs and awards, the Law 182/2018 thresholds the tender checks use, and system switches. Changes apply to requests submitted from now on; requests already in progress keep their steps." />
 
       <div className="space-y-6">
-        {(["PO", "BOQ", "AWARD"] as const).map((entity) => {
+        {(["PO", "BOQ", "AWARD", "DISPOSAL"] as const).map((entity) => {
           const rows = policies.filter((p) => p.entity === entity);
           return (
             <Panel key={entity} title={ENTITY_LABEL[entity]} padded={false}>
@@ -141,7 +142,7 @@ export default async function SettingsPage() {
 }
 
 function PolicyForm({ entity, policy, facOptions }: {
-  entity: "PO" | "BOQ" | "AWARD"; policy?: typeof approvalPolicies.$inferSelect; facOptions: { value: number; label: string }[];
+  entity: "PO" | "BOQ" | "AWARD" | "DISPOSAL"; policy?: typeof approvalPolicies.$inferSelect; facOptions: { value: number; label: string }[];
 }) {
   return (
     <ActionForm action={savePolicy} className="space-y-3">

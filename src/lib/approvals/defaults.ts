@@ -18,11 +18,13 @@ export const DEFAULT_POLICIES: NewPolicy[] = [
   { entity: "BOQ", label: "Hospital director", approverRole: "DIRECTOR", minAmountEgp: "0", stepOrder: 1 },
   // Awards: the committee members' signatures are added per tender; this is the final step (Law 182/2018 art. 35).
   { entity: "AWARD", label: "Competent authority", approverRole: "DIRECTOR", minAmountEgp: "0", stepOrder: 1 },
+  // Condemning a device writes off a public asset: the director decides (add a Finance step under settings if needed).
+  { entity: "DISPOSAL", label: "Hospital director", approverRole: "DIRECTOR", minAmountEgp: "0", stepOrder: 1 },
 ];
 
 export async function ensureDefaultPolicies(db: DB): Promise<void> {
   let added = 0;
-  for (const entity of ["PO", "BOQ", "AWARD"] as const) {
+  for (const entity of ["PO", "BOQ", "AWARD", "DISPOSAL"] as const) {
     const [existing] = await db.select({ id: approvalPolicies.id }).from(approvalPolicies).where(eq(approvalPolicies.entity, entity)).limit(1);
     if (existing) continue;
     const rows = DEFAULT_POLICIES.filter((p) => p.entity === entity);

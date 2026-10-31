@@ -87,6 +87,9 @@ export const partTxnKind = pgEnum("part_txn_kind", ["RECEIPT", "ISSUE", "RETURN"
 export const recallAction = pgEnum("recall_action", ["INSPECT", "SOFTWARE_UPDATE", "MODIFY", "REPLACE_PART", "REMOVE_FROM_USE", "ADVISORY"]);
 export const recallStatus = pgEnum("recall_status", ["OPEN", "CLOSED"]);
 export const recallAssetStatus = pgEnum("recall_asset_status", ["PENDING", "ACTIONED", "NOT_AFFECTED"]);
+export const disposalReason = pgEnum("disposal_reason", ["BEYOND_REPAIR", "END_OF_LIFE", "OBSOLETE", "UNSAFE", "RECALLED", "LOST_OR_STOLEN", "OTHER"]);
+export const disposalMethod = pgEnum("disposal_method", ["SCRAP", "SALE", "DONATION", "RETURN_TO_SUPPLIER", "TRADE_IN", "OTHER"]);
+export const disposalStatus = pgEnum("disposal_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "COMPLETED", "CANCELLED"]);
 
 /* ───────────────────────────── People ───────────────────────────── */
 
@@ -746,6 +749,33 @@ export const recallAssets = pgTable("recall_assets", {
   note: text("note"),
 }, (t) => [primaryKey({ columns: [t.recallId, t.assetId] }), index("recall_assets_asset_idx").on(t.assetId), index("recall_assets_wo_idx").on(t.workOrderId)]);
 
+/**
+ * Condemnation and disposal of an asset (wave 3). DRAFT → PENDING_APPROVAL (approvals engine, entity DISPOSAL) →
+ * APPROVED (asset condemned, out of service) → COMPLETED (asset DISPOSED); or REJECTED / CANCELLED.
+ */
+export const disposals = pgTable("disposals", {
+  id: serial("id").primaryKey(),
+  number: varchar("number", { length: 24 }).notNull().unique(),          // DSP-2026-0001
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id),
+  reason: disposalReason("reason").notNull(),
+  method: disposalMethod("method").notNull().default("SCRAP"),
+  justification: text("justification").notNull(),
+  /** Residual value expected (sale, trade-in), in currency. */
+  estimatedValue: money("estimated_value"),
+  currency: varchar("currency", { length: 3 }),
+  status: disposalStatus("status").notNull().default("DRAFT"),
+  requestedById: integer("requested_by_id").references(() => users.id, { onDelete: "set null" }),
+  requestedByName: text("requested_by_name"),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  disposedOn: date("disposed_on"),
+  proceeds: money("proceeds"),
+  certificateRef: text("certificate_ref"),
+  notes: text("notes"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index("disposals_asset_idx").on(t.assetId), index("disposals_facility_idx").on(t.facilityId)]);
+
 /* ───────────────────── Documents & activity log ───────────────────── */
 
 /** Generic attachment for any entity (offer PDFs, datasheets, PO scans, certificates...). */
@@ -793,7 +823,7 @@ export const appSettings = pgTable("app_settings", {
   updatedAt: updatedAt(),
 });
 
-export const approvalEntity = pgEnum("approval_entity", ["PO", "BOQ", "AWARD"]);
+export const approvalEntity = pgEnum("approval_entity", ["PO", "BOQ", "AWARD", "DISPOSAL"]);
 export const approvalStatus = pgEnum("approval_status", ["PENDING", "APPROVED", "REJECTED", "CANCELLED"]);
 export const approvalStepStatus = pgEnum("approval_step_status", ["WAITING", "PENDING", "APPROVED", "REJECTED", "SKIPPED"]);
 

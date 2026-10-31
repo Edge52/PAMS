@@ -10,7 +10,7 @@ import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { DB } from "../../src/db";
 import {
-  activityLog, assets, deviceTypes, facilities, maintenanceEvents, partTransactions, recallAssets, recalls, serviceContractAssets, serviceContracts,
+  activityLog, assets, deviceTypes, disposals, facilities, maintenanceEvents, partTransactions, recallAssets, recalls, serviceContractAssets, serviceContracts,
   spareParts, suppliers, users, workOrders,
 } from "../../src/db/schema";
 import { responseDue, suggestedPriority, type WorkOrderPriority } from "../../src/lib/assets/work-orders";
@@ -229,7 +229,39 @@ export default async function seed(db: DB) {
       }));
     }
   }
+  // Disposals: one finished last month, one waiting for the director (through the approvals engine).
+  let disposalsMade = 0;
+  const [oldest] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId }).from(assets)
+    .where(and(eq(assets.status, "IN_SERVICE"), sql`${assets.installDate} is not null`)).orderBy(assets.installDate).limit(1);
+  const [broken] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId }).from(assets)
+    .where(eq(assets.status, "OUT_OF_SERVICE")).orderBy(assets.id).limit(1);
+  if (oldest && lead) {
+    await db.insert(disposals).values({
+      number: `DSP-${year}-0001`, assetId: oldest.id, facilityId: oldest.facilityId, reason: "END_OF_LIFE", method: "TRADE_IN",
+      justification: "Past its service life; the manufacturer no longer supplies parts. Traded in against the replacement.",
+      status: "COMPLETED", requestedById: lead.id, requestedByName: lead.name, decidedAt: new Date(now - 40 * 24 * H),
+      disposedOn: shift(-30), proceeds: "15000", currency: "EGP", certificateRef: "Condemnation committee minutes 2026/07",
+    });
+    await db.update(assets).set({ status: "DISPOSED", condition: "CONDEMNED" }).where(eq(assets.id, oldest.id));
+    disposalsMade++;
+  }
+  if (broken && lead) {
+    const [d] = await db.insert(disposals).values({
+      number: `DSP-${year}-0002`, assetId: broken.id, facilityId: broken.facilityId, reason: "BEYOND_REPAIR", method: "SCRAP",
+      justification: "Main board failed twice this year; the vendor's repair quote is 70 % of a new unit and parts lead time is 12 weeks.",
+      status: "PENDING_APPROVAL", requestedById: lead.id, requestedByName: lead.name,
+    }).returning({ id: disposals.id });
+    const [actor] = await db.select({ id: users.id, name: users.name, role: users.role, allFacilities: users.allFacilities }).from(users).where(eq(users.id, lead.id));
+    try {
+      const { startApproval } = await import("../../src/lib/approvals/server");
+      await startApproval({ entity: "DISPOSAL", entityId: d.id, title: `Dispose of ${broken.tag} (DSP-${year}-0002)`, href: `/assets/disposals/${d.id}`, facilityId: broken.facilityId }, actor);
+    } catch (e) {
+      await db.update(disposals).set({ status: "DRAFT" }).where(eq(disposals.id, d.id));
+      console.warn("  workorders: disposal left as draft —", e instanceof Error ? e.message : e);
+    }
+    disposalsMade++;
+  }
   for (let i = 0; i < log.length; i += 500) await db.insert(activityLog).values(log.slice(i, i + 500));
-  console.log(`  workorders: ${parts} spare parts, ${recallCount} recalls`);
+  console.log(`  workorders: ${parts} spare parts, ${recallCount} recalls, ${disposalsMade} disposals`);
   console.log(`  workorders: ${created} created (${down.length} open for devices that are down, ${visits.length} PPM jobs with checklists), ${contracts} service contracts`);
 }
