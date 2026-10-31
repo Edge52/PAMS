@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centroid, interiorPoint, latticeInside, pointInPolygon, polygonArea, rectPoly, spreadInRoom, wallsFromRooms, type Pt } from "./geometry";
+import { centroid, deviceKind, interiorPoint, latticeInside, pointInPolygon, polygonArea, rectPoly, spreadInRoom, wallsFromRooms, type Pt } from "./geometry";
 
 const L: Pt[] = [[0, 0], [100, 0], [100, 30], [30, 30], [30, 100], [0, 100]]; // L-shaped room, centroid outside the bar
 
@@ -45,5 +45,19 @@ describe("wallsFromRooms", () => {
   it("emits a shared edge once", () => {
     const segs = wallsFromRooms([rectPoly(0, 0, 10, 10), rectPoly(10, 0, 10, 10)]);
     expect(segs.length / 4).toBe(7); // 4 + 4 edges, one shared
+  });
+});
+
+describe("device kinds", () => {
+  it("maps groups and categories to marker shapes", () => {
+    expect(deviceKind("FUR-BED", "FUR")).toBe("bed");
+    expect(deviceKind("LIF-VEN", "LIF")).toBe("ventilator");
+    expect(deviceKind("LIF-DEF", "LIF")).toBe("monitor");
+    expect(deviceKind("LIF-AIR", "LIF")).toBe("other");
+    expect(deviceKind("INF-PMP", "INF")).toBe("pump");
+    expect(deviceKind("IMG-CT", "IMG")).toBe("imaging");
+    expect(deviceKind("OBG-FET", "OBG")).toBe("monitor");
+    expect(deviceKind(null, "MON")).toBe("monitor");
+    expect(deviceKind(null, null)).toBe("other");
   });
 });

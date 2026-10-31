@@ -9,12 +9,34 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { spreadInRoom, wallsFromRooms, type Pt } from "./geometry";
+import { deviceKind, interiorPoint, polygonArea, spreadInRoom, wallsFromRooms, type DeviceKind, type Pt } from "./geometry";
 import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinRoom } from "./types";
 
 /** Drawn wall height in metres (clear height below the ceiling after MEP; floors sit 5 m apart). */
 const WALL_HEIGHT = 3.3;
 const DEVICE_HEIGHT = 1.3;
+/** Closer than this (metres from the camera to its target) devices show their shapes instead of dots. */
+const NEAR_DISTANCE = 75;
+/** Room labels appear on the isolated floor when the camera is closer than this. */
+const LABEL_DISTANCE = 120;
+const MAX_LABELS = 70;
+
+/** Marker shapes close up: geometry and the height of its centre above the floor (metres). */
+function kindGeometry(k: DeviceKind): { geo: THREE.BufferGeometry; y: number } {
+  const { geo, y } = kindShape(k);
+  geo.scale(1.5, 1.5, 1.5); // symbols, drawn a little larger than life so they read from a few metres away
+  return { geo, y };
+}
+function kindShape(k: DeviceKind): { geo: THREE.BufferGeometry; y: number } {
+  switch (k) {
+    case "bed": return { geo: new THREE.BoxGeometry(1.0, 0.3, 0.55), y: 0.55 };
+    case "monitor": { const g = new THREE.BoxGeometry(0.5, 0.36, 0.07); return { geo: g, y: 1.45 }; }
+    case "ventilator": return { geo: new THREE.CylinderGeometry(0.18, 0.24, 0.8, 14), y: 0.6 };
+    case "imaging": { const g = new THREE.TorusGeometry(0.55, 0.16, 10, 28); return { geo: g, y: 0.9 }; }
+    case "pump": return { geo: new THREE.BoxGeometry(0.16, 0.26, 0.14), y: 1.15 };
+    default: return { geo: new THREE.OctahedronGeometry(0.26), y: 0.9 };
+  }
+}
 
 type FloorView = {
   floor: TwinFloor;
@@ -48,7 +70,17 @@ export class TwinScene {
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
   private floors = new Map<number, FloorView>();
-  private deviceMesh: THREE.InstancedMesh | null = null;
+  private deviceMesh: THREE.InstancedMesh | null = null;          // far: one dot per device
+  private kindMeshes = new Map<DeviceKind, { mesh: THREE.InstancedMesh; ids: number[]; y: number }>(); // near: shapes
+  private kindIndex = new Map<number, { kind: DeviceKind; i: number }>();
+  private near = false;
+  private roomById = new Map<number, TwinRoom>();
+  private floorById = new Map<number, TwinFloor>();
+  private labelLayer: HTMLDivElement;
+  private labels: { el: HTMLSpanElement; x: number; z: number; w: number }[] = [];
+  private labelsAt = 0;
+  private labelInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+  private placing: { assetId: number; floorId: number; done: (p: { x: number; y: number } | null) => void } | null = null;
   private beamLines: THREE.LineSegments | null = null;
   private deviceIds: number[] = [];
   private devicePos = new Map<number, { floorId: number; x: number; z: number }>();
@@ -105,7 +137,13 @@ export class TwinScene {
     this.selectionRing.visible = false;
     this.scene.add(this.selectionRing);
 
-    for (const r of data.rooms) this.roomFloor.set(r.id, r.floorId);
+    for (const r of data.rooms) { this.roomFloor.set(r.id, r.floorId); this.roomById.set(r.id, r); }
+    for (const f of data.floors) this.floorById.set(f.id, f);
+    // Room names float over the model as HTML (crisp at any zoom); placed every few frames, overlaps dropped.
+    this.labelLayer = document.createElement("div");
+    Object.assign(this.labelLayer.style, { position: "absolute", inset: "0", pointerEvents: "none", overflow: "hidden" });
+    this.labelLayer.setAttribute("aria-hidden", "true");
+    container.appendChild(this.labelLayer);
     for (const a of data.assets) this.assetsById.set(a.id, { ...a }); // own copies: live updates change status in place
 
     this.resizeObs = new ResizeObserver(() => this.resize());
@@ -253,34 +291,53 @@ export class TwinScene {
     this.positionDevices();
   }
 
-  /** Devices: glowing markers on thin beams. Positions come from stored pins or are spread inside the room outline. */
+  /** Spread a room's unpinned devices inside its outline; pinned ones keep their spot (plan units → metres). */
+  private placeRoom(roomId: number, list: TwinAsset[]) {
+    const room = this.roomById.get(roomId); if (!room) return;
+    const f = this.floorById.get(room.floorId); if (!f) return;
+    const s = this.u(f);
+    const unpinned = list.filter((a) => a.posX == null || a.posY == null);
+    const spots = spreadInRoom(room.poly as Pt[], unpinned.length);
+    let k = 0;
+    for (const a of list) {
+      const [px, py] = a.posX != null && a.posY != null ? [a.posX, a.posY] : spots[k++];
+      this.devicePos.set(a.id, { floorId: f.id, x: px * s, z: py * s });
+    }
+  }
+
+  /** Devices: glowing dots on thin beams from afar, shapes by kind close up. */
   private buildDevices() {
     const byRoom = new Map<number, TwinAsset[]>();
-    for (const a of this.data.assets) if (a.roomId && this.roomFloor.has(a.roomId)) (byRoom.get(a.roomId) ?? byRoom.set(a.roomId, []).get(a.roomId)!).push(a);
-    const roomById = new Map(this.data.rooms.map((r) => [r.id, r]));
-    const floorById = new Map(this.data.floors.map((f) => [f.id, f]));
-    for (const [roomId, list] of byRoom) {
-      const room = roomById.get(roomId)!; const f = floorById.get(room.floorId)!; const s = this.u(f);
-      const unpinned = list.filter((a) => a.posX == null || a.posY == null);
-      const spots = spreadInRoom(room.poly as Pt[], unpinned.length);
-      let k = 0;
-      for (const a of list) {
-        const [px, py] = a.posX != null && a.posY != null ? [a.posX, a.posY] : spots[k++];
-        this.devicePos.set(a.id, { floorId: f.id, x: px * s, z: py * s });
-      }
-    }
+    for (const a of this.assetsById.values()) if (a.roomId && this.roomFloor.has(a.roomId)) (byRoom.get(a.roomId) ?? byRoom.set(a.roomId, []).get(a.roomId)!).push(a);
+    for (const [roomId, list] of byRoom) this.placeRoom(roomId, list);
     this.deviceIds = [...this.devicePos.keys()];
     const n = this.deviceIds.length;
     const geo = new THREE.IcosahedronGeometry(0.3, 1);
     this.deviceMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false }), Math.max(1, n));
     this.deviceMesh.count = n;
     this.deviceMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const byKind = new Map<DeviceKind, number[]>();
     for (let i = 0; i < n; i++) {
       const a = this.assetsById.get(this.deviceIds[i])!;
       this.deviceMesh.setColorAt(i, new THREE.Color(STATUS_COLORS[a.status] ?? "#cfe8ff").multiplyScalar(2.0));
+      const k = deviceKind(a.groupCode, a.categoryCode);
+      (byKind.get(k) ?? byKind.set(k, []).get(k)!).push(a.id);
     }
     this.deviceMesh.renderOrder = 5;
     this.scene.add(this.deviceMesh);
+    for (const [kind, ids] of byKind) {
+      const { geo: g, y } = kindGeometry(kind);
+      const mesh = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false }), ids.length);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      ids.forEach((id, i) => {
+        this.kindIndex.set(id, { kind, i });
+        mesh.setColorAt(i, new THREE.Color(STATUS_COLORS[this.assetsById.get(id)!.status] ?? "#cfe8ff").multiplyScalar(1.5));
+      });
+      mesh.visible = false;
+      mesh.renderOrder = 5;
+      this.kindMeshes.set(kind, { mesh, ids, y });
+      this.scene.add(mesh);
+    }
     const bg = new THREE.BufferGeometry();
     bg.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(n * 6), 3));
     bg.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(n * 6), 3));
@@ -308,11 +365,18 @@ export class TwinScene {
       const k = show ? (hi ? 1.8 : dim ? 0.55 : 1) * pulse : 0;
       p.set(d.x, y, d.z); sc.set(k, k, k);
       m.compose(p, q, sc); this.deviceMesh.setMatrixAt(i, m);
+      const ki = this.kindIndex.get(id);
+      if (ki) {
+        const km = this.kindMeshes.get(ki.kind)!;
+        p.set(d.x, y - DEVICE_HEIGHT + km.y, d.z);
+        m.compose(p, q, sc); km.mesh.setMatrixAt(ki.i, m);
+      }
       const c = new THREE.Color(STATUS_COLORS[a.status] ?? "#cfe8ff").multiplyScalar(show ? (dim ? 0.25 : 0.9) : 0);
       beamPos.setXYZ(i * 2, d.x, y - DEVICE_HEIGHT + 0.05, d.z); beamPos.setXYZ(i * 2 + 1, d.x, y, d.z);
       beamCol.setXYZ(i * 2, 0, 0, 0); beamCol.setXYZ(i * 2 + 1, c.r, c.g, c.b);
     }
     this.deviceMesh.instanceMatrix.needsUpdate = true;
+    for (const km of this.kindMeshes.values()) km.mesh.instanceMatrix.needsUpdate = true;
     beamPos.needsUpdate = true; beamCol.needsUpdate = true;
     this.updateSelectionRing();
   }
@@ -331,6 +395,7 @@ export class TwinScene {
   /** Show one floor (others fade out), or all floors with `null`. */
   isolateFloor(floorId: number | null, fly = true) {
     this.isolated = floorId;
+    this.buildLabels();
     this.applyFloorVisibility();
     this.positionDevices();
     if (!fly) return;
@@ -424,6 +489,8 @@ export class TwinScene {
       if (!st || st === a.status) continue;
       a.status = st;
       this.deviceMesh.setColorAt(i, new THREE.Color(STATUS_COLORS[st] ?? "#cfe8ff").multiplyScalar(2.0));
+      const ki = this.kindIndex.get(a.id);
+      if (ki) { const km = this.kindMeshes.get(ki.kind)!; km.mesh.setColorAt(ki.i, new THREE.Color(STATUS_COLORS[st] ?? "#cfe8ff").multiplyScalar(1.5)); if (km.mesh.instanceColor) km.mesh.instanceColor.needsUpdate = true; }
       changed = true;
     }
     if (changed && this.deviceMesh.instanceColor) this.deviceMesh.instanceColor.needsUpdate = true;
@@ -491,6 +558,7 @@ export class TwinScene {
     el.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY }; });
     el.addEventListener("pointerup", (e) => {
       if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) {
+        if (this.placing) { this.finishPlacing(e); down = null; return; }
         const hit = this.pick(e);
         this.select(hit, !!hit);
         this.events.onSelect?.(hit);
@@ -499,6 +567,7 @@ export class TwinScene {
     });
     el.addEventListener("pointermove", (e) => {
       if (e.buttons) return;
+      if (this.placing) { el.style.cursor = "crosshair"; return; }
       const hit = this.pick(e);
       el.style.cursor = hit ? "pointer" : "grab";
       this.events.onHover?.(hit, hit ? { x: e.offsetX, y: e.offsetY } : null);
@@ -510,7 +579,18 @@ export class TwinScene {
     const r = this.renderer.domElement.getBoundingClientRect();
     this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    if (this.deviceMesh) {
+    const usable = (id: number | undefined) => {
+      const d = id != null ? this.devicePos.get(id) : null;
+      return id != null && !!d && this.visibleAssets.has(id) && (this.isolated == null || this.isolated === d.floorId);
+    };
+    if (this.near) {
+      const meshes = [...this.kindMeshes.values()].map((k) => k.mesh);
+      for (const h of this.raycaster.intersectObjects(meshes)) {
+        const km = [...this.kindMeshes.values()].find((k) => k.mesh === h.object);
+        const id = km?.ids[h.instanceId ?? -1];
+        if (usable(id)) return { kind: "asset", id: id! };
+      }
+    } else if (this.deviceMesh) {
       const hits = this.raycaster.intersectObject(this.deviceMesh);
       for (const h of hits) {
         const id = this.deviceIds[h.instanceId ?? -1];
@@ -581,6 +661,14 @@ export class TwinScene {
     this.controls.autoRotateSpeed = 0.35;
     this.controls.update();
     const t = this.clock.getElapsedTime();
+    const near = this.camera.position.distanceTo(this.controls.target) < NEAR_DISTANCE;
+    if (near !== this.near && this.deviceMesh) {
+      this.near = near;
+      this.deviceMesh.visible = !near;
+      if (this.beamLines) this.beamLines.visible = !near;
+      for (const km of this.kindMeshes.values()) km.mesh.visible = near;
+    }
+    this.updateLabels(now);
     if (!this.reducedMotion && this.deviceMesh) this.positionDevices(t);
     if (this.selectionRing.visible && !this.reducedMotion) {
       const k = 1 + 0.15 * Math.sin(t * 3);
@@ -603,6 +691,106 @@ export class TwinScene {
     this.composer.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
+    this.labelLayer.remove();
+  }
+
+  /* ───────────── Room labels ───────────── */
+
+  private buildLabels() {
+    this.labelLayer.replaceChildren();
+    this.labels = [];
+    if (this.isolated == null) return;
+    const f = this.floorById.get(this.isolated); if (!f) return;
+    const s = this.u(f);
+    const list = this.data.rooms.filter((r) => r.floorId === f.id && r.type !== "CORRIDOR" && r.poly.length >= 3)
+      .map((r) => ({ r, area: polygonArea(r.poly as Pt[]) })).sort((a, b) => b.area - a.area);
+    for (const { r } of list) {
+      const el = document.createElement("span");
+      const name = document.createElement("span"); name.textContent = r.name;
+      const code = document.createElement("span"); code.textContent = ` ${r.code}`; code.style.opacity = "0.6";
+      el.append(name, code);
+      Object.assign(el.style, {
+        position: "absolute", left: "0", top: "0", whiteSpace: "nowrap", font: "500 11px/1.2 system-ui, sans-serif", color: "#e6f7ff",
+        background: "rgba(4,18,31,0.72)", border: "1px solid rgba(47,211,255,0.25)", borderRadius: "4px", padding: "1px 5px", display: "none",
+      });
+      this.labelLayer.appendChild(el);
+      const [px, py] = interiorPoint(r.poly as Pt[]);
+      this.labels.push({ el, x: px * s, z: py * s, w: (r.name.length + r.code.length + 1) * 6 + 12 });
+    }
+  }
+
+  /** Keep labels clear of the HUD (pixels from each edge of the view). */
+  setLabelInsets(i: { top: number; right: number; bottom: number; left: number }) { this.labelInsets = i; this.labelsAt = 0; }
+
+  /** Place labels for the isolated floor when close enough, biggest rooms first, skipping any that would overlap. */
+  private updateLabels(now: number) {
+    if (now - this.labelsAt < 120 || !this.labels.length) return;
+    this.labelsAt = now;
+    const f = this.isolated != null ? this.floorById.get(this.isolated) : null;
+    const close = !!f && this.camera.position.distanceTo(this.controls.target) < LABEL_DISTANCE;
+    this.labelLayer.style.display = close ? "block" : "none";
+    if (!close || !f) return;
+    const y = this.floorY(f) + 0.2;
+    const w = this.renderer.domElement.clientWidth, h = this.renderer.domElement.clientHeight;
+    const boxes: [number, number, number, number][] = [];
+    const v = new THREE.Vector3();
+    let shown = 0;
+    for (const l of this.labels) {
+      v.set(l.x, y, l.z).project(this.camera);
+      const sx = (v.x + 1) / 2 * w - l.w / 2, sy = (1 - v.y) / 2 * h - 8;
+      const ins = this.labelInsets;
+      const visible = v.z < 1 && sx > ins.left && sy > ins.top && sx + l.w < w - ins.right && sy + 16 < h - ins.bottom && shown < MAX_LABELS
+        && !boxes.some(([x0, y0, x1, y1]) => sx < x1 && sx + l.w > x0 && sy < y1 && sy + 16 > y0);
+      l.el.style.display = visible ? "block" : "none";
+      if (visible) { l.el.style.transform = `translate(${Math.round(sx)}px, ${Math.round(sy)}px)`; boxes.push([sx - 2, sy - 2, sx + l.w + 2, sy + 18]); shown++; }
+    }
+  }
+
+  /* ───────────── Moving and placing devices ───────────── */
+
+  /** A device moved (or got an exact spot): re-place it and its old and new rooms' unpinned devices. */
+  moveDevice(assetId: number, roomId: number, posX: number | null, posY: number | null) {
+    const a = this.assetsById.get(assetId); if (!a) return;
+    const old = a.roomId;
+    Object.assign(a, { roomId, posX, posY });
+    for (const r of new Set([old, roomId])) {
+      if (r == null) continue;
+      this.placeRoom(r, [...this.assetsById.values()].filter((x) => x.roomId === r));
+    }
+    this.positionDevices(this.clock.getElapsedTime());
+    this.updateSelectionRing();
+  }
+
+  /** Next click on the device's floor returns that spot in plan units (or null if it misses the floor). */
+  startPlacing(assetId: number, done: (p: { x: number; y: number } | null) => void) {
+    const d = this.devicePos.get(assetId); if (!d) { done(null); return; }
+    this.placing = { assetId, floorId: d.floorId, done };
+    if (this.isolated !== d.floorId) this.isolateFloor(d.floorId, false);
+    // Bring the device's room into view (it may have just moved somewhere else).
+    const f = this.floorById.get(d.floorId)!;
+    this.flyTo(new THREE.Vector3(d.x, this.floorY(f), d.z), 14, 1);
+    this.renderer.domElement.style.cursor = "crosshair";
+  }
+
+  cancelPlacing() {
+    const p = this.placing; this.placing = null;
+    this.renderer.domElement.style.cursor = "grab";
+    p?.done(null);
+  }
+
+  private finishPlacing(e: PointerEvent) {
+    const p = this.placing!; this.placing = null;
+    this.renderer.domElement.style.cursor = "grab";
+    const v = this.floors.get(p.floorId); const f = this.floorById.get(p.floorId);
+    if (!v || !f) { p.done(null); return; }
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.floorY(f));
+    const hit = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(plane, hit)) { p.done(null); return; }
+    const s = this.u(f);
+    p.done({ x: hit.x / s, y: hit.z / s });
   }
 
   /** Rooms of a floor (for the UI). */

@@ -385,7 +385,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
             </ActionForm>
           </Panel>}
 
-          {canMaint && <Panel title="Record maintenance">
+          {canMaint && <Panel title={<span id="record-maintenance">Record maintenance</span>}>
             <ActionForm action={logMaintenanceAction} className="space-y-3">
               <input type="hidden" name="assetId" value={x.id} />
               <div className="grid grid-cols-2 gap-3">

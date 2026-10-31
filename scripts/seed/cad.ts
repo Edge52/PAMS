@@ -294,8 +294,13 @@ export async function importBuilding(db: DB, b: CadBuilding, opts: { equipment?:
   console.log(`  ${b.name}: ${b.floors.length} floors, ${deptCodes.length} departments, ${roomCount} rooms, ${totalBeds} beds, ${placed} demo devices`);
 }
 
+/** DWG multiline text can carry formatting codes ("\\pxqc;" alignment, "\\P" line breaks, braces); keep only the words. */
+export function cleanCadText(s: string) {
+  return s.replace(/\\[A-Za-z][^;\\]*;/g, " ").replace(/\\P/gi, " ").replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
+}
+
 function titleCase(s: string) {
-  return s.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/\b(Ct|Mri|Dxa|Icu|Ccu|Ed|Or|Orl|Vip|Tlt|Rad|Agv|Hvac|Rmu|Md|P\/R)\b/g, (m) => m.toUpperCase());
+  return cleanCadText(s).toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/\b(Ct|Mri|Dxa|Icu|Ccu|Ed|Or|Orl|Vip|Tlt|Rad|Agv|Hvac|Rmu|Md|P\/R)\b/g, (m) => m.toUpperCase());
 }
 
 /** Seed entry: import every building JSON in seed-data/cad/. */

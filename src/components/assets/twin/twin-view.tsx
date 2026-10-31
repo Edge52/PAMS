@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { twinMoveAction, twinPlaceAction, type TwinActionState } from "@/app/assets/3d/actions";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { PickResult, TwinScene } from "./scene";
@@ -46,12 +47,21 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
   const [liveError, setLiveError] = useState(false);
   const [layer, setLayer] = useState<LayerId>("department");
   const [scope, setScope] = useState<Scope>("room");
+  const [assetList, setAssetList] = useState(data.assets);
+  const [placingId, setPlacingId] = useState<number | null>(null);
+  const [toast, setToast] = useState<{ ok?: string; error?: string } | null>(null);
+  const [moveState, moveAction, movePending] = useActionState(async (prev: TwinActionState, fd: FormData) => {
+    const res = await twinMoveAction(prev, fd);
+    if (res?.ok && res.assetId && res.roomId) applyMove(res.assetId, res.roomId, null, null);
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+    return res;
+  }, null);
 
   const roomById = useMemo(() => new Map(data.rooms.map((r) => [r.id, r])), [data.rooms]);
-  const assetById = useMemo(() => new Map(data.assets.map((a) => [a.id, a])), [data.assets]);
+  const assetById = useMemo(() => new Map(assetList.map((a) => [a.id, a])), [assetList]);
   const deptById = useMemo(() => new Map(data.departments.map((d) => [d.id, d])), [data.departments]);
   const floorById = useMemo(() => new Map(data.floors.map((f) => [f.id, f])), [data.floors]);
-  const placed = useMemo(() => data.assets.filter((a) => a.roomId && roomById.has(a.roomId)), [data.assets, roomById]);
+  const placed = useMemo(() => assetList.filter((a) => a.roomId && roomById.has(a.roomId)), [assetList, roomById]);
   const categories = useMemo(() => {
     const m = new Map<string, { code: string; name: string; n: number }>();
     for (const a of placed) { const c = m.get(a.categoryCode) ?? { code: a.categoryCode, name: a.category, n: 0 }; c.n++; m.set(a.categoryCode, c); }
@@ -152,6 +162,12 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
   }, [layer, scope, layerValues, data.rooms, deptById, roomById]);
   useEffect(() => { if (ready) sceneRef.current?.setHighlight(new Set(matches.map((a) => a.id))); }, [matches, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setExplode(explode); }, [explode, ready]);
+  // Room labels stay in the free middle of the view, clear of the title bar and the panel columns.
+  useEffect(() => {
+    if (!ready) return;
+    sceneRef.current?.setLabelInsets(mode === "phone" ? { top: 150, right: 8, bottom: 120, left: 8 }
+      : mode === "compact" ? { top: 120, right: 290, bottom: 8, left: 230 } : { top: 120, right: 345, bottom: 8, left: 265 });
+  }, [mode, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setBloom(bloom); }, [bloom, ready]);
 
   // Deep link: ?assetId= or ?roomId= flies there once ready.
@@ -165,13 +181,42 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
+  function applyMove(assetId: number, roomId: number, posX: number | null, posY: number | null) {
+    setAssetList((list) => list.map((a) => (a.id === assetId ? { ...a, roomId, posX, posY } : a)));
+    sceneRef.current?.moveDevice(assetId, roomId, posX, posY);
+  }
+  function placeExactly(assetId: number) {
+    const a = assetById.get(assetId); if (!a?.roomId) return;
+    setPlacingId(assetId); setToast(null);
+    sceneRef.current?.startPlacing(assetId, async (pt) => {
+      setPlacingId(null);
+      if (!pt) return;
+      const fd = new FormData(); fd.set("assetId", String(assetId)); fd.set("posX", String(pt.x)); fd.set("posY", String(pt.y));
+      const res = await twinPlaceAction(null, fd);
+      if (res?.ok && res.roomId) applyMove(assetId, res.roomId, res.posX ?? null, res.posY ?? null);
+      setToast(res ? { ok: res.ok, error: res.error } : null);
+    });
+  }
+  async function clearSpot(assetId: number) {
+    const fd = new FormData(); fd.set("assetId", String(assetId)); fd.set("posX", "0"); fd.set("posY", "0"); fd.set("clear", "1");
+    const res = await twinPlaceAction(null, fd);
+    if (res?.ok && res.roomId) applyMove(assetId, res.roomId, null, null);
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
+  useEffect(() => {
+    if (placingId == null) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") sceneRef.current?.cancelPlacing(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [placingId]);
+
   function chooseFloor(id: number | null) { setFloorId(id); sceneRef.current?.isolateFloor(id); }
   function focus(p: PickResult) {
     setSelected(p); if (p) setSheetTab("details");
-    if (p?.kind === "asset") {
-      const fl = roomById.get(assetById.get(p.id)?.roomId ?? -1)?.floorId ?? null;
-      if (floorId != null && fl !== floorId) setFloorId(fl);
-    }
+    // Jumping to a device or room shows its floor on its own, so floors above don't hide it and room names appear.
+    const roomId = p?.kind === "asset" ? assetById.get(p.id)?.roomId : p?.kind === "room" ? p.id : null;
+    const fl = roomId != null ? roomById.get(roomId)?.floorId ?? null : null;
+    if (fl != null && fl !== floorId) { setFloorId(fl); sceneRef.current?.isolateFloor(fl, false); }
     sceneRef.current?.select(p);
   }
   const toggle = (set: Set<string>, v: string, setter: (s: Set<string>) => void) => { const n = new Set(set); if (n.has(v)) n.delete(v); else n.add(v); setter(n); };
@@ -183,6 +228,8 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
     : hover?.p?.kind === "room" ? (() => { const r = roomById.get(hover.p.id); return r ? `${r.name} · ${r.code}` : ""; })() : "";
 
   const sortedFloors = [...data.floors].sort((a, b) => b.elevation - a.elevation);
+  const roomsByFloor = sortedFloors.map((f) => [f, data.rooms.filter((r) => r.floorId === f.id && r.type !== "CORRIDOR").sort((a, b) => a.name.localeCompare(b.name))] as const)
+    .filter(([, rs]) => rs.length > 0);
   const floorName = floorId == null ? "Whole building" : floorById.get(floorId)?.name ?? "";
   const hasSelection = !!(selAsset || selRoom);
   const sheetTab = visibleSheetTab(sheetTabRaw, hasSelection);
@@ -201,6 +248,7 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
           <span>{f.name}</span><span>{perFloor.get(f.id) ?? 0}</span>
         </button>
       ))}
+      <p className="mt-2 text-xs text-[#8fb6cc]">Choose a floor and zoom in to see room names and device shapes.</p>
     </div>
   );
   const viewControls = (
@@ -322,7 +370,40 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
             <dt className="text-[#8fb6cc]">Serial</dt><dd className="break-all font-mono">{selAsset.serial ?? "—"}</dd>
             <dt className="text-[#8fb6cc]">Criticality</dt><dd>{selAsset.criticality?.replace("_", " ").toLowerCase() ?? "—"}</dd>
           </dl>
-          <Link href={`/assets/${selAsset.id}`} className="mt-2 inline-block rounded-md bg-[#2fd3ff] px-3 py-1.5 text-sm font-semibold text-[#03121f] hover:bg-white">Open asset record</Link>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Link href={`/assets/${selAsset.id}`} className="rounded-md bg-[#2fd3ff] px-3 py-1.5 text-sm font-semibold text-[#03121f] hover:bg-white">Open asset record</Link>
+            {data.can.report && <Link href={`/assets/work-orders/new?assetId=${selAsset.id}`} className="twin-act text-[#ffb08a]">Report a fault</Link>}
+            {data.can.maintain && <Link href={`/assets/${selAsset.id}#record-maintenance`} className="twin-act">Record maintenance</Link>}
+            {(live.get(selAsset.id)?.openJobs ?? 0) > 0 && <Link href={`/assets/work-orders?tab=all&q=${encodeURIComponent(selAsset.tag)}`} className="twin-act">Open jobs</Link>}
+          </div>
+          {data.can.move && (
+            <div className="mt-3 space-y-2 border-t border-[#123a55] pt-2">
+              <details>
+                <summary className="cursor-pointer text-[13px] font-semibold text-[#5fd6ff]">Move to another room</summary>
+                <form action={moveAction} className="mt-2 space-y-2">
+                  <input type="hidden" name="assetId" value={selAsset.id} />
+                  <label className="block text-xs text-[#8fb6cc]">Room
+                    <select name="roomId" required defaultValue="" className="twin-input mt-1">
+                      <option value="" disabled>Choose a room…</option>
+                      {roomsByFloor.map(([f, rs]) => (
+                        <optgroup key={f.id} label={f.name}>
+                          {rs.map((r) => <option key={r.id} value={r.id} disabled={r.id === selAsset.roomId}>{r.name} · {r.code}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-xs text-[#8fb6cc]">Reason (optional)<input name="reason" maxLength={500} className="twin-input mt-1" /></label>
+                  <button type="submit" disabled={movePending} className="twin-act">{movePending ? "Moving…" : "Move device"}</button>
+                  {moveState?.error && <p role="alert" className="text-xs text-[#ff8a96]">{moveState.error}</p>}
+                </form>
+              </details>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button type="button" onClick={() => placeExactly(selAsset.id)} disabled={placingId != null} className="twin-act">Set exact spot</button>
+                {selAsset.posX != null && <button type="button" onClick={() => clearSpot(selAsset.id)} className="twin-act">Use automatic spot</button>}
+              </div>
+              <p className="text-xs text-[#8fb6cc]">{selAsset.posX != null ? "Placed at its exact spot (also on the 2D floor map)." : "Placed automatically inside its room."}</p>
+            </div>
+          )}
         </div>
       )}
       {selRoom && (
@@ -343,7 +424,10 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
               </ul>
             )
           )}
-          <Link href={`/assets?roomId=${selRoom.id}`} className="mt-2 inline-block text-sm text-[#5fd6ff] hover:underline">Room in the asset register</Link>
+          <div className="mt-2 flex flex-wrap gap-3">
+            <Link href={`/assets?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Room in the asset register</Link>
+            {data.can.addAsset && <Link href={`/assets/new?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Add a device here</Link>}
+          </div>
         </div>
       )}
     </>
@@ -478,6 +562,17 @@ export function TwinView({ data, live: initialLive }: { data: TwinData; live: Li
         </div>
       )}
 
+      {placingId != null && (
+        <div role="status" className="absolute left-1/2 top-24 z-20 -translate-x-1/2 rounded-lg border border-[#2fd3ff] bg-[#04121fee] px-4 py-2 text-sm text-white">
+          Click the device&apos;s exact spot inside its room. <button type="button" onClick={() => sceneRef.current?.cancelPlacing()} className="ml-2 text-[#5fd6ff] hover:underline">Cancel</button>
+        </div>
+      )}
+      {toast && (toast.ok || toast.error) && placingId == null && (
+        <div role={toast.error ? "alert" : "status"} className={`absolute left-1/2 top-24 z-20 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-[#04121fee] px-4 py-2 text-sm ${toast.error ? "border-[#ff4f62] text-[#ff8a96]" : "border-[#3cf5a6] text-[#b9ffe0]"}`}>
+          <span>{toast.error ?? toast.ok}</span>
+          <button type="button" onClick={() => setToast(null)} className="text-xs text-[#8fb6cc] hover:text-white" aria-label="Dismiss">Close</button>
+        </div>
+      )}
       {hover && hoverText && (
         <div className="pointer-events-none absolute z-10 rounded-md border border-[#1d6f9a] bg-[#04121fcc] px-2 py-1 text-xs text-white backdrop-blur"
           style={{ left: hover.x + 14, top: hover.y + 10 }}>{hoverText}</div>

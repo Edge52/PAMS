@@ -33,6 +33,8 @@ export type TwinAsset = {
   deviceType: string;
   category: string;
   categoryCode: string;
+  /** Level-2 group code (e.g. "LIF-VEN"), for the marker shape. */
+  groupCode: string | null;
   status: string;
   criticality: string | null;
   roomId: number | null;
@@ -45,6 +47,8 @@ export type TwinAsset = {
 
 export type TwinData = {
   facility: { id: number; name: string; code: string };
+  /** What the signed-in user may do from the model (the server actions check again). */
+  can: { report: boolean; move: boolean; maintain: boolean; addAsset: boolean };
   facilities: { id: number; name: string }[];
   floors: TwinFloor[];
   rooms: TwinRoom[];

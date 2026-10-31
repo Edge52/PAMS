@@ -103,3 +103,29 @@ export const DEPARTMENT_PALETTE = [
   "#2fd3ff", "#7c6bff", "#ff6fb5", "#ffb547", "#4ff0a5", "#ff6b5b", "#5aa8ff", "#c56bff", "#f5e65b", "#43e0c9",
   "#ff8f3f", "#8fd14f", "#e85bd2", "#5b7bff", "#ffd27a", "#3ad9a0",
 ];
+
+/** Marker shape per kind of equipment in the 3D view (close up); far away every device is a dot. */
+export type DeviceKind = "bed" | "monitor" | "ventilator" | "imaging" | "pump" | "other";
+
+const KIND_BY_PREFIX: [string, DeviceKind][] = [
+  ["FUR-BED", "bed"], ["FUR-STR", "bed"], ["LIF-NEO", "bed"], ["OBG-DEL", "bed"], ["FUR-OPT", "bed"],
+  ["LIF-VEN", "ventilator"], ["LIF-ANE", "ventilator"], ["LIF-RES", "ventilator"],
+  ["INF", "pump"],
+  ["IMG", "imaging"], ["RTH", "imaging"],
+  ["MON", "monitor"], ["CAR", "monitor"], ["OBG-FET", "monitor"], ["LIF-DEF", "monitor"],
+];
+
+/** Kind from the device's group code (e.g. "LIF-VEN") and category code (e.g. "LIF"); the longest matching prefix wins. */
+export function deviceKind(groupCode: string | null | undefined, categoryCode: string | null | undefined): DeviceKind {
+  const codes = [groupCode, categoryCode].filter((c): c is string => !!c);
+  let best: DeviceKind = "other", len = 0;
+  for (const [p, k] of KIND_BY_PREFIX) {
+    if (p.length > len && codes.some((c) => c === p || c.startsWith(p + "-"))) { best = k; len = p.length; }
+  }
+  return best;
+}
+
+export const KIND_LABELS: Record<DeviceKind, string> = {
+  bed: "Beds and incubators", monitor: "Monitors and diagnostics", ventilator: "Ventilators and anaesthesia",
+  imaging: "Imaging", pump: "Infusion pumps", other: "Other equipment",
+};

@@ -4,9 +4,17 @@ Floors are drawn in different coordinate systems, so each floor is aligned to th
 transform (rotation + translation) fitted to the lift labels ("Elevator - N"), which sit on vertical shafts.
 Output: plan units = 1 per 100 mm, y pointing down (same convention as the app's 2D floor map).
 """
-import json, math, sys
+import json
+import re, math, sys
 import numpy as np
 from shapely.geometry import Polygon
+
+
+def clean_text(s):
+    """Drop DWG multiline-text formatting codes (\\pxqc; alignment, \\P line breaks, braces) from a label."""
+    s = re.sub(r"\\[A-Za-z][^;\\]*;", " ", s)
+    s = re.sub(r"\\P", " ", s, flags=re.I)
+    return re.sub(r"\s+", " ", s.replace("{", "").replace("}", "")).strip()
 
 # Usage: python3 build.py <floors.json> <work dir with <code>-rooms.json files> <output.json>
 cfg = json.load(open(sys.argv[1])); work = sys.argv[2]; out_path = sys.argv[3]
@@ -139,7 +147,7 @@ for code, name, level in FLOORS:
         rc = ROOM_CODE_SAFE(base); k = 2
         while rc in seen: rc = ROOM_CODE_SAFE(f"{base}-{k}"); k += 1
         seen.add(rc)
-        rooms.append({"code": rc, "name": (r.get("name") or "").strip()[:200] or rc, "dept": r.get("dept"), "num": r.get("num"),
+        rooms.append({"code": rc, "name": clean_text(r.get("name") or "")[:200] or rc, "dept": r.get("dept"), "num": r.get("num"),
                       "shape": r.get("shape"), "area": r.get("area_m2"), "poly": poly, "label": [cx, cy]})
     floors_out.append({
         "code": code, "name": name, "level": level, "elevation": level * FLOOR_TO_FLOOR_M, "sourceFile": d["file"],

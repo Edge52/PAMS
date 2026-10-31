@@ -57,3 +57,13 @@ describe("illustrative fit-out", () => {
     expect(codes("CORRIDOR", "GEN")).toEqual([]);
   });
 });
+
+describe("cleanCadText", () => {
+  it("drops DWG multiline-text formatting codes", async () => {
+    const { cleanCadText } = await import("./cad");
+    expect(cleanCadText("\\pxqc;ORTHOTIC & PROTHESIS")).toBe("ORTHOTIC & PROTHESIS");
+    expect(cleanCadText("SHOCKWAVE \\pxqc;ROOM")).toBe("SHOCKWAVE ROOM");
+    expect(cleanCadText("{\\fArial|b1;ICU}\\PBAY 3")).toBe("ICU BAY 3");
+    expect(cleanCadText("Plain  name ")).toBe("Plain name");
+  });
+});

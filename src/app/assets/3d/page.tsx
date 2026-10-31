@@ -46,7 +46,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
   const group = alias(deviceTypes, "grp"), cat = alias(deviceTypes, "cat");
   const assetRows = await db.select({
     id: assets.id, tag: assets.assetTag, deviceType: deviceTypes.name, category: sql<string>`coalesce(${cat.name}, ${group.name}, ${deviceTypes.name})`,
-    categoryCode: sql<string>`coalesce(${cat.code}, ${group.code}, ${deviceTypes.code})`, status: assets.status, criticality: assets.criticality,
+    categoryCode: sql<string>`coalesce(${cat.code}, ${group.code}, ${deviceTypes.code})`, groupCode: sql<string | null>`case when ${cat.code} is null then null else ${group.code} end`, status: assets.status, criticality: assets.criticality,
     roomId: assets.roomId, posX: assets.posX, posY: assets.posY, manufacturer: assets.manufacturer, model: assets.model, serial: assets.serialNumber,
   }).from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
     .leftJoin(group, eq(group.id, deviceTypes.parentId)).leftJoin(cat, eq(cat.id, group.parentId))
@@ -54,6 +54,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
 
   const data: TwinData = {
     facility,
+    can: { report: can(me.role, "workorders.report"), move: can(me.role, "assets.move"), maintain: can(me.role, "maintenance.edit"), addAsset: can(me.role, "assets.edit") },
     facilities: facs.map((f) => ({ id: f.id, name: f.name })),
     floors: floorRows.map(({ f, buildingName, hasCad }) => ({
       id: f.id, name: floorRows.filter((x) => x.f.level === f.level).length > 1 ? `${buildingName}, ${f.name}` : f.name, level: f.level, buildingName,
