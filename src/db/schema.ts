@@ -72,6 +72,9 @@ export const assetCondition = pgEnum("asset_condition", ["NEW", "GOOD", "FAIR", 
 export const criticality = pgEnum("criticality", ["LIFE_SUPPORT", "HIGH", "MEDIUM", "LOW"]);
 export const maintenanceType = pgEnum("maintenance_type", ["PPM", "CORRECTIVE", "CALIBRATION", "INSPECTION", "SAFETY_TEST"]);
 export const maintenanceStatus = pgEnum("maintenance_status", ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "OVERDUE"]);
+// added in wave 3 (work orders)
+export const workOrderStatus = pgEnum("work_order_status", ["OPEN", "ASSIGNED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CLOSED", "CANCELLED"]);
+export const workOrderPriority = pgEnum("work_order_priority", ["URGENT", "HIGH", "NORMAL", "LOW"]);
 
 /* ───────────────────────────── People ───────────────────────────── */
 
@@ -135,7 +138,7 @@ export const floors = pgTable("floors", {
   /** Logical canvas size for room polygons / asset pins (units are arbitrary, e.g. 1000 × 600). */
   planWidth: integer("plan_width").notNull().default(1000),
   planHeight: integer("plan_height").notNull().default(600),
-  /** Height of the finished floor above the building's reference level, in metres (3D view). Null → level × 4.5 m. */
+  /** Height of the finished floor above the building's reference level, in metres (3D view). Null → level × 5 m. */
   elevation: real("elevation"),
   /** Plan units per metre. 10 when imported from CAD (1 unit = 100 mm); hand-drawn plans use arbitrary units. */
   unitsPerMetre: real("units_per_metre"),
@@ -579,6 +582,52 @@ export const maintenanceEvents = pgTable("maintenance_events", {
   createdAt: createdAt(),
 }, (t) => [index("maintenance_asset_idx").on(t.assetId)]);
 
+/**
+ * Work order: a fault report or a job on one asset, from report to sign-off (wave 3).
+ * OPEN → ASSIGNED → IN_PROGRESS ⇄ ON_HOLD → COMPLETED → CLOSED, or CANCELLED. Rules live in src/lib/assets/work-orders.ts.
+ * Completing one writes a maintenance_events row so the maintenance history and PPM due dates stay in one place.
+ */
+export const workOrders = pgTable("work_orders", {
+  id: serial("id").primaryKey(),
+  number: varchar("number", { length: 24 }).notNull().unique(),       // WO-2026-0001
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id),
+  type: maintenanceType("type").notNull().default("CORRECTIVE"),
+  priority: workOrderPriority("priority").notNull().default("NORMAL"),
+  status: workOrderStatus("status").notNull().default("OPEN"),
+  title: text("title").notNull(),
+  description: text("description"),
+  /** The device can't be used while this is open — counts as downtime. */
+  deviceDown: boolean("device_down").notNull().default(false),
+  reportedById: integer("reported_by_id").references(() => users.id, { onDelete: "set null" }),
+  reportedByName: text("reported_by_name"),
+  reporterContact: text("reporter_contact"),
+  assignedToId: integer("assigned_to_id").references(() => users.id, { onDelete: "set null" }),
+  reportedAt: timestamp("reported_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Response target from the priority (URGENT 4 h … LOW 7 days). */
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  assignedAt: timestamp("assigned_at", { withTimezone: true }),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  downtimeStart: timestamp("downtime_start", { withTimezone: true }),
+  downtimeEnd: timestamp("downtime_end", { withTimezone: true }),
+  holdReason: text("hold_reason"),
+  resolution: text("resolution"),
+  rootCause: text("root_cause"),
+  laborHours: real("labor_hours"),
+  cost: money("cost"),
+  currency: varchar("currency", { length: 3 }),
+  maintenanceEventId: integer("maintenance_event_id").references(() => maintenanceEvents.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index("work_orders_asset_idx").on(t.assetId),
+  index("work_orders_status_idx").on(t.status),
+  index("work_orders_assignee_idx").on(t.assignedToId),
+  index("work_orders_facility_idx").on(t.facilityId),
+]);
+
 /* ───────────────────── Documents & activity log ───────────────────── */
 
 /** Generic attachment for any entity (offer PDFs, datasheets, PO scans, certificates...). */
@@ -860,7 +909,7 @@ export const assetsRelations = relations(assets, ({ one, many }) => ({
   poLine: one(poLines, { fields: [assets.poLineId], references: [poLines.id] }),
   parent: one(assets, { fields: [assets.parentAssetId], references: [assets.id], relationName: "components" }),
   components: many(assets, { relationName: "components" }),
-  movements: many(assetMovements), maintenance: many(maintenanceEvents),
+  movements: many(assetMovements), maintenance: many(maintenanceEvents), workOrders: many(workOrders),
 }));
 export const assetMovementsRelations = relations(assetMovements, ({ one }) => ({
   asset: one(assets, { fields: [assetMovements.assetId], references: [assets.id] }),
@@ -870,4 +919,9 @@ export const assetMovementsRelations = relations(assetMovements, ({ one }) => ({
 export const maintenanceEventsRelations = relations(maintenanceEvents, ({ one }) => ({
   asset: one(assets, { fields: [maintenanceEvents.assetId], references: [assets.id] }),
   vendor: one(suppliers, { fields: [maintenanceEvents.vendorId], references: [suppliers.id] }),
+}));
+export const workOrdersRelations = relations(workOrders, ({ one }) => ({
+  asset: one(assets, { fields: [workOrders.assetId], references: [assets.id] }),
+  facility: one(facilities, { fields: [workOrders.facilityId], references: [facilities.id] }),
+  maintenanceEvent: one(maintenanceEvents, { fields: [workOrders.maintenanceEventId], references: [maintenanceEvents.id] }),
 }));

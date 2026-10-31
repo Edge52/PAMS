@@ -3,7 +3,7 @@
  *               npm run db:seed -- --reset → wipe ALL tables first
  *               npm run db:reset -- --only=facility,boq → reset, reference data, then only the listed module seeds
  *
- * Order: reference (lead) → users (demo accounts) → facility (assets agent) → boq (boq agent) → procurement (procurement agent) → assets (assets agent).
+ * Order: reference → users (demo accounts) → facility → boq → procurement → assets → cad → approvals → workorders.
  * Each module seed lives in scripts/seed/<name>.ts and exports `default async function seed(db: DB): Promise<void>`.
  * Missing module files are skipped, so the runner works while modules are still being built.
  */
@@ -115,7 +115,7 @@ export async function runSeed(opts: { reset?: boolean; only?: string[] | null } 
     const m = (await import(policies)) as { ensureDefaultPolicies: (d: DB) => Promise<void> };
     await m.ensureDefaultPolicies(db);
   }
-  for (const name of ["users", "facility", "boq", "procurement", "assets", "cad", "approvals"]) {
+  for (const name of ["users", "facility", "boq", "procurement", "assets", "cad", "approvals", "workorders"]) {
     if (opts.only && !opts.only.includes(name)) continue;
     const file = path.join(__dirname, "seed", `${name}.ts`);
     if (!existsSync(file)) { console.log(`${name}: no seed file yet, skipped`); continue; }

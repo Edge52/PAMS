@@ -5,6 +5,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import {
   assetMovements, assets, buildings, departments, deviceTypes, facilities, floors, maintenanceEvents, offers, poLines, projects, purchaseOrders, rooms, suppliers,
+  users, workOrders,
 } from "@/db/schema";
 import { Badge, Button, Details, Field, FormGrid, Input, LinkButton, PageHeader, Panel, StatusBadge, Textarea } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents-panel";
@@ -14,7 +15,8 @@ import { MiniMap } from "@/components/assets/mini-map";
 import { ASSET_CONDITIONS, ASSET_STATUSES, MAINTENANCE_TYPES } from "@/lib/assets/filters";
 import { displayEventStatus, dueState, lifecycle, nextPpmDue, warrantyState, maintenanceTypeLabel } from "@/lib/assets/maintenance";
 import { cat, grp, locationTree, miniMapData } from "@/lib/assets/queries";
-import { CURRENCIES, formatDate, formatMoney, formatNumber, todayISO } from "@/lib/format";
+import { isActive, isLate } from "@/lib/assets/work-orders";
+import { CURRENCIES, formatDate, formatDateTime, formatMoney, formatNumber, todayISO } from "@/lib/format";
 import { getActivity } from "@/lib/server-utils";
 import { humanize } from "@/lib/status";
 import { can } from "@/lib/auth/permissions";
@@ -31,6 +33,7 @@ const fromDept = alias(departments, "from_dept");
 const toDept = alias(departments, "to_dept");
 const poSupplier = alias(suppliers, "po_supplier");
 const parent = alias(assets, "parent");
+const woAssignee = alias(users, "wo_assignee");
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const me = await requirePermission("assets.view");
@@ -63,9 +66,10 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   await requireFacilityAccess(a.asset.facilityId, me);
   const x = a.asset;
   const canEdit = can(me.role, "assets.edit"), canMove = can(me.role, "assets.move"), canMaint = can(me.role, "maintenance.edit");
+  const canReport = can(me.role, "workorders.report");
   const today = todayISO();
 
-  const [trail, events, moves, components, activity, tree, vendors, mini] = await Promise.all([
+  const [trail, events, moves, components, activity, tree, vendors, mini, jobs] = await Promise.all([
     x.poLineId ? db.select({
       poId: purchaseOrders.id, poNumber: purchaseOrders.number, poStatus: purchaseOrders.status, issueDate: purchaseOrders.issueDate, unitPrice: poLines.unitPrice, currency: purchaseOrders.currency,
       offerId: offers.id, offerRef: offers.reference, projectId: projects.id, projectCode: projects.code, projectTitle: projects.title,
@@ -85,7 +89,11 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
     locationTree(x.facilityId, null), // access to this facility was checked above
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(eq(suppliers.active, true)).orderBy(asc(suppliers.name)),
     a.floorId ? miniMapData(a.floorId) : Promise.resolve(null),
+    db.select({ wo: workOrders, assigneeName: woAssignee.name }).from(workOrders).leftJoin(woAssignee, eq(woAssignee.id, workOrders.assignedToId))
+      .where(eq(workOrders.assetId, assetId)).orderBy(desc(workOrders.reportedAt)).limit(20),
   ]);
+  const openJobs = jobs.filter((j) => isActive(j.wo.status));
+  const nowTs = new Date();
   const po = trail[0];
 
   const w = warrantyState(x.warrantyEnd, today);
@@ -103,6 +111,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
         description={<><Link href={`/catalogue/${a.typeCode}`} className="font-semibold text-ink hover:text-primary">{a.typeName}</Link>{x.manufacturer || x.model ? ` · ${[x.manufacturer, x.model].filter(Boolean).join(" ")}` : ""}</>}
         back={{ href: "/assets", label: "Asset register" }}
         actions={<>
+          {canReport && x.status !== "DISPOSED" && <LinkButton href={`/assets/work-orders/new?assetId=${x.id}`} variant="danger">Report a fault</LinkButton>}
           <LinkButton href={`/assets/labels?ids=${x.id}`}>Print label</LinkButton>
           {x.roomId && <LinkButton href={`/assets/3d?facilityId=${x.facilityId}&assetId=${x.id}`}>Show in 3D</LinkButton>}
           {x.roomId && <LinkButton href={`/assets/map?assetId=${x.id}`} variant="primary">Show on floor map</LinkButton>}
@@ -115,6 +124,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
         {x.criticality && <Badge tone={x.criticality === "LIFE_SUPPORT" ? "danger" : "neutral"}>{humanize(x.criticality)} criticality</Badge>}
         {w.state === "EXPIRING" && <Badge tone="warn">Warranty ends in {w.days} days</Badge>}
         {ppmState === "OVERDUE" && <Badge tone="danger">PPM overdue</Badge>}
+        {openJobs.length > 0 && <Badge tone="warn">{openJobs.length} open work order{openJobs.length === 1 ? "" : "s"}</Badge>}
         {life.state === "BEYOND" && <Badge tone="danger">Beyond life expectancy</Badge>}
       </div>
 
@@ -165,6 +175,23 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                 { label: "Part of", value: x.parentAssetId ? <Link href={`/assets/${x.parentAssetId}`} className="font-mono text-primary hover:underline">{a.parentTag}</Link> : null },
                 { label: "Notes", value: x.notes },
               ]} />
+            )}
+          </Panel>
+
+          <Panel title="Work orders" padded={false}
+            actions={<Link href={`/assets/work-orders?tab=all&q=${encodeURIComponent(x.assetTag)}`} className="text-sm text-primary hover:underline">All work orders</Link>}>
+            {jobs.length === 0 ? <p className="p-4 text-sm text-muted">No faults reported.{canReport && x.status !== "DISPOSED" && <> If it stops working, <Link href={`/assets/work-orders/new?assetId=${x.id}`} className="text-primary hover:underline">report a fault</Link>.</>}</p> : (
+              <ul className="divide-y divide-line">
+                {jobs.map(({ wo, assigneeName }) => (
+                  <li key={wo.id} className="flex flex-wrap items-start justify-between gap-2 px-4 py-2 text-sm">
+                    <div className="min-w-0">
+                      <Link href={`/assets/work-orders/${wo.id}`} className="font-semibold text-primary hover:underline">{wo.number}</Link> {wo.title}
+                      <div className="text-xs text-muted">{formatDateTime(wo.reportedAt)} · {wo.reportedByName ?? "—"}{assigneeName && ` · assigned to ${assigneeName}`}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-1"><StatusBadge value={wo.priority} /><StatusBadge value={wo.status} />{isLate(wo, nowTs) && <Badge tone="danger">Late</Badge>}</div>
+                  </li>
+                ))}
+              </ul>
             )}
           </Panel>
 

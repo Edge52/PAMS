@@ -7,7 +7,7 @@ import { pendingForUser } from "@/lib/approvals/server";
 import { db } from "@/db";
 import {
   activityLog, assets, boqs, facilities, floors, buildings, maintenanceEvents, offers, poLines,
-  projects, purchaseOrders, rooms,
+  projects, purchaseOrders, rooms, workOrders,
 } from "@/db/schema";
 import { EmptyState, Panel, PageHeader, LinkButton, Stat, StatusBadge, Table, THead, Th, Td } from "@/components/ui";
 import { addDaysISO, addMonthsISO, daysUntil, formatDate, formatMoney, formatNumber, num, todayISO } from "@/lib/format";
@@ -21,6 +21,7 @@ const PRE_AWARD: readonly string[] = ["PLANNING", "SPECIFICATION", "RFQ", "EVALU
 const ENTITY_HREF: Record<string, (id: number) => string> = {
   asset: (id) => `/assets/${id}`, offer: (id) => `/procurement/offers/${id}`, po: (id) => `/procurement/purchase-orders/${id}`,
   project: (id) => `/procurement/${id}`, supplier: (id) => `/procurement/suppliers/${id}`, boq: (id) => `/boq/${id}`,
+  work_order: (id) => `/assets/work-orders/${id}`,
 };
 
 export default async function Dashboard() {
@@ -71,6 +72,18 @@ export default async function Dashboard() {
     db.select().from(activityLog).where(scope === null ? undefined : eq(activityLog.actor, me.name)).orderBy(desc(activityLog.at)).limit(10),
   ]);
 
+  // Jobs for me: open work orders assigned to me, and for whoever assigns jobs, faults nobody has picked up yet.
+  const canAssignJobs = can(me.role, "workorders.assign");
+  const jobFilter = canAssignJobs
+    ? or(and(eq(workOrders.assignedToId, me.id), inArray(workOrders.status, ["ASSIGNED", "IN_PROGRESS", "ON_HOLD"])), eq(workOrders.status, "OPEN"))
+    : and(eq(workOrders.assignedToId, me.id), inArray(workOrders.status, ["ASSIGNED", "IN_PROGRESS", "ON_HOLD"]));
+  const myJobs = can(me.role, "maintenance.edit") || canAssignJobs
+    ? await db.select({ id: workOrders.id, number: workOrders.number, title: workOrders.title, status: workOrders.status, priority: workOrders.priority,
+        reportedAt: workOrders.reportedAt, tag: assets.assetTag })
+      .from(workOrders).innerJoin(assets, eq(assets.id, workOrders.assetId)).where(and(jobFilter, own(workOrders.facilityId)))
+      .orderBy(sql`case ${workOrders.priority} when 'URGENT' then 0 when 'HIGH' then 1 when 'NORMAL' then 2 else 3 end`, workOrders.reportedAt).limit(8)
+    : [];
+
   const total = assetTotals[0]?.n ?? 0;
   const byStatus = Object.fromEntries(statusRows.map((r) => [r.status, r.n]));
   const inService = (byStatus.IN_SERVICE ?? 0) + (byStatus.INSTALLED ?? 0);
@@ -106,6 +119,21 @@ export default async function Dashboard() {
               <li key={w.step.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm">
                 <Link href={w.request.href} className="font-semibold text-primary hover:underline">{w.request.title}</Link>
                 <span className="text-xs text-muted">{w.mode === "paper" ? `Record ${w.step.memberName ?? "member"}'s signature` : w.step.label} · since {formatDate(w.request.requestedAt)}</span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+
+      {myJobs.length > 0 && (
+        <Panel title={canAssignJobs ? "Jobs to assign or work on" : "Jobs assigned to you"} className="mb-6" padded={false}
+          actions={<Link href="/assets/work-orders" className="text-sm font-semibold text-primary hover:underline">All work orders</Link>}>
+          <ul className="divide-y divide-line">
+            {myJobs.map((j) => (
+              <li key={j.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm">
+                <span><Link href={`/assets/work-orders/${j.id}`} className="font-semibold text-primary hover:underline">{j.number}</Link> {j.tag} — {j.title}</span>
+                <span className="flex items-center gap-1"><StatusBadge value={j.priority} /><StatusBadge value={j.status} />
+                  <span className="text-xs text-muted">since {formatDate(j.reportedAt)}</span></span>
               </li>
             ))}
           </ul>

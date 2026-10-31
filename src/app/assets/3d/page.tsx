@@ -13,7 +13,8 @@ import { scopeWhere } from "@/lib/assets/access";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "3D view" };
 
-const FLOOR_TO_FLOOR_M = 4.5;
+/** Floor-to-floor height when a floor has no stored elevation (La Plaza: 5 m). */
+const FLOOR_TO_FLOOR_M = 5;
 
 export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string }> }) {
   const me = await requirePermission("assets.view");

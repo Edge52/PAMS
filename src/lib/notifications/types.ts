@@ -18,6 +18,9 @@ export const KIND_LABELS: Record<string, string> = {
   maintenance_due: "Maintenance due",
   maintenance_overdue: "Maintenance overdue",
   acceptance_notice_due: "Acceptance notice due",
+  work_order_reported: "Fault reported",
+  work_order_assigned: "Job assigned",
+  work_order_completed: "Job completed",
   test: "Test",
 };
 

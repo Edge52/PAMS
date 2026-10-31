@@ -11,7 +11,7 @@ from shapely.geometry import Polygon
 # Usage: python3 build.py <floors.json> <work dir with <code>-rooms.json files> <output.json>
 cfg = json.load(open(sys.argv[1])); work = sys.argv[2]; out_path = sys.argv[3]
 FLOORS = [(f["code"], f["name"], f["level"]) for f in cfg["floors"]]
-FLOOR_TO_FLOOR_M = cfg.get("floorToFloorMetres", 4.5)
+FLOOR_TO_FLOOR_M = cfg.get("floorToFloorMetres", 5.0)
 REF = cfg.get("referenceFloor") or FLOORS[0][0]
 UNIT_MM = 100.0  # 1 plan unit = 100 mm → 10 units per metre
 

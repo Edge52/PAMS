@@ -9,8 +9,15 @@ describe("permissions", () => {
   it("every role can read", () => {
     for (const r of ROLES) expect(can(r, "assets.view")).toBe(true);
   });
-  it("viewer can't change anything", () => {
-    expect(permissionsOf("VIEWER").every((p) => p.endsWith(".view"))).toBe(true);
+  it("viewer can't change anything except report a fault", () => {
+    expect(permissionsOf("VIEWER").every((p) => p.endsWith(".view") || p === "workorders.report")).toBe(true);
+  });
+  it("everyone can report a fault; only the biomedical lead and admins assign jobs", () => {
+    for (const r of ROLES) expect(can(r, "workorders.report")).toBe(true);
+    expect(can("BIOMEDICAL", "workorders.assign")).toBe(true);
+    expect(can("ADMIN", "workorders.assign")).toBe(true);
+    expect(can("TECHNICIAN", "workorders.assign")).toBe(false);
+    expect(can("DEPARTMENT_HEAD", "workorders.assign")).toBe(false);
   });
   it("technicians move assets and log maintenance but don't edit them", () => {
     expect(can("TECHNICIAN", "assets.move")).toBe(true);

@@ -147,3 +147,22 @@ Schema is final for 2.1 (migration `0005_release_2_1`). Need a column? Ask the l
 | Notifications & reports | `postgres://postgres@localhost:5433/hpams_review` | 3104 / `.next-notify` |
 | Assets | `postgres://postgres@localhost:5433/hpams_assets` | 3103 / `.next-assets` |
 Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables).
+
+---
+
+# Wave 3 additions
+
+## Work orders (biomedical package, step 1)
+- Routes: `/assets/work-orders` (list + KPIs), `/assets/work-orders/new?assetId=|tag=` (report a fault, phone friendly; the QR label
+  opens `/assets/[id]`, which has a "Report a fault" button), `/assets/work-orders/[id]` (detail and every step).
+- Table `work_orders` (migration `0007_wave3_work_orders`). Rules are pure in `src/lib/assets/work-orders.ts` (status flow, who may
+  do what, response targets, downtime, KPIs, asset status effects); DB helpers in `src/lib/assets/work-order-server.ts`.
+- Permissions: `workorders.report` (every role), `workorders.assign` (admin, biomedical). Working a job needs `maintenance.edit`.
+- Completing a job writes a `maintenance_events` row, so maintenance history and PPM due dates stay in one place.
+- Attachments: entity type `work_order` (edit needs `maintenance.edit`). Activity entity type `work_order`.
+- **Inside a transaction always pass the actor to `logActivity(..., me.name, tx)`.** Without it, `logActivity` looks up the signed-in
+  user through the global `db`, which deadlocks on PGlite's single connection.
+
+## Building heights
+- La Plaza floors are 5 m floor to floor (`seed-data/cad/la-plaza.json`, `tools/cad/floors.json`; migration 0007 moves floors still on
+  the old 4.5 m spacing). The 3D view draws walls 3.3 m high (`WALL_HEIGHT` in `src/components/assets/twin/scene.ts`).

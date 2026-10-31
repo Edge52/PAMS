@@ -12,7 +12,7 @@ import { requireDocumentEdit } from "./documents-access";
 import { logActivity } from "./server-utils";
 import { ALLOWED_EXTENSIONS_LABEL, fileKind, storeFile } from "./storage";
 
-const ENTITY_TYPES = ["offer", "po", "asset", "spec", "supplier", "project", "delivery", "boq", "rfq"] as const;
+const ENTITY_TYPES = ["offer", "po", "asset", "spec", "supplier", "project", "delivery", "boq", "rfq", "work_order"] as const;
 const MAX_BYTES = 25 * 1024 * 1024;
 
 export type UploadState = { error?: string; ok?: string } | null;

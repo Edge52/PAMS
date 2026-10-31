@@ -11,7 +11,8 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { spreadInRoom, wallsFromRooms, type Pt } from "./geometry";
 import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinRoom } from "./types";
 
-const WALL_HEIGHT = 3.0;
+/** Drawn wall height in metres (clear height below the ceiling after MEP; floors sit 5 m apart). */
+const WALL_HEIGHT = 3.3;
 const DEVICE_HEIGHT = 1.3;
 
 type FloorView = {

@@ -19,7 +19,7 @@ export function DocumentUploadForm({ entityType, entityId, returnPath, kinds }: 
         <input ref={fileRef} type="file" name="file" required aria-label="File to attach"
           accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,.dwg,.dxf,.msg,.eml"
           className="max-w-full text-sm file:mr-2 file:rounded file:border file:border-line file:bg-surface file:px-2 file:py-1" />
-        <Select name="kind" options={kinds} defaultValue="quotation" className="w-auto" aria-label="Document type" />
+        <Select name="kind" options={kinds} defaultValue={kinds[0]?.value} className="w-auto" aria-label="Document type" />
         <Button variant="secondary" disabled={pending}>{pending ? "Attaching…" : "Attach file"}</Button>
       </div>
       {state?.error && <p role="alert" className="text-sm text-danger">{state.error}</p>}

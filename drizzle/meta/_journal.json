@@ -50,6 +50,13 @@
       "when": 1793318477878,
       "tag": "0006_approvals_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793477248095,
+      "tag": "0007_wave3_work_orders",
+      "breakpoints": true
     }
   ]
 }

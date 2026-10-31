@@ -20,6 +20,8 @@ const map: Record<string, Tone> = {
   LIFE_SUPPORT: "danger", HIGH: "warn", MEDIUM: "info", LOW: "neutral",
   // maintenance
   SCHEDULED: "info", IN_PROGRESS: "warn", COMPLETED: "ok", OVERDUE: "danger",
+  // work orders (IN_PROGRESS, COMPLETED, CLOSED, CANCELLED, HIGH and LOW above)
+  OPEN: "danger", ASSIGNED: "info", ON_HOLD: "warn", URGENT: "danger", NORMAL: "info",
 };
 
 export function statusTone(value: string | null | undefined): Tone {

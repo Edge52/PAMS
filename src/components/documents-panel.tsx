@@ -9,8 +9,10 @@ const KINDS = [
   { value: "compliance", label: "Compliance statement" }, { value: "certificate", label: "Certificate (CE/FDA/ISO)" },
   { value: "po_scan", label: "Signed PO" }, { value: "delivery_note", label: "Delivery note" },
   { value: "invoice", label: "Invoice" }, { value: "manual", label: "Manual" }, { value: "photo", label: "Photo" },
+  { value: "service_report", label: "Service report" },
   { value: "other", label: "Other" },
 ];
+const byValue = (vs: string[]) => vs.map((v) => KINDS.find((k) => k.value === v)!).filter(Boolean);
 
 function size(bytes: number | null) {
   if (!bytes) return "";
@@ -18,14 +20,19 @@ function size(bytes: number | null) {
 }
 
 /** Server component: lists attachments and offers an upload form. */
-export async function DocumentsPanel({ entityType, entityId, returnPath, title = "Documents" }: {
+export async function DocumentsPanel({ entityType, entityId, returnPath, title = "Documents", kinds, emptyHint }: {
   entityType: string; entityId: number; returnPath: string; title?: string;
+  /** Document kinds offered on upload, first one preselected (default: every kind, quotation first). */
+  kinds?: string[];
+  /** What to attach, shown when nothing is attached yet. */
+  emptyHint?: string;
 }) {
+  const offered = kinds ? byValue(kinds) : KINDS;
   const [docs, canEdit] = await Promise.all([listDocuments(entityType, entityId), canEditDocuments(entityType)]);
   return (
     <Panel title={title}>
       {docs.length === 0 ? (
-        <p className="mb-3 text-sm text-muted">{canEdit ? "No files attached yet. Attach the quotation, datasheets or certificates below." : "No files attached yet."}</p>
+        <p className="mb-3 text-sm text-muted">{canEdit ? `No files attached yet. ${emptyHint ?? "Attach the quotation, datasheets or certificates below."}` : "No files attached yet."}</p>
       ) : (
         <ul className="mb-4 divide-y divide-line">
           {docs.map((d) => (
@@ -45,7 +52,7 @@ export async function DocumentsPanel({ entityType, entityId, returnPath, title =
           ))}
         </ul>
       )}
-      {canEdit && <DocumentUploadForm entityType={entityType} entityId={entityId} returnPath={returnPath} kinds={KINDS} />}
+      {canEdit && <DocumentUploadForm entityType={entityType} entityId={entityId} returnPath={returnPath} kinds={offered} />}
     </Panel>
   );
 }

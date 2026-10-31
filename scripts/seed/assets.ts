@@ -298,7 +298,7 @@ export default async function seed(db: DB) {
   }
 
   // Maintenance history: last two completed PPMs per asset; ~1 in 7 skipped its latest PPM (→ overdue);
-  // upcoming PPMs in the next 45 days are scheduled; faults have corrective work orders.
+  // upcoming PPMs in the next 45 days are scheduled. Faulty devices get their work orders in scripts/seed/workorders.ts.
   const events: (typeof maintenanceEvents.$inferInsert)[] = [];
   const techs = ["Ahmed Samir (BME)", "Mona Farouk (BME)", "Karim Adel (BME)", "Vendor field engineer"];
   for (const c of created) {
@@ -319,13 +319,6 @@ export default async function seed(db: DB) {
     if (typeById.get(c.typeId)?.calib && cycles.length && c.idx % 3 === 0) {
       const d = cycles[cycles.length - 1];
       events.push({ assetId: c.id, type: "CALIBRATION", status: "COMPLETED", scheduledDate: d, completedDate: d, performedBy: "Vendor field engineer", cost: "350.00", currency: "USD", findings: "Calibrated against reference; within tolerance." });
-    }
-    if (c.status === "UNDER_MAINTENANCE") {
-      events.push({ assetId: c.id, type: "CORRECTIVE", status: "IN_PROGRESS", scheduledDate: addDays(TODAY, -4), performedBy: "Vendor field engineer",
-        findings: "Reported fault during use. Unit tagged out; diagnosis in progress, spare part on order." });
-    }
-    if (c.status === "OUT_OF_SERVICE") {
-      events.push({ assetId: c.id, type: "CORRECTIVE", status: "SCHEDULED", scheduledDate: addDays(TODAY, 6), findings: "Awaiting replacement part from the vendor." });
     }
   }
   for (let i = 0; i < events.length; i += 500) await db.insert(maintenanceEvents).values(events.slice(i, i + 500));

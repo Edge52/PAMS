@@ -56,6 +56,14 @@ export function todayISO(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
+/** Timestamps in the hospital's time zone: Date → "27 Oct 2026, 14:05". */
+export function formatDateTime(v: string | Date | null | undefined): string {
+  if (!v) return "—";
+  const d = typeof v === "string" ? new Date(v) : v;
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-GB", { timeZone: APP_TIME_ZONE, day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 /** Add months to a YYYY-MM-DD date, clamping to the end of the month (31 Aug + 6 → 28/29 Feb, not 3 Mar). */
 export function addMonthsISO(iso: string, months: number): string {
   const d = new Date(iso.slice(0, 10) + "T00:00:00Z");

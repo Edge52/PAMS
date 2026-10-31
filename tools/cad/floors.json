@@ -2,7 +2,7 @@
   "building": "La Plaza Hospital",
   "facilityCode": "LPH",
   "output": "seed-data/cad/la-plaza.json",
-  "floorToFloorMetres": 4.5,
+  "floorToFloorMetres": 5.0,
   "referenceFloor": "GR",
   "floors": [
     { "code": "B2", "name": "Basement 2", "level": -2, "file": "SKT-LP-101-T-Basement 2 Floor Plan.dwg" },

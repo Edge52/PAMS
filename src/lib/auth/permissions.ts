@@ -27,12 +27,14 @@ export const PERMISSIONS = [
   "procurement.edit", "specs.edit", "suppliers.edit", "offers.edit", "award.recommend", "po.create", "po.issue", "goods.receive",
   // assets
   "assets.edit", "assets.move", "maintenance.edit", "facilities.edit", "catalogue.edit",
+  // work orders (wave 3): anyone signed in can report a fault; assigning and signing off is for the biomedical lead
+  "workorders.report", "workorders.assign",
   // admin
   "users.manage", "settings.manage",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
-const VIEW: Permission[] = ["boq.view", "procurement.view", "assets.view", "reports.view"];
+const VIEW: Permission[] = ["boq.view", "procurement.view", "assets.view", "reports.view", "workorders.report"];
 
 const MATRIX: Record<Role, readonly Permission[]> = {
   ADMIN: PERMISSIONS,
@@ -40,7 +42,7 @@ const MATRIX: Record<Role, readonly Permission[]> = {
   PROCUREMENT: [...VIEW, "procurement.edit", "specs.edit", "suppliers.edit", "offers.edit", "award.recommend", "po.create", "po.issue", "goods.receive"],
   FINANCE: [...VIEW],
   PLANNER: [...VIEW, "boq.edit", "standards.edit"],
-  BIOMEDICAL: [...VIEW, "boq.edit", "specs.edit", "goods.receive", "assets.edit", "assets.move", "maintenance.edit", "facilities.edit", "catalogue.edit"],
+  BIOMEDICAL: [...VIEW, "boq.edit", "specs.edit", "goods.receive", "assets.edit", "assets.move", "maintenance.edit", "facilities.edit", "catalogue.edit", "workorders.assign"],
   TECHNICIAN: [...VIEW, "assets.move", "maintenance.edit"],
   DEPARTMENT_HEAD: [...VIEW],
   VIEWER: [...VIEW],
@@ -66,5 +68,6 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "po.issue": "issue purchase orders", "goods.receive": "receive goods",
   "assets.edit": "edit assets", "assets.move": "move assets", "maintenance.edit": "record maintenance",
   "facilities.edit": "edit facilities and rooms", "catalogue.edit": "edit the device catalogue",
+  "workorders.report": "report faults", "workorders.assign": "assign and sign off work orders",
   "users.manage": "manage users", "settings.manage": "change settings",
 };
