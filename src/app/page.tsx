@@ -98,7 +98,7 @@ export default async function Dashboard() {
         title="Dashboard"
         description="Tenders in flight, equipment on every floor, and what needs attention this week."
         actions={<>
-          {can(me.role, "boq.edit") && <LinkButton href="/boq/new">New BOQ</LinkButton>}
+          {can(me.role, "boq.edit") && <LinkButton href="/boq/quick-start">BOQ quick start</LinkButton>}
           {can(me.role, "procurement.edit") && <LinkButton href="/procurement/new" variant="primary">New project</LinkButton>}
         </>}
       />

@@ -45,11 +45,12 @@ export default async function BoqListPage({ searchParams }: { searchParams: Prom
         description="Bills of quantities generated from standard ratios — per department, priced, and ready to attach to a tender."
         actions={<>
           <LinkButton href="/boq/standards">Standards & ratios</LinkButton>
-          {mayEdit && <LinkButton href="/boq/new" variant="primary">New BOQ</LinkButton>}
+          {mayEdit && <LinkButton href="/boq/new">New BOQ</LinkButton>}
+          {mayEdit && <LinkButton href="/boq/quick-start" variant="primary">Quick start</LinkButton>}
         </>} />
       <Notice notice={sp.notice} error={sp.error} />
       {rows.length === 0 ? (
-        <EmptyState title="No BOQs yet" action={mayEdit ? <LinkButton href="/boq/new" variant="primary">Create your first BOQ</LinkButton> : undefined}>
+        <EmptyState title="No BOQs yet" action={mayEdit ? <LinkButton href="/boq/quick-start" variant="primary">Start with a few questions</LinkButton> : undefined}>
           Pick a standard set, describe the departments (or import them from a facility) and the quantities are worked out for you.
         </EmptyState>
       ) : (

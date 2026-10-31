@@ -15,6 +15,9 @@ describe("throughput rules", () => {
     expect(l.calculatedQty).toBe(2);
     expect(l.explanation).toBe("18,000 CT exams a year × 1 per 15,000 = 1.2, rounded up → 2");
   });
+  it("plan none when the answer is 0, whatever the minimum", () => {
+    expect(generateLines({ ...base, rules: [rule({ param: "mriExams", paramRatio: 1 / 6000 })], departments: [{ ...rad, params: { mriExams: 0 } }] })).toEqual([]);
+  });
   it("fall back to the basis when the question isn't answered", () => {
     const [l] = generateLines({ ...base, rules: [rule({ param: "ctExams", paramRatio: 1 / 15000 })], departments: [rad] });
     expect(l.calculatedQty).toBe(1); // 200 beds × 1 per 250 = 0.8 → 1
@@ -98,7 +101,7 @@ describe("price tiers", () => {
 describe("form input", () => {
   it("keeps only known features and answers", () => {
     expect(cleanFeatures(["trauma", "hack", "trauma"])).toEqual(["trauma"]);
-    expect(cleanParams("RAD", { ctExams: "18000", mriExams: "", bogus: 5, xrayExams: "-3" })).toEqual({ ctExams: 18000 });
+    expect(cleanParams("RAD", { ctExams: "18000", mriExams: "", bogus: 5, xrayExams: "-3", usExams: "0" })).toEqual({ ctExams: 18000, usExams: 0 });
     expect(cleanParams("OPD", { ctExams: 1 })).toEqual({});
   });
 });

@@ -178,7 +178,9 @@ export interface QuantityResult {
  */
 export function calculateQuantity(rule: RuleInput, dept: DepartmentInput, hospitalBeds: number): QuantityResult {
   const answer = rule.param ? dept.params?.[rule.param] : undefined;
-  if (rule.param && rule.paramRatio != null && rule.paramRatio > 0 && answer != null && answer > 0) {
+  if (rule.param && rule.paramRatio != null && rule.paramRatio > 0 && answer != null && answer >= 0) {
+    // An explicit 0 means "none planned" (e.g. no MRI service): no line, whatever the minimum.
+    if (answer === 0) return { perInstance: 0, qty: 0, explanation: `No ${paramUnit(rule.param, dept.departmentTypeCode)} planned` };
     return throughputQuantity(rule, dept, answer);
   }
   const ratio = rule.ratio;

@@ -113,7 +113,7 @@ export function ScopeTab({ ws, locked, deptTypes, facilities, projects, realDepa
 
       {depts.some((d) => DEPARTMENT_QUESTIONS[d.departmentTypeCode]) && (
         <Panel title="Planning questions">
-          <p className="mb-3 text-sm text-muted">Throughput sizes the big items more accurately than beds alone (e.g. one CT per 15,000 exams a year). Leave blank to use the bed and room ratios. Regenerate after saving.</p>
+          <p className="mb-3 text-sm text-muted">Throughput sizes the big items more accurately than beds alone (e.g. one CT per 15,000 exams a year). Leave blank to use the bed and room ratios; enter 0 for a service you won&apos;t offer. Regenerate after saving.</p>
           <div className="space-y-4">
             {depts.filter((d) => DEPARTMENT_QUESTIONS[d.departmentTypeCode]).map((d) => (
               <form key={d.id} action={saveDepartmentAnswers} className="rounded-[var(--radius-control)] border border-line p-3">

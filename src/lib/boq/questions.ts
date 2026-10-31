@@ -50,12 +50,13 @@ export function cleanFeatures(list: readonly string[]): FeatureKey[] {
   return [...new Set(list)].filter((k): k is FeatureKey => known.has(k));
 }
 
-/** Keep only known, non-negative whole answers for a department type (form input). */
+/** Keep only known, non-negative whole answers for a department type (form input). 0 means "none planned". */
 export function cleanParams(departmentTypeCode: string, raw: Record<string, unknown>): Record<string, number> {
   const out: Record<string, number> = {};
   for (const q of DEPARTMENT_QUESTIONS[departmentTypeCode] ?? []) {
     const v = Number(raw[q.key]);
-    if (raw[q.key] !== undefined && raw[q.key] !== "" && Number.isFinite(v) && v > 0) out[q.key] = Math.min(Math.round(v), 10_000_000);
+    // Blank = not answered (the bed/room ratio applies); 0 = none planned.
+    if (raw[q.key] !== undefined && raw[q.key] !== "" && raw[q.key] !== null && Number.isFinite(v) && v >= 0) out[q.key] = Math.min(Math.round(v), 10_000_000);
   }
   return out;
 }
