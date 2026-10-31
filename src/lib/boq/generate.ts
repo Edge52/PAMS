@@ -11,7 +11,7 @@ import {
   generateLines, HOSPITAL_WIDE, mergeRegeneration, needsHospitalWideDepartment, summarizeMerge,
   type CompanionInput, type ExistingLine, type MergePlan, type RuleInput, type Tier,
 } from "./engine";
-import { tierPriceUsd, type PriceTier } from "./pricing";
+import { effectiveTier, tierPriceUsd, type PriceTier } from "./pricing";
 
 /** Signature of convert() from @/lib/server-utils — injected so this module stays free of server-only imports. */
 export type ConvertFn = (amount: number, from: string, to: string) => Promise<number | null>;
@@ -170,4 +170,35 @@ export async function regenerateBoq(d: DB, boqId: number, convert: ConvertFn): P
   });
   if (createdHospitalWide) summary = `Added a "Hospital-wide (shared)" department for hospital-level rules.\n${summary}`;
   return { plan, summary, createdHospitalWide };
+}
+
+/**
+ * Reprice lines at their tier (line → department → BOQ) from the catalogue bands, converted to the BOQ currency.
+ * Lines with a hand-typed price, or whose device has no band, are left alone. Returns how many prices changed.
+ */
+export async function repriceBoqLines(d: DB, boqId: number, convert: ConvertFn, only: { deptId?: number; lineId?: number } = {}): Promise<{ changed: number; kept: number; noBand: number }> {
+  const [boq] = await d.select().from(boqs).where(eq(boqs.id, boqId));
+  if (!boq) return { changed: 0, kept: 0, noBand: 0 };
+  const depts = new Map((await d.select({ id: boqDepartments.id, tier: boqDepartments.priceTier }).from(boqDepartments).where(eq(boqDepartments.boqId, boqId))).map((x) => [x.id, x.tier]));
+  const lines = (await d.select().from(boqLines).where(eq(boqLines.boqId, boqId)))
+    .filter((l) => (only.deptId == null || l.boqDepartmentId === only.deptId) && (only.lineId == null || l.id === only.lineId));
+  if (!lines.length) return { changed: 0, kept: 0, noBand: 0 };
+  const bands = new Map((await d.select({ id: deviceTypes.id, min: deviceTypes.priceMinUsd, max: deviceTypes.priceMaxUsd }).from(deviceTypes)
+    .where(inArray(deviceTypes.id, [...new Set(lines.map((l) => l.deviceTypeId))]))).map((x) => [x.id, x]));
+  const rate = boq.currency === "USD" ? 1 : await convert(1, "USD", boq.currency);
+  let changed = 0, kept = 0, noBand = 0;
+  await d.transaction(async (tx) => {
+    for (const l of lines) {
+      if (l.priceManual) { kept++; continue; }
+      const t = effectiveTier(l.priceTier as PriceTier | null, (l.boqDepartmentId != null ? depts.get(l.boqDepartmentId) : null) as PriceTier | null, boq.priceTier as PriceTier);
+      const usd = tierPriceUsd(bands.get(l.deviceTypeId)?.min, bands.get(l.deviceTypeId)?.max, t);
+      if (usd === null || rate === null) { noBand++; continue; }
+      const price = (Math.round(usd * rate * 100) / 100).toFixed(2);
+      if (price === l.unitPriceEstimate) continue;
+      await tx.update(boqLines).set({ unitPriceEstimate: price }).where(eq(boqLines.id, l.id));
+      changed++;
+    }
+    if (changed) await tx.update(boqs).set({ updatedAt: new Date() }).where(eq(boqs.id, boqId));
+  });
+  return { changed, kept, noBand };
 }

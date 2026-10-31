@@ -10,11 +10,12 @@ import { computeTotals } from "./pricing";
 
 export type DeviceTypeRow = typeof deviceTypes.$inferSelect;
 
-export interface DeviceInfo { id: number; code: string; name: string; categoryCode: string; categoryName: string; groupName: string | null }
+export interface DeviceInfo { id: number; code: string; name: string; categoryCode: string; categoryName: string; groupName: string | null; priceMinUsd: string | null; priceMaxUsd: string | null }
 
 /** All device types with their level-1 category resolved (the taxonomy is small: tens to hundreds of rows). */
 export async function deviceCatalogue(): Promise<Map<number, DeviceInfo>> {
-  const rows = await db.select({ id: deviceTypes.id, code: deviceTypes.code, name: deviceTypes.name, parentId: deviceTypes.parentId, level: deviceTypes.level })
+  const rows = await db.select({ id: deviceTypes.id, code: deviceTypes.code, name: deviceTypes.name, parentId: deviceTypes.parentId, level: deviceTypes.level,
+    min: deviceTypes.priceMinUsd, max: deviceTypes.priceMaxUsd })
     .from(deviceTypes);
   const byId = new Map(rows.map((r) => [r.id, r]));
   const out = new Map<number, DeviceInfo>();
@@ -27,7 +28,7 @@ export async function deviceCatalogue(): Promise<Map<number, DeviceInfo>> {
       if (p.level === 2) group = p.name;
       cur = p;
     }
-    out.set(r.id, { id: r.id, code: r.code, name: r.name, categoryCode: cur.code, categoryName: cur.name, groupName: group });
+    out.set(r.id, { id: r.id, code: r.code, name: r.name, categoryCode: cur.code, categoryName: cur.name, groupName: group, priceMinUsd: r.min, priceMaxUsd: r.max });
   }
   return out;
 }
@@ -67,7 +68,7 @@ export async function getBoqWorkspace(id: number) {
     const dev = catalogue.get(l.deviceTypeId);
     return {
       ...l,
-      deviceCode: dev?.code ?? "?", deviceName: dev?.name ?? `Device #${l.deviceTypeId}`,
+      deviceCode: dev?.code ?? "?", deviceName: dev?.name ?? `Device #${l.deviceTypeId}`, priceMinUsd: dev?.priceMinUsd ?? null, priceMaxUsd: dev?.priceMaxUsd ?? null,
       categoryCode: dev?.categoryCode ?? "—", categoryName: dev?.categoryName ?? "Uncategorised",
       amount: Math.round(l.quantity * num(l.unitPriceEstimate) * 100) / 100,
     };

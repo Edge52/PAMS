@@ -9,7 +9,8 @@ import { CURRENCIES, num } from "@/lib/format";
 import { convert, float, int, logActivity, str } from "@/lib/server-utils";
 import { TIERS } from "@/lib/boq/engine";
 import { cleanFeatures, cleanParams, featureLabel, paramUnit } from "@/lib/boq/questions";
-import { defaultUnitPrices, facilityScope as facilityDepartmentScope, regenerateBoq } from "@/lib/boq/generate";
+import { defaultUnitPrices, facilityScope as facilityDepartmentScope, regenerateBoq, repriceBoqLines } from "@/lib/boq/generate";
+import { PRICE_TIER_LABELS, PRICE_TIERS, type PriceTier } from "@/lib/boq/pricing";
 import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { cancelApproval, pendingRequest, startApproval } from "@/lib/approvals/server";
 import { boqTotal } from "@/lib/procurement/tender";
@@ -476,4 +477,57 @@ export async function loadFacilityScope(facilityId: number) {
   const [fac] = await db.select({ totalBeds: facilities.totalBeds }).from(facilities).where(eq(facilities.id, id));
   if (!fac) return { rows: [], totalBeds: 0 };
   return { rows: await facilityDepartmentScope(db, id), totalBeds: fac.totalBeds };
+}
+
+/* ───────────────────────── Price tiers (wave 3) ───────────────────────── */
+
+const tierOf = (v: string | null): PriceTier | null => (v && (PRICE_TIERS as readonly string[]).includes(v) ? (v as PriceTier) : null);
+const repriceNote = (r: { changed: number; kept: number; noBand: number }) =>
+  `${r.changed} ${r.changed === 1 ? "price" : "prices"} updated${r.kept ? `, ${r.kept} typed by hand kept` : ""}${r.noBand ? `, ${r.noBand} without a catalogue band left as they were` : ""}.`;
+
+/** Price the whole BOQ at a tier (departments and lines with their own tier keep it). */
+export async function setBoqPriceTier(fd: FormData) {
+  const me = await requirePermission("boq.edit");
+  const boqId = int(fd, "boqId") ?? 0;
+  const back = `/boq/${boqId}`;
+  const boq = await loadEditableBoq(boqId, back, me);
+  const tier = tierOf(str(fd, "priceTier"));
+  if (!tier) fail(back, "Choose basic, standard or premium.");
+  await db.update(boqs).set({ priceTier: tier }).where(eq(boqs.id, boqId));
+  const r = await repriceBoqLines(db, boqId, convert);
+  await logActivity("boq", boqId, "repriced", `Price tier ${PRICE_TIER_LABELS[boq.priceTier as PriceTier].toLowerCase()} → ${PRICE_TIER_LABELS[tier].toLowerCase()}: ${repriceNote(r)}`);
+  revalidatePath(`/boq/${boqId}`);
+  redirect(`${back}?notice=${enc(`Priced at the ${PRICE_TIER_LABELS[tier].toLowerCase()} tier: ${repriceNote(r)}`)}`);
+}
+
+/** One department at its own tier, or back to the BOQ's (blank). */
+export async function setDepartmentPriceTier(fd: FormData) {
+  const me = await requirePermission("boq.edit");
+  const boqId = int(fd, "boqId") ?? 0;
+  const back = `/boq/${boqId}?tab=scope`;
+  await loadEditableBoq(boqId, back, me);
+  const deptId = int(fd, "deptId") ?? 0;
+  const [dept] = await db.select().from(boqDepartments).where(and(eq(boqDepartments.id, deptId), eq(boqDepartments.boqId, boqId)));
+  if (!dept) fail(back, "That department was removed.");
+  const tier = tierOf(str(fd, "priceTier"));
+  await db.update(boqDepartments).set({ priceTier: tier }).where(eq(boqDepartments.id, deptId));
+  const r = await repriceBoqLines(db, boqId, convert, { deptId });
+  await logActivity("boq", boqId, "repriced", `${dept.label}: ${tier ? `${PRICE_TIER_LABELS[tier].toLowerCase()} tier` : "BOQ tier"} — ${repriceNote(r)}`);
+  revalidatePath(`/boq/${boqId}`);
+  redirect(`${back}&notice=${enc(`${dept.label}: ${repriceNote(r)}`)}#price-tiers`);
+}
+
+/** Put a line back to its tier's catalogue price (forgets a hand-typed price). */
+export async function resetLinePrice(fd: FormData) {
+  const me = await requirePermission("boq.edit");
+  const lineId = int(fd, "lineId") ?? 0;
+  const [line] = await db.select().from(boqLines).where(eq(boqLines.id, lineId));
+  if (!line) redirect("/boq");
+  const back = `/boq/${line.boqId}?tab=${str(fd, "tab") ?? "department"}`;
+  await loadEditableBoq(line.boqId, back, me);
+  await db.update(boqLines).set({ priceManual: false, priceTier: tierOf(str(fd, "priceTier")) }).where(eq(boqLines.id, lineId));
+  const r = await repriceBoqLines(db, line.boqId, convert, { lineId });
+  await logActivity("boq", line.boqId, "repriced", `Line #${lineId} priced from the catalogue again${r.changed ? "" : " (price unchanged)"}.`);
+  revalidatePath(`/boq/${line.boqId}`);
+  redirect(`${back}&notice=${enc(r.noBand ? "This device has no catalogue price band — type the price by hand." : "Line priced from the catalogue.")}`);
 }

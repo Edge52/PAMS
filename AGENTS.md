@@ -209,3 +209,16 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 ## Building heights
 - La Plaza floors are 5 m floor to floor (`seed-data/cad/la-plaza.json`, `tools/cad/floors.json`; migration 0007 moves floors still on
   the old 4.5 m spacing). The 3D view draws walls 3.3 m high (`WALL_HEIGHT` in `src/components/assets/twin/scene.ts`).
+
+## BOQ quick start (wave 3)
+- Wizard `/boq/quick-start` (`boq.edit`): type, ownership, beds, services, special conditions, price tier and target budget, then a
+  preview (`previewQuickStartAction`, nothing saved) and `createQuickStartAction`, which makes a normal draft BOQ and generates it.
+- Templates and answers → departments: pure in `src/lib/boq/templates.ts` (`TEMPLATES`, `defaultAnswers`, `bedSplit`, `buildScope`).
+- Department planning questions (exams, deliveries, chairs…): `src/lib/boq/questions.ts`, stored in `boq_departments.params`.
+  An answer of 0 means "none planned" and gives quantity 0.
+- Rules (migration `0013`): `boq_rules.param` / `param_ratio` (throughput sizing), `boq_rules.condition` (only when the BOQ has that
+  feature in `boqs.features`; part of the unique index), table `device_companions` (accessories topped up to the shortfall).
+  Reference data in `seed-data/boq-quickstart.json` — draft figures, to be reviewed by the biomedical team.
+- Price tiers (`price_tier` BASIC / STANDARD / PREMIUM): pure in `src/lib/boq/pricing.ts` (`tierPriceUsd`, `effectiveTier`,
+  `scenarioTotals`). Tier on the BOQ, the department or the line (line wins). `repriceBoqLines()` in `src/lib/boq/generate.ts`
+  reprices from the catalogue bands and never touches a price typed by hand (`boq_lines.price_manual`).

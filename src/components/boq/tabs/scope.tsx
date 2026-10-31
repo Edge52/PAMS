@@ -2,8 +2,9 @@ import { Button, Field, FormGrid, Input, Panel, Select, Textarea } from "@/compo
 import { CURRENCIES, formatNumber } from "@/lib/format";
 import type { BoqWorkspace } from "@/lib/boq/queries";
 import {
-  deleteDepartment, importFacilityDepartments, regenerate, saveDepartment, saveDepartmentAnswers, updateBoqSettings,
+  deleteDepartment, importFacilityDepartments, regenerate, saveDepartment, saveDepartmentAnswers, setDepartmentPriceTier, updateBoqSettings,
 } from "@/app/boq/actions";
+import { PRICE_TIER_LABELS, PRICE_TIERS } from "@/lib/boq/pricing";
 import { DEPARTMENT_QUESTIONS, FEATURES } from "@/lib/boq/questions";
 
 type Opt = { value: string | number; label: string };
@@ -132,6 +133,23 @@ export function ScopeTab({ ws, locked, deptTypes, facilities, projects, realDepa
           </div>
         </Panel>
       )}
+
+      <Panel title={<span id="price-tiers">Price tier by department</span>}>
+        <p className="mb-3 text-sm text-muted">Departments follow the BOQ&apos;s tier ({PRICE_TIER_LABELS[boq.priceTier as (typeof PRICE_TIERS)[number]].toLowerCase()}) unless you choose one here, e.g. premium for the ICU and basic for the wards. Saving reprices that department; prices typed by hand are kept.</p>
+        <ul className="divide-y divide-line">
+          {depts.map((d) => (
+            <li key={d.id}>
+              <form action={setDepartmentPriceTier} className="flex flex-wrap items-center gap-2 py-1.5 text-sm">
+                <input type="hidden" name="boqId" value={boq.id} /><input type="hidden" name="deptId" value={d.id} />
+                <span className="min-w-48 flex-1">{d.label}</span>
+                <Select name="priceTier" aria-label={`Price tier for ${d.label}`} defaultValue={d.priceTier ?? ""} className="w-auto"
+                  options={[{ value: "", label: "BOQ tier" }, ...PRICE_TIERS.map((t) => ({ value: t, label: PRICE_TIER_LABELS[t] }))]} {...disabled} />
+                {!locked && <Button variant="secondary">Save</Button>}
+              </form>
+            </li>
+          ))}
+        </ul>
+      </Panel>
 
       <Panel title="BOQ settings">
         <form action={updateBoqSettings}>

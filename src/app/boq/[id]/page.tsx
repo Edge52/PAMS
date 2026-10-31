@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { departments, facilities, projects } from "@/db/schema";
-import { Button, LinkButton, PageHeader, Panel, Stat, StatusBadge, TabLinks } from "@/components/ui";
+import { Badge, Button, LinkButton, PageHeader, Panel, Stat, StatusBadge, TabLinks } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents-panel";
 import { Notice } from "@/components/boq/notice";
 import { ByDepartmentTab } from "@/components/boq/tabs/by-department";
@@ -11,10 +11,11 @@ import { ByDeviceTab } from "@/components/boq/tabs/by-device";
 import { ScopeTab } from "@/components/boq/tabs/scope";
 import { GapTab } from "@/components/boq/tabs/gap";
 import { AssumptionsTab } from "@/components/boq/tabs/assumptions";
-import { formatDate, formatMoney, formatNumber } from "@/lib/format";
-import { getActivity } from "@/lib/server-utils";
-import { departmentTypeList, getBoqWorkspace, installedCounts, level3DeviceOptions, rulesForSet } from "@/lib/boq/queries";
-import { createNewVersion, deleteBoq, regenerate, submitBoqForApproval, withdrawBoqFromReview } from "../actions";
+import { formatDate, formatMoney, formatNumber, num } from "@/lib/format";
+import { convert, getActivity } from "@/lib/server-utils";
+import { departmentTypeList, getBoqWorkspace, installedCounts, level3DeviceOptions, rulesForSet, type BoqWorkspace } from "@/lib/boq/queries";
+import { PRICE_TIER_HELP, PRICE_TIER_LABELS, PRICE_TIERS, scenarioTotals } from "@/lib/boq/pricing";
+import { createNewVersion, deleteBoq, regenerate, setBoqPriceTier, submitBoqForApproval, withdrawBoqFromReview } from "../actions";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
@@ -114,6 +115,8 @@ export default async function BoqPage({ params, searchParams }: {
         <Stat label="Departments" value={formatNumber(ws.depts.length)}
           hint={[overrides && `${overrides} overridden`, manual && `${manual} by hand`].filter(Boolean).join(" · ") || `${formatNumber(boq.totalHospitalBeds)} hospital beds`} />
       </div>
+
+      <PriceScenarios ws={ws} locked={locked} />
 
       <Panel className="mb-5" padded>
         <div className="flex flex-wrap items-center gap-2">
@@ -220,5 +223,49 @@ async function History({ boqId }: { boqId: number }) {
     )}
     <DocumentsPanel entityType="boq" entityId={boqId} returnPath={`/boq/${boqId}?tab=history`} title="Attachments" />
     </div>
+  );
+}
+
+/** The BOQ priced at basic, standard and premium side by side, with the target budget and one click to switch. */
+async function PriceScenarios({ ws, locked }: { ws: BoqWorkspace; locked: boolean }) {
+  const { boq, totals } = ws;
+  const cur = boq.currency;
+  const rate = cur === "USD" ? 1 : await convert(1, "USD", cur);
+  if (rate === null) return null;
+  const sc = scenarioTotals(ws.lines.map((l) => ({ quantity: l.quantity, min: l.priceMinUsd, max: l.priceMaxUsd, currentPrice: l.unitPriceEstimate, priceManual: l.priceManual })),
+    (x) => x / rate, boq.contingencyPct);
+  const own = ws.depts.filter((d) => d.priceTier).length + ws.lines.filter((l) => l.priceTier).length;
+  const manual = ws.lines.filter((l) => l.priceManual).length;
+  const target = boq.targetBudget != null ? num(boq.targetBudget) : null;
+  const money = (v: number) => formatMoney(v, cur, { compact: v >= 1e6 });
+  return (
+    <Panel title="Price scenarios" className="mb-5"
+      actions={<span className="text-xs text-muted">From the catalogue price bands{manual ? `; ${manual} prices typed by hand are kept in every scenario` : ""}</span>}>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {PRICE_TIERS.map((t) => {
+          const total = Math.round(sc.byTier[t].total * rate);
+          const current = boq.priceTier === t;
+          return (
+            <div key={t} className={`rounded-[var(--radius-panel)] border px-4 py-3 ${current ? "border-primary bg-primary-soft" : "border-line"}`}>
+              <p className="flex items-center justify-between text-sm text-muted">{PRICE_TIER_LABELS[t]}{current && <Badge tone="primary">Current</Badge>}</p>
+              <p className="mt-1 text-2xl font-bold">{money(total)}</p>
+              <p className="text-xs text-muted">{PRICE_TIER_HELP[t]}</p>
+              {target != null && <p className={`mt-1 text-xs ${total > target ? "text-warn" : "text-ok"}`}>{total > target ? `${money(total - target)} over target` : `${money(target - total)} under target`}</p>}
+              {!current && !locked && (
+                <form action={setBoqPriceTier} className="mt-2">
+                  <input type="hidden" name="boqId" value={boq.id} /><input type="hidden" name="priceTier" value={t} />
+                  <Button variant="secondary">Price at {PRICE_TIER_LABELS[t].toLowerCase()}</Button>
+                </form>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-xs text-muted">
+        Current BOQ total {money(totals.grandTotal)}{target != null ? ` against a target of ${money(target)}` : ""}.
+        {own ? ` ${own} departments or lines have their own tier (set them on the Departments tab or in a line's edit form).` : " Departments and single lines can have their own tier."}
+        {sc.unpriced ? ` ${sc.unpriced} lines have no catalogue band and are left out of the scenarios.` : ""}
+      </p>
+    </Panel>
   );
 }

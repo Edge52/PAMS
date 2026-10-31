@@ -3,6 +3,8 @@ import { useActionState, useState } from "react";
 import { Badge, Button, Input } from "@/components/ui";
 import { formatMoney, formatNumber } from "@/lib/format";
 import { keepInputs } from "@/lib/submit-keep";
+import { resetLinePrice } from "@/app/boq/actions";
+import { PRICE_TIER_LABELS, PRICE_TIERS, type PriceTier } from "@/lib/boq/pricing";
 
 type FormState = { error?: string; ok?: string } | undefined;
 
@@ -19,6 +21,9 @@ export interface LineRowData {
   amount: number;
   calcExplanation: string | null;
   notes: string | null;
+  /** Wave 3: the line's own price tier, and whether its price was typed by hand. Optional for older callers. */
+  priceTier?: string | null;
+  priceManual?: boolean;
 }
 
 const TIER_TONE: Record<string, "primary" | "info" | "neutral"> = { ESSENTIAL: "primary", RECOMMENDED: "info", OPTIONAL: "neutral" };
@@ -49,6 +54,12 @@ export function LineRow({ line, currency, locked, showWhy, updateAction, deleteA
           {line.isManual && <span className="ml-1.5"><Badge tone="info">{replacement ? "Replacement" : "Added by hand"}</Badge></span>}
           {showWhy && why && (!line.isManual || replacement) && <span className="mt-0.5 block text-xs text-muted">{why}</span>}
           {line.notes && <span className="mt-0.5 block text-xs text-ink/80">Note: {line.notes}</span>}
+          {(line.priceManual || line.priceTier) && (
+            <span className="mt-0.5 flex flex-wrap gap-1">
+              {line.priceManual && <Badge tone="warn">Price typed by hand</Badge>}
+              {line.priceTier && <Badge tone="info">{PRICE_TIER_LABELS[line.priceTier as PriceTier]} price</Badge>}
+            </span>
+          )}
         </td>
         <td className="border-b border-line px-3 py-2 align-top"><Badge tone={TIER_TONE[line.tier] ?? "neutral"}>{TIER_LABEL[line.tier] ?? line.tier}</Badge></td>
         <td className="border-b border-line px-3 py-2 text-right align-top" title={why || undefined}>
@@ -104,6 +115,16 @@ export function LineRow({ line, currency, locked, showWhy, updateAction, deleteA
               </p>
             )}
             {state?.error && <p role="alert" className="mt-2 text-sm text-danger">{state.error}</p>}
+            <form action={resetLinePrice} className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              <input type="hidden" name="lineId" value={line.id} /><input type="hidden" name="tab" value={tab} />
+              <span className="text-xs text-muted">Price from the catalogue at</span>
+              <select name="priceTier" defaultValue={line.priceTier ?? ""} aria-label="Price tier for this line"
+                className="rounded-[var(--radius-control)] border border-line bg-surface px-2 py-1 text-sm">
+                <option value="">the department&apos;s tier</option>
+                {PRICE_TIERS.map((t) => <option key={t} value={t}>{PRICE_TIER_LABELS[t].toLowerCase()}</option>)}
+              </select>
+              <Button variant="secondary">Use catalogue price</Button>
+            </form>
             <form action={deleteAction} className="mt-2"
               onSubmit={(e) => { if (!confirm(`Remove ${line.deviceName} from this BOQ?`)) e.preventDefault(); }}>
               <input type="hidden" name="lineId" value={line.id} />
