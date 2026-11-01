@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — wave 7 (in progress, branch `wave-7`)
+
+Migration `0016`. Update with `git pull` and `npm run demo`; your data is kept.
+
+- **Lift cores**: declared once per hospital under Facilities › Lifts (bed, public, service, AGV; stops per floor;
+  cars, capacity, typical wait). Suggested from lift lobbies in the drawings and marked *assumed* until confirmed. The
+  3D view draws them as shafts, and "nearest working device" only takes a lift that stops on the device's floor.
+- **Presentation renders**: *Presentation render…* in the 3D view makes a furnished dollhouse image of a floor or one
+  department. It shows solid walls with grey tops, floor finishes by room type, registered equipment plus
+  illustrative room-kit furniture, soft shadows and ambient occlusion. Labels and the title block are drawn by the
+  app. Export at 1080p, 4K or 8K (tiled), or as a printable floor book of every floor.
+- Demo restarts no longer crash on the work-order seed.
+
 ## Release 3.0 — 1 Nov 2026
 
 Waves 3 to 6, on top of release 2.1. Migrations `0007`–`0015`. Update with `git pull` and `npm run demo` (or

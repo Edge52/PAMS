@@ -14,6 +14,7 @@ import { AVAILABLE, rankNearest, type Ranked } from "./nearest";
 import { PLAN_BANDS, planBand, spreadGhosts } from "@/lib/assets/plan-installed";
 import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server";
 import { bucketOf, colorFor, LAYER_INFO, LAYERS, legendFor, NEUTRAL, roomValues, type LayerId, type LiveMetrics, type Scope } from "./layers";
+import { RenderPanel } from "./render/render-panel";
 
 const LIVE_EVERY_MS = 60_000;
 
@@ -58,6 +59,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [floorId, setFloorId] = useState<number | null>(null);
+  const [renderOpen, setRenderOpen] = useState(false);
   const [explode, setExplode] = useState(1.6);
   const [bloom, setBloom] = useState(true);
   // The look is a per-viewer preference, remembered in this browser only (the server renders the default).
@@ -650,6 +652,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       <div className="mt-2 flex flex-wrap gap-1.5 border-t border-[#123a55] pt-2">
         <button type="button" onClick={copyLink} className="twin-act">Copy link</button>
         <button type="button" onClick={downloadImage} disabled={snapping} className="twin-act">{snapping ? "Making image…" : "Download image"}</button>
+        <button type="button" onClick={() => setRenderOpen(true)} className="twin-act" title="Furnished presentation image or floor book">Presentation render…</button>
       </div>
       {shareLink && <input readOnly value={shareLink} onFocus={(e) => e.currentTarget.select()} aria-label="Link to this view" className="twin-input mt-2 text-xs" />}
     </div>
@@ -967,6 +970,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           </div>
         </div>
       )}
+      {renderOpen && <RenderPanel data={{ ...data, assets: assetList }} floorId={floorId} onClose={() => setRenderOpen(false)} />}
     </div>
   );
 }

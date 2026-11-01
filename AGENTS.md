@@ -274,3 +274,12 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   reasoning and sources; values are read from the modules that use them. When you change a figure, update its note there.
 - `npm run reference:sheet` rebuilds `docs/reference-figures-review.xlsx`; the summary is `docs/reference-figures.md`.
 - Seeding upserts the quick-start rules, so changed workload rates reach existing databases on the next `npm run demo` or seed.
+
+## Wave 7: lift cores and presentation renders
+- Lift cores: `lift_cores` (stops per floor in plan units), pure logic in `src/lib/assets/lifts.ts` (`suggestLifts`,
+  `liftAllowed`), loading/inserting in `lifts-data.ts` (takes `db`, so seeds can call it), UI under
+  Facilities › Lifts. Declared people lifts (BED/PUBLIC) replace lifts read from room names in `scene.coreSpots()`.
+- Renders: `src/components/assets/twin/render/`. Pure, unit-tested: `kits.ts` (room → finish and furniture kit,
+  wall placement), `labels.ts`, `walls.ts` (wall lines → solid wall mass). `furniture.ts` builds the models in code
+  (no model files). `studio.ts` renders off screen with its own renderer, separate from the live view;
+  `render-panel.tsx` is the dialog. Kit furniture is illustrative and must stay labelled as such.
