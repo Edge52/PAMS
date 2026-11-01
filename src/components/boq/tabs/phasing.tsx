@@ -1,4 +1,4 @@
-import { Badge, Button, Panel, Table, Td, Th, THead } from "@/components/ui";
+import { Button, Panel, Table, Td, Th, THead } from "@/components/ui";
 import { savePhasing } from "@/app/boq/actions";
 import { ADVANCE_SHARE, MAX_PHASES } from "@/lib/boq/phasing";
 import type { BoqPlanning } from "@/lib/boq/planning-server";
@@ -106,7 +106,7 @@ export function PhasingTab({ ws, planning, locked }: { ws: BoqWorkspace; plannin
             <p className="mt-4 text-sm font-semibold">Costs more to run than to buy over 10 years</p>
             <p className="text-xs text-muted">Weigh running costs (service contracts, consumables) in the tender evaluation for these, not only the price.</p>
             <ul className="mt-2 flex flex-wrap gap-2">
-              {tco10.runningHeavy.map((r) => <li key={r.name}><Badge tone="warn">{r.name}: {money(r.running)} running vs {money(r.purchase)}</Badge></li>)}
+              {tco10.runningHeavy.map((r) => <li key={r.name} className="max-w-full rounded bg-warn-soft px-2 py-1 text-xs font-semibold text-warn">{r.name}: {money(r.running)} running vs {money(r.purchase)}</li>)}
             </ul>
           </>
         )}
