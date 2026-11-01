@@ -1,25 +1,25 @@
 {
-  "_about": "BOQ quick start reference data (wave 3). Draft planning figures for review, like the ratio standards: throughput rates attach to existing rules (used when a department answers the question), conditional rules apply when the BOQ has the feature, companions top up equipment that comes with another.",
+  "_about": "BOQ quick start reference data (wave 3). Draft planning figures for review, like the ratio standards: throughput rates attach to existing rules (used when a department answers the question), conditional rules apply when the BOQ has the feature, companions top up equipment that comes with another. Reviewed against published sources in wave 6: see docs/reference-figures.md.",
   "throughput": [
     {
       "dept": "RAD",
       "device": "IMG-CT-64",
       "param": "ctExams",
-      "per": 15000,
-      "note": "About 15,000 exams a year per 64-slice CT (≈ 60 a day)."
+      "per": 12000,
+      "note": "About 12,000 exams a year per CT (Canadian national average 12,900 per unit, CDA-AMC 2022–23)."
     },
     {
       "dept": "RAD",
       "device": "IMG-ACC-CTINJ",
       "param": "ctExams",
-      "per": 15000
+      "per": 12000
     },
     {
       "dept": "RAD",
       "device": "IMG-MRI-15T",
       "param": "mriExams",
       "per": 6000,
-      "note": "About 6,000 exams a year per 1.5 T scanner (≈ 24 a day)."
+      "note": "About 6,000 exams a year per MRI (Canadian national average 5,850 per unit, CDA-AMC 2022–23)."
     },
     {
       "dept": "RAD",
@@ -44,8 +44,8 @@
       "dept": "RAD",
       "device": "IMG-XR-DR",
       "param": "xrayExams",
-      "per": 20000,
-      "note": "About 20,000 exams a year per digital radiography room."
+      "per": 10000,
+      "note": "About 10,000 exams a year per digital room with extended hours (US VA criteria: 4,370 on one 8-hour shift at 22 min an exam)."
     },
     {
       "dept": "RAD",
@@ -58,7 +58,7 @@
       "device": "OBG-DEL-BED",
       "param": "deliveries",
       "per": 400,
-      "note": "About 400 deliveries a year per delivery bed."
+      "note": "About 400 deliveries a year per delivery bed (16 h stay at 75 % occupancy ≈ 410)."
     },
     {
       "dept": "LDR",
@@ -76,7 +76,8 @@
       "dept": "ENDO",
       "device": "END-FLX-GI",
       "param": "procedures",
-      "per": 2500
+      "per": 1500,
+      "note": "About 1,500 procedures a year per endoscopy room (1,000–1,500 rule of thumb; VA ≈ 1,070 colonoscopies or 2,130 gastroscopies)."
     },
     {
       "dept": "CATH",

@@ -11,7 +11,7 @@ export const ADVANCE_SHARE = 0.3;
 
 /** Months between order and opening, by code prefix (longest match wins). */
 export const LEAD_MONTHS: { prefix: string; months: number }[] = [
-  { prefix: "IMG-MRI", months: 10 }, { prefix: "IMG-CT", months: 8 }, { prefix: "IMG-ANG", months: 9 }, { prefix: "IMG-", months: 6 },
+  { prefix: "IMG-MRI", months: 10 }, { prefix: "IMG-CT", months: 6 }, { prefix: "IMG-ANG", months: 8 }, { prefix: "IMG-", months: 6 },
   { prefix: "THR-RT", months: 12 }, { prefix: "LAB-", months: 5 }, { prefix: "STE-", months: 6 }, { prefix: "FUR-", months: 3 }, { prefix: "", months: 4 },
 ];
 export const leadMonths = (code: string) => LEAD_MONTHS.filter((l) => code.startsWith(l.prefix)).sort((a, b) => b.prefix.length - a.prefix.length)[0].months;

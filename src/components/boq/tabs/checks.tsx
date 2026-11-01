@@ -97,7 +97,7 @@ export function ChecksTab({ ws, checks, locked, rooms }: { ws: BoqWorkspace; che
       <Panel title="Room requirements" actions={<span className="text-xs text-muted">{rooms.length ? `${rooms.filter((r) => r.status !== "ok").length} of ${rooms.length} need attention` : ""}</span>}>
         {rooms.length === 0 ? <p className="text-sm text-muted">No equipment in this BOQ needs a special room (CT, MRI, angiography, X-ray rooms, theatres).</p> : (
           <>
-            <p className="mb-3 text-xs text-muted">Room areas come from the floor plans of the linked departments. Draft planning figures — confirm with each vendor&apos;s site planning guide.</p>
+            <p className="mb-3 text-xs text-muted">Room areas come from the floor plans of the linked departments. Minimum areas follow published guidance where it exists (FGI, vendor site planning; see docs/reference-figures.md) — confirm with the chosen vendor&apos;s site planning guide.</p>
             <ul className="space-y-3">
               {rooms.map((r, i) => (
                 <li key={`${r.device}-${r.department}-${i}`} className="rounded-[var(--radius-panel)] border border-line px-3 py-2">
@@ -124,7 +124,7 @@ export function ChecksTab({ ws, checks, locked, rooms }: { ws: BoqWorkspace; che
       <Panel title="Benchmarks" actions={<span className="text-xs text-muted">{benchmarks.length ? `${off.length} of ${benchmarks.length} outside the range` : ""}</span>}>
         {benchmarks.length === 0 ? <p className="text-sm text-muted">No benchmark applies to these departments yet (ICU, CCU, NICU, emergency, theatres, wards, delivery, dialysis and radiology are covered).</p> : (
           <>
-            <p className="mb-3 text-xs text-muted">Draft reference ranges from common international practice, for a first check — review them with your biomedical team. Planned quantity divided by the department&apos;s beds, rooms or the hospital&apos;s beds.</p>
+            <p className="mb-3 text-xs text-muted">Reference ranges for a first check: sourced where a published figure exists, planning judgement otherwise (docs/reference-figures.md) — confirm them with your biomedical team. Planned quantity divided by the department&apos;s beds, rooms or the hospital&apos;s beds.</p>
             <Table>
               <THead><tr><Th>Department</Th><Th>Equipment</Th><Th align="right">Planned</Th><Th align="right">Density</Th><Th align="right">Range</Th><Th>Check</Th></tr></THead>
               <tbody>

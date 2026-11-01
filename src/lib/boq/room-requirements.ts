@@ -11,13 +11,13 @@ export type RoomNeed = {
 };
 
 export const ROOM_NEEDS: RoomNeed[] = [
-  { prefix: "IMG-MRI", label: "MRI scanner", minArea: 40, shielding: "RF cage (Faraday) and magnetic shielding; 5-gauss line inside the controlled area", power: "≈ 100 kVA", hvac: "Chilled water for the cold head; quench pipe to outside", floorLoad: "≈ 6–8 t over the magnet footprint" },
+  { prefix: "IMG-MRI", label: "MRI scanner", minArea: 30, shielding: "RF cage (Faraday) and magnetic shielding; 5-gauss line inside the controlled area", power: "≈ 100 kVA", hvac: "Chilled water for the cold head; quench pipe to outside", floorLoad: "≈ 6–8 t over the magnet footprint" },
   { prefix: "IMG-CT", label: "CT scanner", minArea: 30, shielding: "Lead lining (≈ 2 mm Pb equivalent, per the physicist's survey)", power: "≈ 80–150 kVA", hvac: "Equipment heat load ≈ 10 kW", floorLoad: "≈ 2–3 t on the gantry footprint" },
   { prefix: "IMG-ANG", label: "Angiography / cath lab", minArea: 45, shielding: "Lead lining (≈ 2 mm Pb)", power: "≈ 100 kVA", hvac: "Theatre-grade ventilation" },
   { prefix: "IMG-XR-DR", label: "Fixed X-ray room", minArea: 25, shielding: "Lead lining (≈ 2 mm Pb)", power: "≈ 60–80 kVA" },
   { prefix: "IMG-MAM", label: "Mammography", minArea: 12, shielding: "Lead lining (≈ 1 mm Pb)" },
   { prefix: "IMG-NM", label: "Gamma camera", minArea: 30, shielding: "Lead lining; hot lab nearby" },
-  { prefix: "SUR-OR-TABLE", label: "Operating theatre", minArea: 36, power: "Isolated power (IT) supply", hvac: "Laminar or turbulent theatre ventilation, ≥ 20 air changes an hour" },
+  { prefix: "SUR-OR-TABLE", label: "Operating theatre", minArea: 37, power: "Isolated power (IT) supply", hvac: "Laminar or turbulent theatre ventilation, ≥ 20 air changes an hour" },
   { prefix: "THR-RT-LIN", label: "Linear accelerator", minArea: 50, shielding: "Concrete bunker designed by a physicist", power: "≈ 100 kVA", floorLoad: "≈ 8–10 t" },
 ];
 

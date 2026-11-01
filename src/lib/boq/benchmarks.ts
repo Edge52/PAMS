@@ -1,6 +1,7 @@
 /**
  * Benchmarks: the plan's density of key devices against reference ranges (pure).
- * DRAFT reference ranges from common international practice, to be reviewed by the hospital's biomedical team.
+ * Reference ranges checked against published sources where they exist (docs/reference-figures.md); the rest are
+ * planning judgement. To be confirmed by the hospital's biomedical team.
  * A device match is an exact code or a code prefix ending in "-" (e.g. "IMG-CT-" for every CT scanner).
  */
 
@@ -14,9 +15,9 @@ export type Benchmark = {
 };
 
 export const BENCHMARKS: Benchmark[] = [
-  { department: "ICU", devices: ["LIF-VEN-ICU"], label: "ICU ventilators", per: "bed", min: 0.5, max: 1.2 },
+  { department: "ICU", devices: ["LIF-VEN-ICU"], label: "ICU ventilators", per: "bed", min: 0.8, max: 1.2 },
   { department: "ICU", devices: ["MON-PAT-HIGH"], label: "High-acuity monitors", per: "bed", min: 1, max: 1.2 },
-  { department: "ICU", devices: ["INF-PMP-SYR"], label: "Syringe pumps", per: "bed", min: 2, max: 4 },
+  { department: "ICU", devices: ["INF-PMP-SYR"], label: "Syringe pumps", per: "bed", min: 3, max: 6 },
   { department: "ICU", devices: ["INF-PMP-VOL"], label: "Volumetric pumps", per: "bed", min: 1, max: 3 },
   { department: "ICU", devices: ["LIF-DEF-"], label: "Defibrillators", per: "bed", min: 0.08, max: 0.25 },
   { department: "CCU", devices: ["MON-PAT-HIGH", "MON-PAT-MID"], label: "Patient monitors", per: "bed", min: 1, max: 1.2 },

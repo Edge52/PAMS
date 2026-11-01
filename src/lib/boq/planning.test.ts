@@ -13,7 +13,7 @@ describe("cost of ownership", () => {
   it("adds running costs and replacements inside the horizon", () => {
     const r = tcoLine({ code: "IMG-CT-64", name: "CT", quantity: 1, unitPrice: 1000 }, 10); // life 8 → one replacement in 10 years
     expect(r).toMatchObject({ purchase: 1000, replacements: 1000 });
-    expect(r.running).toBeCloseTo(1000 * 0.14 * 10);
+    expect(r.running).toBeCloseTo(1000 * 0.16 * 10); // 12 % service + 2 % consumables + 2 % energy
     expect(tcoLine({ code: "IMG-CT-64", name: "CT", quantity: 1, unitPrice: 1000 }, 5).replacements).toBe(0);
     const s = tcoSummary([{ code: "THR-HD-MCH", name: "Dialysis", quantity: 2, unitPrice: 100 }, { code: "FUR-BED", name: "Bed", quantity: 0, unitPrice: 50 }], 5);
     expect(s.purchase).toBe(200);
@@ -32,8 +32,9 @@ describe("room requirements", () => {
       { boqDepartmentId: 1, department: "Imaging", linked: true, deviceCode: "IMG-MRI-15", deviceName: "MRI", quantity: 1 },
       { boqDepartmentId: 2, department: "Theatres", linked: false, deviceCode: "SUR-OR-TABLE", deviceName: "Table", quantity: 4 },
     ], [{ id: 1, departmentBoqId: 1, name: "Room A", code: "A", area: 45 }, { id: 2, departmentBoqId: 1, name: "Room B", code: "B", area: 31 }, { id: 3, departmentBoqId: 1, name: "Room C", code: "C", area: 26 }]);
-    expect(r.map((x) => [x.device, x.status, x.fitting.map((f) => f.code).join()])).toEqual([["MRI", "ok", "A"], ["Table", "not-linked", ""], ["CT", "short", "B"]]);
-    expect(r[2].largest?.code).toBe("B");
+    // Theatre (37 m²) first, then CT and MRI (30 m² each, in input order): the two CTs take A and B, MRI is left with C.
+    expect(r.map((x) => [x.device, x.status, x.fitting.map((f) => f.code).join()])).toEqual([["Table", "not-linked", ""], ["CT", "ok", "A,B"], ["MRI", "short", ""]]);
+    expect(r[2].largest?.code).toBe("C");
   });
 });
 
@@ -42,10 +43,10 @@ describe("phasing and cash flow", () => {
     expect(cleanPhaseMonths([5, 3, "x", 1])).toEqual([0, 3, 12, 12]);
   });
   it("pays an advance at order and the rest on delivery, per quarter", () => {
-    expect(leadMonths("IMG-CT-64")).toBe(8);
+    expect(leadMonths("IMG-CT-64")).toBe(6);
     const c = cashFlow([{ phase: 1, code: "MON-PAT", amount: 100 }, { phase: 2, code: "IMG-CT-64", amount: 1000 }], "2027-01-01", [0, 6, 12, 18]);
-    // monitors: order Sep 2026 (−4), delivery Dec 2026 (−1); CT (opens Jul 2027): order Nov 2026 (−2), delivery Jun 2027 (+5)
-    expect(c.rows.map((r) => [r.quarter, Math.round(r.total)])).toEqual([["2026 Q3", 30], ["2026 Q4", 370], ["2027 Q2", 700]]);
+    // monitors: order Sep 2026 (−4), delivery Dec 2026 (−1); CT (opens Jul 2027): order Jan 2027 (0), delivery Jun 2027 (+5)
+    expect(c.rows.map((r) => [r.quarter, Math.round(r.total)])).toEqual([["2026 Q3", 30], ["2026 Q4", 70], ["2027 Q1", 300], ["2027 Q2", 700]]);
     expect(c.rows.at(-1)!.cumulative).toBe(1100);
     expect(c.phases).toEqual([{ phase: 1, amount: 100, opensMonth: 0, opens: "2027 Q1" }, { phase: 2, amount: 1000, opensMonth: 6, opens: "2027 Q3" }]);
   });

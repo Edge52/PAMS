@@ -172,8 +172,9 @@ quantity shows its calculation.
 
 The quick-start reference figures (`seed-data/boq-quickstart.json`: workload rates, conditional rules, companions),
 the benchmark ranges (`src/lib/boq/benchmarks.ts`), the running-cost rates (`src/lib/boq/tco.ts`), room requirements
-(`src/lib/boq/room-requirements.ts`) and lead times (`src/lib/boq/phasing.ts`) are **drafts for your biomedical team
-to review**.
+(`src/lib/boq/room-requirements.ts`) and lead times (`src/lib/boq/phasing.ts`) were **checked against published sources** in wave 6:
+see [docs/reference-figures.md](docs/reference-figures.md) and the review sheet `docs/reference-figures-review.xlsx`
+(`npm run reference:sheet` rebuilds it). Figures marked *judgement* still need your biomedical team's confirmation.
 
 ## Updating an existing installation
 

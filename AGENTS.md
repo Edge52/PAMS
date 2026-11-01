@@ -267,3 +267,10 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - Wave 5 additions to the 3D view: `viewPreset("iso" | "plan" | "eye")` (eye level isolates a floor and returns its id),
   `setSection(axis, at)` (global `renderer.clippingPlanes`), `setFacade(on)` (outline from `outlineFromRooms` in `twin/geometry.ts`),
   `setHeatMode("smooth" | "blocks")` (smooth = canvas texture of radial glows per affected room).
+
+# Wave 6: reference figures
+- Every planning reference figure (benchmarks, room needs, running costs, lead times, quick-start workload rules, special
+  conditions, companions) is registered in `src/lib/boq/reference-figures.ts` with status (sourced / adjusted / judgement),
+  reasoning and sources; values are read from the modules that use them. When you change a figure, update its note there.
+- `npm run reference:sheet` rebuilds `docs/reference-figures-review.xlsx`; the summary is `docs/reference-figures.md`.
+- Seeding upserts the quick-start rules, so changed workload rates reach existing databases on the next `npm run demo` or seed.

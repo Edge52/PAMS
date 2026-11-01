@@ -11,13 +11,13 @@ export type Question = { key: string; label: string; unit: string; hint?: string
 
 export const DEPARTMENT_QUESTIONS: Record<string, Question[]> = {
   RAD: [
-    { key: "ctExams", label: "CT exams a year", unit: "CT exams", hint: "A 64-slice CT handles about 15,000 a year." },
+    { key: "ctExams", label: "CT exams a year", unit: "CT exams", hint: "About 12,000 a year per CT (national averages run 12,000–13,000)." },
     { key: "mriExams", label: "MRI exams a year", unit: "MRI exams", hint: "About 6,000 a year per scanner." },
-    { key: "xrayExams", label: "X-ray exams a year", unit: "X-ray exams", hint: "About 20,000 a year per digital room." },
+    { key: "xrayExams", label: "X-ray exams a year", unit: "X-ray exams", hint: "About 10,000 a year per digital room with extended hours." },
     { key: "usExams", label: "Ultrasound exams a year", unit: "ultrasound exams", hint: "About 6,000 a year per system." },
   ],
   LDR: [{ key: "deliveries", label: "Deliveries a year", unit: "deliveries", hint: "About 400 a year per delivery bed." }],
-  ENDO: [{ key: "procedures", label: "Endoscopies a year", unit: "endoscopies", hint: "About 2,500 a year per tower." }],
+  ENDO: [{ key: "procedures", label: "Endoscopies a year", unit: "endoscopies", hint: "About 1,500 a year per endoscopy room." }],
   CATH: [{ key: "procedures", label: "Cath lab procedures a year", unit: "procedures", hint: "About 1,200 a year per lab." }],
   LAB: [{ key: "tests", label: "Chemistry tests a year", unit: "chemistry tests", hint: "About 400,000 a year per automated analyser." }],
 };

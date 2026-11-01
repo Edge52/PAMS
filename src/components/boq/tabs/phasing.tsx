@@ -79,7 +79,7 @@ export function PhasingTab({ ws, planning, locked }: { ws: BoqWorkspace; plannin
         )}
       </Panel>
 
-      <Panel title="Cost of ownership" actions={<span className="text-xs text-muted">Draft yearly rates per device group; replace with your contract figures</span>}>
+      <Panel title="Cost of ownership" actions={<span className="text-xs text-muted">Yearly rates per device group (service 4.5–15 % of price, published range); replace with your contract figures</span>}>
         <div className="grid gap-3 sm:grid-cols-2">
           {[tco5, tco10].map((t) => (
             <div key={t.years} className="rounded-[var(--radius-panel)] border border-line px-4 py-3">

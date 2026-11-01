@@ -8,8 +8,8 @@ export type RunningRates = { maintenance: number; consumables: number; energy: n
 
 /** By code prefix (longest match wins). Shares of the purchase price per year; life in years. */
 export const TCO_RATES: { prefix: string; label: string; rates: RunningRates }[] = [
-  { prefix: "IMG-MRI", label: "MRI", rates: { maintenance: 0.09, consumables: 0.02, energy: 0.03, life: 10 } },
-  { prefix: "IMG-CT", label: "CT", rates: { maintenance: 0.1, consumables: 0.02, energy: 0.02, life: 8 } },
+  { prefix: "IMG-MRI", label: "MRI", rates: { maintenance: 0.1, consumables: 0.02, energy: 0.03, life: 10 } },
+  { prefix: "IMG-CT", label: "CT", rates: { maintenance: 0.12, consumables: 0.02, energy: 0.02, life: 8 } },
   { prefix: "IMG-", label: "Imaging", rates: { maintenance: 0.08, consumables: 0.02, energy: 0.01, life: 10 } },
   { prefix: "LAB-", label: "Laboratory", rates: { maintenance: 0.08, consumables: 0.25, energy: 0.01, life: 7 } },
   { prefix: "THR-HD", label: "Dialysis", rates: { maintenance: 0.07, consumables: 0.4, energy: 0.01, life: 7 } },
