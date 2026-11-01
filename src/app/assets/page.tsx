@@ -76,6 +76,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
           <NativeSelect name="status" aria-label="Status" options={enumOptions(ASSET_STATUSES)} value={f.status} placeholder="Any status" />
           <NativeSelect name="criticality" aria-label="Criticality" options={enumOptions(CRITICALITIES)} value={f.criticality} placeholder="Any criticality" />
           <NativeSelect name="warranty" aria-label="Warranty" options={[{ value: "expiring", label: "Warranty ends in 90 days" }, { value: "expired", label: "Warranty expired" }]} value={f.warranty} placeholder="Any warranty" />
+          <label><span className="sr-only">Tag</span><input name="tag" defaultValue={f.tag} placeholder="Tag" className={ctl} /></label>
           <NativeSelect name="sort" aria-label="Sort by" options={[{ value: "tag", label: "Sort by tag" }, { value: "type", label: "Sort by device type" }, { value: "location", label: "Sort by location" }, { value: "warranty", label: "Sort by warranty end" }, { value: "status", label: "Sort by status" }]} value={f.sort ?? "tag"} />
         </div>
         {f.poId && <input type="hidden" name="poId" value={f.poId} />}
@@ -122,7 +123,8 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
                     <Td className="w-8"><input type="checkbox" name="ids" value={a.id} form="labels-form" aria-label={`Select ${a.assetTag} for labels`} /></Td>
                     <Td className="whitespace-nowrap"><Link href={`/assets/${a.id}`} className="font-mono text-[13px] font-semibold text-primary hover:underline">{a.assetTag}</Link></Td>
                     <Td><Link href={`/catalogue/${a.deviceTypeCode}`} className="hover:text-primary">{a.deviceTypeName}</Link></Td>
-                    <Td>{a.manufacturer ?? "—"}<div className="text-xs text-muted">{a.model}</div></Td>
+                    <Td>{a.manufacturer ?? "—"}<div className="text-xs text-muted">{a.model}</div>
+                      {a.tags.length > 0 && <div className="mt-0.5 flex flex-wrap gap-1">{a.tags.map((t) => <Link key={t} href={`/assets${qs({ tag: t, page: undefined })}`}><Badge tone="info">{t}</Badge></Link>)}</div>}</Td>
                     <Td className="font-mono text-xs">{a.serialNumber ?? <span className="text-faint">—</span>}</Td>
                     <Td className="min-w-[12rem]">
                       {a.roomId ? (

@@ -1,3 +1,4 @@
+import { cleanTag } from "./tags";
 /**
  * Asset register filter contract — parsing and serialising the URL params.
  * Cross-module contract (AGENTS.md): /assets?poId=&departmentId=&roomId=&deviceType=&status=
@@ -41,6 +42,8 @@ export type AssetFilter = {
   criticality?: Criticality;
   warranty?: "expired" | "expiring";
   poId?: number;
+  /** One free label (wave 5). */
+  tag?: string;
   sort?: AssetSort;
   page?: number;
 };
@@ -84,6 +87,7 @@ export function parseAssetFilter(p: Params): AssetFilter {
     criticality: oneOf(p, "criticality", CRITICALITIES),
     warranty: w === "expired" || w === "expiring" ? w : undefined,
     poId: id(p, "poId"),
+    tag: cleanTag(get(p, "tag")) ?? undefined,
     sort: oneOf(p, "sort", SORTS),
     page: page && page > 1 ? page : undefined,
   };
@@ -94,7 +98,7 @@ export function filterToQuery(f: AssetFilter, over: Partial<Record<keyof AssetFi
   const out = new URLSearchParams();
   const merged: Record<string, unknown> = { ...f, ...over };
   const order: (keyof AssetFilter)[] = ["q", "facilityId", "buildingId", "floorId", "departmentId", "roomId", "category", "deviceType",
-    "status", "criticality", "warranty", "poId", "sort", "page"];
+    "status", "criticality", "warranty", "poId", "tag", "sort", "page"];
   for (const k of order) {
     const v = merged[k];
     if (v === undefined || v === null || v === "") continue;

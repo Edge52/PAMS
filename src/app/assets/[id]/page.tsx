@@ -183,6 +183,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                   <Field label="Warranty end"><Input type="date" name="warrantyEnd" defaultValue={x.warrantyEnd ?? ""} /></Field>
                   <Field label="Purchase cost"><Input type="number" step="0.01" min={0} name="purchaseCost" defaultValue={x.purchaseCost ?? ""} /></Field>
                   <Field label="Currency"><NativeSelect name="currency" options={CURRENCIES.map((c) => ({ value: c, label: c }))} value={x.currency ?? "USD"} /></Field>
+                  <Field label="Tags" hint="Free labels, separated by commas — e.g. loan, teaching, donated."><Input name="tags" maxLength={1000} defaultValue={x.tags.join(", ")} /></Field>
                   <Field label="Notes"><Textarea name="notes" rows={2} defaultValue={x.notes ?? ""} /></Field>
                 </FormGrid>
                 <div className="mt-4 flex gap-2"><Button>Save details</Button><LinkButton href={path} variant="ghost">Cancel</LinkButton></div>
@@ -195,6 +196,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                 { label: "Manufacturer", value: x.manufacturer },
                 { label: "Model", value: x.model ? (catModel ? <><Link href={`/catalogue/models/${catModel.id}`} className="text-primary hover:underline">{x.model}</Link>{catSupport && catSupport !== "supported" && <> <Badge tone={SUPPORT_TONE[catSupport]}>{SUPPORT_LABELS[catSupport]}</Badge></>}</> : x.model) : null },
                 { label: "Serial number", value: x.serialNumber ? <span className="font-mono">{x.serialNumber}</span> : null },
+                { label: "Tags", value: x.tags.length ? <span className="flex flex-wrap gap-1">{x.tags.map((t) => <Link key={t} href={`/assets?tag=${encodeURIComponent(t)}`}><Badge tone="info">{t}</Badge></Link>)}</span> : null },
                 { label: "Risk class", value: a.riskClass ? `Class ${a.riskClass}` : null },
                 { label: "Purchase date", value: x.purchaseDate ? formatDate(x.purchaseDate) : null },
                 { label: "Install date", value: x.installDate ? formatDate(x.installDate) : null },

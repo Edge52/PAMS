@@ -1,4 +1,5 @@
 "use server";
+import { parseTags } from "@/lib/assets/tags";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -81,7 +82,7 @@ export async function createAssetAction(_: FormState, fd: FormData): Promise<For
 }
 
 const EditSchema = AssetSchema.omit({ deviceTypeId: true, facilityId: true, departmentId: true, roomId: true, status: true, condition: true, parentTag: true })
-  .extend({ assetId: reqId("Asset") });
+  .extend({ assetId: reqId("Asset"), tags: text(1000) });
 
 export async function updateAssetAction(_: FormState, fd: FormData): Promise<FormState> {
   const me = await requirePermission("assets.edit");
@@ -95,7 +96,7 @@ export async function updateAssetAction(_: FormState, fd: FormData): Promise<For
     manufacturer: d.manufacturer ?? null, model: d.model ?? null, serialNumber: d.serialNumber ?? null,
     purchaseDate: d.purchaseDate ?? null, installDate: d.installDate ?? null, warrantyEnd: d.warrantyEnd ?? null,
     purchaseCost: d.purchaseCost != null ? String(d.purchaseCost) : null, currency: d.purchaseCost != null ? (d.currency ?? "USD").toUpperCase() : null,
-    notes: d.notes ?? null,
+    notes: d.notes ?? null, tags: parseTags(d.tags),
   }).where(eq(assets.id, d.assetId));
   await logActivity("asset", d.assetId, "updated", "Identity and purchase details updated");
   revalidatePath(`/assets/${d.assetId}`);

@@ -73,7 +73,8 @@ function assetWhere(f: AssetFilter, today: string, scope: Scope): SQL | undefine
   const c: (SQL | undefined)[] = [scopeWhere(assets.facilityId, scope)];
   if (f.q) {
     const like = `%${f.q.replace(/[%_\\]/g, (m) => "\\" + m)}%`;
-    c.push(or(ilike(assets.assetTag, like), ilike(assets.serialNumber, like), ilike(assets.model, like), ilike(assets.manufacturer, like), ilike(deviceTypes.name, like)));
+    c.push(or(ilike(assets.assetTag, like), ilike(assets.serialNumber, like), ilike(assets.model, like), ilike(assets.manufacturer, like), ilike(deviceTypes.name, like),
+      sql`array_to_string(${assets.tags}, ' ') ilike ${like}`));
   }
   if (f.facilityId) c.push(eq(assets.facilityId, f.facilityId));
   if (f.buildingId) c.push(eq(floors.buildingId, f.buildingId));
@@ -86,6 +87,7 @@ function assetWhere(f: AssetFilter, today: string, scope: Scope): SQL | undefine
   if (f.criticality) c.push(eq(assets.criticality, f.criticality));
   if (f.warranty === "expired") c.push(lt(assets.warrantyEnd, today));
   if (f.warranty === "expiring") c.push(and(gte(assets.warrantyEnd, today), lte(assets.warrantyEnd, addDays(today, 90))));
+  if (f.tag) c.push(sql`${f.tag} = any(${assets.tags})`);
   if (f.poId) c.push(inArray(assets.poLineId, db.select({ id: poLines.id }).from(poLines).where(eq(poLines.poId, f.poId))));
   const list = c.filter(Boolean) as SQL[];
   return list.length ? and(...list) : undefined;
@@ -93,7 +95,7 @@ function assetWhere(f: AssetFilter, today: string, scope: Scope): SQL | undefine
 
 const assetColumns = {
   id: assets.id, assetTag: assets.assetTag, status: assets.status, condition: assets.condition, criticality: assets.criticality,
-  manufacturer: assets.manufacturer, model: assets.model, serialNumber: assets.serialNumber,
+  manufacturer: assets.manufacturer, model: assets.model, serialNumber: assets.serialNumber, tags: assets.tags,
   warrantyEnd: assets.warrantyEnd, installDate: assets.installDate, purchaseDate: assets.purchaseDate,
   purchaseCost: assets.purchaseCost, currency: assets.currency, poLineId: assets.poLineId,
   roomId: assets.roomId, departmentId: assets.departmentId, facilityId: assets.facilityId,

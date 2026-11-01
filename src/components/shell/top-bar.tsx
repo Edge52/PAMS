@@ -9,6 +9,11 @@ export function TopBar({ user }: { user: CurrentUser }) {
   const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
   return (
     <div className="mb-4 flex items-center justify-end gap-2 pl-20 md:pl-0">
+      <form action="/search" role="search" className="mr-auto min-w-0 flex-1 sm:max-w-sm md:ml-0">
+        <label htmlFor="global-search" className="sr-only">Search everything</label>
+        <input id="global-search" type="search" name="q" placeholder="Search equipment, rooms, suppliers…" autoComplete="off"
+          className="w-full rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm placeholder:text-faint focus:border-primary focus:outline-none" />
+      </form>
       <NotificationBell userId={user.id} />
       <details className="relative">
         <summary className="flex cursor-pointer list-none items-center gap-2 rounded-[var(--radius-control)] px-2 py-1 hover:bg-sunken [&::-webkit-details-marker]:hidden">
