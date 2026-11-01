@@ -264,3 +264,6 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - Device models come from `kindGeometry()` (merged primitives, y = 0 at the floor); status rings are one `InstancedMesh`.
   `positionDevices()` sets every colour, so call it after any status, highlight or selection change.
 - Labels: `buildLabels()` makes floor tags, department labels and room labels; `updateLabels()` picks by zoom and drops overlaps.
+- Wave 5 additions to the 3D view: `viewPreset("iso" | "plan" | "eye")` (eye level isolates a floor and returns its id),
+  `setSection(axis, at)` (global `renderer.clippingPlanes`), `setFacade(on)` (outline from `outlineFromRooms` in `twin/geometry.ts`),
+  `setHeatMode("smooth" | "blocks")` (smooth = canvas texture of radial glows per affected room).

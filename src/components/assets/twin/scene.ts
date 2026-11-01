@@ -9,7 +9,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, polygonArea, spreadInRoom, wallsFromRooms, type CoreKind, type DeviceKind, type Pt } from "./geometry";
+import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, outlineFromRooms, polygonArea, presetCamera, spreadInRoom, wallsFromRooms, type CoreKind, type DeviceKind, type Pt } from "./geometry";
 import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinRoom } from "./types";
 
 /** Drawn wall height in metres (clear height below the ceiling after MEP; floors sit 5 m apart). */
@@ -81,6 +81,7 @@ type FloorView = {
   roomBase: Map<number, THREE.Color>;        // room id → department colour
   heat: THREE.Mesh | null;                   // problem-layer blocks over affected rooms
   cores: THREE.Group | null;                 // stairs, lifts and shafts, 1 m tall; scaled to the gap to the floor above
+  facade: THREE.Group | null;                // glass envelope traced from the rooms, 1 m tall; scaled like the cores
   wallMesh: THREE.Mesh | null;
   wallLines: THREE.LineSegments | null;
   /** Thousands of CAD wall segments: dark tinted glass instead of additive glass in the dark style. */
@@ -170,6 +171,10 @@ export class TwinScene {
   private focus: Set<number> | null = null;
   private selOutline: THREE.Group | null = null;
   private labelCenter = new THREE.Vector3();
+  private facadeOn = true;
+  private heatMode: "smooth" | "blocks" = "smooth";
+  private section: { axis: "x" | "z"; at: number } | null = null;
+  private sectionPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
 
   constructor(private container: HTMLElement, private data: TwinData, private events: TwinEvents = {}) {
     this.reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -382,16 +387,40 @@ export class TwinScene {
 
     const cores = this.buildCores(rooms, s);
     if (cores) { cores.visible = this.coresOn; group.add(cores); }
+    const facade = this.buildFacade(rooms, s);
+    if (facade) group.add(facade);
 
     this.scene.add(group);
     const center = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
     const view: FloorView = {
-      floor: f, group, roomsMesh, roomIndexByFace, roomRanges, roomBase, heat: null, cores, wallMesh, wallLines, dense: wallSegs.length / 4 > 1500,
+      floor: f, group, roomsMesh, roomIndexByFace, roomRanges, roomBase, heat: null, cores, facade, wallMesh, wallLines, dense: wallSegs.length / 4 > 1500,
       extras, doors, glass, columns, slab, slabEdge: edge, slabBox, bounds: { x0, x1, z0, z1 }, center, size: Math.max(x1 - x0, z1 - z0, 20),
     };
     this.floors.set(f.id, view);
     this.styleFloor(view);
     this.tintFloor(view);
+  }
+
+  /** Glass façade: the floor's outline (traced from its rooms) as translucent panels 1 m tall, with a line at the floor. */
+  private buildFacade(rooms: TwinRoom[], s: number): THREE.Group | null {
+    const segs = outlineFromRooms(rooms.map((r) => r.poly.map(([x, y]) => [x * s, y * s] as Pt)));
+    if (!segs.length) return null;
+    const pos: number[] = [], lines: number[] = [];
+    for (let i = 0; i + 3 < segs.length; i += 4) {
+      const [ax, az, bx, bz] = [segs[i], segs[i + 1], segs[i + 2], segs[i + 3]];
+      pos.push(ax, 0, az, bx, 0, bz, bx, 1, bz, ax, 0, az, bx, 1, bz, ax, 1, az);
+      lines.push(ax, 0.02, az, bx, 0.02, bz, ax, 1, az, bx, 1, bz); // floor line and storey top
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
+    const glass = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: "#4fc3ff", transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false }));
+    glass.renderOrder = 6;
+    const lg = new THREE.BufferGeometry(); lg.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
+    const edge = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: "#7fdcff", transparent: true, opacity: 0.6, depthWrite: false }));
+    edge.renderOrder = 6;
+    const group = new THREE.Group();
+    group.add(glass, edge);
+    group.userData = { glass, edge };
+    return group;
   }
 
   /** Stairs, lifts and shafts as translucent prisms 1 m tall (stretched to the floor above in layoutFloors). */
@@ -438,6 +467,13 @@ export class TwinScene {
         const above = byElev.find((f) => f.elevation > v.floor.elevation);
         const gap = this.isolated == null && above ? (above.elevation - v.floor.elevation) * this.explode : WALL_HEIGHT;
         v.cores.scale.y = Math.max(WALL_HEIGHT, gap - 0.05);
+      }
+      if (v.facade) {
+        const above = byElev.find((f) => f.elevation > v.floor.elevation);
+        const gap = above ? (above.elevation - v.floor.elevation) * this.explode : WALL_HEIGHT;
+        const k = Math.max(WALL_HEIGHT, gap - 0.3);
+        (v.facade.userData.glass as THREE.Mesh).scale.y = k;
+        (v.facade.userData.edge as THREE.LineSegments).scale.y = k;
       }
     }
     this.applyFloorVisibility();
@@ -655,6 +691,8 @@ export class TwinScene {
       for (const o of [v.wallMesh, v.wallLines, v.glass, v.columns]) if (o) o.scale.y = k;
       if (v.doors) v.doors.visible = full;
       if (v.columns) v.columns.visible = full;
+      // The façade wraps the building from afar; it would only get in the way on one floor or close up.
+      if (v.facade) v.facade.visible = this.facadeOn && !full;
     }
   }
 
@@ -681,6 +719,12 @@ export class TwinScene {
     if (v.doors) (v.doors.material as THREE.LineBasicMaterial).color.set(P.door);
     if (v.glass) (v.glass.material as THREE.LineBasicMaterial).color.set(P.glass);
     if (v.columns) (v.columns.material as THREE.LineBasicMaterial).color.set(P.column);
+    if (v.facade) {
+      const g = v.facade.userData.glass.material as THREE.MeshBasicMaterial, e = v.facade.userData.edge.material as THREE.LineBasicMaterial;
+      g.color.set(light ? "#5ea9d4" : "#4fc3ff"); g.opacity = light ? 0.3 : 0.08;
+      g.blending = light ? THREE.NormalBlending : THREE.AdditiveBlending; g.needsUpdate = true;
+      e.color.set(light ? "#4f6e86" : "#7fdcff"); e.opacity = light ? 0.75 : 0.6;
+    }
   }
 
   /** Switch between the glowing dark style and the light architectural one. */
@@ -700,6 +744,78 @@ export class TwinScene {
     this.positionDevices();
     this.drawSelection();
     this.buildLabels();
+  }
+
+  /** Show or hide the glass façade around the building (whole-building view from afar). */
+  setFacade(on: boolean) { this.facadeOn = on; this.applyWallHeights(); }
+
+  /** Problem layers as smooth colour spreading from the affected rooms, or as blocks over them. */
+  setHeatMode(mode: "smooth" | "blocks") { this.heatMode = mode; for (const v of this.floors.values()) this.buildHeat(v, this.tints?.map ?? null); }
+
+  /** Extent of the building in metres (from the rooms, not the site linework). */
+  private roomExtent() {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const r of this.data.rooms) {
+      const f = this.floorById.get(r.floorId); if (!f) continue;
+      const s = this.u(f);
+      for (const [x, y] of r.poly) { x0 = Math.min(x0, x * s); x1 = Math.max(x1, x * s); z0 = Math.min(z0, y * s); z1 = Math.max(z1, y * s); }
+    }
+    return Number.isFinite(x0) ? { x0, x1, z0, z1 } : { x0: 0, x1: 100, z0: 0, z1: 100 };
+  }
+
+  /**
+   * Section cut: hide everything beyond a vertical plane, to look inside the building. `at` is 0–1 across the building
+   * (east–west for "x", north–south for "z"); null removes the cut.
+   */
+  setSection(axis: "x" | "z" | null, at = 0.5) {
+    this.section = axis ? { axis, at: Math.min(1, Math.max(0, at)) } : null;
+    if (!this.section) { this.renderer.clippingPlanes = []; return; }
+    const e = this.roomExtent();
+    const [a, b] = this.section.axis === "x" ? [e.x0, e.x1] : [e.z0, e.z1];
+    const pos = a + (b - a) * this.section.at;
+    this.sectionPlane.normal.set(this.section.axis === "x" ? -1 : 0, 0, this.section.axis === "z" ? -1 : 0);
+    this.sectionPlane.constant = pos;
+    this.renderer.clippingPlanes = [this.sectionPlane];
+  }
+
+  /**
+   * Camera presets: isometric, plan (straight down) or eye level (standing in the selected room, or in the middle of the
+   * floor). Eye level needs one floor: it shows the chosen floor, or the lowest floor above ground.
+   */
+  viewPreset(kind: "iso" | "plan" | "eye"): number | null {
+    this.userMoved = true;
+    if (kind === "eye") {
+      let fid = this.isolated;
+      const sel = this.selected?.kind === "room" ? this.selected.id : this.selected?.kind === "asset" ? this.assetsById.get(this.selected.id)?.roomId ?? null : null;
+      const selRoom = sel != null ? this.roomById.get(sel) : null;
+      if (selRoom) fid = selRoom.floorId;
+      if (fid == null) fid = [...this.data.floors].filter((f) => f.level >= 0).sort((a, b) => a.level - b.level)[0]?.id ?? this.data.floors[0]?.id ?? null;
+      if (fid == null) return null;
+      if (this.isolated !== fid) this.isolateFloor(fid, false);
+      const f = this.floorById.get(fid)!;
+      // Stand inside a room (the selected one, or the floor's largest) and look along its length.
+      const room = selRoom ?? this.data.rooms.filter((r) => r.floorId === fid && r.poly.length >= 3 && !coreKind(r.name))
+        .sort((a, b) => polygonArea(b.poly as Pt[]) - polygonArea(a.poly as Pt[]))[0];
+      if (!room) return fid;
+      const s = this.u(f);
+      const [px, py] = interiorPoint(room.poly as Pt[]);
+      const xs = room.poly.map((q) => q[0] * s), zs = room.poly.map((q) => q[1] * s);
+      const spanX = Math.max(...xs) - Math.min(...xs), spanZ = Math.max(...zs) - Math.min(...zs);
+      const along = spanX >= spanZ ? { x: 1, z: 0 } : { x: 0, z: 1 };
+      const d = Math.max(1, Math.min(5, Math.max(spanX, spanZ) / 3));
+      const eye = this.floorY(f) + 1.6;
+      this.setCamera([px * s - along.x * d, eye, py * s - along.z * d], [px * s + along.x * d, eye, py * s + along.z * d]);
+      return fid;
+    }
+    const shown = [...this.floors.values()].filter((v) => this.floorShown(v.floor.id));
+    if (!shown.length) return this.isolated;
+    const e = this.roomExtent();
+    const size = Math.max(e.x1 - e.x0, e.z1 - e.z0, 20);
+    const ys = shown.map((v) => this.floorY(v.floor));
+    const target = { x: (e.x0 + e.x1) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2, z: (e.z0 + e.z1) / 2 };
+    const cam = presetCamera(kind, target, this.isolated != null ? size * 0.8 : size);
+    this.setCamera([cam.x, cam.y, cam.z], [target.x, target.y, target.z]);
+    return this.isolated;
   }
 
   /** Show or fold away the basement levels in the whole-building view. */
@@ -869,8 +985,12 @@ export class TwinScene {
 
   /** Glowing blocks over affected rooms; taller = worse (level 0–3). */
   private buildHeat(v: FloorView, tints: Map<number, { color: string; level: number }> | null) {
-    if (v.heat) { v.group.remove(v.heat); v.heat.geometry.dispose(); (v.heat.material as THREE.Material).dispose(); v.heat = null; }
+    if (v.heat) {
+      v.group.remove(v.heat); v.heat.geometry.dispose();
+      const m = v.heat.material as THREE.MeshBasicMaterial; m.map?.dispose(); m.dispose(); v.heat = null;
+    }
     if (!tints) return;
+    if (this.heatMode === "smooth") { this.buildSmoothHeat(v, tints); return; }
     const s = this.u(v.floor);
     const parts: THREE.BufferGeometry[] = [];
     for (const r of this.data.rooms) {
@@ -892,6 +1012,47 @@ export class TwinScene {
     for (const p of parts) p.dispose();
     if (!merged) return;
     v.heat = new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+    v.heat.renderOrder = 4;
+    v.group.add(v.heat);
+  }
+
+  /**
+   * Smooth heat map: each affected room paints a soft glow in its colour, bigger and stronger the worse it is, worst
+   * drawn last, onto a texture laid over the floor.
+   */
+  private buildSmoothHeat(v: FloorView, tints: Map<number, { color: string; level: number }>) {
+    const s = this.u(v.floor);
+    const hits = this.data.rooms.filter((r) => r.floorId === v.floor.id && r.poly.length >= 3 && tints.has(r.id))
+      .map((r) => ({ r, t: tints.get(r.id)!, area: polygonArea(r.poly as Pt[]) * s * s })).sort((a, b) => a.t.level - b.t.level);
+    if (!hits.length) return;
+    // Texture over the rooms' extent on this floor, about 4 px per metre (at most 1024 px on the long side).
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const r of this.data.rooms) if (r.floorId === v.floor.id) for (const [x, y] of r.poly) { x0 = Math.min(x0, x * s); x1 = Math.max(x1, x * s); z0 = Math.min(z0, y * s); z1 = Math.max(z1, y * s); }
+    const pad = 12; x0 -= pad; z0 -= pad; x1 += pad; z1 += pad;
+    const ppm = Math.min(4, 1024 / Math.max(x1 - x0, z1 - z0));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(2, Math.ceil((x1 - x0) * ppm)); canvas.height = Math.max(2, Math.ceil((z1 - z0) * ppm));
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
+    for (const { r, t, area } of hits) {
+      const [px, py] = interiorPoint(r.poly as Pt[]);
+      const cx = (px * s - x0) * ppm, cy = (py * s - z0) * ppm;
+      const radius = (Math.sqrt(area) * 0.9 + 4 + t.level * 3) * ppm;
+      const c = new THREE.Color(t.color);
+      const rgb = `${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)}`;
+      const strength = 0.55 + t.level * 0.13;
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      grad.addColorStop(0, `rgba(${rgb}, ${strength})`);
+      grad.addColorStop(0.55, `rgba(${rgb}, ${strength * 0.55})`);
+      grad.addColorStop(1, `rgba(${rgb}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const plane = new THREE.PlaneGeometry(x1 - x0, z1 - z0);
+    plane.rotateX(-Math.PI / 2);
+    v.heat = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+    v.heat.position.set((x0 + x1) / 2, 0.12, (z0 + z1) / 2);
     v.heat.renderOrder = 4;
     v.group.add(v.heat);
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centroid, coreKind, floorLoadOrder, isSlow, deviceKind, interiorPoint, latticeInside, pointInPolygon, polygonArea, rectPoly, spreadInRoom, wallsFromRooms, type Pt } from "./geometry";
+import { centroid, coreKind, floorLoadOrder, isSlow, outlineFromRooms, presetCamera, deviceKind, interiorPoint, latticeInside, pointInPolygon, polygonArea, rectPoly, spreadInRoom, wallsFromRooms, type Pt } from "./geometry";
 
 const L: Pt[] = [[0, 0], [100, 0], [100, 30], [30, 30], [30, 100], [0, 100]]; // L-shaped room, centroid outside the bar
 
@@ -81,5 +81,24 @@ describe("vertical cores and loading", () => {
     expect(isSlow([...Array(45).fill(60), ...Array(5).fill(10)])).toBe(true);
     expect(isSlow([...Array(45).fill(16), 900, 900, 900, 900, 900])).toBe(false);
     expect(isSlow(Array(10).fill(80))).toBe(false);
+  });
+});
+
+describe("façade outline and camera presets", () => {
+  it("traces the outside of two rooms with a wall gap between them as one rectangle", () => {
+    const segs = outlineFromRooms([rectPoly(0, 0, 10, 6), rectPoly(10.2, 0, 10, 6)], 1);
+    // Total outline length ≈ the perimeter of a 20 × 6 block (cells snap it to the grid).
+    let len = 0;
+    for (let i = 0; i < segs.length; i += 4) len += Math.hypot(segs[i + 2] - segs[i], segs[i + 3] - segs[i + 1]);
+    expect(len).toBeGreaterThan(48);
+    expect(len).toBeLessThan(62);
+  });
+  it("gives no façade for an empty floor or a huge site plan", () => {
+    expect(outlineFromRooms([])).toEqual([]);
+    expect(outlineFromRooms([rectPoly(0, 0, 5000, 5000)], 1)).toEqual([]);
+  });
+  it("places preset cameras", () => {
+    expect(presetCamera("plan", { x: 1, y: 2, z: 3 }, 100)).toEqual({ x: 1, y: 127, z: 3.01 });
+    expect(presetCamera("eye", { x: 0, y: 1.6, z: 0 }, 50).y).toBe(1.6);
   });
 });

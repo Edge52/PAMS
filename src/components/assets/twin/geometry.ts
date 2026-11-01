@@ -158,3 +158,73 @@ export function isSlow(frameMs: number[], ms = 45, min = 40): boolean {
   const sorted = [...frameMs].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)] > ms; // median: one stall (a tab switch, a GC) doesn't count
 }
+
+/**
+ * The outline of a floor traced from its rooms (for the glass façade): rooms are rasterised onto a grid of `cell`
+ * metres, small gaps (walls, shafts) are closed, and the edges between filled and empty cells are returned as segments
+ * [x1, z1, x2, z2, …] in metres, with collinear runs merged. Polygons are in metres.
+ */
+export function outlineFromRooms(polys: Pt[][], cell = 1.5): number[] {
+  const all = polys.filter((p) => p.length >= 3);
+  if (!all.length) return [];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of all) for (const [x, y] of p) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
+  const pad = 2;
+  const nx = Math.ceil((maxX - minX) / cell) + pad * 2, ny = Math.ceil((maxY - minY) / cell) + pad * 2;
+  if (nx * ny > 400_000) return []; // a site plan, not a building: no façade
+  const ox = minX - pad * cell, oy = minY - pad * cell;
+  let grid = new Uint8Array(nx * ny);
+  const boxes = all.map((p) => { let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity; for (const [x, y] of p) { a = Math.min(a, x); b = Math.min(b, y); c = Math.max(c, x); d = Math.max(d, y); } return [a, b, c, d] as const; });
+  for (let k = 0; k < all.length; k++) {
+    const [a, b, c, d] = boxes[k];
+    for (let j = Math.max(0, Math.floor((b - oy) / cell)); j <= Math.min(ny - 1, Math.floor((d - oy) / cell)); j++) {
+      for (let i = Math.max(0, Math.floor((a - ox) / cell)); i <= Math.min(nx - 1, Math.floor((c - ox) / cell)); i++) {
+        if (grid[j * nx + i]) continue;
+        if (pointInPolygon([ox + (i + 0.5) * cell, oy + (j + 0.5) * cell], all[k])) grid[j * nx + i] = 1;
+      }
+    }
+  }
+  // Close gaps of one cell (walls between rooms): dilate, then erode.
+  const morph = (src: Uint8Array, grow: boolean) => {
+    const out = new Uint8Array(src.length);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      let v = grow ? 0 : 1;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const x = i + di, y = j + dj;
+        const s = x >= 0 && y >= 0 && x < nx && y < ny ? src[y * nx + x] : 0;
+        if (grow ? s : !s) v = grow ? 1 : 0;
+      }
+      out[j * nx + i] = v;
+    }
+    return out;
+  };
+  grid = morph(morph(grid, true), false);
+  const at = (i: number, j: number) => (i >= 0 && j >= 0 && i < nx && j < ny ? grid[j * nx + i] : 0);
+  const segs: number[] = [];
+  // Horizontal edges (between rows), merged along each row.
+  for (let j = 0; j <= ny; j++) {
+    let start = -1;
+    for (let i = 0; i <= nx; i++) {
+      const edge = i < nx && at(i, j) !== at(i, j - 1);
+      if (edge && start < 0) start = i;
+      if (!edge && start >= 0) { segs.push(ox + start * cell, oy + j * cell, ox + i * cell, oy + j * cell); start = -1; }
+    }
+  }
+  for (let i = 0; i <= nx; i++) {
+    let start = -1;
+    for (let j = 0; j <= ny; j++) {
+      const edge = j < ny && at(i, j) !== at(i - 1, j);
+      if (edge && start < 0) start = j;
+      if (!edge && start >= 0) { segs.push(ox + i * cell, oy + start * cell, ox + i * cell, oy + j * cell); start = -1; }
+    }
+  }
+  return segs;
+}
+
+/** Camera placement for a preset view around a target (metres): returns the camera position. Pure. */
+export function presetCamera(kind: "iso" | "plan" | "eye", target: { x: number; y: number; z: number }, size: number): { x: number; y: number; z: number } {
+  if (kind === "plan") return { x: target.x, y: target.y + size * 1.25, z: target.z + 0.01 };
+  if (kind === "eye") return { x: target.x - 6, y: target.y, z: target.z - 6 };
+  const d = size * 1.1;
+  return { x: target.x + d * 0.7, y: target.y + d * 0.75, z: target.z + d * 0.7 };
+}

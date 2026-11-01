@@ -64,6 +64,10 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const style = useSyncExternalStore(subscribeStyle, readStyle, () => "dark" as TwinStyle);
   const setStyle = writeStyle;
   const [basements, setBasements] = useState(false);
+  const [facade, setFacade] = useState(true);
+  const [heatMode, setHeatMode] = useState<"smooth" | "blocks">("smooth");
+  const [sectionAxis, setSectionAxis] = useState<"" | "x" | "z">("");
+  const [sectionAt, setSectionAt] = useState(0.5);
   const hasBasements = data.floors.some((f) => f.level < 0) && data.floors.some((f) => f.level >= 0);
   const [cores, setCores] = useState(true);
   const [coreCounts, setCoreCounts] = useState<Record<string, number> | null>(null);
@@ -260,6 +264,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => { if (ready) sceneRef.current?.setBloom(bloom); }, [bloom, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setStyle(style); }, [style, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setShowBasements(basements); }, [basements, ready]);
+  useEffect(() => { if (ready) sceneRef.current?.setFacade(facade); }, [facade, ready]);
+  useEffect(() => { if (ready) sceneRef.current?.setHeatMode(heatMode); }, [heatMode, ready]);
+  useEffect(() => { if (ready) sceneRef.current?.setSection(sectionAxis || null, sectionAt); }, [sectionAxis, sectionAt, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setCores(cores); }, [cores, ready]);
   // Fill the window below the app's top bar exactly (its height varies), so nothing hides under the bottom edge.
   useEffect(() => {
@@ -429,10 +436,25 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           </button>
         ))}
       </div>
+      <div className="mb-3 flex gap-1 text-xs" role="group" aria-label="Camera">
+        {([["iso", "Isometric"], ["plan", "Plan"], ["eye", "Eye level"]] as const).map(([k, label]) => (
+          <button key={k} type="button" onClick={() => { const f = sceneRef.current?.viewPreset(k); if (k === "eye" && f != null) setFloorId(f); }}
+            className="flex-1 rounded-md border border-[#1d4f6d] px-2 py-1 text-[#d6f3ff] hover:border-[#2fd3ff]">{label}</button>
+        ))}
+      </div>
       <label className="flex items-center justify-between text-[13px]" htmlFor="twin-explode">Floor spacing <span className="text-[#8fb6cc]">{explode.toFixed(1)}×</span></label>
       <input id="twin-explode" type="range" min={1} max={4} step={0.1} value={explode} onChange={(e) => setExplode(Number(e.target.value))} className="w-full accent-[#2fd3ff]" />
       {style === "dark" && <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={bloom} onChange={(e) => setBloom(e.target.checked)} className="accent-[#2fd3ff]" /> Glow</label>}
       {hasBasements && <label className="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" checked={basements} onChange={(e) => setBasements(e.target.checked)} className="accent-[#2fd3ff]" /> Basements in the whole building</label>}
+      <label className="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" checked={facade} onChange={(e) => setFacade(e.target.checked)} className="accent-[#2fd3ff]" /> Glass façade (from afar)</label>
+      <div className="mt-3 border-t border-[#123a55] pt-2">
+        <label className="flex items-center justify-between gap-2 text-[13px]" htmlFor="twin-section">Section cut
+          <select id="twin-section" value={sectionAxis} onChange={(e) => setSectionAxis(e.target.value as "" | "x" | "z")} className="twin-input w-auto py-0.5 text-xs">
+            <option value="">Off</option><option value="x">East–west</option><option value="z">North–south</option>
+          </select>
+        </label>
+        {sectionAxis && <input type="range" min={0} max={1} step={0.01} value={sectionAt} onChange={(e) => setSectionAt(Number(e.target.value))} aria-label="Where to cut" className="mt-1 w-full accent-[#2fd3ff]" />}
+      </div>
       {coreCounts && coreCounts.stair + coreCounts.lift + coreCounts.shaft > 0 && (
         <>
           <label className="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" checked={cores} onChange={(e) => setCores(e.target.checked)} className="accent-[#2fd3ff]" /> Lifts and stairs</label>
@@ -490,7 +512,15 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               </button>
             ))}
           </div>
-          <p className="mt-2 text-xs text-[#8fb6cc]">{scope === "department" ? LAYER_INFO[layer].help.replace("each room", "each department") : LAYER_INFO[layer].help} Taller blocks mean more.</p>
+          <div className="mt-2 flex gap-1 text-xs" role="group" aria-label="Show as">
+            {(["smooth", "blocks"] as const).map((m) => (
+              <button key={m} type="button" aria-pressed={heatMode === m} onClick={() => setHeatMode(m)}
+                className={`flex-1 rounded-md border px-2 py-1 ${heatMode === m ? "border-[#2fd3ff] bg-[#0c2a40] text-white" : "border-[#1d4f6d] text-[#8fb6cc]"}`}>
+                {m === "smooth" ? "Heat map" : "Blocks"}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-[#8fb6cc]">{scope === "department" ? LAYER_INFO[layer].help.replace("each room", "each department") : LAYER_INFO[layer].help} {heatMode === "blocks" ? "Taller blocks mean more." : "Stronger colour means more."}</p>
           {legend && (
             <ul className="mt-2 space-y-1 text-[13px]" aria-label="Legend">
               {legend.labels.map((lab, i) => (
