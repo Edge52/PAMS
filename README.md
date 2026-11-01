@@ -8,6 +8,12 @@ Hospital procurement, BOQ planning and medical asset management in one system.
 
 The modules share one device classification, so a line flows from BOQ → specification → offer → purchase order → delivered asset → room on the map, and the BOQ's "plan vs installed" view closes the loop.
 
+## Documentation
+
+- [System documentation (release 3.0)](docs/system-documentation.md): what the system does, roles, architecture, limitations, backlog
+- [User guide](docs/user-guide.md): everyday jobs by role
+- [Deployment and going live](docs/deploy.md) · [Reference figures](docs/reference-figures.md) · [Changelog](CHANGELOG.md) · [All documents](docs/README.md)
+
 ## Try it on a laptop
 
 Requirements: Node.js 22 or newer ([nodejs.org](https://nodejs.org), or `brew install node` on a Mac). Nothing else.
