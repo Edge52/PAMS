@@ -17,6 +17,7 @@ import { boqTotal } from "@/lib/procurement/tender";
 import { getBoqWorkspace } from "@/lib/boq/queries";
 import { fitLines } from "@/lib/boq/checks-server";
 import { describeChange, fitToBudget } from "@/lib/boq/fit-budget";
+import { cleanPhaseMonths, MAX_PHASES } from "@/lib/boq/phasing";
 
 /** Only drafts change: a BOQ under review is frozen so approvers approve exactly what was submitted. */
 const EDITABLE = ["DRAFT"] as const;
@@ -567,4 +568,29 @@ export async function fitToBudgetAction(fd: FormData) {
   redirect(`${back}&notice=${enc(r.reached
     ? `Within the target now: ${money(r.after)} after ${r.changes.length} changes.`
     : `${r.changes.length} changes saved ${money(r.before - r.after)}, still ${money(r.after - r.target)} over: the rest is essential equipment or prices typed by hand.`)}`);
+}
+
+/** Phasing: the day phase 1 opens, when phases 2–4 open (months after phase 1), and each department's phase. */
+export async function savePhasing(fd: FormData) {
+  const me = await requirePermission("boq.edit");
+  const boqId = int(fd, "boqId") ?? 0;
+  const back = `/boq/${boqId}?tab=phasing`;
+  await loadEditableBoq(boqId, back, me);
+  const opening = str(fd, "openingDate");
+  if (opening && !/^\d{4}-\d{2}-\d{2}$/.test(opening)) fail(back, "Enter the opening date as a date.");
+  const months = cleanPhaseMonths([0, int(fd, "phase2"), int(fd, "phase3"), int(fd, "phase4")]);
+  const depts = await db.select({ id: boqDepartments.id, phase: boqDepartments.phase }).from(boqDepartments).where(eq(boqDepartments.boqId, boqId));
+  let moved = 0;
+  await db.transaction(async (tx) => {
+    await tx.update(boqs).set({ openingDate: opening ?? null, phaseMonths: months }).where(eq(boqs.id, boqId));
+    for (const d of depts) {
+      const p = int(fd, `phase_${d.id}`);
+      if (p == null || p < 1 || p > MAX_PHASES || p === d.phase) continue;
+      await tx.update(boqDepartments).set({ phase: p }).where(eq(boqDepartments.id, d.id));
+      moved++;
+    }
+    await logActivity("boq", boqId, "phasing", `Phasing saved: phase 1 opens ${opening ?? "(no date)"}, phases at ${months.join(", ")} months; ${moved} department${moved === 1 ? "" : "s"} moved.`, me.name, tx);
+  });
+  revalidatePath(`/boq/${boqId}`);
+  redirect(`${back}&notice=${enc("Phasing saved.")}`);
 }

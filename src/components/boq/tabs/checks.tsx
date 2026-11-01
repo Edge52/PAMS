@@ -4,13 +4,14 @@ import { fitToBudgetAction } from "@/app/boq/actions";
 import { PER_LABEL } from "@/lib/boq/benchmarks";
 import { describeChange } from "@/lib/boq/fit-budget";
 import type { BoqChecks } from "@/lib/boq/checks-server";
+import type { ReqResult } from "@/lib/boq/room-requirements";
 import type { BoqWorkspace } from "@/lib/boq/queries";
 import { formatMoney, formatNumber } from "@/lib/format";
 
 const SEVERITY = { high: { tone: "danger", label: "High" }, medium: { tone: "warn", label: "Medium" }, low: { tone: "info", label: "Low" } } as const;
 
 /** Checks: risk flags, fit to budget, and benchmarks against reference ranges. */
-export function ChecksTab({ ws, checks, locked }: { ws: BoqWorkspace; checks: BoqChecks; locked: boolean }) {
+export function ChecksTab({ ws, checks, locked, rooms }: { ws: BoqWorkspace; checks: BoqChecks; locked: boolean; rooms: ReqResult[] }) {
   const { boq } = ws;
   const money = (n: number) => formatMoney(n, boq.currency, { compact: Math.abs(n) >= 1e6 });
   const { fit, risks, benchmarks } = checks;
@@ -89,6 +90,33 @@ export function ChecksTab({ ws, checks, locked }: { ws: BoqWorkspace; checks: Bo
                 <Button variant="primary">Apply these {fit.changes.length} changes</Button>
               </form>
             )}
+          </>
+        )}
+      </Panel>
+
+      <Panel title="Room requirements" actions={<span className="text-xs text-muted">{rooms.length ? `${rooms.filter((r) => r.status !== "ok").length} of ${rooms.length} need attention` : ""}</span>}>
+        {rooms.length === 0 ? <p className="text-sm text-muted">No equipment in this BOQ needs a special room (CT, MRI, angiography, X-ray rooms, theatres).</p> : (
+          <>
+            <p className="mb-3 text-xs text-muted">Room areas come from the floor plans of the linked departments. Draft planning figures — confirm with each vendor&apos;s site planning guide.</p>
+            <ul className="space-y-3">
+              {rooms.map((r, i) => (
+                <li key={`${r.device}-${r.department}-${i}`} className="rounded-[var(--radius-panel)] border border-line px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={r.status === "ok" ? "ok" : r.status === "short" ? "danger" : "warn"}>
+                      {r.status === "ok" ? "Rooms fit" : r.status === "short" ? "Not enough room" : r.status === "no-rooms" ? "No rooms drawn" : "Not linked"}
+                    </Badge>
+                    <span className="font-semibold">{r.quantity} × {r.device}</span><span className="text-sm text-muted">· {r.department}</span>
+                  </div>
+                  <p className="mt-1 text-sm">
+                    {r.status === "ok" && <>Fits in {r.fitting.map((f) => `${f.name} ${f.code} (${formatNumber(f.area, 1)} m²)`).join(", ")}; needs at least {r.need.minArea} m².</>}
+                    {r.status === "short" && <>{r.fitting.length} of {r.quantity} fit. {r.largest ? <>The largest free room is {r.largest.name} {r.largest.code} at {formatNumber(r.largest.area, 1)} m²; </> : null}needs at least {r.need.minArea} m².</>}
+                    {r.status === "no-rooms" && <>The linked department has no rooms on the floor plans yet. Needs at least {r.need.minArea} m².</>}
+                    {r.status === "not-linked" && <>Link this BOQ department to a real department (Departments tab) to check it against the floor plans. Needs at least {r.need.minArea} m².</>}
+                  </p>
+                  <p className="mt-1 text-xs text-muted">{[r.need.shielding && `Shielding: ${r.need.shielding}`, r.need.power && `Power: ${r.need.power}`, r.need.hvac && `HVAC: ${r.need.hvac}`, r.need.floorLoad && `Floor load: ${r.need.floorLoad}`].filter(Boolean).join(" · ")}</p>
+                </li>
+              ))}
+            </ul>
           </>
         )}
       </Panel>

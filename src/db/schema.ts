@@ -345,6 +345,9 @@ export const boqs = pgTable("boqs", {
   priceTier: priceTier("price_tier").notNull().default("STANDARD"),
   /** Budget the planner is aiming for (shown against the total). */
   targetBudget: money("target_budget"),
+  /** Phasing (wave 4): the day phase 1 opens, and months after it that phases 1–4 open. */
+  openingDate: date("opening_date"),
+  phaseMonths: jsonb("phase_months").$type<number[]>().notNull().default([0, 6, 12, 18]),
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -364,6 +367,8 @@ export const boqDepartments = pgTable("boq_departments", {
   params: jsonb("params").$type<Record<string, number>>().notNull().default({}),
   /** Price tier for this department; null = the BOQ's. */
   priceTier: priceTier("price_tier"),
+  /** Opening phase (1–4) for phasing and cash flow (wave 4). */
+  phase: integer("phase").notNull().default(1),
 });
 
 export const boqLines = pgTable("boq_lines", {

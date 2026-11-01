@@ -55,7 +55,7 @@ export async function getBoqWorkspace(id: number) {
   const project = boq.projectId ? (await db.select().from(projects).where(eq(projects.id, boq.projectId)))[0] ?? null : null;
   const depts = await db.select({
     id: boqDepartments.id, departmentTypeCode: boqDepartments.departmentTypeCode, departmentId: boqDepartments.departmentId,
-    label: boqDepartments.label, beds: boqDepartments.beds, rooms: boqDepartments.rooms, instances: boqDepartments.instances, params: boqDepartments.params, priceTier: boqDepartments.priceTier,
+    label: boqDepartments.label, beds: boqDepartments.beds, rooms: boqDepartments.rooms, instances: boqDepartments.instances, params: boqDepartments.params, priceTier: boqDepartments.priceTier, phase: boqDepartments.phase,
     typeName: departmentTypes.name, sortOrder: departmentTypes.sortOrder, realName: departments.name,
   }).from(boqDepartments)
     .innerJoin(departmentTypes, eq(departmentTypes.code, boqDepartments.departmentTypeCode))

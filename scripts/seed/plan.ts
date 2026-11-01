@@ -30,10 +30,12 @@ export default async function seed(db: DB) {
   if (!scope.length) { console.log("  plan: La Plaza has no departments with a type, skipped"); return; }
   const [boq] = await db.insert(boqs).values({
     name: NAME, facilityId: fac.id, standardSetId: set.id, totalHospitalBeds: fac.totalBeds, currency: "USD",
-    contingencyPct: 5, includeTiers: ["ESSENTIAL"], status: "APPROVED",
+    contingencyPct: 5, includeTiers: ["ESSENTIAL"], status: "APPROVED", openingDate: "2027-03-01", phaseMonths: [0, 6, 12, 18],
     notes: "Demo: generated from La Plaza's departments as the reference plan for commissioning (3D view → Plan vs installed).",
   }).returning({ id: boqs.id });
-  await db.insert(boqDepartments).values(scope.map((s) => ({ ...s, boqId: boq.id })));
+  // Demo phasing: critical care, emergency and theatres open first, wards six months later, the rest after a year.
+  const phaseOf = (code: string) => (["ICU", "CCU", "NICU", "ER", "OR", "PACU", "RAD", "LAB"].includes(code) ? 1 : code.startsWith("WARD") || code === "LDR" ? 2 : 3);
+  await db.insert(boqDepartments).values(scope.map((s) => ({ ...s, boqId: boq.id, phase: phaseOf(s.departmentTypeCode) })));
   const res = await regenerateBoq(db, boq.id, convert);
   console.log(`  plan: "${NAME}" — ${scope.length} departments, ${res.plan.counts.added} lines`);
 }
