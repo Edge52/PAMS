@@ -222,3 +222,20 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - Price tiers (`price_tier` BASIC / STANDARD / PREMIUM): pure in `src/lib/boq/pricing.ts` (`tierPriceUsd`, `effectiveTier`,
   `scenarioTotals`). Tier on the BOQ, the department or the line (line wins). `repriceBoqLines()` in `src/lib/boq/generate.ts`
   reprices from the catalogue bands and never touches a price typed by hand (`boq_lines.price_manual`).
+
+# Wave 4 additions
+
+## 3D view
+- Floors load the linked floor first (`floorLoadOrder`), the rest three at a time; `TwinScene.build()` resolves after the first.
+  Anything that reads a floor's view (`this.floors.get`) must allow it to be missing while loading; use `floorById` for data.
+- Only pulsing (faulty) devices are updated per frame (`pulseDevices`); call `positionDevices()` after any change.
+- Lifts, stairs and shafts come from room names (`coreKind` in `twin/geometry.ts`).
+- Plan vs installed: `/assets/3d/plan?facilityId=&boqId=` (needs `boq.view`), rules in `src/lib/assets/plan-installed.ts`.
+- Nearest working device: `twin/nearest.ts` (same floor first, other floors via lift/stairs, fixed cost per storey).
+
+## BOQ checks and planning
+- Pure rules: `fit-budget.ts`, `benchmarks.ts`, `risks.ts`, `room-requirements.ts`, `tco.ts`, `phasing.ts` in `src/lib/boq`;
+  DB side in `checks-server.ts` and `planning-server.ts`. Tabs: Checks (`?tab=checks`), Phasing & costs (`?tab=phasing`).
+- `fitToBudgetAction` recomputes the proposal on the server; never apply a client-sent list.
+- Migration `0014_wave4_phasing`: `boq_departments.phase`, `boqs.opening_date`, `boqs.phase_months`.
+- Demo seed `scripts/seed/plan.ts` (runs last): La Plaza's approved fit-out plan BOQ, phased.
