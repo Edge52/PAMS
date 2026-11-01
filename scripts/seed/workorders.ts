@@ -51,6 +51,11 @@ export default async function seed(db: DB) {
     for (let i = 0; i < visits.length; i += 500) await db.insert(maintenanceEvents).values(visits.slice(i, i + 500));
   }
 
+  // The demo launcher seeds on every start: once demo jobs or contracts exist, don't add them again (contract numbers
+  // are unique, so a second run would fail and stop the app).
+  const existing = await db.execute<{ n: number }>(sql`select ((select count(*) from service_contracts) + (select count(*) from work_orders))::int as n`);
+  if (Number(existing.rows[0]?.n ?? 0) > 0) { console.log("  workorders: demo jobs and contracts already loaded, skipped"); return; }
+
   const down = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, status: assets.status, criticality: assets.criticality, notes: assets.notes })
     .from(assets).where(inArray(assets.status, ["OUT_OF_SERVICE", "UNDER_MAINTENANCE"])).orderBy(assets.id);
   const working = await db.select({ id: assets.id, facilityId: assets.facilityId, criticality: assets.criticality })
