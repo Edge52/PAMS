@@ -9,7 +9,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { deviceKind, interiorPoint, polygonArea, spreadInRoom, wallsFromRooms, type DeviceKind, type Pt } from "./geometry";
+import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, polygonArea, spreadInRoom, wallsFromRooms, type CoreKind, type DeviceKind, type Pt } from "./geometry";
 import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinRoom } from "./types";
 
 /** Drawn wall height in metres (clear height below the ceiling after MEP; floors sit 5 m apart). */
@@ -20,6 +20,9 @@ const NEAR_DISTANCE = 75;
 /** Room labels appear on the isolated floor when the camera is closer than this. */
 const LABEL_DISTANCE = 120;
 const MAX_LABELS = 70;
+/** Floors fetched at the same time after the first one. */
+const LOAD_CONCURRENCY = 3;
+const CORE_COLORS: Record<CoreKind, string> = { stair: "#a78bff", lift: "#ff8fd8", shaft: "#5b7f9c" };
 
 /** Marker shapes close up: geometry and the height of its centre above the floor (metres). */
 function kindGeometry(k: DeviceKind): { geo: THREE.BufferGeometry; y: number } {
@@ -46,6 +49,7 @@ type FloorView = {
   roomRanges: Map<number, [number, number]>; // room id → [first vertex, vertex count] in roomsMesh
   roomBase: Map<number, THREE.Color>;        // room id → department colour
   heat: THREE.Mesh | null;                   // problem-layer blocks over affected rooms
+  cores: THREE.Group | null;                 // stairs, lifts and shafts, 1 m tall; scaled to the gap to the floor above
   wallMesh: THREE.Mesh | null;
   wallLines: THREE.LineSegments | null;
   extras: THREE.Object3D[];
@@ -60,6 +64,8 @@ export type TwinEvents = {
   onHover?: (p: PickResult, screen: { x: number; y: number } | null) => void;
   onSelect?: (p: PickResult) => void;
   onProgress?: (loaded: number, total: number) => void;
+  /** The device struggled to keep up; the scene has switched to lighter graphics (no glow, 1× pixels). */
+  onSlow?: () => void;
 };
 
 export class TwinScene {
@@ -101,6 +107,13 @@ export class TwinScene {
   private reducedMotion: boolean;
   private resizeObs: ResizeObserver;
   private clock = new THREE.Clock();
+  private tints: { map: Map<number, { color: string; level: number }>; neutral: string } | null = null;
+  private coresOn = true;
+  private pulsing: number[] = [];          // device indices that pulse (faults); only these change every frame
+  private userMoved = false;               // the camera was moved by hand or by a fly-to since loading began
+  private frameTimes: number[] = [];
+  private lastFrame = 0;
+  private perfChecked = false;
 
   constructor(private container: HTMLElement, private data: TwinData, private events: TwinEvents = {}) {
     this.reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -119,7 +132,7 @@ export class TwinScene {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.maxPolarAngle = Math.PI * 0.49;
-    this.controls.addEventListener("start", () => { this.flight = null; this.idleSince = Infinity; });
+    this.controls.addEventListener("start", () => { this.flight = null; this.idleSince = Infinity; this.userMoved = true; });
     this.controls.addEventListener("end", () => { this.idleSince = performance.now(); });
 
     this.scene.add(new THREE.AmbientLight("#9fd8ff", 0.6));
@@ -155,21 +168,44 @@ export class TwinScene {
 
   /* ───────────── Building ───────────── */
 
-  /** Build every floor. `loadGeometry` fetches CAD linework for floors that have it. */
-  async build(loadGeometry: (floorId: number) => Promise<FloorGeometry | null>) {
-    const floors = [...this.data.floors].sort((a, b) => a.elevation - b.elevation);
+  /**
+   * Build the model. The first floor (the one asked for, or the one nearest ground level) is built before this
+   * resolves, so the view is usable at once; the other floors stream in behind, a few at a time.
+   * `loadGeometry` fetches CAD linework for floors that have it.
+   */
+  async build(loadGeometry: (floorId: number) => Promise<FloorGeometry | null>, firstFloorId: number | null = null): Promise<{ rest: Promise<void> }> {
+    const order = floorLoadOrder(this.data.floors, firstFloorId);
     let loaded = 0;
-    this.events.onProgress?.(0, floors.length);
-    await Promise.all(floors.map(async (f) => {
+    this.events.onProgress?.(0, order.length);
+    const one = async (f: TwinFloor) => {
       const geo = f.hasCad ? await loadGeometry(f.id).catch(() => null) : null;
       if (this.disposed) return;
       this.buildFloor(f, geo);
-      this.events.onProgress?.(++loaded, floors.length);
-    }));
-    if (this.disposed) return;
+      this.events.onProgress?.(++loaded, order.length);
+      // Someone already chose this floor while it was loading: show it now.
+      if (this.isolated === f.id && loaded > 1) { this.layoutFloors(); this.isolateFloor(f.id); }
+    };
+    if (order.length) await one(order[0]);
+    if (this.disposed) return { rest: Promise.resolve() };
     this.layoutFloors();
     this.buildDevices();
     this.frameAll(false);
+    this.userMoved = false;
+    const queue = order.slice(1);
+    const rest = (async () => {
+      const worker = async () => {
+        while (queue.length && !this.disposed) {
+          await one(queue.shift()!);
+          if (!this.disposed) this.layoutFloors();
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(LOAD_CONCURRENCY, queue.length) }, worker));
+      if (this.disposed) return;
+      this.buildLabels();
+      // Untouched since loading began: frame the whole building now that it's all there.
+      if (!this.userMoved && this.isolated == null) this.frameAll(true);
+    })();
+    return { rest };
   }
 
   private u(f: TwinFloor) { return 1 / (f.unitsPerMetre || 10); }
@@ -275,9 +311,44 @@ export class TwinScene {
       extras.push(l); group.add(l);
     }
 
+    const cores = this.buildCores(rooms, s);
+    if (cores) { cores.visible = this.coresOn; group.add(cores); }
+
     this.scene.add(group);
     const center = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
-    this.floors.set(f.id, { floor: f, group, roomsMesh, roomIndexByFace, roomRanges, roomBase, heat: null, wallMesh, wallLines, extras, slab, center, size: Math.max(x1 - x0, z1 - z0, 20) });
+    const view: FloorView = { floor: f, group, roomsMesh, roomIndexByFace, roomRanges, roomBase, heat: null, cores, wallMesh, wallLines, extras, slab, center, size: Math.max(x1 - x0, z1 - z0, 20) };
+    this.floors.set(f.id, view);
+    if (this.tints) this.tintFloor(view);
+  }
+
+  /** Stairs, lifts and shafts as translucent prisms 1 m tall (stretched to the floor above in layoutFloors). */
+  private buildCores(rooms: TwinRoom[], s: number): THREE.Group | null {
+    const parts: THREE.BufferGeometry[] = [];
+    for (const r of rooms) {
+      const k = coreKind(r.name); if (!k) continue;
+      const shape = new THREE.Shape(r.poly.map(([x, y]) => new THREE.Vector2(x * s, -y * s)));
+      const g = new THREE.ExtrudeGeometry(shape, { depth: 1, bevelEnabled: false });
+      g.rotateX(-Math.PI / 2);
+      const c = new THREE.Color(CORE_COLORS[k]);
+      const n = g.getAttribute("position").count;
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      g.deleteAttribute("uv"); g.deleteAttribute("normal");
+      parts.push(g);
+    }
+    if (!parts.length) return null;
+    const merged = mergeGeometries(parts, false);
+    for (const p of parts) p.dispose();
+    if (!merged) return null;
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+    body.renderOrder = 4;
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(merged, 30), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false }));
+    edges.renderOrder = 4;
+    group.add(body, edges);
+    group.position.y = 0.02;
+    return group;
   }
 
   private floorY(f: TwinFloor) {
@@ -286,7 +357,16 @@ export class TwinScene {
   }
 
   private layoutFloors() {
-    for (const v of this.floors.values()) v.group.position.y = this.floorY(v.floor);
+    const byElev = [...this.data.floors].sort((a, b) => a.elevation - b.elevation);
+    for (const v of this.floors.values()) {
+      v.group.position.y = this.floorY(v.floor);
+      if (v.cores) {
+        // Whole building: cores rise to the floor above so they read as shafts; one floor on its own: room height.
+        const above = byElev.find((f) => f.elevation > v.floor.elevation);
+        const gap = this.isolated == null && above ? (above.elevation - v.floor.elevation) * this.explode : WALL_HEIGHT;
+        v.cores.scale.y = Math.max(WALL_HEIGHT, gap - 0.05);
+      }
+    }
     this.applyFloorVisibility();
     this.positionDevices();
   }
@@ -347,31 +427,45 @@ export class TwinScene {
     this.positionDevices();
   }
 
-  private positionDevices(t = 0) {
+  /** Scale of a device marker now (0 = hidden); faults pulse, search hits swell, the rest dim while searching. */
+  private deviceScale(i: number, t: number): number {
+    const id = this.deviceIds[i]; const d = this.devicePos.get(id)!; const a = this.assetsById.get(id)!;
+    const floorVisible = this.floors.has(d.floorId) && (this.isolated == null || this.isolated === d.floorId);
+    if (!this.visibleAssets.has(id) || !floorVisible) return 0;
+    const hi = this.highlight.size ? this.highlight.has(id) : false;
+    const dim = this.highlight.size > 0 && !hi;
+    const pulse = !this.reducedMotion && (a.status === "OUT_OF_SERVICE" || a.status === "UNDER_MAINTENANCE") ? 1 + 0.25 * Math.sin(t * 4 + i) : 1;
+    return (hi ? 1.8 : dim ? 0.55 : 1) * pulse;
+  }
+
+  private setDeviceMatrix(i: number, k: number, m: THREE.Matrix4, p: THREE.Vector3, q: THREE.Quaternion, sc: THREE.Vector3) {
+    const id = this.deviceIds[i]; const d = this.devicePos.get(id)!;
+    const y = this.floorY(this.floorById.get(d.floorId)!) + DEVICE_HEIGHT;
+    p.set(d.x, y, d.z); sc.set(k, k, k);
+    m.compose(p, q, sc); this.deviceMesh!.setMatrixAt(i, m);
+    const ki = this.kindIndex.get(id);
+    if (ki) {
+      const km = this.kindMeshes.get(ki.kind)!;
+      p.set(d.x, y - DEVICE_HEIGHT + km.y, d.z);
+      m.compose(p, q, sc); km.mesh.setMatrixAt(ki.i, m);
+    }
+  }
+
+  /** Full update of every marker and beam; run when something changes (not every frame). */
+  private positionDevices(t = this.clock.getElapsedTime()) {
     if (!this.deviceMesh || !this.beamLines) return;
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
     const beamPos = this.beamLines.geometry.getAttribute("position") as THREE.BufferAttribute;
     const beamCol = this.beamLines.geometry.getAttribute("color") as THREE.BufferAttribute;
-    const floorById = new Map(this.data.floors.map((f) => [f.id, f]));
+    this.pulsing = [];
     for (let i = 0; i < this.deviceIds.length; i++) {
       const id = this.deviceIds[i]; const d = this.devicePos.get(id)!; const a = this.assetsById.get(id)!;
-      const floorVisible = this.isolated == null || this.isolated === d.floorId;
-      const show = this.visibleAssets.has(id) && floorVisible;
-      const y = this.floorY(floorById.get(d.floorId)!) + DEVICE_HEIGHT;
-      const hi = this.highlight.size ? this.highlight.has(id) : false;
-      const dim = this.highlight.size > 0 && !hi;
-      // Faults pulse; highlighted search results swell.
-      const pulse = !this.reducedMotion && (a.status === "OUT_OF_SERVICE" || a.status === "UNDER_MAINTENANCE") ? 1 + 0.25 * Math.sin(t * 4 + i) : 1;
-      const k = show ? (hi ? 1.8 : dim ? 0.55 : 1) * pulse : 0;
-      p.set(d.x, y, d.z); sc.set(k, k, k);
-      m.compose(p, q, sc); this.deviceMesh.setMatrixAt(i, m);
-      const ki = this.kindIndex.get(id);
-      if (ki) {
-        const km = this.kindMeshes.get(ki.kind)!;
-        p.set(d.x, y - DEVICE_HEIGHT + km.y, d.z);
-        m.compose(p, q, sc); km.mesh.setMatrixAt(ki.i, m);
-      }
-      const c = new THREE.Color(STATUS_COLORS[a.status] ?? "#cfe8ff").multiplyScalar(show ? (dim ? 0.25 : 0.9) : 0);
+      const k = this.deviceScale(i, t);
+      this.setDeviceMatrix(i, k, m, p, q, sc);
+      if (k > 0 && !this.reducedMotion && (a.status === "OUT_OF_SERVICE" || a.status === "UNDER_MAINTENANCE")) this.pulsing.push(i);
+      const y = this.floorY(this.floorById.get(d.floorId)!) + DEVICE_HEIGHT;
+      const dim = this.highlight.size > 0 && !this.highlight.has(id);
+      c.set(STATUS_COLORS[a.status] ?? "#cfe8ff").multiplyScalar(k > 0 ? (dim ? 0.25 : 0.9) : 0);
       beamPos.setXYZ(i * 2, d.x, y - DEVICE_HEIGHT + 0.05, d.z); beamPos.setXYZ(i * 2 + 1, d.x, y, d.z);
       beamCol.setXYZ(i * 2, 0, 0, 0); beamCol.setXYZ(i * 2 + 1, c.r, c.g, c.b);
     }
@@ -379,6 +473,15 @@ export class TwinScene {
     for (const km of this.kindMeshes.values()) km.mesh.instanceMatrix.needsUpdate = true;
     beamPos.needsUpdate = true; beamCol.needsUpdate = true;
     this.updateSelectionRing();
+  }
+
+  /** Per frame: only the pulsing (faulty) devices change size. */
+  private pulseDevices(t: number) {
+    if (!this.deviceMesh || !this.pulsing.length) return;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+    for (const i of this.pulsing) this.setDeviceMatrix(i, this.deviceScale(i, t), m, p, q, sc);
+    this.deviceMesh.instanceMatrix.needsUpdate = true;
+    for (const km of this.kindMeshes.values()) km.mesh.instanceMatrix.needsUpdate = true;
   }
 
   private addGround() {
@@ -395,9 +498,9 @@ export class TwinScene {
   /** Show one floor (others fade out), or all floors with `null`. */
   isolateFloor(floorId: number | null, fly = true) {
     this.isolated = floorId;
+    this.userMoved = true;
     this.buildLabels();
-    this.applyFloorVisibility();
-    this.positionDevices();
+    this.layoutFloors();
     if (!fly) return;
     if (floorId == null) this.frameAll(true);
     else {
@@ -426,28 +529,42 @@ export class TwinScene {
    */
   setRoomTint(tints: Map<number, { color: string; level: number }> | null, neutral = "#1c3346") {
     this.tinted = tints != null;
-    const colors = tints ? new Map([...tints].map(([id, t]) => [id, t.color])) : null;
-    const n = new THREE.Color(neutral);
-    for (const v of this.floors.values()) {
-      if (!v.roomsMesh) continue;
+    this.tints = tints ? { map: tints, neutral } : null;
+    for (const v of this.floors.values()) this.tintFloor(v);
+    this.applyFloorVisibility();
+  }
+
+  private tintFloor(v: FloorView) {
+    const tints = this.tints?.map ?? null;
+    if (v.roomsMesh) {
+      const n = new THREE.Color(this.tints?.neutral ?? "#1c3346");
       const attr = v.roomsMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
       for (const [roomId, [first, count]] of v.roomRanges) {
-        const hex = colors?.get(roomId);
-        const c = colors ? (hex ? new THREE.Color(hex) : n) : v.roomBase.get(roomId)!;
+        const hex = tints?.get(roomId)?.color;
+        const c = tints ? (hex ? new THREE.Color(hex) : n) : v.roomBase.get(roomId)!;
         for (let i = first; i < first + count; i++) attr.setXYZ(i, c.r, c.g, c.b);
       }
       attr.needsUpdate = true;
-      this.buildHeat(v, tints);
-      // Walls step back while a layer is on, so the coloured rooms read through them.
-      if (v.wallMesh) {
-        const m = v.wallMesh.material as THREE.MeshBasicMaterial;
-        if (m.userData.baseOpacity == null) m.userData.baseOpacity = m.opacity;
-        m.opacity = this.tinted ? Math.min(m.userData.baseOpacity as number, 0.22) : (m.userData.baseOpacity as number);
-        m.depthWrite = !this.tinted && (m.userData.baseOpacity as number) > 0.5;
-        m.needsUpdate = true;
-      }
     }
-    this.applyFloorVisibility();
+    this.buildHeat(v, tints);
+    // Walls step back while a layer is on, so the coloured rooms read through them.
+    if (v.wallMesh) {
+      const m = v.wallMesh.material as THREE.MeshBasicMaterial;
+      if (m.userData.baseOpacity == null) m.userData.baseOpacity = m.opacity;
+      m.opacity = this.tinted ? Math.min(m.userData.baseOpacity as number, 0.22) : (m.userData.baseOpacity as number);
+      m.depthWrite = !this.tinted && (m.userData.baseOpacity as number) > 0.5;
+      m.needsUpdate = true;
+    }
+  }
+
+  /** Show or hide stairs, lifts and shafts. */
+  setCores(on: boolean) { this.coresOn = on; for (const v of this.floors.values()) if (v.cores) v.cores.visible = on; }
+
+  /** How many stairs, lifts and shafts the drawings have (for the legend). */
+  coreCounts(): Record<CoreKind, number> {
+    const n: Record<CoreKind, number> = { stair: 0, lift: 0, shaft: 0 };
+    for (const r of this.data.rooms) { const k = coreKind(r.name); if (k) n[k]++; }
+    return n;
   }
 
   /** Glowing blocks over affected rooms; taller = worse (level 0–3). */
@@ -494,7 +611,7 @@ export class TwinScene {
       changed = true;
     }
     if (changed && this.deviceMesh.instanceColor) this.deviceMesh.instanceColor.needsUpdate = true;
-    if (changed) this.positionDevices(this.clock.getElapsedTime());
+    if (changed) this.positionDevices();
   }
 
   /** Which assets to show (filters). */
@@ -505,19 +622,20 @@ export class TwinScene {
 
   select(p: PickResult, fly = true) {
     this.selected = p;
+    if (p && fly) this.userMoved = true;
     this.updateSelectionRing();
     if (!p || !fly) return;
     if (p.kind === "asset") {
       const d = this.devicePos.get(p.id); if (!d) return;
       if (this.isolated != null && this.isolated !== d.floorId) this.isolateFloor(d.floorId, false);
-      const f = this.floors.get(d.floorId)!;
-      this.flyTo(new THREE.Vector3(d.x, this.floorY(f.floor) + DEVICE_HEIGHT, d.z), 16, 0.9);
+      const f = this.floorById.get(d.floorId)!;
+      this.flyTo(new THREE.Vector3(d.x, this.floorY(f) + DEVICE_HEIGHT, d.z), 16, 0.9);
     } else {
       const room = this.data.rooms.find((r) => r.id === p.id); if (!room) return;
-      const v = this.floors.get(room.floorId); if (!v) return;
-      const s = this.u(v.floor);
+      const fl = this.floorById.get(room.floorId); if (!fl) return;
+      const s = this.u(fl);
       const xs = room.poly.map((pt) => pt[0] * s), zs = room.poly.map((pt) => pt[1] * s);
-      const c = new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, this.floorY(v.floor), (Math.min(...zs) + Math.max(...zs)) / 2);
+      const c = new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, this.floorY(fl), (Math.min(...zs) + Math.max(...zs)) / 2);
       this.flyTo(c, Math.max(14, (Math.max(...xs) - Math.min(...xs)) * 2.2), 0.9);
     }
   }
@@ -558,6 +676,7 @@ export class TwinScene {
   }
 
   setCamera(cam: [number, number, number], tgt: [number, number, number], animate = true) {
+    this.userMoved = true;
     const to = new THREE.Vector3(...cam), target = new THREE.Vector3(...tgt);
     if (!animate || this.reducedMotion) { this.flight = null; this.camera.position.copy(to); this.controls.target.copy(target); this.controls.update(); return; }
     this.flight = { from: this.camera.position.clone(), to, tFrom: this.controls.target.clone(), tTo: target, t0: performance.now(), dur: 1100 };
@@ -653,9 +772,9 @@ export class TwinScene {
     if (p?.kind === "asset") {
       const d = this.devicePos.get(p.id);
       if (d) {
-        const f = this.floors.get(d.floorId)!;
-        this.selectionRing.position.set(d.x, this.floorY(f.floor) + 0.05, d.z);
-        this.selectionRing.visible = this.isolated == null || this.isolated === d.floorId;
+        const f = this.floorById.get(d.floorId)!;
+        this.selectionRing.position.set(d.x, this.floorY(f) + 0.05, d.z);
+        this.selectionRing.visible = this.floors.has(d.floorId) && (this.isolated == null || this.isolated === d.floorId);
         return;
       }
     }
@@ -664,9 +783,9 @@ export class TwinScene {
 
   /** Screen position of an asset (for overlay labels), or null when off-screen or hidden. */
   screenOf(assetId: number): { x: number; y: number } | null {
-    const d = this.devicePos.get(assetId); if (!d) return null;
-    const f = this.floors.get(d.floorId); if (!f) return null;
-    const v = new THREE.Vector3(d.x, this.floorY(f.floor) + DEVICE_HEIGHT + 0.6, d.z).project(this.camera);
+    const d = this.devicePos.get(assetId); if (!d || !this.floors.has(d.floorId)) return null;
+    const f = this.floorById.get(d.floorId)!;
+    const v = new THREE.Vector3(d.x, this.floorY(f) + DEVICE_HEIGHT + 0.6, d.z).project(this.camera);
     if (v.z > 1) return null;
     const w = this.renderer.domElement.clientWidth, h = this.renderer.domElement.clientHeight;
     return { x: (v.x + 1) / 2 * w, y: (1 - v.y) / 2 * h };
@@ -709,13 +828,32 @@ export class TwinScene {
       for (const km of this.kindMeshes.values()) km.mesh.visible = near;
     }
     this.updateLabels(now);
-    if (!this.reducedMotion && this.deviceMesh) this.positionDevices(t);
+    if (!this.reducedMotion && this.deviceMesh) this.pulseDevices(t);
+    this.watchFrameRate(now);
     if (this.selectionRing.visible && !this.reducedMotion) {
       const k = 1 + 0.15 * Math.sin(t * 3);
       this.selectionRing.scale.set(k, 1, k);
     }
     this.composer.render();
   };
+
+  /**
+   * Once, a few seconds after the devices are in: if frames are slow (a tablet or an older laptop), drop the glow and
+   * render at 1× pixels. The person can switch the glow back on.
+   */
+  private watchFrameRate(now: number) {
+    const dt = now - this.lastFrame; this.lastFrame = now;
+    if (this.perfChecked || !this.deviceMesh || document.visibilityState !== "visible" || this.flight) return;
+    if (dt > 0 && dt < 1000) this.frameTimes.push(dt);
+    if (this.frameTimes.length < 90) return;
+    this.perfChecked = true;
+    if (isSlow(this.frameTimes)) {
+      this.bloom.enabled = false;
+      this.renderer.setPixelRatio(1); this.composer.setPixelRatio(1); this.resize();
+      this.events.onSlow?.();
+    }
+    this.frameTimes = [];
+  }
 
   dispose() {
     this.disposed = true;
@@ -797,7 +935,7 @@ export class TwinScene {
       if (r == null) continue;
       this.placeRoom(r, [...this.assetsById.values()].filter((x) => x.roomId === r));
     }
-    this.positionDevices(this.clock.getElapsedTime());
+    this.positionDevices();
     this.updateSelectionRing();
   }
 

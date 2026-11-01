@@ -9,9 +9,12 @@ import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { PickResult, TwinScene } from "./scene";
 import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinData } from "./types";
+import { CORE_LABELS } from "./geometry";
 import { bucketOf, colorFor, LAYER_INFO, LAYERS, legendFor, NEUTRAL, roomValues, type LayerId, type LiveMetrics, type Scope } from "./layers";
 
 const LIVE_EVERY_MS = 60_000;
+/** Same colours as the stairs, lifts and shafts in the scene. */
+const CORE_SWATCH = { stair: "#a78bff", lift: "#ff8fd8", shaft: "#5b7f9c" } as const;
 
 function decodeLive(p: LivePayload): Map<number, LiveMetrics> {
   return new Map(p.rows.map(([id, status, openJobs, ppm, life, downtimeHours, valueEgp, recall]) =>
@@ -40,6 +43,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [floorId, setFloorId] = useState<number | null>(null);
   const [explode, setExplode] = useState(1.6);
   const [bloom, setBloom] = useState(true);
+  const [cores, setCores] = useState(true);
+  const [coreCounts, setCoreCounts] = useState<Record<string, number> | null>(null);
   const [query, setQuery] = useState("");
   const [cats, setCats] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
@@ -101,15 +106,20 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         if (cancelled || !host.current) return;
         scene = new TwinScene(host.current, data, {
           onProgress: (loaded, total) => setProgress({ loaded, total }),
+          onSlow: () => { setBloom(false); setToast({ ok: "Lighter graphics on this device: glow is off for a smoother picture. Switch it back on under Floor spacing." }); },
           onSelect: (p) => { setSelected(p); if (p) setSheetTab("details"); },
           onHover: (p, s) => setHover(p && s ? { p, ...s } : null),
         });
         sceneRef.current = scene;
+        // The floor a link points at loads first; the rest stream in behind it.
+        const sp = new URLSearchParams(window.location.search);
+        const linkRoom = data.rooms.find((r) => r.id === Number(sp.get("roomId")) || r.id === data.assets.find((a) => a.id === Number(sp.get("assetId")))?.roomId);
+        const first = decodeView(sp.get("v"))?.floor ?? linkRoom?.floorId ?? (Number(sp.get("floorId")) || null);
         await scene.build(async (id) => {
           const res = await fetch(`/assets/3d/geometry/${id}`);
           return res.ok ? ((await res.json()) as FloorGeometry) : null;
-        });
-        if (!cancelled) setReady(true);
+        }, first);
+        if (!cancelled) { setReady(true); setCoreCounts(scene.coreCounts()); }
       } catch (e) {
         if (!cancelled) setError((e as Error).message === "no-webgl" ? "This browser can't show 3D graphics (WebGL is off). Use the 2D floor map instead." : "The 3D view couldn't start. Reload the page to try again.");
       }
@@ -182,6 +192,15 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       : mode === "compact" ? { top: 120, right: 290, bottom: 8, left: 230 } : { top: 120, right: 345, bottom: 8, left: 265 });
   }, [mode, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setBloom(bloom); }, [bloom, ready]);
+  useEffect(() => { if (ready) sceneRef.current?.setCores(cores); }, [cores, ready]);
+  // Fill the window below the app's top bar exactly (its height varies), so nothing hides under the bottom edge.
+  useEffect(() => {
+    const el = root.current; if (!el) return;
+    const fit = () => { el.style.height = `${Math.max(320, window.innerHeight - (el.getBoundingClientRect().top + window.scrollY))}px`; };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
 
   // Deep link: ?assetId= or ?roomId= flies there once ready.
   useEffect(() => {
@@ -318,6 +337,18 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       <label className={mode === "phone" ? "flex items-center justify-between text-[13px]" : "sr-only"} htmlFor="twin-explode">Floor spacing <span className="text-[#8fb6cc]">{explode.toFixed(1)}×</span></label>
       <input id="twin-explode" type="range" min={1} max={4} step={0.1} value={explode} onChange={(e) => setExplode(Number(e.target.value))} className="w-full accent-[#2fd3ff]" />
       <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={bloom} onChange={(e) => setBloom(e.target.checked)} className="accent-[#2fd3ff]" /> Glow</label>
+      {coreCounts && coreCounts.stair + coreCounts.lift + coreCounts.shaft > 0 && (
+        <>
+          <label className="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" checked={cores} onChange={(e) => setCores(e.target.checked)} className="accent-[#2fd3ff]" /> Lifts and stairs</label>
+          {cores && (
+            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[#8fb6cc]" aria-label="Lifts and stairs legend">
+              {(["stair", "lift", "shaft"] as const).filter((k) => coreCounts[k]).map((k) => (
+                <li key={k} className="flex items-center gap-1"><span className="size-2.5 rounded-sm" style={{ background: CORE_SWATCH[k] }} />{CORE_LABELS[k]} {coreCounts[k]}</li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </div>
   );
   const statusList = (
@@ -551,7 +582,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   };
 
   return (
-    <div ref={root} className="twin relative -mx-5 -my-6 h-[calc(100dvh)] overflow-hidden bg-[#030a14] text-[#d6f3ff] md:-mx-8 lg:-mx-10">
+    <div ref={root} className="twin relative -mx-5 -mb-3 -mt-6 h-[calc(100dvh-4rem)] overflow-hidden bg-[#030a14] text-[#d6f3ff] md:-mx-8 lg:-mx-10">
       <div ref={host} className="absolute inset-0" aria-label="3D model of the hospital with its equipment" role="img" />
 
       {/* Top bar */}
@@ -690,6 +721,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             <p className="text-sm text-[#8fb6cc]">Building the model: {progress.loaded} of {progress.total} floors</p>
           </div>
         </div>
+      )}
+      {ready && progress.loaded < progress.total && (
+        <p role="status" className="pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded-full border border-[#1d4f6d] bg-[#04121fcc] px-3 py-1 text-xs text-[#8fb6cc]">
+          Loading floors: {progress.loaded} of {progress.total}
+        </p>
       )}
       {error && (
         <div className="absolute inset-0 grid place-items-center p-6">

@@ -129,3 +129,32 @@ export const KIND_LABELS: Record<DeviceKind, string> = {
   bed: "Beds and incubators", monitor: "Monitors and diagnostics", ventilator: "Ventilators and anaesthesia",
   imaging: "Imaging", pump: "Infusion pumps", other: "Other equipment",
 };
+
+/** Vertical cores read from room names: stairs, lifts and service shafts tie the floors together in the model. */
+export type CoreKind = "stair" | "lift" | "shaft";
+export function coreKind(name: string | null | undefined): CoreKind | null {
+  const n = (name ?? "").toLowerCase();
+  if (/\b(stair|staircase|escape)\b|\bstairs?\s*\d/.test(n)) return "stair";
+  if (/\b(lift|elevator|elev\.?)\b/.test(n)) return "lift";
+  if (/\bshaft\b|\briser\b|\bduct\b/.test(n)) return "shaft";
+  return null;
+}
+export const CORE_LABELS: Record<CoreKind, string> = { stair: "Stairs", lift: "Lifts", shaft: "Service shafts" };
+
+/**
+ * Order to load floors in: the floor asked for first (or the one nearest ground level), then outwards from it, so
+ * the model is usable after one floor and the rest stream in behind.
+ */
+export function floorLoadOrder<T extends { id: number; elevation: number }>(floors: T[], firstId: number | null = null): T[] {
+  if (!floors.length) return [];
+  const start = floors.find((f) => f.id === firstId)
+    ?? [...floors].sort((a, b) => Math.abs(a.elevation) - Math.abs(b.elevation) || b.elevation - a.elevation)[0];
+  return [...floors].sort((a, b) => Math.abs(a.elevation - start.elevation) - Math.abs(b.elevation - start.elevation) || b.elevation - a.elevation);
+}
+
+/** Frame-time budget: true when the average frame over the sample took longer than `ms` (a slow tablet or laptop). */
+export function isSlow(frameMs: number[], ms = 45, min = 40): boolean {
+  if (frameMs.length < min) return false;
+  const sorted = [...frameMs].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] > ms; // median: one stall (a tab switch, a GC) doesn't count
+}
