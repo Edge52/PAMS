@@ -601,6 +601,8 @@ export const assets = pgTable("assets", {
   warrantyEnd: date("warranty_end"),
   lifeExpectancyYears: integer("life_expectancy_years"),
   notes: text("notes"),
+  /** Free labels for grouping and search (wave 5), e.g. "loan", "teaching", "donated". Lower case. */
+  tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
@@ -814,6 +816,37 @@ export const disposals = pgTable("disposals", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [index("disposals_asset_idx").on(t.assetId), index("disposals_facility_idx").on(t.facilityId)]);
+
+/**
+ * Brand and model catalogue (wave 5): the makes and models of each device type, with a reference price and support
+ * dates. Assets keep their manufacturer/model text; the catalogue offers those values to pick from and is matched by name.
+ */
+export const deviceModels = pgTable("device_models", {
+  id: serial("id").primaryKey(),
+  deviceTypeId: integer("device_type_id").notNull().references(() => deviceTypes.id, { onDelete: "cascade" }),
+  manufacturer: text("manufacturer").notNull(),
+  model: text("model").notNull(),
+  refPriceUsd: money("ref_price_usd"),
+  /** The maker stops selling it / stops supporting it (parts and service). */
+  endOfSale: date("end_of_sale"),
+  endOfSupport: date("end_of_support"),
+  notes: text("notes"),
+  active: boolean("active").notNull().default(true),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex("device_models_unique").on(t.deviceTypeId, sql`lower(${t.manufacturer})`, sql`lower(${t.model})`),
+  index("device_models_type_idx").on(t.deviceTypeId),
+]);
+
+/** Standardisation (wave 5): the preferred model of a device type in one hospital. */
+export const preferredModels = pgTable("preferred_models", {
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  deviceTypeId: integer("device_type_id").notNull().references(() => deviceTypes.id, { onDelete: "cascade" }),
+  modelId: integer("model_id").notNull().references(() => deviceModels.id, { onDelete: "cascade" }),
+  reason: text("reason"),
+  setBy: text("set_by"),
+  setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.facilityId, t.deviceTypeId] })]);
 
 /** A named camera view of a hospital's 3D model (wave 3). Private to its author unless shared. */
 export const twinViews = pgTable("twin_views", {

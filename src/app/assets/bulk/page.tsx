@@ -1,5 +1,7 @@
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { BulkForm } from "@/components/assets/bulk-form";
+import { ModelDatalists } from "@/components/assets/model-datalists";
+import { modelSuggestions } from "@/lib/assets/models-server";
 import { ASSET_STATUSES } from "@/lib/assets/filters";
 import { deviceTypeOptions, listFacilities, locationTree } from "@/lib/assets/queries";
 import { CURRENCIES, todayISO } from "@/lib/format";
@@ -31,6 +33,7 @@ export default async function BulkPage({ searchParams }: { searchParams: Promise
         description="Register many units of one device type and place them across a department's rooms in one go — for example 12 monitors, one at each ICU bed." />
       <BulkForm facilities={facs} departments={departments} types={types} statuses={[...ASSET_STATUSES]} currencies={CURRENCIES}
         initial={{ deviceTypeId: n(sp.deviceTypeId), departmentId: n(sp.departmentId), today: todayISO() }} action={bulkCreateAction} />
+      <ModelDatalists {...await modelSuggestions()} />
     </>
   );
 }

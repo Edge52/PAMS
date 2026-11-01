@@ -2,13 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, boqRules, departments, departmentTypes, deviceTypes, facilities, standardSets } from "@/db/schema";
+import { assets, boqRules, departments, departmentTypes, deviceModels, deviceTypes, facilities, standardSets } from "@/db/schema";
+import { SUPPORT_LABELS, SUPPORT_TONE, supportState } from "@/lib/assets/models";
 import { Badge, Details, EmptyState, LinkButton, PageHeader, Panel, Stat, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
 import { Ar, Crumbs, Notice } from "@/components/assets/bits";
 import { ChecklistPanel } from "@/components/assets/checklist-panel";
 import { defaultChecklist, effectiveChecklist } from "@/lib/assets/checklists";
 import { DEFAULT_PPM_INTERVAL_MONTHS } from "@/lib/assets/maintenance";
-import { formatMoney, formatNumber } from "@/lib/format";
+import { formatMoney, formatNumber, todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
@@ -91,6 +92,11 @@ export default async function DeviceTypePage({ params, searchParams }: { params:
     }).from(boqRules).innerJoin(standardSets, eq(standardSets.id, boqRules.standardSetId)).leftJoin(departmentTypes, eq(departmentTypes.code, boqRules.departmentTypeCode))
       .where(eq(boqRules.deviceTypeId, dt.id)).orderBy(asc(standardSets.code), asc(departmentTypes.sortOrder)),
   ]);
+  const unitsOf = sql<number>`(select count(*) from assets a where a.device_type_id = ${dt.id} and a.status <> 'DISPOSED' and ${inScope}
+    and lower(trim(a.manufacturer)) = lower(${deviceModels.manufacturer}) and lower(trim(a.model)) = lower(${deviceModels.model}))::int`;
+  const models = await db.select({ m: deviceModels, units: unitsOf }).from(deviceModels)
+    .where(eq(deviceModels.deviceTypeId, dt.id)).orderBy(desc(deviceModels.active), asc(deviceModels.manufacturer), asc(deviceModels.model));
+  const today = todayISO();
   const total = byStatus.reduce((s, r) => s + r.n, 0);
   const down = byStatus.filter((s) => s.status === "UNDER_MAINTENANCE" || s.status === "OUT_OF_SERVICE").reduce((s, r) => s + r.n, 0);
   const basisText = (b: string, ratio: number) => ({
@@ -131,6 +137,23 @@ export default async function DeviceTypePage({ params, searchParams }: { params:
               { label: "UMDNS", value: dt.umdnsCode },
               { label: "GMDN term", value: dt.gmdnTerm },
             ]} />
+          </Panel>
+          <Panel title="Makes and models" padded={false} actions={can(me.role, "catalogue.edit") && <Link href={`/catalogue/models/new?deviceTypeId=${dt.id}&back=${encodeURIComponent(`/catalogue/${dt.code}`)}`} className="text-sm font-semibold text-primary hover:underline">Add a make and model</Link>}>
+            {models.length === 0 ? <p className="p-4 text-sm text-muted">No make or model recorded for this type yet. Add the ones you buy, so equipment is always registered with the same names.</p> : (
+              <ul className="divide-y divide-line">
+                {models.map(({ m, units }) => {
+                  const st = supportState(m, today);
+                  return (
+                    <li key={m.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
+                      <Link href={`/catalogue/models/${m.id}`} className="min-w-0 flex-1 font-semibold text-primary hover:underline">{m.manufacturer} {m.model}</Link>
+                      {!m.active && <Badge>Retired</Badge>}
+                      {st !== "supported" && <Badge tone={SUPPORT_TONE[st]}>{SUPPORT_LABELS[st]}</Badge>}
+                      <span className="text-muted">{units} unit{units === 1 ? "" : "s"}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </Panel>
           {checklist}
           <Panel title="Specification template" padded={false}>

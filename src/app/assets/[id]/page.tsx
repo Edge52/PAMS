@@ -1,11 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { ModelDatalists } from "@/components/assets/model-datalists";
+import { modelSuggestions } from "@/lib/assets/models-server";
+import { nameKey, SUPPORT_LABELS, SUPPORT_TONE, supportState } from "@/lib/assets/models";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import {
   assetMovements, assets, buildings, departments, deviceTypes, facilities, floors, maintenanceEvents, offers, poLines, projects, purchaseOrders, rooms, suppliers,
   disposals, recallAssets, recalls, users, workOrders,
+  deviceModels,
 } from "@/db/schema";
 import { assetLifecycle } from "@/lib/assets/lifecycle-server";
 import { BAND_LABEL } from "@/lib/assets/lifecycle-kpis";
@@ -70,6 +74,9 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   if (!a) notFound();
   await requireFacilityAccess(a.asset.facilityId, me);
   const x = a.asset;
+  const [catModel] = x.manufacturer && x.model ? await db.select().from(deviceModels)
+    .where(and(eq(deviceModels.deviceTypeId, x.deviceTypeId), sql`lower(${deviceModels.manufacturer}) = ${nameKey(x.manufacturer)}`, sql`lower(${deviceModels.model}) = ${nameKey(x.model)}`)) : [];
+  const catSupport = catModel ? supportState(catModel, todayISO()) : null;
   const canEdit = can(me.role, "assets.edit"), canMove = can(me.role, "assets.move"), canMaint = can(me.role, "maintenance.edit");
   const canReport = can(me.role, "workorders.report");
   const today = todayISO();
@@ -167,8 +174,9 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
               <ActionForm action={updateAssetAction}>
                 <input type="hidden" name="assetId" value={x.id} />
                 <FormGrid cols={3}>
-                  <Field label="Manufacturer"><Input name="manufacturer" defaultValue={x.manufacturer ?? ""} /></Field>
-                  <Field label="Model"><Input name="model" defaultValue={x.model ?? ""} /></Field>
+                  <Field label="Manufacturer"><Input name="manufacturer" defaultValue={x.manufacturer ?? ""} list="dl-makers" autoComplete="off" /></Field>
+                  <Field label="Model"><Input name="model" defaultValue={x.model ?? ""} list="dl-models" autoComplete="off" /></Field>
+                  <ModelDatalists {...await modelSuggestions()} />
                   <Field label="Serial number"><Input name="serialNumber" defaultValue={x.serialNumber ?? ""} /></Field>
                   <Field label="Purchase date"><Input type="date" name="purchaseDate" defaultValue={x.purchaseDate ?? ""} /></Field>
                   <Field label="Install date"><Input type="date" name="installDate" defaultValue={x.installDate ?? ""} /></Field>
@@ -185,7 +193,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                 { label: "Device type", value: <Link href={`/catalogue/${a.typeCode}`} className="text-primary hover:underline">{a.typeName}</Link> },
                 { label: "Category", value: [a.categoryName, a.groupName].filter(Boolean).join(" › ") },
                 { label: "Manufacturer", value: x.manufacturer },
-                { label: "Model", value: x.model },
+                { label: "Model", value: x.model ? (catModel ? <><Link href={`/catalogue/models/${catModel.id}`} className="text-primary hover:underline">{x.model}</Link>{catSupport && catSupport !== "supported" && <> <Badge tone={SUPPORT_TONE[catSupport]}>{SUPPORT_LABELS[catSupport]}</Badge></>}</> : x.model) : null },
                 { label: "Serial number", value: x.serialNumber ? <span className="font-mono">{x.serialNumber}</span> : null },
                 { label: "Risk class", value: a.riskClass ? `Class ${a.riskClass}` : null },
                 { label: "Purchase date", value: x.purchaseDate ? formatDate(x.purchaseDate) : null },

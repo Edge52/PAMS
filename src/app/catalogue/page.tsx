@@ -46,7 +46,10 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader title="Device catalogue"
         description={<>{formatNumber(levelCount(3))} device types in {levelCount(1)} categories and {levelCount(2)} groups. {formatNumber(typesInUse)} types are in use in the register.</>}
-        actions={can(me.role, "assets.edit") && <LinkButton href="/assets/new">Register an asset</LinkButton>} />
+        actions={<>
+          <LinkButton href="/catalogue/models">Makes and models</LinkButton>
+          {can(me.role, "assets.edit") && <LinkButton href="/assets/new">Register an asset</LinkButton>}
+        </>} />
       <form role="search" className="mb-4 flex flex-wrap items-center gap-2" action="/catalogue">
         <input type="search" name="q" defaultValue={q} placeholder="Search name, Arabic name or code — e.g. ventilator, مراقبة, MON-PAT"
           aria-label="Search the catalogue"

@@ -66,8 +66,8 @@ export function BulkForm({ facilities, departments, types, statuses, currencies,
           </F>
           <F label="Quantity"><input type="number" name="quantity" min={1} max={500} required value={quantity} onChange={(e) => setQuantity(Math.max(0, Math.min(500, Number(e.target.value) || 0)))} className={ctl} /></F>
           <F label="Status" hint="Blank: in service"><select name="status" defaultValue="" className={ctl}><option value="">Automatic</option>{statuses.map((s) => <option key={s} value={s}>{humanize(s)}</option>)}</select></F>
-          <F label="Manufacturer"><input name="manufacturer" className={ctl} placeholder="Philips" /></F>
-          <F label="Model"><input name="model" className={ctl} placeholder="IntelliVue MX750" /></F>
+          <F label="Manufacturer"><input name="manufacturer" className={ctl} placeholder="Philips" list="dl-makers" autoComplete="off" /></F>
+          <F label="Model"><input name="model" className={ctl} placeholder="IntelliVue MX750" list="dl-models" autoComplete="off" /></F>
           <F label="Install date"><input type="date" name="installDate" defaultValue={initial.today} className={ctl} /></F>
           <F label="Warranty months"><input type="number" name="warrantyMonths" min={0} max={240} defaultValue={24} className={ctl} /></F>
           <F label="Purchase date"><input type="date" name="purchaseDate" className={ctl} /></F>

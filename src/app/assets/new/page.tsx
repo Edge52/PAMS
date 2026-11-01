@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { buildings, floors, rooms } from "@/db/schema";
@@ -8,6 +9,8 @@ import { ASSET_CONDITIONS, ASSET_STATUSES } from "@/lib/assets/filters";
 import { deviceTypeOptions, listFacilities, locationTree } from "@/lib/assets/queries";
 import { CURRENCIES, todayISO } from "@/lib/format";
 import { createAssetAction } from "../actions";
+import { ModelDatalists } from "@/components/assets/model-datalists";
+import { modelSuggestions } from "@/lib/assets/models-server";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -42,8 +45,9 @@ export default async function NewAssetPage({ searchParams }: { searchParams: Pro
         <Panel title="What it is">
           <FormGrid cols={3}>
             <Field label="Device type" className="sm:col-span-2 lg:col-span-3"><DeviceTypeSelect types={types} value={deviceTypeId} required /></Field>
-            <Field label="Manufacturer"><Input name="manufacturer" placeholder="Philips" /></Field>
-            <Field label="Model"><Input name="model" placeholder="IntelliVue MX750" /></Field>
+            <Field label="Manufacturer"><Input name="manufacturer" placeholder="Philips" list="dl-makers" autoComplete="off" /></Field>
+            <Field label="Model" hint={<><Link href="/catalogue/models" className="text-primary hover:underline">Makes and models</Link> in the catalogue are offered as you type.</>}><Input name="model" placeholder="IntelliVue MX750" list="dl-models" autoComplete="off" /></Field>
+            <ModelDatalists {...await modelSuggestions()} />
             <Field label="Serial number" hint="Must be unique in the register"><Input name="serialNumber" /></Field>
           </FormGrid>
         </Panel>

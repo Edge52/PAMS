@@ -51,6 +51,7 @@ const sections: { title: string; links: NavLink[] }[] = [
       { href: "/assets/contracts", label: "Service contracts", need: "assets.view" },
       { href: "/assets/parts", label: "Spare parts", need: "assets.view" },
       { href: "/assets/recalls", label: "Recalls", need: "assets.view" },
+      { href: "/assets/fleet", label: "Fleet & standardisation", need: "assets.view" },
       { href: "/assets/replacement", label: "Replacement plan", need: "assets.view" },
       { href: "/assets/disposals", label: "Disposals", need: "assets.view" },
     ],
