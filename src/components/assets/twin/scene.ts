@@ -24,22 +24,53 @@ const MAX_LABELS = 70;
 const LOAD_CONCURRENCY = 3;
 const CORE_COLORS: Record<CoreKind, string> = { stair: "#a78bff", lift: "#ff8fd8", shaft: "#5b7f9c" };
 
-/** Marker shapes close up: geometry and the height of its centre above the floor (metres). */
-function kindGeometry(k: DeviceKind): { geo: THREE.BufferGeometry; y: number } {
-  const { geo, y } = kindShape(k);
-  geo.scale(1.5, 1.5, 1.5); // symbols, drawn a little larger than life so they read from a few metres away
-  return { geo, y };
-}
-function kindShape(k: DeviceKind): { geo: THREE.BufferGeometry; y: number } {
+/** Device models close up: life-size, simplified shapes standing on the floor (y = 0 is the floor). */
+function kindGeometry(k: DeviceKind): { geo: THREE.BufferGeometry; y: number; ring: number } {
+  const part = (g: THREE.BufferGeometry, x: number, y: number, z = 0) => { g.translate(x, y, z); return g; };
+  const box = (w: number, h: number, d: number, x: number, y: number, z = 0) => part(new THREE.BoxGeometry(w, h, d), x, y, z);
+  const cyl = (r: number, h: number, x: number, y: number, z = 0, seg = 12) => part(new THREE.CylinderGeometry(r, r, h, seg), x, y, z);
+  let parts: THREE.BufferGeometry[]; let ring = 0.55;
   switch (k) {
-    case "bed": return { geo: new THREE.BoxGeometry(1.0, 0.3, 0.55), y: 0.55 };
-    case "monitor": { const g = new THREE.BoxGeometry(0.5, 0.36, 0.07); return { geo: g, y: 1.45 }; }
-    case "ventilator": return { geo: new THREE.CylinderGeometry(0.18, 0.24, 0.8, 14), y: 0.6 };
-    case "imaging": { const g = new THREE.TorusGeometry(0.55, 0.16, 10, 28); return { geo: g, y: 0.9 }; }
-    case "pump": return { geo: new THREE.BoxGeometry(0.16, 0.26, 0.14), y: 1.15 };
-    default: return { geo: new THREE.OctahedronGeometry(0.26), y: 0.9 };
+    case "bed": // frame, mattress, headboard
+      parts = [box(1.95, 0.12, 0.92, 0, 0.45), box(1.82, 0.16, 0.84, 0.03, 0.6), box(0.07, 0.62, 0.92, -0.95, 0.72), box(0.05, 0.3, 0.92, 0.95, 0.62)];
+      ring = 1.15; break;
+    case "monitor": // screen on a pole with a base
+      parts = [box(0.46, 0.33, 0.07, 0, 1.5), cyl(0.025, 1.34, 0, 0.67), cyl(0.2, 0.04, 0, 0.02, 0, 16)]; break;
+    case "ventilator": // cart, column, screen
+      parts = [box(0.55, 0.08, 0.55, 0, 0.14), box(0.3, 0.85, 0.3, 0, 0.6), box(0.42, 0.3, 0.05, 0, 1.18, 0.12), cyl(0.03, 0.12, 0.2, 0.06, 0.2, 8), cyl(0.03, 0.12, -0.2, 0.06, -0.2, 8)];
+      ring = 0.6; break;
+    case "imaging": { // gantry ring standing up, patient table through the bore
+      const gantry = new THREE.TorusGeometry(0.72, 0.24, 12, 32); gantry.translate(0, 1.0, 0);
+      parts = [gantry, box(0.5, 0.25, 0.9, 0, 0.12), box(2.3, 0.1, 0.52, 1.0, 0.82), box(0.7, 0.72, 0.42, 1.55, 0.38)];
+      ring = 1.6; break;
+    }
+    case "pump": // pump on an IV pole
+      parts = [cyl(0.018, 1.9, 0, 0.95, 0, 8), box(0.2, 0.26, 0.16, 0.12, 1.2), cyl(0.24, 0.04, 0, 0.02, 0, 12)]; ring = 0.45; break;
+    default: // a cabinet-style unit
+      parts = [box(0.5, 0.75, 0.42, 0, 0.375), box(0.42, 0.06, 0.36, 0, 0.78)];
   }
+  // Same attributes everywhere (position, normal, uv) so the parts merge into one geometry.
+  const geo = mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)), false)!;
+  for (const g of parts) g.dispose();
+  return { geo, y: 0, ring };
 }
+
+export type TwinStyle = "dark" | "light";
+/** Two looks: the glowing "digital twin" and a light, solid "architectural" one for reports and presentations. */
+const PALETTE = {
+  dark: {
+    bg: "#030a14", fog: 0.0032, grid: ["#0e3550", "#071c2c"], slab: "#061827", slabOpacity: 0.5, slabEdge: "#1d6f9a", slabEdgeOpacity: 0.45,
+    roomOpacity: { whole: 0.2, iso: 0.32 }, wallLine: "#38c8f0", wallLineOpacity: 0.5, door: "#3c7da3", glass: "#9ff3ff", column: "#5a8cff",
+    model: "#cfe6f3", select: "#2fd3ff", ambient: 0.6, hemi: 0.45, sun: 0.5, exposure: 0.9,
+  },
+  light: {
+    bg: "#e8edf1", fog: 0.0014, grid: ["#c3cdd5", "#d9e0e6"], slab: "#f7f9fa", slabOpacity: 0.94, slabEdge: "#8e9daa", slabEdgeOpacity: 0.7,
+    roomOpacity: { whole: 0.9, iso: 0.92 }, wallLine: "#6f7f8c", wallLineOpacity: 0.75, door: "#8ea2b2", glass: "#2f95c0", column: "#6d7b88",
+    model: "#f3f6f8", select: "#0a84c1", ambient: 0.35, hemi: 0.95, sun: 1.15, exposure: 1.0,
+  },
+} as const;
+/** Whole-building view from afar: walls drawn this share of their height, so floors read as plates of coloured rooms. */
+const CUTAWAY = 0.32;
 
 type FloorView = {
   floor: TwinFloor;
@@ -52,8 +83,16 @@ type FloorView = {
   cores: THREE.Group | null;                 // stairs, lifts and shafts, 1 m tall; scaled to the gap to the floor above
   wallMesh: THREE.Mesh | null;
   wallLines: THREE.LineSegments | null;
+  /** Thousands of CAD wall segments: dark tinted glass instead of additive glass in the dark style. */
+  dense: boolean;
   extras: THREE.Object3D[];
+  doors: THREE.LineSegments | null;
+  glass: THREE.LineSegments | null;
+  columns: THREE.LineSegments | null;
   slab: THREE.Mesh;
+  slabEdge: THREE.LineSegments;
+  slabBox: THREE.Mesh;
+  bounds: { x0: number; x1: number; z0: number; z1: number };
   center: THREE.Vector3;
   size: number;
 };
@@ -78,12 +117,14 @@ export class TwinScene {
   private floors = new Map<number, FloorView>();
   private deviceMesh: THREE.InstancedMesh | null = null;          // far: one dot per device
   private kindMeshes = new Map<DeviceKind, { mesh: THREE.InstancedMesh; ids: number[]; y: number }>(); // near: shapes
+  private statusRings: THREE.InstancedMesh | null = null;         // near: a ring on the floor in the status colour
+  private ringSize: number[] = [];
   private kindIndex = new Map<number, { kind: DeviceKind; i: number }>();
   private near = false;
   private roomById = new Map<number, TwinRoom>();
   private floorById = new Map<number, TwinFloor>();
   private labelLayer: HTMLDivElement;
-  private labels: { el: HTMLSpanElement; x: number; z: number; w: number }[] = [];
+  private labels: { el: HTMLSpanElement; floorId: number; x: number; z: number; w: number; h: number; kind: "room" | "dept" | "floor" }[] = [];
   private labelsAt = 0;
   private labelInsets = { top: 0, right: 0, bottom: 0, left: 0 };
   private placing: { assetId: number; floorId: number; done: (p: { x: number; y: number } | null) => void } | null = null;
@@ -118,6 +159,17 @@ export class TwinScene {
   private ghostSpots: { floorId: number; x: number; z: number }[] = [];
   private routeLine: THREE.Group | null = null;
   private routeSpots: { floorId: number; x: number; z: number }[] | null = null;
+  private style: TwinStyle = "dark";
+  private bloomWanted = true;
+  private showBasements = false;
+  private grid: THREE.GridHelper | null = null;
+  private ambient: THREE.AmbientLight;
+  private hemi: THREE.HemisphereLight;
+  private sun: THREE.DirectionalLight;
+  /** Devices to keep bright while the rest dim: the selected room's equipment, or the selected device. */
+  private focus: Set<number> | null = null;
+  private selOutline: THREE.Group | null = null;
+  private labelCenter = new THREE.Vector3();
 
   constructor(private container: HTMLElement, private data: TwinData, private events: TwinEvents = {}) {
     this.reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -139,7 +191,11 @@ export class TwinScene {
     this.controls.addEventListener("start", () => { this.flight = null; this.idleSince = Infinity; this.userMoved = true; });
     this.controls.addEventListener("end", () => { this.idleSince = performance.now(); });
 
-    this.scene.add(new THREE.AmbientLight("#9fd8ff", 0.6));
+    this.ambient = new THREE.AmbientLight("#9fd8ff", 0.6);
+    this.hemi = new THREE.HemisphereLight("#ffffff", "#8a98a6", 0.45);
+    this.sun = new THREE.DirectionalLight("#ffffff", 0.5);
+    this.sun.position.set(0.6, 1, 0.35);
+    this.scene.add(this.ambient, this.hemi, this.sun);
     this.addGround();
 
     this.composer = new EffectComposer(this.renderer);
@@ -193,6 +249,7 @@ export class TwinScene {
     if (this.disposed) return { rest: Promise.resolve() };
     this.layoutFloors();
     this.buildDevices();
+    this.buildLabels();
     this.frameAll(false);
     this.userMoved = false;
     const queue = order.slice(1);
@@ -200,7 +257,7 @@ export class TwinScene {
       const worker = async () => {
         while (queue.length && !this.disposed) {
           await one(queue.shift()!);
-          if (!this.disposed) this.layoutFloors();
+          if (!this.disposed) { this.layoutFloors(); this.buildLabels(); }
         }
       };
       await Promise.all(Array.from({ length: Math.min(LOAD_CONCURRENCY, queue.length) }, worker));
@@ -237,6 +294,11 @@ export class TwinScene {
     const edge = new THREE.LineSegments(new THREE.EdgesGeometry(slabGeo), new THREE.LineBasicMaterial({ color: "#1d6f9a", transparent: true, opacity: 0.45 }));
     edge.position.copy(slab.position);
     group.add(edge);
+    // Light style: the slab has thickness, so floors read as solid plates.
+    const slabBox = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0 + 8, 0.35, z1 - z0 + 8), new THREE.MeshLambertMaterial({ color: "#d3dbe2" }));
+    slabBox.position.set((x0 + x1) / 2, -0.2, (z0 + z1) / 2);
+    slabBox.visible = false;
+    group.add(slabBox);
 
     // Rooms: one merged mesh, coloured by department; face → room for picking.
     let roomsMesh: THREE.Mesh | null = null;
@@ -282,6 +344,7 @@ export class TwinScene {
         lines.push(ax, WALL_HEIGHT, az, bx, WALL_HEIGHT, bz, ax, 0.03, az, bx, 0.03, bz);
       }
       const wg = new THREE.BufferGeometry(); wg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      wg.computeVertexNormals(); // for the lit, solid walls of the light style
       // Dense CAD linework (thousands of segments per floor) would add up to a white haze as additive glass, so CAD
       // walls are dark tinted glass that hides what's behind it; only their top edges glow.
       const dense = wallSegs.length / 4 > 1500;
@@ -297,22 +360,24 @@ export class TwinScene {
 
     const extras: THREE.Object3D[] = [];
     const flat = (segs: number[] | undefined, color: string, y: number, opacity: number) => {
-      if (!segs?.length) return;
+      if (!segs?.length) return null;
       const pts: number[] = [];
       for (let i = 0; i + 3 < segs.length; i += 4) pts.push(segs[i] * s, y, segs[i + 1] * s, segs[i + 2] * s, y, segs[i + 3] * s);
       const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
       const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
       extras.push(l); group.add(l);
+      return l;
     };
-    flat(geo?.doors, "#3c7da3", 0.04, 0.45);
-    flat(geo?.glass, "#9ff3ff", WALL_HEIGHT * 0.6, 0.6);
+    const doors = flat(geo?.doors, "#3c7da3", 0.04, 0.45);
+    const glass = flat(geo?.glass, "#9ff3ff", WALL_HEIGHT * 0.6, 0.6);
+    let columns: THREE.LineSegments | null = null;
     if (geo?.columns?.length) {
       // Columns rise full height as bright vertical edges.
       const pts: number[] = []; const c = geo.columns;
       for (let i = 0; i + 3 < c.length; i += 4) pts.push(c[i] * s, 0, c[i + 1] * s, c[i] * s, WALL_HEIGHT, c[i + 1] * s);
       const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-      const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: "#5a8cff", transparent: true, opacity: 0.35, depthWrite: false }));
-      extras.push(l); group.add(l);
+      columns = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: "#5a8cff", transparent: true, opacity: 0.35, depthWrite: false }));
+      extras.push(columns); group.add(columns);
     }
 
     const cores = this.buildCores(rooms, s);
@@ -320,9 +385,13 @@ export class TwinScene {
 
     this.scene.add(group);
     const center = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
-    const view: FloorView = { floor: f, group, roomsMesh, roomIndexByFace, roomRanges, roomBase, heat: null, cores, wallMesh, wallLines, extras, slab, center, size: Math.max(x1 - x0, z1 - z0, 20) };
+    const view: FloorView = {
+      floor: f, group, roomsMesh, roomIndexByFace, roomRanges, roomBase, heat: null, cores, wallMesh, wallLines, dense: wallSegs.length / 4 > 1500,
+      extras, doors, glass, columns, slab, slabEdge: edge, slabBox, bounds: { x0, x1, z0, z1 }, center, size: Math.max(x1 - x0, z1 - z0, 20),
+    };
     this.floors.set(f.id, view);
-    if (this.tints) this.tintFloor(view);
+    this.styleFloor(view);
+    this.tintFloor(view);
   }
 
   /** Stairs, lifts and shafts as translucent prisms 1 m tall (stretched to the floor above in layoutFloors). */
@@ -375,6 +444,7 @@ export class TwinScene {
     this.positionDevices();
     this.positionGhosts();
     this.drawRoute();
+    this.drawSelection();
   }
 
   /** Spread a room's unpinned devices inside its outline; pinned ones keep their spot (plan units → metres). */
@@ -411,19 +481,27 @@ export class TwinScene {
     }
     this.deviceMesh.renderOrder = 5;
     this.scene.add(this.deviceMesh);
+    const ringOf = new Map<DeviceKind, number>();
     for (const [kind, ids] of byKind) {
-      const { geo: g, y } = kindGeometry(kind);
-      const mesh = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false }), ids.length);
+      const { geo: g, y, ring } = kindGeometry(kind);
+      ringOf.set(kind, ring);
+      // Lit models in a neutral colour; the status shows as a ring on the floor (and colours search hits).
+      const mesh = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: "#ffffff" }), ids.length);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      ids.forEach((id, i) => {
-        this.kindIndex.set(id, { kind, i });
-        mesh.setColorAt(i, new THREE.Color(STATUS_COLORS[this.assetsById.get(id)!.status] ?? "#cfe8ff").multiplyScalar(1.5));
-      });
+      ids.forEach((id, i) => { this.kindIndex.set(id, { kind, i }); mesh.setColorAt(i, new THREE.Color(PALETTE[this.style].model)); });
       mesh.visible = false;
       mesh.renderOrder = 5;
       this.kindMeshes.set(kind, { mesh, ids, y });
       this.scene.add(mesh);
     }
+    const ringGeo = new THREE.RingGeometry(0.78, 1, 36); ringGeo.rotateX(-Math.PI / 2);
+    this.statusRings = new THREE.InstancedMesh(ringGeo, new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }), Math.max(1, n));
+    this.statusRings.count = n;
+    this.statusRings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.statusRings.visible = false;
+    this.statusRings.renderOrder = 4;
+    this.ringSize = this.deviceIds.map((id) => ringOf.get(this.kindIndex.get(id)?.kind ?? "other") ?? 0.55);
+    this.scene.add(this.statusRings);
     const bg = new THREE.BufferGeometry();
     bg.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(n * 6), 3));
     bg.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(n * 6), 3));
@@ -436,24 +514,34 @@ export class TwinScene {
   /** Scale of a device marker now (0 = hidden); faults pulse, search hits swell, the rest dim while searching. */
   private deviceScale(i: number, t: number): number {
     const id = this.deviceIds[i]; const d = this.devicePos.get(id)!; const a = this.assetsById.get(id)!;
-    const floorVisible = this.floors.has(d.floorId) && (this.isolated == null || this.isolated === d.floorId);
-    if (!this.visibleAssets.has(id) || !floorVisible) return 0;
+    if (!this.visibleAssets.has(id) || !this.floorShown(d.floorId)) return 0;
     const hi = this.highlight.size ? this.highlight.has(id) : false;
     const dim = this.highlight.size > 0 && !hi;
     const pulse = !this.reducedMotion && (a.status === "OUT_OF_SERVICE" || a.status === "UNDER_MAINTENANCE") ? 1 + 0.25 * Math.sin(t * 4 + i) : 1;
     return (hi ? 1.8 : dim ? 0.55 : 1) * pulse;
   }
 
+  private static readonly UP = new THREE.Vector3(0, 1, 0);
+  private static readonly NO_TURN = new THREE.Quaternion();
+
   private setDeviceMatrix(i: number, k: number, m: THREE.Matrix4, p: THREE.Vector3, q: THREE.Quaternion, sc: THREE.Vector3) {
     const id = this.deviceIds[i]; const d = this.devicePos.get(id)!;
-    const y = this.floorY(this.floorById.get(d.floorId)!) + DEVICE_HEIGHT;
-    p.set(d.x, y, d.z); sc.set(k, k, k);
-    m.compose(p, q, sc); this.deviceMesh!.setMatrixAt(i, m);
+    const floor = this.floorY(this.floorById.get(d.floorId)!);
+    p.set(d.x, floor + DEVICE_HEIGHT, d.z); sc.set(k, k, k);
+    m.compose(p, TwinScene.NO_TURN, sc); this.deviceMesh!.setMatrixAt(i, m);
     const ki = this.kindIndex.get(id);
     if (ki) {
       const km = this.kindMeshes.get(ki.kind)!;
-      p.set(d.x, y - DEVICE_HEIGHT + km.y, d.z);
+      // Models keep their size (only search hits grow a little); a quarter turn per device so a ward doesn't look stamped.
+      const mk = k === 0 ? 0 : Math.min(1.25, Math.max(1, k));
+      q.setFromAxisAngle(TwinScene.UP, (id % 4) * Math.PI / 2);
+      p.set(d.x, floor + km.y, d.z); sc.set(mk, mk, mk);
       m.compose(p, q, sc); km.mesh.setMatrixAt(ki.i, m);
+    }
+    if (this.statusRings) {
+      const r = k === 0 ? 0 : (this.ringSize[i] ?? 0.55) * k;
+      p.set(d.x, floor + 0.04, d.z); sc.set(r, 1, r);
+      m.compose(p, TwinScene.NO_TURN, sc); this.statusRings.setMatrixAt(i, m);
     }
   }
 
@@ -470,13 +558,28 @@ export class TwinScene {
       this.setDeviceMatrix(i, k, m, p, q, sc);
       if (k > 0 && !this.reducedMotion && (a.status === "OUT_OF_SERVICE" || a.status === "UNDER_MAINTENANCE")) this.pulsing.push(i);
       const y = this.floorY(this.floorById.get(d.floorId)!) + DEVICE_HEIGHT;
-      const dim = this.highlight.size > 0 && !this.highlight.has(id);
-      c.set(STATUS_COLORS[a.status] ?? "#cfe8ff").multiplyScalar(k > 0 ? (dim ? 0.25 : 0.9) : 0);
+      const emph = this.highlight.size ? this.highlight : this.focus;
+      const dim = !!emph && !emph.has(id);
+      const status = STATUS_COLORS[a.status] ?? "#cfe8ff";
+      c.set(status).multiplyScalar(k > 0 ? (dim ? 0.25 : 0.9) : 0);
       beamPos.setXYZ(i * 2, d.x, y - DEVICE_HEIGHT + 0.05, d.z); beamPos.setXYZ(i * 2 + 1, d.x, y, d.z);
       beamCol.setXYZ(i * 2, 0, 0, 0); beamCol.setXYZ(i * 2 + 1, c.r, c.g, c.b);
+      // Colours: dots and rings in the status colour, models neutral (search hits take the status colour); dimmed ones fade.
+      const fade = dim ? (this.style === "light" ? 0.55 : 0.3) : 1;
+      this.deviceMesh.setColorAt(i, c.set(status).multiplyScalar((this.style === "light" ? 1.0 : 2.0) * fade));
+      this.statusRings?.setColorAt(i, c.set(status).multiplyScalar((this.style === "light" ? 0.9 : 1.3) * fade));
+      const ki = this.kindIndex.get(id);
+      if (ki) {
+        const hit = this.highlight.size > 0 && this.highlight.has(id);
+        const base = c.set(hit ? status : PALETTE[this.style].model);
+        if (dim) base.lerp(new THREE.Color(PALETTE[this.style].bg), 0.55);
+        this.kindMeshes.get(ki.kind)!.mesh.setColorAt(ki.i, base);
+      }
     }
     this.deviceMesh.instanceMatrix.needsUpdate = true;
-    for (const km of this.kindMeshes.values()) km.mesh.instanceMatrix.needsUpdate = true;
+    if (this.deviceMesh.instanceColor) this.deviceMesh.instanceColor.needsUpdate = true;
+    if (this.statusRings) { this.statusRings.instanceMatrix.needsUpdate = true; if (this.statusRings.instanceColor) this.statusRings.instanceColor.needsUpdate = true; }
+    for (const km of this.kindMeshes.values()) { km.mesh.instanceMatrix.needsUpdate = true; if (km.mesh.instanceColor) km.mesh.instanceColor.needsUpdate = true; }
     beamPos.needsUpdate = true; beamCol.needsUpdate = true;
     this.updateSelectionRing();
   }
@@ -487,13 +590,17 @@ export class TwinScene {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
     for (const i of this.pulsing) this.setDeviceMatrix(i, this.deviceScale(i, t), m, p, q, sc);
     this.deviceMesh.instanceMatrix.needsUpdate = true;
+    if (this.statusRings) this.statusRings.instanceMatrix.needsUpdate = true;
     for (const km of this.kindMeshes.values()) km.mesh.instanceMatrix.needsUpdate = true;
   }
 
   private addGround() {
-    const grid = new THREE.GridHelper(1200, 240, "#0e3550", "#071c2c");
-    (grid.material as THREE.Material).transparent = true; (grid.material as THREE.Material).opacity = 0.5;
+    if (this.grid) { this.scene.remove(this.grid); this.grid.geometry.dispose(); (this.grid.material as THREE.Material).dispose(); }
+    const [a, b] = PALETTE[this.style].grid;
+    const grid = new THREE.GridHelper(1200, 240, a, b);
+    (grid.material as THREE.Material).transparent = true; (grid.material as THREE.Material).opacity = this.style === "light" ? 0.7 : 0.5;
     grid.position.y = -0.6;
+    this.grid = grid;
     this.scene.add(grid);
   }
 
@@ -516,15 +623,90 @@ export class TwinScene {
     }
   }
 
+  /** Basement levels fold away in the whole-building view (unless switched on), when the building has floors above ground. */
+  private hiddenFloor(f: TwinFloor) {
+    return this.isolated == null && !this.showBasements && f.level < 0 && this.data.floors.some((x) => x.level >= 0);
+  }
+
+  /** Loaded and on screen: the isolated floor, or every floor of the whole building except folded basements. */
+  private floorShown(floorId: number) {
+    const f = this.floorById.get(floorId);
+    return !!f && this.floors.has(floorId) && (this.isolated == null ? !this.hiddenFloor(f) : this.isolated === floorId);
+  }
+
   private applyFloorVisibility() {
+    const P = PALETTE[this.style];
     for (const [id, v] of this.floors) {
-      const on = this.isolated == null || this.isolated === id;
-      v.group.visible = on || this.isolated == null;
-      const fade = on ? 1 : 0;
-      (v.slab.material as THREE.MeshBasicMaterial).opacity = 0.5 * fade;
-      if (v.roomsMesh) (v.roomsMesh.material as THREE.MeshBasicMaterial).opacity = this.tinted ? (this.isolated === id ? 0.62 : 0.45) : this.isolated === id ? 0.26 : 0.13;
-      v.group.visible = on;
+      v.group.visible = this.floorShown(id);
+      const iso = this.isolated === id;
+      if (v.roomsMesh) {
+        const m = v.roomsMesh.material as THREE.MeshBasicMaterial;
+        m.opacity = this.tinted ? (iso ? 0.7 : 0.55) : iso ? P.roomOpacity.iso : P.roomOpacity.whole;
+      }
     }
+    this.applyWallHeights();
+  }
+
+  /** Walls full height on one floor or close up; a low cutaway over the whole building from afar. Doors and columns follow. */
+  private applyWallHeights() {
+    const full = this.isolated != null || this.near;
+    const k = full ? 1 : CUTAWAY;
+    for (const v of this.floors.values()) {
+      for (const o of [v.wallMesh, v.wallLines, v.glass, v.columns]) if (o) o.scale.y = k;
+      if (v.doors) v.doors.visible = full;
+      if (v.columns) v.columns.visible = full;
+    }
+  }
+
+  /** Materials of one floor for the current style. */
+  private styleFloor(v: FloorView) {
+    const P = PALETTE[this.style], light = this.style === "light";
+    const slab = v.slab.material as THREE.MeshBasicMaterial;
+    slab.color.set(P.slab); slab.opacity = P.slabOpacity; slab.depthWrite = light;
+    const edge = v.slabEdge.material as THREE.LineBasicMaterial;
+    edge.color.set(P.slabEdge); edge.opacity = P.slabEdgeOpacity;
+    v.slabBox.visible = light;
+    if (v.wallMesh) {
+      (v.wallMesh.material as THREE.Material).dispose();
+      v.wallMesh.material = light
+        ? new THREE.MeshLambertMaterial({ color: "#fbfcfd", side: THREE.DoubleSide, transparent: true, opacity: 1 })
+        : v.dense
+          ? new THREE.MeshBasicMaterial({ color: "#0b2638", transparent: true, opacity: 0.78, side: THREE.DoubleSide, depthWrite: true })
+          : new THREE.MeshBasicMaterial({ color: "#1f8fc0", transparent: true, opacity: 0.035, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    }
+    if (v.wallLines) {
+      const m = v.wallLines.material as THREE.LineBasicMaterial;
+      m.color.set(light ? P.wallLine : v.dense ? "#38c8f0" : "#4fd8ff"); m.opacity = light ? P.wallLineOpacity : v.dense ? 0.5 : 0.32;
+    }
+    if (v.doors) (v.doors.material as THREE.LineBasicMaterial).color.set(P.door);
+    if (v.glass) (v.glass.material as THREE.LineBasicMaterial).color.set(P.glass);
+    if (v.columns) (v.columns.material as THREE.LineBasicMaterial).color.set(P.column);
+  }
+
+  /** Switch between the glowing dark style and the light architectural one. */
+  setStyle(style: TwinStyle) {
+    this.style = style;
+    const P = PALETTE[style];
+    (this.scene.background as THREE.Color).set(P.bg);
+    (this.scene.fog as THREE.FogExp2).color.set(P.bg); (this.scene.fog as THREE.FogExp2).density = P.fog;
+    this.ambient.intensity = P.ambient; this.ambient.color.set(style === "light" ? "#ffffff" : "#9fd8ff");
+    this.hemi.intensity = P.hemi; this.sun.intensity = P.sun;
+    this.renderer.toneMappingExposure = P.exposure;
+    this.addGround();
+    for (const v of this.floors.values()) { this.styleFloor(v); this.tintFloor(v); }
+    this.bloom.enabled = this.bloomWanted && style === "dark";
+    if (this.beamLines) this.beamLines.visible = !this.near && style === "dark";
+    this.applyFloorVisibility();
+    this.positionDevices();
+    this.drawSelection();
+    this.buildLabels();
+  }
+
+  /** Show or fold away the basement levels in the whole-building view. */
+  setShowBasements(on: boolean) {
+    this.showBasements = on;
+    this.layoutFloors();
+    this.buildLabels();
   }
 
   private tinted = false;
@@ -542,12 +724,15 @@ export class TwinScene {
 
   private tintFloor(v: FloorView) {
     const tints = this.tints?.map ?? null;
+    const light = this.style === "light";
+    const white = new THREE.Color("#ffffff");
     if (v.roomsMesh) {
-      const n = new THREE.Color(this.tints?.neutral ?? "#1c3346");
+      const n = new THREE.Color(light ? "#e4e9ee" : this.tints?.neutral ?? "#1c3346");
       const attr = v.roomsMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
       for (const [roomId, [first, count]] of v.roomRanges) {
         const hex = tints?.get(roomId)?.color;
-        const c = tints ? (hex ? new THREE.Color(hex) : n) : v.roomBase.get(roomId)!;
+        // Light style: pastel department colours on the white slab.
+        const c = tints ? (hex ? new THREE.Color(hex) : n) : light ? v.roomBase.get(roomId)!.clone().lerp(white, 0.18) : v.roomBase.get(roomId)!;
         for (let i = first; i < first + count; i++) attr.setXYZ(i, c.r, c.g, c.b);
       }
       attr.needsUpdate = true;
@@ -557,7 +742,7 @@ export class TwinScene {
     if (v.wallMesh) {
       const m = v.wallMesh.material as THREE.MeshBasicMaterial;
       if (m.userData.baseOpacity == null) m.userData.baseOpacity = m.opacity;
-      m.opacity = this.tinted ? Math.min(m.userData.baseOpacity as number, 0.22) : (m.userData.baseOpacity as number);
+      m.opacity = this.tinted ? Math.min(m.userData.baseOpacity as number, light ? 0.3 : 0.22) : (m.userData.baseOpacity as number);
       m.depthWrite = !this.tinted && (m.userData.baseOpacity as number) > 0.5;
       m.needsUpdate = true;
     }
@@ -591,7 +776,7 @@ export class TwinScene {
     if (!this.ghostMesh) return;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
     this.ghostSpots.forEach((g, i) => {
-      const on = this.floors.has(g.floorId) && (this.isolated == null || this.isolated === g.floorId);
+      const on = this.floorShown(g.floorId);
       p.set(g.x, this.floorY(this.floorById.get(g.floorId)!) + DEVICE_HEIGHT, g.z);
       const k = on ? 1 : 0; sc.set(k, k, k);
       m.compose(p, q, sc); this.ghostMesh!.setMatrixAt(i, m);
@@ -720,13 +905,9 @@ export class TwinScene {
       const st = statuses.get(a.id);
       if (!st || st === a.status) continue;
       a.status = st;
-      this.deviceMesh.setColorAt(i, new THREE.Color(STATUS_COLORS[st] ?? "#cfe8ff").multiplyScalar(2.0));
-      const ki = this.kindIndex.get(a.id);
-      if (ki) { const km = this.kindMeshes.get(ki.kind)!; km.mesh.setColorAt(ki.i, new THREE.Color(STATUS_COLORS[st] ?? "#cfe8ff").multiplyScalar(1.5)); if (km.mesh.instanceColor) km.mesh.instanceColor.needsUpdate = true; }
       changed = true;
     }
-    if (changed && this.deviceMesh.instanceColor) this.deviceMesh.instanceColor.needsUpdate = true;
-    if (changed) this.positionDevices();
+    if (changed) this.positionDevices(); // colours of dots, rings and models follow
   }
 
   /** Which assets to show (filters). */
@@ -738,6 +919,11 @@ export class TwinScene {
   select(p: PickResult, fly = true) {
     this.selected = p;
     if (p && fly) this.userMoved = true;
+    // Everything else steps back: the selected room's equipment, or the selected device, stays bright.
+    this.focus = !p ? null : p.kind === "asset" ? new Set([p.id])
+      : new Set([...this.assetsById.values()].filter((a) => a.roomId === p.id).map((a) => a.id));
+    this.positionDevices();
+    this.drawSelection();
     this.updateSelectionRing();
     if (!p || !fly) return;
     if (p.kind === "asset") {
@@ -756,7 +942,8 @@ export class TwinScene {
   }
 
   frameAll(animate = true) {
-    const vs = [...this.floors.values()];
+    const shown = [...this.floors.values()].filter((v) => !this.hiddenFloor(v.floor));
+    const vs = shown.length ? shown : [...this.floors.values()];
     if (!vs.length) return;
     const size = Math.max(...vs.map((v) => v.size));
     const c = vs.reduce((acc, v) => acc.add(v.center), new THREE.Vector3()).multiplyScalar(1 / vs.length);
@@ -781,7 +968,7 @@ export class TwinScene {
     this.idleSince = Infinity;
   }
 
-  setBloom(on: boolean) { this.bloom.enabled = on; }
+  setBloom(on: boolean) { this.bloomWanted = on; this.bloom.enabled = on && this.style === "dark"; }
 
   /* ───────────── Saved views and snapshots ───────────── */
 
@@ -882,6 +1069,38 @@ export class TwinScene {
     return null;
   }
 
+  /** A glowing outline around the selected room (or the selected device's room): a line and a low translucent fence. */
+  private drawSelection() {
+    if (this.selOutline) {
+      this.scene.remove(this.selOutline);
+      this.selOutline.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose(); (m.material as THREE.Material | undefined)?.dispose(); });
+      this.selOutline = null;
+    }
+    const p = this.selected;
+    const roomId = p?.kind === "room" ? p.id : p?.kind === "asset" ? this.assetsById.get(p.id)?.roomId ?? null : null;
+    const room = roomId != null ? this.roomById.get(roomId) : null;
+    const f = room ? this.floorById.get(room.floorId) : null;
+    if (!room || !f || room.poly.length < 3) return;
+    const s = this.u(f), y = this.floorY(f), color = PALETTE[this.style].select;
+    const pts = room.poly.map(([x, z]) => new THREE.Vector3(x * s, y + 0.08, z * s));
+    const group = new THREE.Group();
+    const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color, toneMapped: false, depthTest: false, transparent: true }));
+    line.renderOrder = 8;
+    const fence: number[] = [];
+    const h = p?.kind === "room" ? 0.9 : 0.45;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      fence.push(a.x, a.y, a.z, b.x, b.y, b.z, b.x, b.y + h, b.z, a.x, a.y, a.z, b.x, b.y + h, b.z, a.x, a.y + h, a.z);
+    }
+    const fg = new THREE.BufferGeometry(); fg.setAttribute("position", new THREE.Float32BufferAttribute(fence, 3));
+    const wall = new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: this.style === "light" ? 0.28 : 0.22, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }));
+    wall.renderOrder = 8;
+    group.add(line, wall);
+    group.visible = this.floorShown(f.id);
+    this.selOutline = group;
+    this.scene.add(group);
+  }
+
   private updateSelectionRing() {
     const p = this.selected;
     if (p?.kind === "asset") {
@@ -939,8 +1158,10 @@ export class TwinScene {
     if (near !== this.near && this.deviceMesh) {
       this.near = near;
       this.deviceMesh.visible = !near;
-      if (this.beamLines) this.beamLines.visible = !near;
+      if (this.beamLines) this.beamLines.visible = !near && this.style === "dark";
       for (const km of this.kindMeshes.values()) km.mesh.visible = near;
+      if (this.statusRings) this.statusRings.visible = near;
+      this.applyWallHeights();
     }
     this.updateLabels(now);
     if (!this.reducedMotion && this.deviceMesh) this.pulseDevices(t);
@@ -987,55 +1208,114 @@ export class TwinScene {
     this.labelLayer.remove();
   }
 
-  /* ───────────── Room labels ───────────── */
+  /* ───────────── Labels: floor tags, departments, rooms ───────────── */
 
+  /**
+   * Whole building: a tag at the side of each floor and the departments on it. One floor on its own: its departments
+   * from afar, its rooms close up. Labels are HTML (crisp at any zoom), placed every few frames, overlaps dropped.
+   */
   private buildLabels() {
     this.labelLayer.replaceChildren();
     this.labels = [];
-    if (this.isolated == null) return;
-    const f = this.floorById.get(this.isolated); if (!f) return;
-    const s = this.u(f);
-    const list = this.data.rooms.filter((r) => r.floorId === f.id && r.type !== "CORRIDOR" && r.poly.length >= 3)
-      .map((r) => ({ r, area: polygonArea(r.poly as Pt[]) })).sort((a, b) => b.area - a.area);
-    for (const { r } of list) {
+    const light = this.style === "light";
+    const make = (text: string, sub: string | null, kind: "room" | "dept" | "floor", color?: string) => {
       const el = document.createElement("span");
-      const name = document.createElement("span"); name.textContent = r.name;
-      const code = document.createElement("span"); code.textContent = ` ${r.code}`; code.style.opacity = "0.6";
-      el.append(name, code);
+      if (color) { const dot = document.createElement("span"); Object.assign(dot.style, { display: "inline-block", width: "8px", height: "8px", borderRadius: "2px", background: color, marginRight: "5px", verticalAlign: "middle" }); el.append(dot); }
+      const name = document.createElement("span"); name.textContent = text; el.append(name);
+      if (sub) { const c = document.createElement("span"); c.textContent = ` ${sub}`; c.style.opacity = "0.6"; el.append(c); }
+      const big = kind !== "room";
       Object.assign(el.style, {
-        position: "absolute", left: "0", top: "0", whiteSpace: "nowrap", font: "500 11px/1.2 system-ui, sans-serif", color: "#e6f7ff",
-        background: "rgba(4,18,31,0.72)", border: "1px solid rgba(47,211,255,0.25)", borderRadius: "4px", padding: "1px 5px", display: "none",
+        position: "absolute", left: "0", top: "0", whiteSpace: "nowrap", display: "none",
+        font: `${big ? 600 : 500} ${kind === "floor" ? 12 : big ? 12 : 11}px/1.25 system-ui, sans-serif`,
+        color: light ? "#14232f" : "#e6f7ff",
+        background: light ? "rgba(255,255,255,0.9)" : "rgba(4,18,31,0.78)",
+        border: `1px solid ${light ? "rgba(20,35,47,0.16)" : "rgba(47,211,255,0.28)"}`,
+        borderLeft: kind === "floor" ? `3px solid ${PALETTE[this.style].select}` : undefined,
+        borderRadius: "4px", padding: big ? "2px 7px" : "1px 5px",
+        boxShadow: light ? "0 1px 3px rgba(0,0,0,0.12)" : "none",
       });
       this.labelLayer.appendChild(el);
-      const [px, py] = interiorPoint(r.poly as Pt[]);
-      this.labels.push({ el, x: px * s, z: py * s, w: (r.name.length + r.code.length + 1) * 6 + 12 });
+      return { el, w: (text.length + (sub ? sub.length + 1 : 0)) * (big ? 7 : 6) + (color ? 13 : 0) + 16, h: big ? 19 : 16 };
+    };
+    const deptName = new Map(this.data.departments.map((d) => [d.id, d]));
+    // Top floor first, so its tag and departments win when labels would overlap.
+    const floorsHere = this.isolated != null ? [this.isolated]
+      : [...this.floors.keys()].filter((id) => this.floorShown(id)).sort((a, b) => this.floorById.get(b)!.elevation - this.floorById.get(a)!.elevation);
+    const cs = floorsHere.map((id) => this.floors.get(id)!.center);
+    if (cs.length) this.labelCenter = cs.reduce((t, c) => t.add(c), new THREE.Vector3()).multiplyScalar(1 / cs.length);
+    for (const fid of floorsHere) {
+      const f = this.floorById.get(fid), v = this.floors.get(fid);
+      if (!f || !v) continue;
+      const s = this.u(f);
+      if (this.isolated == null) {
+        const t = make(f.name, null, "floor");
+        this.labels.push({ ...t, floorId: fid, x: v.bounds.x1 + 6, z: (v.bounds.z0 + v.bounds.z1) / 2, kind: "floor" });
+      }
+      // Departments: labelled in their biggest room on this floor, biggest departments first.
+      const byDept = new Map<number, { area: number; room: TwinRoom; total: number }>();
+      for (const r of this.data.rooms) {
+        if (r.floorId !== fid || r.departmentId == null || r.poly.length < 3 || r.type === "CORRIDOR") continue;
+        const a = polygonArea(r.poly as Pt[]);
+        const cur = byDept.get(r.departmentId);
+        if (!cur) byDept.set(r.departmentId, { area: a, room: r, total: a });
+        else { cur.total += a; if (a > cur.area) { cur.area = a; cur.room = r; } }
+      }
+      for (const [deptId, d] of [...byDept].sort((a, b) => b[1].total - a[1].total).slice(0, this.isolated == null ? 6 : 24)) {
+        const dep = deptName.get(deptId); if (!dep) continue;
+        const [px, py] = interiorPoint(d.room.poly as Pt[]);
+        const t = make(dep.name, null, "dept", dep.color);
+        this.labels.push({ ...t, floorId: fid, x: px * s, z: py * s, kind: "dept" });
+      }
+      if (this.isolated != null) {
+        const list = this.data.rooms.filter((r) => r.floorId === fid && r.type !== "CORRIDOR" && r.poly.length >= 3)
+          .map((r) => ({ r, area: polygonArea(r.poly as Pt[]) })).sort((a, b) => b.area - a.area);
+        for (const { r } of list) {
+          const [px, py] = interiorPoint(r.poly as Pt[]);
+          const t = make(r.name, r.code, "room");
+          this.labels.push({ ...t, floorId: fid, x: px * s, z: py * s, kind: "room" });
+        }
+      }
     }
+    this.labelsAt = 0;
   }
 
   /** Keep labels clear of the HUD (pixels from each edge of the view). */
   setLabelInsets(i: { top: number; right: number; bottom: number; left: number }) { this.labelInsets = i; this.labelsAt = 0; }
 
-  /** Place labels for the isolated floor when close enough, biggest rooms first, skipping any that would overlap. */
+  /** Place the labels that suit the zoom, in priority order (floors, departments, rooms), skipping any that would overlap. */
   private updateLabels(now: number) {
     if (now - this.labelsAt < 120 || !this.labels.length) return;
     this.labelsAt = now;
-    const f = this.isolated != null ? this.floorById.get(this.isolated) : null;
-    const close = !!f && this.camera.position.distanceTo(this.controls.target) < LABEL_DISTANCE;
-    this.labelLayer.style.display = close ? "block" : "none";
-    if (!close || !f) return;
-    const y = this.floorY(f) + 0.2;
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    const kinds = new Set<string>(this.isolated != null ? (dist < LABEL_DISTANCE ? ["room"] : ["dept"]) : dist < 320 ? ["floor", "dept"] : ["floor"]);
     const w = this.renderer.domElement.clientWidth, h = this.renderer.domElement.clientHeight;
     const boxes: [number, number, number, number][] = [];
     const v = new THREE.Vector3();
+    const ins = this.labelInsets;
     let shown = 0;
     for (const l of this.labels) {
-      v.set(l.x, y, l.z).project(this.camera);
-      const sx = (v.x + 1) / 2 * w - l.w / 2, sy = (1 - v.y) / 2 * h - 8;
-      const ins = this.labelInsets;
-      const visible = v.z < 1 && sx > ins.left && sy > ins.top && sx + l.w < w - ins.right && sy + 16 < h - ins.bottom && shown < MAX_LABELS
-        && !boxes.some(([x0, y0, x1, y1]) => sx < x1 && sx + l.w > x0 && sy < y1 && sy + 16 > y0);
+      const f = this.floorById.get(l.floorId);
+      let visible = false, sx = 0, sy = 0;
+      if (f && kinds.has(l.kind) && shown < MAX_LABELS && this.floorShown(l.floorId)) {
+        if (l.kind === "floor") {
+          // A column of floor names at the left of the model: at each floor's height on screen, just left of the floor
+          // (or just inside the free area when the floor runs under the side panel).
+          const vw = this.floors.get(l.floorId)!, b = vw.bounds, y = this.floorY(f);
+          let minX = Infinity;
+          for (const [x, z] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1]]) minX = Math.min(minX, (v.set(x, y, z).project(this.camera).x + 1) / 2 * w);
+          v.set(this.labelCenter.x, y, this.labelCenter.z).project(this.camera);
+          sx = Math.max(ins.left + 8, minX - l.w - 10);
+          sy = (1 - v.y) / 2 * h - l.h / 2;
+        } else {
+          v.set(l.x, this.floorY(f) + 0.2, l.z).project(this.camera);
+          sx = (v.x + 1) / 2 * w - l.w / 2;
+          sy = (1 - v.y) / 2 * h - l.h / 2;
+        }
+        visible = v.z < 1 && sx > ins.left && sy > ins.top && sx + l.w < w - ins.right && sy + l.h < h - ins.bottom
+          && !boxes.some(([x0, y0, x1, y1]) => sx < x1 && sx + l.w > x0 && sy < y1 && sy + l.h > y0);
+      }
       l.el.style.display = visible ? "block" : "none";
-      if (visible) { l.el.style.transform = `translate(${Math.round(sx)}px, ${Math.round(sy)}px)`; boxes.push([sx - 2, sy - 2, sx + l.w + 2, sy + 18]); shown++; }
+      if (visible) { l.el.style.transform = `translate(${Math.round(sx)}px, ${Math.round(sy)}px)`; boxes.push([sx - 2, sy - 2, sx + l.w + 2, sy + l.h + 2]); shown++; }
     }
   }
 
@@ -1050,7 +1330,9 @@ export class TwinScene {
       if (r == null) continue;
       this.placeRoom(r, [...this.assetsById.values()].filter((x) => x.roomId === r));
     }
+    if (this.selected?.kind === "room") this.focus = new Set([...this.assetsById.values()].filter((x) => x.roomId === (this.selected as { id: number }).id).map((x) => x.id));
     this.positionDevices();
+    this.drawSelection();
     this.updateSelectionRing();
   }
 

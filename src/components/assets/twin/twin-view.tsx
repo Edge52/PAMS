@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { deleteViewAction, saveViewAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
-import type { PickResult, TwinScene } from "./scene";
+import type { PickResult, TwinScene, TwinStyle } from "./scene";
 import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinData } from "./types";
 import { CORE_LABELS, coreKind, polygonArea, type Pt } from "./geometry";
 import { AVAILABLE, rankNearest, type Ranked } from "./nearest";
@@ -16,6 +16,18 @@ import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server
 import { bucketOf, colorFor, LAYER_INFO, LAYERS, legendFor, NEUTRAL, roomValues, type LayerId, type LiveMetrics, type Scope } from "./layers";
 
 const LIVE_EVERY_MS = 60_000;
+
+/* The chosen look (dark "digital twin" or light "architectural"), kept in localStorage; unreadable storage → dark. */
+const STYLE_KEY = "hpams.twin.style";
+const styleListeners = new Set<() => void>();
+function subscribeStyle(cb: () => void) { styleListeners.add(cb); return () => { styleListeners.delete(cb); }; }
+function readStyle(): TwinStyle { try { return window.localStorage.getItem(STYLE_KEY) === "light" ? "light" : "dark"; } catch { return memoryStyle ?? "dark"; } }
+function writeStyle(v: TwinStyle) {
+  try { window.localStorage.setItem(STYLE_KEY, v); } catch { /* private window: not remembered */ }
+  memoryStyle = v;
+  styleListeners.forEach((cb) => cb());
+}
+let memoryStyle: TwinStyle | null = null;
 /** Same colours as the stairs, lifts and shafts in the scene. */
 const CORE_SWATCH = { stair: "#a78bff", lift: "#ff8fd8", shaft: "#5b7f9c" } as const;
 
@@ -48,6 +60,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [floorId, setFloorId] = useState<number | null>(null);
   const [explode, setExplode] = useState(1.6);
   const [bloom, setBloom] = useState(true);
+  // The look is a per-viewer preference, remembered in this browser only (the server renders the default).
+  const style = useSyncExternalStore(subscribeStyle, readStyle, () => "dark" as TwinStyle);
+  const setStyle = writeStyle;
+  const [basements, setBasements] = useState(false);
+  const hasBasements = data.floors.some((f) => f.level < 0) && data.floors.some((f) => f.level >= 0);
   const [cores, setCores] = useState(true);
   const [coreCounts, setCoreCounts] = useState<Record<string, number> | null>(null);
   const [planId, setPlanId] = useState<number | null>(null);
@@ -117,7 +134,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         if (cancelled || !host.current) return;
         scene = new TwinScene(host.current, data, {
           onProgress: (loaded, total) => setProgress({ loaded, total }),
-          onSlow: () => { setBloom(false); setToast({ ok: "Lighter graphics on this device: glow is off for a smoother picture. Switch it back on under Floor spacing." }); },
+          onSlow: () => { setBloom(false); setToast({ ok: "Lighter graphics on this device: glow is off for a smoother picture. Switch it back on under View." }); },
           onSelect: (p) => { setSelected(p); if (p) setSheetTab("details"); },
           onHover: (p, s) => setHover(p && s ? { p, ...s } : null),
         });
@@ -241,6 +258,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       : mode === "compact" ? { top: 120, right: 290, bottom: 8, left: 230 } : { top: 120, right: 345, bottom: 8, left: 265 });
   }, [mode, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setBloom(bloom); }, [bloom, ready]);
+  useEffect(() => { if (ready) sceneRef.current?.setStyle(style); }, [style, ready]);
+  useEffect(() => { if (ready) sceneRef.current?.setShowBasements(basements); }, [basements, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setCores(cores); }, [cores, ready]);
   // Fill the window below the app's top bar exactly (its height varies), so nothing hides under the bottom edge.
   useEffect(() => {
@@ -402,10 +421,18 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   );
   const viewControls = (
     <div>
-      {/* In the side column the panel header already says "Floor spacing 1.6×". */}
-      <label className={mode === "phone" ? "flex items-center justify-between text-[13px]" : "sr-only"} htmlFor="twin-explode">Floor spacing <span className="text-[#8fb6cc]">{explode.toFixed(1)}×</span></label>
+      <div className="mb-3 flex gap-1 text-xs" role="group" aria-label="Look">
+        {(["dark", "light"] as const).map((st) => (
+          <button key={st} type="button" aria-pressed={style === st} onClick={() => setStyle(st)}
+            className={`flex-1 rounded-md border px-2 py-1 ${style === st ? "border-[#2fd3ff] bg-[#0c2a40] text-white" : "border-[#1d4f6d] text-[#8fb6cc]"}`}>
+            {st === "dark" ? "Digital twin" : "Architectural"}
+          </button>
+        ))}
+      </div>
+      <label className="flex items-center justify-between text-[13px]" htmlFor="twin-explode">Floor spacing <span className="text-[#8fb6cc]">{explode.toFixed(1)}×</span></label>
       <input id="twin-explode" type="range" min={1} max={4} step={0.1} value={explode} onChange={(e) => setExplode(Number(e.target.value))} className="w-full accent-[#2fd3ff]" />
-      <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={bloom} onChange={(e) => setBloom(e.target.checked)} className="accent-[#2fd3ff]" /> Glow</label>
+      {style === "dark" && <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={bloom} onChange={(e) => setBloom(e.target.checked)} className="accent-[#2fd3ff]" /> Glow</label>}
+      {hasBasements && <label className="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" checked={basements} onChange={(e) => setBasements(e.target.checked)} className="accent-[#2fd3ff]" /> Basements in the whole building</label>}
       {coreCounts && coreCounts.stair + coreCounts.lift + coreCounts.shaft > 0 && (
         <>
           <label className="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" checked={cores} onChange={(e) => setCores(e.target.checked)} className="accent-[#2fd3ff]" /> Lifts and stairs</label>
@@ -751,12 +778,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   };
 
   return (
-    <div ref={root} className="twin relative -mx-5 -mb-3 -mt-6 h-[calc(100dvh-4rem)] overflow-hidden bg-[#030a14] text-[#d6f3ff] md:-mx-8 lg:-mx-10">
+    <div ref={root} className={`twin relative -mx-5 -mb-3 -mt-6 h-[calc(100dvh-4rem)] overflow-hidden ${style === "light" ? "bg-[#e8edf1]" : "bg-[#030a14]"} text-[#d6f3ff] md:-mx-8 lg:-mx-10`}>
       <div ref={host} className="absolute inset-0" aria-label="3D model of the hospital with its equipment" role="img" />
 
       {/* Top bar */}
       <div className={`pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 pl-16 md:pl-4 ${phone ? "p-3" : "p-4"}`}>
-        <div className="pointer-events-auto min-w-0">
+        <div className={`pointer-events-auto min-w-0 ${style === "light" ? "-mx-3 -my-1.5 rounded-lg bg-[#04121fd9] px-3 py-1.5 backdrop-blur" : ""}`}>
           <p className="text-[11px] font-semibold tracking-[0.18em] text-[#5fd6ff]">Digital twin</p>
           <h1 className={`${phone ? "text-base" : "text-xl"} font-bold text-white`}>{data.facility.name}</h1>
           <p className="text-xs text-[#8fb6cc] sm:text-sm">{data.floors.length} floors · {data.rooms.length.toLocaleString()} rooms · {placed.length.toLocaleString()} devices</p>
@@ -792,7 +819,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                 {planPanel}
               </HudPanel>
             )}
-            <HudPanel title="Floor spacing" summary={`${explode.toFixed(1)}×`} open={panels.isOpen("view")} onToggle={() => panels.toggle("view")}>
+            <HudPanel title="View" summary={`${style === "dark" ? "Digital twin" : "Architectural"} · ${explode.toFixed(1)}×`} open={panels.isOpen("view")} onToggle={() => panels.toggle("view")}>
               {viewControls}
             </HudPanel>
             <HudPanel title="Status" summary={statuses.size ? `${statuses.size} of ${visibleStatuses.length}` : "All"} open={panels.isOpen("status")} onToggle={() => panels.toggle("status")}>
