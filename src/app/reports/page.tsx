@@ -17,6 +17,13 @@ export default async function ReportsIndex() {
     <>
       <PageHeader title="Reports" description="Filter by facility and dates, print or save as PDF, or export to Excel. You only see facilities you have access to." />
       <div className="space-y-6">
+        <section>
+          <h2 className="mb-2 text-[15px] font-semibold text-muted">Summary</h2>
+          <Link href="/reports/executive" className="block rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3 hover:border-primary md:max-w-md">
+            <span className="block font-semibold text-primary">Executive summary</span>
+            <span className="mt-1 block text-sm text-muted">One page per hospital: what needs attention, equipment availability, maintenance performance, contracts and purchasing. Print or save as PDF.</span>
+          </Link>
+        </section>
         {GROUPS.map((g) => (
           <section key={g.title}>
             <h2 className="mb-2 text-[15px] font-semibold text-muted">{g.title}</h2>

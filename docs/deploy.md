@@ -79,3 +79,27 @@ service (systemd, PM2 or NSSM on Windows) and schedule `npm run backup`.
 - One account per person; switch accounts off when people leave (Administration › Users).
 - Restrict facility access for users who work in one hospital only.
 - Keep the server updated and backups copied off it.
+
+## Going live at a hospital (La Plaza pilot)
+
+1. **Server**: follow *Server* above on the cloud VM, with the hospital's domain (e.g. `pams.laplaza-hospital.eg`)
+   pointing at it. Create the first administrator with the `SETUP_CODE`.
+2. **Building**: load the floors, rooms and departments from the CAD import, without demo equipment:
+   ```bash
+   docker compose exec app npx tsx scripts/load-buildings.ts
+   ```
+   (`npm run cad:load` without Docker.) It skips a hospital that already exists, so it is safe to run again.
+3. **Email** from the hospital's domain: put the mailbox's SMTP address in `.env`, then `docker compose up -d`, and
+   switch email on under **Administration › Approval rules & settings**. Typical settings:
+   - Microsoft 365: `SMTP_URL=smtp://pams%40laplaza-hospital.eg:PASSWORD@smtp.office365.com:587`
+   - Google Workspace: `SMTP_URL=smtps://pams%40laplaza-hospital.eg:APP-PASSWORD@smtp.gmail.com:465` (an app password)
+   - The hospital's own mail server: ask IT for the host, port and a mailbox for the system.
+   - `MAIL_FROM="Hospital PAMS <pams@laplaza-hospital.eg>"`. Write `@` in the user name as `%40`.
+4. **People**: add each user under **Administration › Users** with their role and hospital. The biomedical engineer
+   who assigns jobs needs the *Biomedical engineer* role.
+5. **Equipment**: register it with **Assets › Import** (Excel), **Bulk placement** or **Register asset**. Fill
+   **Device catalogue › Makes and models** first (or let *Add the makes and models in the register* build it after an
+   import), so makes and models are spelt one way; then set preferred models under **Fleet & standardisation**.
+6. **Labels**: print QR labels from the register (select, then *Print labels*). Scanning one opens the device page with
+   *Report a fault*.
+7. Check the security list above, and that the nightly backups are copied off the server.

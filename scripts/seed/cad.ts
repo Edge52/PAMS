@@ -15,7 +15,7 @@ import { assetMovements, assets, buildings, departments, deviceTypes, facilities
 type Pt = [number, number];
 type CadRoom = { code: string; name: string; dept: string | null; num: string | null; shape: string; area: number | null; poly: Pt[]; label: Pt };
 type CadFloor = { code: string; name: string; level: number; elevation: number; sourceFile: string; walls: number[]; doors: number[]; glass: number[]; columns: number[]; rooms: CadRoom[] };
-type CadBuilding = { name: string; facilityCode?: string; unitsPerMetre: number; planWidth: number; planHeight: number; floors: CadFloor[] };
+export type CadBuilding = { name: string; facilityCode?: string; unitsPerMetre: number; planWidth: number; planHeight: number; floors: CadFloor[] };
 type RoomType = (typeof rooms.$inferInsert)["type"];
 
 /** Drawing department codes → system department (type from seed-data/department-types.json; null = non-clinical). */

@@ -15,6 +15,7 @@
     "db:reset": "tsx --env-file-if-exists=.env scripts/seed.ts --reset",
     "demo": "tsx --env-file-if-exists=.env scripts/launch.ts demo",
     "cad:import": "bash tools/cad/import.sh",
+    "cad:load": "tsx --env-file-if-exists=.env scripts/load-buildings.ts",
     "local": "tsx --env-file-if-exists=.env scripts/launch.ts local",
     "backup": "bash scripts/backup.sh"
   },
