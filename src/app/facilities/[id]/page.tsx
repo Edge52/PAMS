@@ -56,6 +56,7 @@ export default async function FacilityPage({ params, searchParams }: { params: P
         actions={<>
           <LinkButton href={`/assets/map?facilityId=${fac.id}`} variant="primary">Open floor map</LinkButton>
           <LinkButton href={`/assets?facilityId=${fac.id}`}>Asset register</LinkButton>
+          {canEdit && <LinkButton href={`/facilities/${fac.id}/drawings`} variant="ghost">Update drawings</LinkButton>}
         </>}
       />
       <TabLinks active={tab} tabs={[

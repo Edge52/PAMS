@@ -2,7 +2,7 @@
 
 ## Unreleased — wave 7 (in progress, branch `wave-7`)
 
-Migration `0016`. Update with `git pull` and `npm run demo`; your data is kept.
+Migrations `0016`–`0017`. Update with `git pull` and `npm run demo`; your data is kept.
 
 - **Lift cores**: declared once per hospital under Facilities › Lifts (bed, public, service, AGV; stops per floor;
   cars, capacity, typical wait). Suggested from lift lobbies in the drawings and marked *assumed* until confirmed. The
@@ -11,6 +11,14 @@ Migration `0016`. Update with `git pull` and `npm run demo`; your data is kept.
   department. It shows solid walls with grey tops, floor finishes by room type, registered equipment plus
   illustrative room-kit furniture, soft shadows and ambient occlusion. Labels and the title block are drawn by the
   app. Export at 1080p, 4K or 8K (tiled), or as a printable floor book of every floor.
+- **Real-size equipment and placing devices in 3D**: devices have a real size (L × W × H), typed in at registration
+  or taken from the make and model, device type or a typical size for the group. The 3D view and renders show them
+  at that size and turn. A "To place" panel lists registered devices without a room. Pick one and drop it on the
+  plan: a real-size ghost turns green when it fits inside a room, R turns it, and Undo lasts 30 s. "Move on plan"
+  picks up a placed device the same way.
+- **Update drawings in place**: Facilities › (hospital) › Update drawings, or `npm run cad:update -- <file> [--apply]`.
+  Revised drawings are matched by floor level and room code and checked on a review screen before anything changes.
+  Equipment, history and lifts are kept, and rooms that still hold equipment are never removed.
 - Demo restarts no longer crash on the work-order seed.
 
 ## Release 3.0 — 1 Nov 2026

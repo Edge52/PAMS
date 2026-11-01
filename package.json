@@ -18,7 +18,8 @@
     "cad:load": "tsx --env-file-if-exists=.env scripts/load-buildings.ts",
     "reference:sheet": "tsx scripts/reference-sheet.ts",
     "local": "tsx --env-file-if-exists=.env scripts/launch.ts local",
-    "backup": "bash scripts/backup.sh"
+    "backup": "bash scripts/backup.sh",
+    "cad:update": "tsx --env-file-if-exists=.env scripts/update-building.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.12",

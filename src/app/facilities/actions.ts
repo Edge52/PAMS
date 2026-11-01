@@ -13,6 +13,10 @@ import { storeFile } from "@/lib/storage";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { LIFT_KINDS } from "@/lib/assets/lifts";
 import { addLiftSuggestions, liftFloors } from "@/lib/assets/lifts-data";
+import { checkBuilding } from "@/lib/assets/cad-merge";
+import { dropPendingDrawing, readPendingDrawing, savePendingDrawing } from "@/lib/assets/cad-pending";
+import { applyMerge } from "@/lib/assets/cad-merge-data";
+import type { CadBuilding } from "@/lib/assets/cad-rooms";
 
 /** facilities.edit and access to the facility being changed (redirects to /forbidden otherwise). */
 async function editFacility(facilityId: number) {
@@ -406,4 +410,41 @@ export async function suggestLiftsAction(fd: FormData) {
   revalidatePath(`/facilities/${fid}`);
   revalidatePath("/assets/3d");
   redirect(back(fid, "lifts", n ? `${n} lift${n === 1 ? "" : "s"} suggested from the drawings. Check them and confirm.` : "No new lifts found in the drawings."));
+}
+
+/* ── Update drawings in place (wave 7) ── */
+
+/** Step 1: upload the revised building file; it's checked and kept aside for the review screen. */
+export async function reviewDrawingsAction(_: FormState, fd: FormData): Promise<FormState> {
+  const fid = Number(fd.get("facilityId"));
+  await editFacility(fid);
+  const file = fd.get("file");
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose the building file (.json) made by the CAD import." };
+  if (file.size > 25 * 1024 * 1024) return { error: "The file is over 25 MB." };
+  let b: unknown;
+  try { b = JSON.parse(await file.text()); } catch { return { error: "That file isn't valid JSON. Use the building file the CAD import writes (seed-data/cad/<name>.json)." }; }
+  const bad = checkBuilding(b);
+  if (bad) return { error: bad };
+  const token = await savePendingDrawing(fid, b as CadBuilding);
+  redirect(`/facilities/${fid}/drawings?review=${token}`);
+}
+
+/** Step 2: apply the reviewed changes. */
+export async function applyDrawingsAction(fd: FormData) {
+  const fid = Number(fd.get("facilityId")), token = String(fd.get("token") ?? "");
+  const me = await editFacility(fid);
+  const b = await readPendingDrawing(fid, token);
+  if (!b) redirect(`/facilities/${fid}/drawings?error=${encodeURIComponent("That upload has expired. Upload the file again.")}`);
+  const plan = await applyMerge(db, fid, b, me.name);
+  await dropPendingDrawing(fid, token);
+  revalidatePath(`/facilities/${fid}`); revalidatePath("/assets/3d"); revalidatePath("/assets/map");
+  const n = plan.counts;
+  redirect(back(fid, "rooms", `Drawings updated: ${n.added} rooms added, ${n.renamed} renamed, ${n.reshaped} reshaped, ${n.department} moved department, ${n.removed} removed${n.kept ? `, ${n.kept} kept because they still hold equipment` : ""}.`));
+}
+
+export async function discardDrawingsAction(fd: FormData) {
+  const fid = Number(fd.get("facilityId")), token = String(fd.get("token") ?? "");
+  await editFacility(fid);
+  await dropPendingDrawing(fid, token);
+  redirect(`/facilities/${fid}/drawings`);
 }
