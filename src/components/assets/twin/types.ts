@@ -27,6 +27,12 @@ export type TwinRoom = {
 
 export type TwinDepartment = { id: number; name: string; code: string; color: string };
 
+/** A declared lift core (Facilities › Lifts) and where it stops on each floor (plan units of that floor). */
+export type TwinLift = {
+  id: number; name: string; kind: "BED" | "PUBLIC" | "SERVICE" | "AGV"; inferred: boolean;
+  stops: { floorId: number; x: number; y: number }[];
+};
+
 export type TwinAsset = {
   id: number;
   tag: string;
@@ -54,6 +60,8 @@ export type TwinData = {
   rooms: TwinRoom[];
   departments: TwinDepartment[];
   assets: TwinAsset[];
+  /** Declared lift cores; empty when none are declared (lifts are then read from room names). */
+  lifts: TwinLift[];
 };
 
 /** Linework of one CAD floor (flat segment arrays [x1, y1, x2, y2, …] in plan units). */

@@ -4,13 +4,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, buildings, departments, facilities, floors, rooms, userFacilities } from "@/db/schema";
+import { assets, buildings, departments, facilities, floors, liftCores, rooms, userFacilities, type LiftStop } from "@/db/schema";
 import { logActivity } from "@/lib/server-utils";
 import { FACILITY_TYPES, ROOM_TYPES } from "@/lib/assets/filters";
 import { code, dbError, firstError, formObject, id, int, num, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
 import { imageSize, planSizeFor } from "@/lib/assets/image-size";
 import { storeFile } from "@/lib/storage";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
+import { LIFT_KINDS } from "@/lib/assets/lifts";
+import { addLiftSuggestions, liftFloors } from "@/lib/assets/lifts-data";
 
 /** facilities.edit and access to the facility being changed (redirects to /forbidden otherwise). */
 async function editFacility(facilityId: number) {
@@ -319,4 +321,89 @@ export async function saveFloorLayout(input: unknown): Promise<LayoutResult> {
   revalidatePath("/assets/map");
   const added = Object.keys(idMap).length;
   return { ok: true, idMap, message: `Layout saved — ${list.length} rooms${added ? `, ${added} new` : ""}${removed.length ? `, ${removed.length} removed` : ""}.` };
+}
+
+/* ── Lifts (wave 7) ── */
+
+const LiftSchema = z.object({
+  facilityId: reqId("Facility"), liftId: id("Lift").optional(),
+  name: reqText("Name", 120), kind: oneOf("Kind", LIFT_KINDS),
+  cars: int("Cars", 1, 20), carCapacity: int("People per car", 1, 60).optional(), waitSeconds: int("Typical wait", 0, 900),
+  x: num("Position across", -100000, 100000).optional(), y: num("Position down", -100000, 100000).optional(),
+  note: text(1000), confirmed: z.preprocess((v) => v === "on" || v === "1", z.boolean()),
+});
+
+/**
+ * Save a lift core. Floors come from the ticked boxes: a floor it already stopped on keeps its stop; a newly ticked
+ * floor gets a stop at the position given (metres from the plan's left and top edges), or at the lift's existing
+ * position, or at the middle of the floor.
+ */
+export async function saveLift(_: FormState, fd: FormData): Promise<FormState> {
+  const p = LiftSchema.safeParse(formObject(fd));
+  if (!p.success) return { error: firstError(p.error) };
+  const me = await editFacility(p.data.facilityId);
+  const { facilityId, liftId, x, y, confirmed, ...d } = p.data;
+  if (!d.kind) return { error: "Choose the kind of lift." };
+  const kind = d.kind;
+  const fl = await liftFloors(db, facilityId);
+  const ticked = fd.getAll("floorIds").map(Number).filter((n) => fl.some((f) => f.id === n));
+  if (ticked.length < 2) return { error: "Tick at least two floors the lift stops on." };
+  const [old] = liftId ? await db.select().from(liftCores).where(and(eq(liftCores.id, liftId), eq(liftCores.facilityId, facilityId))) : [];
+  if (liftId && !old) return { error: "That lift no longer exists." };
+  const sizes = await db.select({ id: floors.id, w: floors.planWidth, h: floors.planHeight }).from(floors).where(inArray(floors.id, ticked));
+  const stops: LiftStop[] = ticked.map((floorId) => {
+    const kept = old?.stops.find((s) => s.floorId === floorId);
+    if (kept && x == null && y == null) return kept;
+    const upm = fl.find((f) => f.id === floorId)?.unitsPerMetre ?? 10;
+    const any = old?.stops[0];
+    const size = sizes.find((s) => s.id === floorId);
+    return {
+      floorId,
+      x: x != null ? x * upm : any?.x ?? (size?.w ?? 0) / 2,
+      y: y != null ? y * upm : any?.y ?? (size?.h ?? 0) / 2,
+    };
+  });
+  const v = {
+    name: d.name, kind, cars: d.cars ?? 1, carCapacity: d.carCapacity ?? null, waitSeconds: d.waitSeconds ?? 45, note: d.note ?? null,
+    stops, inferred: old ? old.inferred && !confirmed : false,
+  };
+  let savedId = liftId;
+  try {
+    if (liftId) await db.update(liftCores).set(v).where(eq(liftCores.id, liftId));
+    else savedId = (await db.insert(liftCores).values({ facilityId, ...v }).returning({ id: liftCores.id }))[0].id;
+  } catch (e) { return { error: dbError(e) }; }
+  await logActivity("lift", savedId!, liftId ? "updated" : "created", `${v.name} ${liftId ? "updated" : "added"} (${stops.length} floors)`, me.name);
+  revalidatePath(`/facilities/${facilityId}`);
+  revalidatePath("/assets/3d");
+  redirect(back(facilityId, "lifts", liftId ? `${v.name} saved.` : `${v.name} added.`));
+}
+
+export async function confirmLift(fd: FormData) {
+  const lid = Number(fd.get("liftId")), fid = Number(fd.get("facilityId"));
+  const me = await editFacility(fid);
+  const [l] = await db.update(liftCores).set({ inferred: false }).where(and(eq(liftCores.id, lid), eq(liftCores.facilityId, fid))).returning({ name: liftCores.name });
+  if (l) await logActivity("lift", lid, "confirmed", `${l.name} confirmed`, me.name);
+  revalidatePath(`/facilities/${fid}`);
+  revalidatePath("/assets/3d");
+  redirect(back(fid, "lifts", l ? `${l.name} confirmed.` : "That lift no longer exists."));
+}
+
+export async function deleteLift(fd: FormData) {
+  const lid = Number(fd.get("liftId")), fid = Number(fd.get("facilityId"));
+  const me = await editFacility(fid);
+  const [l] = await db.delete(liftCores).where(and(eq(liftCores.id, lid), eq(liftCores.facilityId, fid))).returning({ name: liftCores.name });
+  if (l) await logActivity("lift", lid, "deleted", `${l.name} removed`, me.name);
+  revalidatePath(`/facilities/${fid}`);
+  revalidatePath("/assets/3d");
+  redirect(back(fid, "lifts", "Lift removed."));
+}
+
+/** Add the lifts the drawings suggest that this hospital doesn't have yet (by name). */
+export async function suggestLiftsAction(fd: FormData) {
+  const fid = Number(fd.get("facilityId"));
+  await editFacility(fid);
+  const n = await addLiftSuggestions(db, fid);
+  revalidatePath(`/facilities/${fid}`);
+  revalidatePath("/assets/3d");
+  redirect(back(fid, "lifts", n ? `${n} lift${n === 1 ? "" : "s"} suggested from the drawings. Check them and confirm.` : "No new lifts found in the drawings."));
 }

@@ -861,6 +861,35 @@ export const twinViews = pgTable("twin_views", {
   createdAt: createdAt(),
 }, (t) => [index("twin_views_facility_idx").on(t.facilityId)]);
 
+/** Who may use a lift in a route: beds and trolleys, the public, supplies and waste, or automated trolleys only. */
+export const liftKind = pgEnum("lift_kind", ["BED", "PUBLIC", "SERVICE", "AGV"]);
+
+/** Where a lift is boarded on one floor (plan units of that floor). */
+export type LiftStop = { floorId: number; x: number; y: number };
+
+/**
+ * A lift core of a hospital (wave 7). Declared once per building because drawings rarely name lifts on every floor;
+ * suggested from lift lobbies in the drawings (`inferred` until someone confirms it) and corrected under
+ * Facilities › Lifts. Routes may only use the lifts their journey kind allows.
+ */
+export const liftCores = pgTable("lift_cores", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  kind: liftKind("kind").notNull(),
+  stops: jsonb("stops").$type<LiftStop[]>().notNull(),
+  cars: integer("cars").notNull().default(1),
+  /** People per car (or one bed plus staff for a bed lift). */
+  carCapacity: integer("car_capacity"),
+  /** Typical wait for a car, seconds (an assumption until measured). */
+  waitSeconds: integer("wait_seconds").notNull().default(45),
+  /** Suggested from the drawings and not yet confirmed by a person. */
+  inferred: boolean("inferred").notNull().default(false),
+  note: text("note"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index("lift_cores_facility_idx").on(t.facilityId)]);
+
 /* ───────────────────── Documents & activity log ───────────────────── */
 
 /** Generic attachment for any entity (offer PDFs, datasheets, PO scans, certificates...). */

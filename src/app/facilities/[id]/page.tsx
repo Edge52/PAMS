@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, buildings, departments, departmentTypes, facilities, floors, rooms } from "@/db/schema";
+import { assets, buildings, departments, departmentTypes, facilities, floors, liftCores, rooms } from "@/db/schema";
 import {
   Badge, Button, Details, EmptyState, Field, FormGrid, Input, LinkButton, PageHeader, Panel, Stat, StatusBadge, TabLinks, Table, Td, Th, THead,
 } from "@/components/ui";
@@ -14,8 +14,10 @@ import { humanize } from "@/lib/status";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import {
-  deleteBuilding, deleteDepartment, deleteFloor, deleteRoom, saveBuilding, saveDepartment, saveFloor, saveRoom, updateFacility,
+  confirmLift, deleteBuilding, deleteDepartment, deleteFloor, deleteLift, deleteRoom, saveBuilding, saveDepartment, saveFloor, saveLift, saveRoom,
+  suggestLiftsAction, updateFacility,
 } from "../actions";
+import { LIFT_KIND_HINTS, LIFT_KIND_LABELS, LIFT_KINDS, liveStops } from "@/lib/assets/lifts";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +44,7 @@ export default async function FacilityPage({ params, searchParams }: { params: P
   await requireFacilityAccess(fac.id, me);
   const canEdit = can(me.role, "facilities.edit");
   const canAddAssets = can(me.role, "assets.edit");
-  const tab = (["overview", "buildings", "departments", "rooms"] as const).find((t) => t === one(sp, "tab")) ?? "overview";
+  const tab = (["overview", "buildings", "departments", "rooms", "lifts"] as const).find((t) => t === one(sp, "tab")) ?? "overview";
   const base = `/facilities/${fac.id}`;
 
   return (
@@ -61,11 +63,13 @@ export default async function FacilityPage({ params, searchParams }: { params: P
         { key: "buildings", label: "Buildings & floors", href: `${base}?tab=buildings` },
         { key: "departments", label: "Departments", href: `${base}?tab=departments` },
         { key: "rooms", label: "Rooms", href: `${base}?tab=rooms` },
+        { key: "lifts", label: "Lifts", href: `${base}?tab=lifts` },
       ]} />
       <Notice sp={sp} />
       {tab === "overview" && <Overview fac={fac} edit={canEdit && one(sp, "edit") === "1"} canEdit={canEdit} canAddAssets={canAddAssets} />}
       {tab === "buildings" && <BuildingsTab facilityId={fac.id} edit={canEdit ? one(sp, "edit") : undefined} canEdit={canEdit} />}
       {tab === "departments" && <DepartmentsTab facilityId={fac.id} edit={canEdit ? numParam(sp, "edit") : null} canEdit={canEdit} />}
+      {tab === "lifts" && <LiftsTab facilityId={fac.id} edit={canEdit ? one(sp, "edit") : undefined} canEdit={canEdit} />}
       {tab === "rooms" && <RoomsTab facilityId={fac.id} floorId={numParam(sp, "floorId")} edit={canEdit ? one(sp, "edit") : undefined} canEdit={canEdit} />}
     </>
   );
@@ -349,6 +353,108 @@ async function DepartmentsTab({ facilityId, edit, canEdit }: { facilityId: numbe
             <Field label="Cost centre"><Input name="costCenter" defaultValue={editing?.costCenter ?? ""} /></Field>
           </FormGrid>
           <SubmitRow><Button>{editing ? "Save department" : "Add department"}</Button>{editing && <LinkButton href={base} variant="ghost">Cancel</LinkButton>}</SubmitRow>
+        </ActionForm>
+      </Panel>}
+    </div>
+  );
+}
+
+/* ───────────── Lifts (wave 7) ───────────── */
+
+async function LiftsTab({ facilityId, edit, canEdit }: { facilityId: number; edit?: string; canEdit: boolean }) {
+  const [list, fls] = await Promise.all([
+    db.select().from(liftCores).where(eq(liftCores.facilityId, facilityId)).orderBy(asc(liftCores.name)),
+    db.select({ id: floors.id, name: floors.name, level: floors.level, upm: floors.unitsPerMetre }).from(floors)
+      .innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(eq(buildings.facilityId, facilityId)).orderBy(asc(floors.level)),
+  ]);
+  const levels = fls.map((f) => ({ id: f.id, level: f.level, unitsPerMetre: f.upm ?? 10 }));
+  const floorName = new Map(fls.map((f) => [f.id, f.name]));
+  const editing = edit && /^\d+$/.test(edit) ? list.find((l) => l.id === Number(edit)) : undefined;
+  const adding = edit === "new";
+  const base = `/facilities/${facilityId}?tab=lifts`;
+  const assumed = list.filter((l) => l.inferred).length;
+  const served = (l: typeof list[number]) => liveStops(l.stops, levels);
+  const KIND_TONE = { BED: "primary", PUBLIC: "info", SERVICE: "neutral", AGV: "tag" } as const;
+  return (
+    <div className="space-y-5">
+      <Panel title="Lift cores" actions={canEdit && <span className="flex gap-2">
+        <form action={suggestLiftsAction}><input type="hidden" name="facilityId" value={facilityId} /><Button variant="secondary">Suggest from the drawings</Button></form>
+        <LinkButton href={`${base}&edit=new#lift-form`} variant="ghost">Add a lift</LinkButton>
+      </span>}>
+        <p className="mb-3 max-w-3xl text-sm text-muted">
+          Walking routes in the 3D view change floors only by these lifts, and each journey only by the lifts it may use: beds by bed lifts,
+          patients and visitors by public or bed lifts, never by AGV lifts. Drawings rarely name lifts on every floor, so lifts are declared here once.
+          {assumed > 0 && <> <strong className="text-warn">{assumed} {assumed === 1 ? "lift is" : "lifts are"} assumed from the drawings</strong>: check where they stop and confirm.</>}
+        </p>
+        {list.length === 0 ? (
+          <EmptyState title="No lifts declared yet">{canEdit ? "Suggest them from the lift lobbies in the drawings, or add them by hand." : "No lifts have been declared for this facility yet."}</EmptyState>
+        ) : (
+          <Table>
+            <THead><tr><Th>Lift</Th><Th>Kind</Th><Th>Stops</Th><Th align="right">Cars</Th><Th align="right">People per car</Th><Th align="right">Typical wait</Th><Th>Status</Th><Th /></tr></THead>
+            <tbody>
+              {list.map((l) => {
+                const st = served(l);
+                return (
+                  <tr key={l.id} className={editing?.id === l.id ? "bg-primary-soft" : "hover:bg-canvas"}>
+                    <Td><span className="font-semibold">{l.name}</span>{l.note && <span className="mt-0.5 block max-w-md text-xs text-muted">{l.note}</span>}</Td>
+                    <Td><Badge tone={KIND_TONE[l.kind]}>{LIFT_KIND_LABELS[l.kind]}</Badge></Td>
+                    <Td className="text-sm">{st.length ? <>{floorName.get(st[0].floorId)} → {floorName.get(st[st.length - 1].floorId)} <span className="text-muted">({st.length} floors)</span></> : <span className="text-danger">No floors</span>}</Td>
+                    <Td align="right">{l.cars}</Td>
+                    <Td align="right">{l.carCapacity ?? <span className="text-faint">—</span>}</Td>
+                    <Td align="right">{l.waitSeconds} s</Td>
+                    <Td>{l.inferred ? <Badge tone="warn">Assumed</Badge> : <Badge tone="ok">Confirmed</Badge>}</Td>
+                    <Td>
+                      <span className="flex justify-end gap-3 text-sm whitespace-nowrap">
+                        {canEdit && l.inferred && (
+                          <form action={confirmLift}><input type="hidden" name="liftId" value={l.id} /><input type="hidden" name="facilityId" value={facilityId} />
+                            <button className="text-ok hover:underline">Confirm</button></form>
+                        )}
+                        {canEdit && <Link href={`${base}&edit=${l.id}#lift-form`} className="text-primary hover:underline">Edit</Link>}
+                        {canEdit && (
+                          <form action={deleteLift}><input type="hidden" name="liftId" value={l.id} /><input type="hidden" name="facilityId" value={facilityId} />
+                            <button className="text-danger hover:underline">Remove</button></form>
+                        )}
+                      </span>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </Panel>
+      {canEdit && (editing || adding) && <Panel title={editing ? `Edit ${editing.name}` : "Add a lift"}>
+        <div id="lift-form" />
+        <ActionForm action={saveLift} key={editing?.id ?? "new"}>
+          <input type="hidden" name="facilityId" value={facilityId} />
+          {editing && <input type="hidden" name="liftId" value={editing.id} />}
+          <FormGrid cols={4}>
+            <Field label="Name"><Input name="name" required defaultValue={editing?.name ?? ""} placeholder="Bed lifts, east core" /></Field>
+            <Field label="Kind" hint={LIFT_KIND_HINTS[editing?.kind ?? "BED"]}>
+              <NativeSelect name="kind" required value={editing?.kind ?? "BED"} options={LIFT_KINDS.map((k) => ({ value: k, label: LIFT_KIND_LABELS[k] }))} />
+            </Field>
+            <Field label="Cars"><Input name="cars" type="number" min={1} max={20} required defaultValue={editing?.cars ?? 1} /></Field>
+            <Field label="People per car" hint="Optional"><Input name="carCapacity" type="number" min={1} max={60} defaultValue={editing?.carCapacity ?? ""} /></Field>
+            <Field label="Typical wait (seconds)" hint="An assumption until measured"><Input name="waitSeconds" type="number" min={0} max={900} required defaultValue={editing?.waitSeconds ?? 45} /></Field>
+            <Field label="Position across (m)" hint={editing ? "Leave empty to keep where it stops" : "From the plan's left edge; empty = middle"}><Input name="x" type="number" step="0.1" /></Field>
+            <Field label="Position down (m)" hint="From the plan's top edge"><Input name="y" type="number" step="0.1" /></Field>
+          </FormGrid>
+          <fieldset className="mt-4">
+            <legend className="text-sm font-semibold">Floors it stops on</legend>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+              {fls.map((f) => (
+                <label key={f.id} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="floorIds" value={f.id} defaultChecked={editing ? editing.stops.some((s) => s.floorId === f.id) : false} />
+                  {f.name}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <Field label="Note" className="mt-4"><Input name="note" defaultValue={editing?.note ?? ""} /></Field>
+          {editing?.inferred && (
+            <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" name="confirmed" defaultChecked /> Mark as confirmed (checked against the drawings)</label>
+          )}
+          <SubmitRow><Button>{editing ? "Save lift" : "Add lift"}</Button><LinkButton href={base} variant="ghost">Cancel</LinkButton></SubmitRow>
         </ActionForm>
       </Panel>}
     </div>

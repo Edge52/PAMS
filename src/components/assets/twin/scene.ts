@@ -10,7 +10,8 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, outlineFromRooms, polygonArea, presetCamera, spreadInRoom, wallsFromRooms, type CoreKind, type DeviceKind, type Pt } from "./geometry";
-import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinRoom } from "./types";
+import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinLift, type TwinRoom } from "./types";
+import type { Core } from "./nearest";
 
 /** Drawn wall height in metres (clear height below the ceiling after MEP; floors sit 5 m apart). */
 const WALL_HEIGHT = 3.3;
@@ -23,6 +24,8 @@ const MAX_LABELS = 70;
 /** Floors fetched at the same time after the first one. */
 const LOAD_CONCURRENCY = 3;
 const CORE_COLORS: Record<CoreKind, string> = { stair: "#a78bff", lift: "#ff8fd8", shaft: "#5b7f9c" };
+/** Declared lift cores by kind (Facilities › Lifts). */
+export const LIFT_COLORS: Record<TwinLift["kind"], string> = { BED: "#ff8fd8", PUBLIC: "#ffc46b", SERVICE: "#8fb6cc", AGV: "#7c8c99" };
 
 /** Device models close up: life-size, simplified shapes standing on the floor (y = 0 is the floor). */
 function kindGeometry(k: DeviceKind): { geo: THREE.BufferGeometry; y: number; ring: number } {
@@ -385,7 +388,12 @@ export class TwinScene {
       extras.push(columns); group.add(columns);
     }
 
-    const cores = this.buildCores(rooms, s);
+    let cores = this.buildCores(rooms, s);
+    const lifts = this.buildLifts(f, s);
+    if (lifts.length) {
+      if (!cores) { cores = new THREE.Group(); cores.position.y = 0.02; }
+      cores.add(...lifts);
+    }
     if (cores) { cores.visible = this.coresOn; group.add(cores); }
     const facade = this.buildFacade(rooms, s);
     if (facade) group.add(facade);
@@ -451,6 +459,24 @@ export class TwinScene {
     group.add(body, edges);
     group.position.y = 0.02;
     return group;
+  }
+
+  /**
+   * Declared lift cores stopping on this floor: a 2.4 m square shaft at each stop, coloured by kind (fainter while it's
+   * still an assumption). 1 m tall, so it scales with the other cores to reach the floor above.
+   */
+  private buildLifts(f: TwinFloor, s: number): THREE.Object3D[] {
+    const out: THREE.Object3D[] = [];
+    for (const l of this.data.lifts ?? []) {
+      const st = l.stops.find((x) => x.floorId === f.id); if (!st) continue;
+      const g = new THREE.BoxGeometry(2.4, 1, 2.4); g.translate(st.x * s, 0.5, st.y * s);
+      const c = LIFT_COLORS[l.kind];
+      const body = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: l.inferred ? 0.18 : 0.34, depthWrite: false, toneMapped: false }));
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: l.inferred ? 0.55 : 0.9, depthWrite: false, toneMapped: false }));
+      body.renderOrder = 4; edges.renderOrder = 4;
+      out.push(body, edges);
+    }
+    return out;
   }
 
   private floorY(f: TwinFloor) {
@@ -916,11 +942,22 @@ export class TwinScene {
   }
 
   /** Lifts and stairs as points (metres), for routing between floors. */
-  coreSpots(): { floorId: number; elevation: number; x: number; z: number; kind: "lift" | "stair" }[] {
-    const out: { floorId: number; elevation: number; x: number; z: number; kind: "lift" | "stair" }[] = [];
+  coreSpots(): Core[] {
+    const out: Core[] = [];
+    // Declared lifts people may use replace lifts guessed from room names; stairs always come from room names.
+    const people = (this.data.lifts ?? []).filter((l) => l.kind === "BED" || l.kind === "PUBLIC");
     for (const r of this.data.rooms) {
-      const k = coreKind(r.name); if (k !== "lift" && k !== "stair") continue;
+      const k = coreKind(r.name);
+      if (k !== "stair" && !(k === "lift" && !people.length)) continue;
       const sp = this.spotOfRoom(r.id); if (sp) out.push({ ...sp, kind: k });
+    }
+    for (const l of people) {
+      const exits = new Map<number, { x: number; z: number }>();
+      for (const st of l.stops) {
+        const f = this.floorById.get(st.floorId); if (!f) continue;
+        const s = this.u(f); exits.set(f.id, { x: st.x * s, z: st.y * s });
+      }
+      for (const [floorId, e] of exits) out.push({ floorId, elevation: this.floorById.get(floorId)!.elevation, x: e.x, z: e.z, kind: "lift", name: l.name, exits });
     }
     return out;
   }
@@ -980,6 +1017,7 @@ export class TwinScene {
   coreCounts(): Record<CoreKind, number> {
     const n: Record<CoreKind, number> = { stair: 0, lift: 0, shaft: 0 };
     for (const r of this.data.rooms) { const k = coreKind(r.name); if (k) n[k]++; }
+    if (this.data.lifts?.length) n.lift = this.data.lifts.length; // declared lift cores, not lobbies named "lift"
     return n;
   }
 

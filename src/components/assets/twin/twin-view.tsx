@@ -387,7 +387,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     const s = sceneRef.current; if (!s || !nearest) return;
     const from = s.spotOfRoom(nearest.fromRoomId), to = s.spotOfAsset(r.id);
     if (!from || !to) return;
-    const path = r.via ? [from, r.via, { ...r.via, floorId: to.floorId }, to] : [from, to];
+    const path = r.via ? [from, r.via, { ...r.via, ...(r.exit ?? {}), floorId: to.floorId }, to] : [from, to];
     // A route across floors needs the whole building on screen.
     if (!r.sameFloor && floorId != null) { setFloorId(null); s.isolateFloor(null, false); }
     s.showRoute(path); s.frameRoute(); setRouteTo(r.id);
@@ -766,7 +766,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                         <button type="button" onClick={() => showRouteTo(r)} aria-pressed={routeTo === r.id}
                           className={`w-full rounded px-1.5 py-1 text-left text-[13px] hover:bg-[#0c2a40] ${routeTo === r.id ? "bg-[#0c2a40] ring-1 ring-[#2fd3ff]" : ""}`}>
                           <span className="flex justify-between gap-2"><span className="truncate text-white">{room?.name ?? "Room"}</span><span className="shrink-0 text-[#5fd6ff]">≈ {Math.round(r.distance)} m</span></span>
-                          <span className="block text-[11px] text-[#8fb6cc]">{a.tag} · {r.sameFloor ? "same floor" : `${r.floors} floor${r.floors === 1 ? "" : "s"} ${(floorById.get(room!.floorId)?.elevation ?? 0) > (floorById.get(selRoom.floorId)?.elevation ?? 0) ? "up" : "down"}${r.via ? ` by the ${r.via.kind === "lift" ? "lift" : "stairs"}` : ""}`}</span>
+                          <span className="block text-[11px] text-[#8fb6cc]">{a.tag} · {r.sameFloor ? "same floor" : `${r.floors} floor${r.floors === 1 ? "" : "s"} ${(floorById.get(room!.floorId)?.elevation ?? 0) > (floorById.get(selRoom.floorId)?.elevation ?? 0) ? "up" : "down"}${r.via ? ` by the ${r.via.kind === "lift" ? (r.via.name ?? "lift") : "stairs"}` : ""}`}</span>
                         </button>
                       </li>
                     );
