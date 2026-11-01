@@ -243,6 +243,10 @@ export const deviceTypes = pgTable("device_types", {
   specTemplate: jsonb("spec_template").$type<{ name: string; unit?: string; hint?: string }[]>(),
   /** PPM checklist for this type (wave 3). Null → inherited from the group/category, else the built-in default. */
   ppmChecklist: jsonb("ppm_checklist").$type<ChecklistItem[]>(),
+  /** Typical size in metres (wave 7); null → the group's typical size (src/lib/assets/dimensions.ts). */
+  lengthM: real("length_m"),
+  widthM: real("width_m"),
+  heightM: real("height_m"),
   active: boolean("active").notNull().default(true),
 }, (t) => [index("device_types_parent_idx").on(t.parentId)]);
 
@@ -584,6 +588,12 @@ export const assets = pgTable("assets", {
   /** Pin position inside the room's floor plan, in floor plan units. Null → auto-placed inside room. */
   posX: real("pos_x"),
   posY: real("pos_y"),
+  /** Turn on the plan, degrees clockwise seen from above (wave 7; null = not set). */
+  posRot: real("pos_rot"),
+  /** Real size in metres (wave 7): length (long side), width, height. Null → from the model, type or typical size. */
+  lengthM: real("length_m"),
+  widthM: real("width_m"),
+  heightM: real("height_m"),
   parentAssetId: integer("parent_asset_id").references((): AnyPgColumn => assets.id, { onDelete: "set null" }),
   manufacturer: text("manufacturer"),
   model: text("model"),
@@ -827,6 +837,10 @@ export const deviceModels = pgTable("device_models", {
   manufacturer: text("manufacturer").notNull(),
   model: text("model").notNull(),
   refPriceUsd: money("ref_price_usd"),
+  /** Datasheet size in metres (wave 7): length (long side), width, height. */
+  lengthM: real("length_m"),
+  widthM: real("width_m"),
+  heightM: real("height_m"),
   /** The maker stops selling it / stops supporting it (parts and service). */
   endOfSale: date("end_of_sale"),
   endOfSupport: date("end_of_support"),

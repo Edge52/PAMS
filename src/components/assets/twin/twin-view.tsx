@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { deleteViewAction, saveViewAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
+import { deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
+import { formatDims } from "@/lib/assets/dimensions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
-import type { PickResult, TwinScene, TwinStyle } from "./scene";
-import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinData } from "./types";
-import { CORE_LABELS, coreKind, polygonArea, type Pt } from "./geometry";
+import type { DropResult, PickResult, TwinScene, TwinStyle } from "./scene";
+import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinAsset, type TwinData } from "./types";
+import { CORE_LABELS, coreKind, deviceKind, polygonArea, type Pt } from "./geometry";
 import { AVAILABLE, rankNearest, type Ranked } from "./nearest";
 import { PLAN_BANDS, planBand, spreadGhosts } from "@/lib/assets/plan-installed";
 import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server";
@@ -91,6 +92,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [scope, setScope] = useState<Scope>("room");
   const [assetList, setAssetList] = useState(data.assets);
   const [placingId, setPlacingId] = useState<number | null>(null);
+  // Wave 7: devices not in a room yet, and the one being dropped on the plan (with where it would land).
+  const [unplaced, setUnplaced] = useState<TwinAsset[]>(data.unplaced ?? []);
+  const [dropping, setDropping] = useState<{ asset: TwinAsset; at: DropResult | null } | null>(null);
+  const [placeFloor, setPlaceFloor] = useState<number | null>(null);
+  const [undo, setUndo] = useState<{ label: string; run: () => void } | null>(null);
   const [toast, setToast] = useState<{ ok?: string; error?: string } | null>(null);
   const [views, setViews] = useState(initialViews);
   const [shareLink, setShareLink] = useState<string | null>(null);
@@ -354,6 +360,89 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       setToast(res ? { ok: res.ok, error: res.error } : null);
     });
   }
+  /* ── Wave 7: dropping devices on the plan at real size ── */
+
+  /** Turn of a device as drawn now (degrees clockwise): its saved turn, else the quarter turn the scene gives it. */
+  const turnOf = (a: TwinAsset) => a.rot ?? ((360 - (a.id % 4) * 90) % 360);
+  function startDrop(asset: TwinAsset, floor: number | null) {
+    const s = sceneRef.current; if (!s || !data.can.move) return;
+    const target = floor ?? (asset.roomId ? roomById.get(asset.roomId)?.floorId : null) ?? placeFloor ?? floorId ?? data.floors.find((f) => f.hasCad)?.id ?? data.floors[0]?.id;
+    if (target == null) return;
+    if (floorId !== target) setFloorId(target);
+    setToast(null); setUndo(null);
+    setDropping({ asset, at: null });
+    s.beginDrop({ assetId: asset.id, kind: deviceKind(asset.groupCode, asset.categoryCode), dims: asset.dims, rot: turnOf(asset) }, target,
+      (r) => { setDropping(null); if (r) void saveDrop(asset, r); },
+      (r) => setDropping((d) => (d ? { ...d, at: r } : d)));
+  }
+  async function sendDrop(assetId: number, roomId: number | null, x: number | null, y: number | null, rot: number | null) {
+    const fd = new FormData();
+    fd.set("assetId", String(assetId)); fd.set("roomId", roomId == null ? "" : String(roomId));
+    if (x != null && y != null) { fd.set("posX", String(x)); fd.set("posY", String(y)); }
+    if (rot != null) fd.set("rot", String(rot));
+    return twinDropAction(null, fd);
+  }
+  /** Apply a saved drop (or undo) to the lists and the model. */
+  function applyDrop(asset: TwinAsset, roomId: number | null, posX: number | null, posY: number | null, rot: number | null) {
+    const s = sceneRef.current;
+    const next = { ...asset, roomId, posX, posY, rot };
+    if (roomId == null) {
+      setAssetList((l) => l.filter((a) => a.id !== asset.id));
+      setUnplaced((l) => [next, ...l.filter((a) => a.id !== asset.id)]);
+      s?.removeAsset(asset.id);
+    } else {
+      setUnplaced((l) => l.filter((a) => a.id !== asset.id));
+      setAssetList((l) => (l.some((a) => a.id === asset.id) ? l.map((a) => (a.id === asset.id ? next : a)) : [...l, next]));
+      s?.upsertAssets([next]);
+    }
+  }
+  async function saveDrop(asset: TwinAsset, r: DropResult) {
+    if (r.roomId == null) { setToast({ error: "Drop the device inside a room." }); return; }
+    const before = { roomId: asset.roomId, posX: asset.posX, posY: asset.posY, rot: asset.rot };
+    const res = await sendDrop(asset.id, r.roomId, r.x, r.y, r.rot);
+    if (!res?.ok) { setToast({ error: res?.error ?? "The device couldn't be placed." }); return; }
+    applyDrop(asset, res.roomId ?? null, res.posX ?? null, res.posY ?? null, res.rot ?? null);
+    setToast({ ok: `${asset.tag}: ${res.ok}${r.inside ? "" : " It sticks out of the room; check the spot."}` });
+    const placedAsset = { ...asset, roomId: res.roomId ?? null, posX: res.posX ?? null, posY: res.posY ?? null, rot: res.rot ?? null };
+    setUndo({
+      label: before.roomId == null ? "Undo (back to the list)" : "Undo",
+      run: async () => {
+        setUndo(null);
+        const u = await sendDrop(asset.id, before.roomId, before.posX, before.posY, before.rot);
+        if (!u?.ok) { setToast({ error: u?.error ?? "Couldn't undo." }); return; }
+        applyDrop(placedAsset, u.roomId ?? null, u.posX ?? null, u.posY ?? null, u.rot ?? null);
+        setToast({ ok: `${asset.tag}: undone.` });
+      },
+    });
+    setTimeout(() => setUndo((u) => (u ? null : u)), 30_000);
+  }
+  // Keys while dropping: R turns 15° (Shift+R the other way), T turns 90°, Esc cancels.
+  useEffect(() => {
+    if (!dropping) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+      const s = sceneRef.current; if (!s) return;
+      if (e.key === "Escape") s.cancelDrop();
+      else if (e.key === "r" || e.key === "R") { s.rotateDrop(e.shiftKey ? -15 : 15); e.preventDefault(); }
+      else if (e.key === "t" || e.key === "T") { s.rotateDrop(90); e.preventDefault(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dropping]);
+  // A link from an asset page (…&place=<id>) starts placing that device once the model is ready.
+  const placeParamDone = useRef(false);
+  useEffect(() => {
+    if (!ready || placeParamDone.current) return;
+    const id = Number(new URLSearchParams(window.location.search).get("place"));
+    if (!id) return;
+    const a = unplaced.find((x) => x.id === id) ?? assetList.find((x) => x.id === id);
+    if (!a) return;
+    const t = setTimeout(() => { placeParamDone.current = true; startDrop(a, null); }, 0); // after this render
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
+  }, [ready]);
+
   async function clearSpot(assetId: number) {
     const fd = new FormData(); fd.set("assetId", String(assetId)); fd.set("posX", "0"); fd.set("posY", "0"); fd.set("clear", "1");
     const res = await twinPlaceAction(null, fd);
@@ -657,6 +746,30 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       {shareLink && <input readOnly value={shareLink} onFocus={(e) => e.currentTarget.select()} aria-label="Link to this view" className="twin-input mt-2 text-xs" />}
     </div>
   );
+  const placeFloors = data.floors.filter((f) => data.rooms.some((r) => r.floorId === f.id)).sort((a, b) => a.elevation - b.elevation);
+  const placeList = (
+    <div className="space-y-2">
+      <p className="text-xs text-[#8fb6cc]">Registered, not in a room yet. Pick one and drop it on the plan at its real size; R turns it, Esc cancels.</p>
+      <label className="block text-xs text-[#8fb6cc]">Floor
+        <select value={placeFloor ?? floorId ?? placeFloors.find((f) => f.hasCad)?.id ?? ""} onChange={(e) => setPlaceFloor(Number(e.target.value))} className="twin-input mt-1">
+          {placeFloors.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+        </select>
+      </label>
+      <ul className="space-y-1.5">
+        {unplaced.slice(0, 100).map((a) => (
+          <li key={a.id} className="flex items-center justify-between gap-2 rounded-md border border-[#123a55] px-2 py-1.5">
+            <span className="min-w-0">
+              <span className="block truncate text-sm text-white">{a.deviceType}</span>
+              <span className="block text-[11px] text-[#8fb6cc]">{a.tag} · {formatDims(a.dims)}</span>
+            </span>
+            {data.can.move && <button type="button" onClick={() => startDrop(a, placeFloor ?? floorId)} disabled={dropping != null || !ready} className="twin-act shrink-0">Place</button>}
+          </li>
+        ))}
+      </ul>
+      {unplaced.length > 100 && <p className="text-xs text-[#8fb6cc]">Showing 100 of {unplaced.length}. Use the asset register to find the rest.</p>}
+      {!data.can.move && <p className="text-xs text-[#8fb6cc]">Placing needs permission to move assets.</p>}
+    </div>
+  );
   const liveTime = new Date(liveAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   const findBox = (
     <div>
@@ -726,6 +839,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                 </form>
               </details>
               <div className="flex flex-wrap items-center gap-1.5">
+                {data.can.move && <button type="button" onClick={() => startDrop(selAsset, null)} disabled={dropping != null || placingId != null} className="twin-act" title="Pick it up and drop it anywhere at real size; R turns it">Move on plan</button>}
                 <button type="button" onClick={() => placeExactly(selAsset.id)} disabled={placingId != null} className="twin-act">Set exact spot</button>
                 {selAsset.posX != null && <button type="button" onClick={() => clearSpot(selAsset.id)} className="twin-act">Use automatic spot</button>}
               </div>
@@ -862,6 +976,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
 
           {/* Right: find, then details of the selection or the equipment types */}
           <div className={`pointer-events-none absolute bottom-4 right-4 flex flex-col gap-2 ${compact ? "top-32 w-64" : "top-28 w-80"}`}>
+            {unplaced.length > 0 && (
+              <HudPanel title="To place" summary={`${unplaced.length}`} open={panels.isOpen("place")} onToggle={() => panels.toggle("place")} bodyClassName="max-h-[32vh] overflow-y-auto">
+                {placeList}
+              </HudPanel>
+            )}
             <HudPanel title="Find a device or room" summary={query.trim().length >= 2 ? `${matches.length === 200 ? "200+" : matches.length} found` : undefined}
               open={panels.isOpen("find")} onToggle={() => panels.toggle("find")}>
               {findBox}
@@ -936,9 +1055,24 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           Click the device&apos;s exact spot inside its room. <button type="button" onClick={() => sceneRef.current?.cancelPlacing()} className="ml-2 text-[#5fd6ff] hover:underline">Cancel</button>
         </div>
       )}
+      {dropping && (
+        <div role="status" className="absolute bottom-6 left-1/2 z-20 flex max-w-[92vw] -translate-x-1/2 flex-wrap items-center gap-2 rounded-lg border border-[#2fd3ff] bg-[#04121fee] px-4 py-2 text-sm text-white">
+          <span><b>{dropping.asset.tag}</b> · {formatDims(dropping.asset.dims)} · </span>
+          <span className={dropping.at?.inside ? "text-[#3cf5a6]" : "text-[#ffb534]"}>
+            {!dropping.at ? "move over the plan" : dropping.at.roomId == null ? "not in a room" : `${roomById.get(dropping.at.roomId)?.name ?? "room"}${dropping.at.inside ? "" : " (sticks out)"}`}
+          </span>
+          <span className="text-[#8fb6cc]">· {dropping.at?.rot ?? turnOf(dropping.asset)}°</span>
+          <button type="button" onClick={() => sceneRef.current?.rotateDrop(-15)} className="twin-act" aria-label="Turn 15 degrees anticlockwise">⟲</button>
+          <button type="button" onClick={() => sceneRef.current?.rotateDrop(15)} className="twin-act" aria-label="Turn 15 degrees clockwise">⟳</button>
+          <button type="button" onClick={() => sceneRef.current?.rotateDrop(90)} className="twin-act">90°</button>
+          <span className="text-xs text-[#8fb6cc]">Click to drop · R turns · Esc cancels</span>
+          <button type="button" onClick={() => sceneRef.current?.cancelDrop()} className="text-[#5fd6ff] hover:underline">Cancel</button>
+        </div>
+      )}
       {toast && (toast.ok || toast.error) && placingId == null && (
         <div role={toast.error ? "alert" : "status"} className={`absolute left-1/2 top-24 z-20 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-[#04121fee] px-4 py-2 text-sm ${toast.error ? "border-[#ff4f62] text-[#ff8a96]" : "border-[#3cf5a6] text-[#b9ffe0]"}`}>
           <span>{toast.error ?? toast.ok}</span>
+          {undo && !toast.error && <button type="button" onClick={undo.run} className="twin-act">{undo.label}</button>}
           <button type="button" onClick={() => setToast(null)} className="text-xs text-[#8fb6cc] hover:text-white" aria-label="Dismiss">Close</button>
         </div>
       )}

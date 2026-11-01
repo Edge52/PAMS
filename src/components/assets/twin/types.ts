@@ -49,6 +49,9 @@ export type TwinAsset = {
   manufacturer: string | null;
   model: string | null;
   serial: string | null;
+  /** Real size in metres (length = long side) and turn on the plan in degrees clockwise (wave 7). */
+  dims: { l: number; w: number; h: number };
+  rot: number | null;
 };
 
 export type TwinData = {
@@ -62,6 +65,8 @@ export type TwinData = {
   assets: TwinAsset[];
   /** Declared lift cores; empty when none are declared (lifts are then read from room names). */
   lifts: TwinLift[];
+  /** Devices of this hospital not in a room yet (newly registered, in store): the "To place" list. */
+  unplaced: TwinAsset[];
 };
 
 /** Linework of one CAD floor (flat segment arrays [x1, y1, x2, y2, …] in plan units). */

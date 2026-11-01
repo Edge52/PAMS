@@ -16,7 +16,7 @@ export function hudMode(width: number): HudMode {
   return "wide";
 }
 
-export type PanelId = "floors" | "view" | "status" | "find" | "types" | "layers" | "views" | "plan";
+export type PanelId = "floors" | "view" | "status" | "find" | "types" | "layers" | "views" | "plan" | "place";
 /** Panels that start folded even on a wide screen (opened when needed). */
 const FOLDED_BY_DEFAULT: PanelId[] = ["plan"];
 export type PanelPrefs = Partial<Record<string, boolean>>;

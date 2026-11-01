@@ -9,7 +9,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, outlineFromRooms, polygonArea, presetCamera, spreadInRoom, wallsFromRooms, type CoreKind, type DeviceKind, type Pt } from "./geometry";
+import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, pointInPolygon, outlineFromRooms, polygonArea, presetCamera, spreadInRoom, wallsFromRooms, type CoreKind, type DeviceKind, type Pt } from "./geometry";
 import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinLift, type TwinRoom } from "./types";
 import type { Core } from "./nearest";
 
@@ -103,6 +103,11 @@ type FloorView = {
 
 export type PickResult = { kind: "asset"; id: number } | { kind: "room"; id: number } | null;
 
+/** A device to drop on the plan (wave 7): real size in metres, turn in degrees clockwise seen from above. */
+export type DropSpec = { assetId: number; kind: DeviceKind; dims: { l: number; w: number; h: number }; rot: number };
+/** Where it would land: floor, the room under it (null = none), plan units, turn, and whether it fits inside that room. */
+export type DropResult = { floorId: number; roomId: number | null; x: number; y: number; rot: number; inside: boolean };
+
 export type TwinEvents = {
   onHover?: (p: PickResult, screen: { x: number; y: number } | null) => void;
   onSelect?: (p: PickResult) => void;
@@ -132,6 +137,11 @@ export class TwinScene {
   private labelsAt = 0;
   private labelInsets = { top: 0, right: 0, bottom: 0, left: 0 };
   private placing: { assetId: number; floorId: number; done: (p: { x: number; y: number } | null) => void } | null = null;
+  private kindNominal = new Map<DeviceKind, THREE.Vector3>();
+  private drop: {
+    spec: DropSpec; floorId: number; rot: number; ghost: THREE.Group; body: THREE.Mesh; foot: THREE.LineLoop; fx: number; fz: number;
+    at: DropResult | null; hid: boolean; done: (r: DropResult | null) => void; onMove?: (r: DropResult | null) => void;
+  } | null = null;
   private beamLines: THREE.LineSegments | null = null;
   private deviceIds: number[] = [];
   private devicePos = new Map<number, { floorId: number; x: number; z: number }>();
@@ -479,6 +489,27 @@ export class TwinScene {
     return out;
   }
 
+  /** Size of a kind's model as built (metres), measured once. */
+  private nominalOf(kind: DeviceKind): THREE.Vector3 {
+    let n = this.kindNominal.get(kind);
+    if (!n) {
+      const { geo } = kindGeometry(kind);
+      geo.computeBoundingBox();
+      n = geo.boundingBox!.getSize(new THREE.Vector3());
+      geo.dispose();
+      this.kindNominal.set(kind, n);
+    }
+    return n;
+  }
+
+  /** Scale that turns a kind's model into a device of real size: length along the model's long axis. */
+  private realScale(kind: DeviceKind, dims: { l: number; w: number; h: number } | undefined, out: THREE.Vector3): THREE.Vector3 {
+    if (!dims) return out.set(1, 1, 1);
+    const n = this.nominalOf(kind);
+    const [sx, sz] = n.x >= n.z ? [dims.l / n.x, dims.w / n.z] : [dims.w / n.x, dims.l / n.z];
+    return out.set(sx, dims.h / Math.max(0.01, n.y), sz);
+  }
+
   private floorY(f: TwinFloor) {
     const minElev = Math.min(...this.data.floors.map((x) => x.elevation));
     return (f.elevation - minElev) * this.explode;
@@ -596,12 +627,16 @@ export class TwinScene {
       const km = this.kindMeshes.get(ki.kind)!;
       // Models keep their size (only search hits grow a little); a quarter turn per device so a ward doesn't look stamped.
       const mk = k === 0 ? 0 : Math.min(1.25, Math.max(1, k));
-      q.setFromAxisAngle(TwinScene.UP, (id % 4) * Math.PI / 2);
-      p.set(d.x, floor + km.y, d.z); sc.set(mk, mk, mk);
+      const a = this.assetsById.get(id)!;
+      // Real size and turn (wave 7); devices without a turn get a quarter turn each so a ward doesn't look stamped.
+      q.setFromAxisAngle(TwinScene.UP, a.rot != null ? -a.rot * Math.PI / 180 : (id % 4) * Math.PI / 2);
+      p.set(d.x, floor + km.y, d.z);
+      this.realScale(ki.kind, a.dims, sc).multiplyScalar(mk);
       m.compose(p, q, sc); km.mesh.setMatrixAt(ki.i, m);
     }
     if (this.statusRings) {
-      const r = k === 0 ? 0 : (this.ringSize[i] ?? 0.55) * k;
+      const dm = this.assetsById.get(id)?.dims;
+      const r = k === 0 ? 0 : (dm ? Math.max(0.45, Math.max(dm.l, dm.w) * 0.62) : this.ringSize[i] ?? 0.55) * k;
       p.set(d.x, floor + 0.04, d.z); sc.set(r, 1, r);
       m.compose(p, TwinScene.NO_TURN, sc); this.statusRings.setMatrixAt(i, m);
     }
@@ -1218,6 +1253,7 @@ export class TwinScene {
     el.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY }; });
     el.addEventListener("pointerup", (e) => {
       if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) {
+        if (this.drop) { this.finishDrop(e); down = null; return; }
         if (this.placing) { this.finishPlacing(e); down = null; return; }
         const hit = this.pick(e);
         this.select(hit, !!hit);
@@ -1227,6 +1263,7 @@ export class TwinScene {
     });
     el.addEventListener("pointermove", (e) => {
       if (e.buttons) return;
+      if (this.drop) { this.moveDrop(e); el.style.cursor = "crosshair"; return; }
       if (this.placing) { el.style.cursor = "crosshair"; return; }
       const hit = this.pick(e);
       el.style.cursor = hit ? "pointer" : "grab";
@@ -1440,7 +1477,8 @@ export class TwinScene {
     // Top floor first, so its tag and departments win when labels would overlap.
     const floorsHere = this.isolated != null ? [this.isolated]
       : [...this.floors.keys()].filter((id) => this.floorShown(id)).sort((a, b) => this.floorById.get(b)!.elevation - this.floorById.get(a)!.elevation);
-    const cs = floorsHere.map((id) => this.floors.get(id)!.center);
+    // A floor still streaming in has no view yet (e.g. isolated straight after the first floor loaded).
+    const cs = floorsHere.filter((id) => this.floors.has(id)).map((id) => this.floors.get(id)!.center);
     if (cs.length) this.labelCenter = cs.reduce((t, c) => t.add(c), new THREE.Vector3()).multiplyScalar(1 / cs.length);
     for (const fid of floorsHere) {
       const f = this.floorById.get(fid), v = this.floors.get(fid);
@@ -1565,6 +1603,157 @@ export class TwinScene {
     if (!this.raycaster.ray.intersectPlane(plane, hit)) { p.done(null); return; }
     const s = this.u(f);
     p.done({ x: hit.x / s, y: hit.z / s });
+  }
+
+  /* ───────────── Adding devices and dropping them on the plan (wave 7) ───────────── */
+
+  private clearDevices() {
+    const drop = (o: THREE.Object3D | null) => {
+      if (!o) return;
+      this.scene.remove(o);
+      const m = o as THREE.Mesh; m.geometry?.dispose(); (m.material as THREE.Material | undefined)?.dispose();
+    };
+    drop(this.deviceMesh); drop(this.statusRings); drop(this.beamLines);
+    for (const km of this.kindMeshes.values()) drop(km.mesh);
+    this.deviceMesh = null; this.statusRings = null; this.beamLines = null;
+    this.kindMeshes.clear(); this.kindIndex.clear(); this.devicePos.clear(); this.deviceIds = []; this.pulsing = [];
+  }
+
+  private applyNear() {
+    if (!this.deviceMesh) return;
+    this.deviceMesh.visible = !this.near;
+    if (this.beamLines) this.beamLines.visible = !this.near && this.style === "dark";
+    for (const km of this.kindMeshes.values()) km.mesh.visible = this.near;
+    if (this.statusRings) this.statusRings.visible = this.near;
+  }
+
+  /** Rebuild the device layer after devices were added, removed or changed rooms (the building stays). */
+  private rebuildDevices(keepVisible: Set<number>) {
+    this.clearDevices();
+    this.buildDevices();
+    this.visibleAssets = new Set([...this.deviceIds].filter((id) => keepVisible.has(id)));
+    this.applyNear();
+    this.positionDevices();
+    this.drawSelection();
+  }
+
+  /** Put devices into the model (just placed from the "To place" list), or update ones already in it. */
+  upsertAssets(list: TwinAsset[]) {
+    const keep = new Set(this.visibleAssets);
+    for (const a of list) { this.assetsById.set(a.id, { ...a }); keep.add(a.id); }
+    this.rebuildDevices(keep);
+  }
+
+  /** Take a device out of the model (sent back to the "To place" list). */
+  removeAsset(assetId: number) {
+    this.assetsById.delete(assetId);
+    const keep = new Set(this.visibleAssets); keep.delete(assetId);
+    this.rebuildDevices(keep);
+  }
+
+  /**
+   * Drop a device on the plan: a real-size ghost (model and footprint) follows the pointer on the floor, green when it
+   * fits inside a room, amber when it doesn't. Click to drop; `rotateDrop` turns it; `cancelDrop` gives up. A device
+   * already in the model is hidden while it's being moved.
+   */
+  beginDrop(spec: DropSpec, floorId: number, done: (r: DropResult | null) => void, onMove?: (r: DropResult | null) => void) {
+    this.cancelDrop();
+    const f = this.floorById.get(floorId); if (!f) { done(null); return; }
+    // The floor may still be streaming in: wait for it (up to a minute) before showing the ghost.
+    if (!this.floors.has(floorId)) {
+      const t0 = performance.now();
+      const wait = () => {
+        if (this.disposed) return;
+        if (this.floors.has(floorId)) this.beginDrop(spec, floorId, done, onMove);
+        else if (performance.now() - t0 > 60_000) done(null);
+        else setTimeout(wait, 250);
+      };
+      setTimeout(wait, 250);
+      return;
+    }
+    if (this.isolated !== floorId) this.isolateFloor(floorId, true);
+    const { geo } = kindGeometry(spec.kind);
+    const body = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: "#3cf5a6", transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false }));
+    body.scale.copy(this.realScale(spec.kind, spec.dims, new THREE.Vector3()));
+    const n = this.nominalOf(spec.kind);
+    const [fx, fz] = n.x >= n.z ? [spec.dims.l, spec.dims.w] : [spec.dims.w, spec.dims.l];
+    const pts = [[-fx / 2, -fz / 2], [fx / 2, -fz / 2], [fx / 2, fz / 2], [-fx / 2, fz / 2]].map(([x, z]) => new THREE.Vector3(x, 0.06, z));
+    const foot = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: "#3cf5a6", toneMapped: false, depthTest: false }));
+    foot.renderOrder = 10; body.renderOrder = 9;
+    const ghost = new THREE.Group(); ghost.add(body, foot); ghost.visible = false;
+    this.scene.add(ghost);
+    const hid = this.devicePos.has(spec.assetId) && this.visibleAssets.has(spec.assetId);
+    if (hid) { this.visibleAssets.delete(spec.assetId); this.positionDevices(); }
+    this.drop = { spec, floorId, rot: ((spec.rot % 360) + 360) % 360, ghost, body, foot, fx, fz, at: null, hid, done, onMove };
+    this.renderer.domElement.style.cursor = "crosshair";
+  }
+
+  /** Turn the device being dropped (degrees clockwise). */
+  rotateDrop(deg: number) {
+    const d = this.drop; if (!d) return;
+    d.rot = (((d.rot + deg) % 360) + 360) % 360;
+    d.ghost.rotation.y = -d.rot * Math.PI / 180;
+    if (d.at) this.updateDrop(d.at.x, d.at.y);
+  }
+
+  isDropping() { return this.drop != null; }
+
+  cancelDrop() {
+    const d = this.drop; if (!d) return;
+    this.endDrop();
+    d.done(null);
+  }
+
+  private endDrop() {
+    const d = this.drop; if (!d) return;
+    this.scene.remove(d.ghost);
+    d.body.geometry.dispose(); (d.body.material as THREE.Material).dispose();
+    d.foot.geometry.dispose(); (d.foot.material as THREE.Material).dispose();
+    if (d.hid) { this.visibleAssets.add(d.spec.assetId); this.positionDevices(); }
+    this.drop = null;
+    this.renderer.domElement.style.cursor = "grab";
+  }
+
+  private moveDrop(e: PointerEvent) {
+    const d = this.drop; if (!d) return;
+    const f = this.floorById.get(d.floorId)!;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hit = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.floorY(f)), hit)) return;
+    const s = this.u(f);
+    this.updateDrop(hit.x / s, hit.z / s);
+  }
+
+  /** Move the ghost to a plan point and work out the room under it and whether its footprint fits inside. */
+  private updateDrop(px: number, py: number) {
+    const d = this.drop; if (!d) return;
+    const f = this.floorById.get(d.floorId)!;
+    const s = this.u(f);
+    d.ghost.visible = true;
+    d.ghost.position.set(px * s, this.floorY(f), py * s);
+    d.ghost.rotation.y = -d.rot * Math.PI / 180;
+    const room = this.data.rooms.find((rm) => rm.floorId === d.floorId && pointInPolygon([px, py], rm.poly as Pt[])) ?? null;
+    const th = -d.rot * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+    const corners: Pt[] = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => {
+      const lx = i * d.fx / 2, lz = j * d.fz / 2;
+      return [px + (lx * c + lz * sn) / s, py + (-lx * sn + lz * c) / s];
+    });
+    const inside = !!room && corners.every((p) => pointInPolygon(p, room.poly as Pt[]));
+    const col = inside ? "#3cf5a6" : "#ffb534";
+    (d.body.material as THREE.MeshBasicMaterial).color.set(col);
+    (d.foot.material as THREE.LineBasicMaterial).color.set(col);
+    d.at = { floorId: d.floorId, roomId: room?.id ?? null, x: px, y: py, rot: Math.round(d.rot), inside };
+    d.onMove?.(d.at);
+  }
+
+  private finishDrop(e: PointerEvent) {
+    this.moveDrop(e);
+    const d = this.drop; if (!d || !d.at) return;
+    const at = d.at;
+    this.endDrop();
+    d.done(at);
   }
 
   /** Rooms of a floor (for the UI). */

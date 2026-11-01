@@ -229,19 +229,24 @@ export class RenderStudio {
     for (const { room, poly } of rooms) {
       const doorsHere = doorPts.filter((p) => nearPoly(p, poly, 0.6));
       const regs = assetsByRoom.get(room.id) ?? [];
-      const exact: Placement[] = [], loose: Model[] = [];
+      const exact: Placement[] = [], loose: Model[] = [], looseAssets: { m: Model; a: TwinAsset }[] = [];
       for (const a of regs) {
         const m = KIND_MODEL[deviceKind(a.groupCode, a.categoryCode)] ?? "cabinet";
         if (a.posX != null && a.posY != null) {
           const [ix, iz] = interiorPoint(poly);
           const x = a.posX * s, z = a.posY * s;
-          exact.push({ model: m, x, z, rot: Math.atan2(ix - x, iz - z), registered: a.id });
-        } else loose.push(m);
+          // Its saved turn (degrees clockwise), else facing the middle of the room.
+          exact.push({ model: m, x, z, rot: a.rot != null ? -a.rot * Math.PI / 180 : Math.atan2(ix - x, iz - z), registered: a.id, dims: a.dims });
+        } else { loose.push(m); looseAssets.push({ m, a }); }
       }
       // Registered equipment first: exact spots kept, the rest along the walls like a kit.
       const counts = new Map<Model, number>(); for (const m of loose) counts.set(m, (counts.get(m) ?? 0) + 1);
       const regLook = { finish: "vinyl" as const, kit: "registered", items: [...counts].map(([model, n]) => ({ model, n })) };
-      const regPlaced = placeKit(poly, regLook, doorsHere, exact, 0.7).map((p) => ({ ...p, registered: -1 }));
+      const regPlaced = placeKit(poly, regLook, doorsHere, exact, 0.7).map((p) => {
+        const i = looseAssets.findIndex((x) => x.m === p.model);
+        const a = i >= 0 ? looseAssets.splice(i, 1)[0].a : null;
+        return { ...p, registered: a?.id ?? -1, dims: a?.dims };
+      });
       placements.push(...exact, ...regPlaced);
       registered += exact.length + regPlaced.length;
       if (o.kits) {
@@ -259,7 +264,16 @@ export class RenderStudio {
     const m4 = new THREE.Matrix4(), qn = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
     for (const [model, list] of byModel) {
       const inst = new THREE.InstancedMesh(modelGeometry(model), mat, list.length);
-      list.forEach((p, i) => { qn.setFromAxisAngle(up, p.rot); m4.compose(new THREE.Vector3(p.x, 0, p.z), qn, one); inst.setMatrixAt(i, m4); });
+      const size = modelGeometry(model).boundingBox ?? (modelGeometry(model).computeBoundingBox(), modelGeometry(model).boundingBox!);
+      const n = size.getSize(new THREE.Vector3());
+      list.forEach((p, i) => {
+        qn.setFromAxisAngle(up, p.rot);
+        // Registered devices at their real size: length along the model's long side.
+        const sc = p.dims
+          ? (n.x >= n.z ? new THREE.Vector3(p.dims.l / n.x, p.dims.h / n.y, p.dims.w / n.z) : new THREE.Vector3(p.dims.w / n.x, p.dims.h / n.y, p.dims.l / n.z))
+          : one;
+        m4.compose(new THREE.Vector3(p.x, 0, p.z), qn, sc); inst.setMatrixAt(i, m4);
+      });
       inst.castShadow = model !== "or-light"; inst.receiveShadow = true;
       group.add(inst);
     }

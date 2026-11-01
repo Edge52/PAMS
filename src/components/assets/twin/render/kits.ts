@@ -98,7 +98,7 @@ export function roomLook(name: string, type?: string | null): RoomLook {
 }
 
 /** One placed item: centre (metres), rotation about the vertical (radians; 0 = facing +z), and its model. */
-export type Placement = { model: Model; x: number; z: number; rot: number; registered?: number };
+export type Placement = { model: Model; x: number; z: number; rot: number; registered?: number; /** real size of a registered device, metres */ dims?: { l: number; w: number; h: number } };
 
 type OBB = { x: number; z: number; hw: number; hd: number; rot: number };
 

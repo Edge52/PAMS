@@ -28,6 +28,9 @@ import { CONTRACT_TYPE_LABELS, contractState, type ContractType } from "@/lib/as
 import { CURRENCIES, formatDate, formatDateTime, formatMoney, formatNumber, todayISO } from "@/lib/format";
 import { getActivity } from "@/lib/server-utils";
 import { humanize } from "@/lib/status";
+import { DIMS_SOURCE_LABELS, formatDims } from "@/lib/assets/dimensions";
+import { sizesFor } from "@/lib/assets/dimensions-server";
+import { SizeFields } from "@/components/assets/size-fields";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import {
@@ -74,6 +77,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   if (!a) notFound();
   await requireFacilityAccess(a.asset.facilityId, me);
   const x = a.asset;
+  const size = (await sizesFor({ assetIds: [x.id] })).get(x.id) ?? null;
   const [catModel] = x.manufacturer && x.model ? await db.select().from(deviceModels)
     .where(and(eq(deviceModels.deviceTypeId, x.deviceTypeId), sql`lower(${deviceModels.manufacturer}) = ${nameKey(x.manufacturer)}`, sql`lower(${deviceModels.model}) = ${nameKey(x.model)}`)) : [];
   const catSupport = catModel ? supportState(catModel, todayISO()) : null;
@@ -186,6 +190,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                   <Field label="Tags" hint="Free labels, separated by commas — e.g. loan, teaching, donated."><Input name="tags" maxLength={1000} defaultValue={x.tags.join(", ")} /></Field>
                   <Field label="Notes"><Textarea name="notes" rows={2} defaultValue={x.notes ?? ""} /></Field>
                 </FormGrid>
+                <SizeFields lengthM={x.lengthM} widthM={x.widthM} heightM={x.heightM} typical={size ? formatDims(size.dims) : null} />
                 <div className="mt-4 flex gap-2"><Button>Save details</Button><LinkButton href={path} variant="ghost">Cancel</LinkButton></div>
               </ActionForm>
             ) : (
@@ -196,6 +201,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                 { label: "Manufacturer", value: x.manufacturer },
                 { label: "Model", value: x.model ? (catModel ? <><Link href={`/catalogue/models/${catModel.id}`} className="text-primary hover:underline">{x.model}</Link>{catSupport && catSupport !== "supported" && <> <Badge tone={SUPPORT_TONE[catSupport]}>{SUPPORT_LABELS[catSupport]}</Badge></>}</> : x.model) : null },
                 { label: "Serial number", value: x.serialNumber ? <span className="font-mono">{x.serialNumber}</span> : null },
+                { label: "Size (L × W × H)", value: size ? <>{formatDims(size.dims)} <span className="text-xs text-muted">({DIMS_SOURCE_LABELS[size.source]})</span>{x.status !== "DISPOSED" && <> · <Link href={`/assets/3d?facilityId=${x.facilityId}&place=${x.id}`} className="text-primary hover:underline">{x.roomId ? "Move in 3D" : "Place in 3D"}</Link></>}</> : null },
                 { label: "Tags", value: x.tags.length ? <span className="flex flex-wrap gap-1">{x.tags.map((t) => <Link key={t} href={`/assets?tag=${encodeURIComponent(t)}`}><Badge tone="info">{t}</Badge></Link>)}</span> : null },
                 { label: "Risk class", value: a.riskClass ? `Class ${a.riskClass}` : null },
                 { label: "Purchase date", value: x.purchaseDate ? formatDate(x.purchaseDate) : null },

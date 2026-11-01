@@ -77,6 +77,48 @@ export async function twinPlaceAction(_: TwinActionState, fd: FormData): Promise
   return { ok: "Exact spot saved. The 2D floor map shows it too.", assetId: a.id, roomId: a.roomId, posX: p.data.posX, posY: p.data.posY };
 }
 
+export type DropActionState = { ok?: string; error?: string; assetId?: number; roomId?: number | null; posX?: number | null; posY?: number | null; rot?: number | null } | null;
+
+const DropSchema = z.object({
+  assetId: reqId("Device"),
+  roomId: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().positive().nullable()),
+  posX: z.coerce.number().finite().optional(), posY: z.coerce.number().finite().optional(),
+  rot: z.coerce.number().finite().optional(),
+});
+
+/**
+ * Drop a device on the plan from the 3D view (wave 7): its room, exact spot (plan units) and turn (degrees clockwise).
+ * An empty room sends it back to the "To place" list (in store, no room). The spot must be inside the room.
+ */
+export async function twinDropAction(_: DropActionState, fd: FormData): Promise<DropActionState> {
+  const me = await requirePermission("assets.move");
+  const p = DropSchema.safeParse(formObject(fd));
+  if (!p.success) return { error: firstError(p.error) };
+  const a = await loadAsset(p.data.assetId);
+  if (!a) return { error: "That device no longer exists." };
+  await requireFacilityAccess(a.facilityId, me);
+  if (a.status === "DISPOSED") return { error: "A disposed device can't be placed." };
+  if (p.data.roomId == null) {
+    const res = await moveAsset({ assetId: a.id, toRoomId: null, reason: "Taken off the plan in the 3D view", movedBy: me.name, posX: null, posY: null });
+    if (!res.ok) return { error: res.error };
+    await db.update(assets).set({ posRot: null }).where(eq(assets.id, a.id));
+    revalidatePath(`/assets/${a.id}`); revalidatePath("/assets/map");
+    return { ok: "Back on the “To place” list.", assetId: a.id, roomId: null, posX: null, posY: null, rot: null };
+  }
+  if (p.data.posX == null || p.data.posY == null) return { error: "Click a spot in a room." };
+  const [r] = await db.select({ polygon: rooms.polygon, x: rooms.x, y: rooms.y, w: rooms.w, h: rooms.h, name: rooms.name }).from(rooms).where(eq(rooms.id, p.data.roomId));
+  if (!r) return { error: "That room no longer exists." };
+  const poly = (r.polygon && r.polygon.length >= 3 ? r.polygon : rectPoly(r.x, r.y, r.w, r.h)) as Pt[];
+  if (!pointInPolygon([p.data.posX, p.data.posY], poly)) return { error: "Drop the device inside a room." };
+  const posX = Math.round(p.data.posX * 10) / 10, posY = Math.round(p.data.posY * 10) / 10;
+  const rot = p.data.rot != null ? ((Math.round(p.data.rot) % 360) + 360) % 360 : null;
+  const res = await moveAsset({ assetId: a.id, toRoomId: p.data.roomId, posX, posY, reason: a.roomId === p.data.roomId ? undefined : "Placed in the 3D view", movedBy: me.name });
+  if (!res.ok) return { error: res.error };
+  await db.update(assets).set({ posRot: rot }).where(eq(assets.id, a.id));
+  revalidatePath(`/assets/${a.id}`); revalidatePath("/assets/map");
+  return { ok: a.roomId === p.data.roomId ? `Moved within ${r.name}.` : `Placed in ${r.name}.`, assetId: a.id, roomId: p.data.roomId, posX, posY, rot };
+}
+
 const ViewSchema = z.object({
   facilityId: reqId("Hospital"), name: z.string().trim().min(1, "Give the view a name.").max(80, "Keep the name under 80 characters."),
   state: z.string().max(2000), shared: z.preprocess((v) => v === "on" || v === "true", z.boolean()),

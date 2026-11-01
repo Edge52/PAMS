@@ -21,6 +21,11 @@ export type NewAssetInput = {
   roomId?: number | null;
   posX?: number | null;
   posY?: number | null;
+  /** Turn on the plan (degrees clockwise) and real size in metres (wave 7). */
+  posRot?: number | null;
+  lengthM?: number | null;
+  widthM?: number | null;
+  heightM?: number | null;
   manufacturer?: string | null;
   model?: string | null;
   serialNumber?: string | null;
@@ -85,6 +90,10 @@ export async function createAsset(input: NewAssetInput, actor?: string, tx?: Exe
     roomId: input.roomId ?? null,
     posX: input.posX ?? null,
     posY: input.posY ?? null,
+    posRot: input.posRot ?? null,
+    lengthM: input.lengthM ?? null,
+    widthM: input.widthM ?? null,
+    heightM: input.heightM ?? null,
     manufacturer: input.manufacturer ?? null,
     model: input.model ?? null,
     serialNumber: input.serialNumber ?? null,

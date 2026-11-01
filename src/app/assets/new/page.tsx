@@ -10,6 +10,7 @@ import { deviceTypeOptions, listFacilities, locationTree } from "@/lib/assets/qu
 import { CURRENCIES, todayISO } from "@/lib/format";
 import { createAssetAction } from "../actions";
 import { ModelDatalists } from "@/components/assets/model-datalists";
+import { SizeFields } from "@/components/assets/size-fields";
 import { modelSuggestions } from "@/lib/assets/models-server";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 
@@ -74,6 +75,9 @@ export default async function NewAssetPage({ searchParams }: { searchParams: Pro
             <Field label="Part of (parent asset tag)" hint="e.g. the workstation this monitor is mounted on"><Input name="parentTag" placeholder="DGH-LIF-000123" className="uppercase" /></Field>
             <Field label="Notes" className="sm:col-span-2 lg:col-span-3"><Textarea name="notes" rows={2} /></Field>
           </FormGrid>
+        </Panel>
+        <Panel title="Size">
+          <SizeFields />
         </Panel>
         <SubmitRow><Button>Register asset</Button><LinkButton href="/assets" variant="ghost">Cancel</LinkButton></SubmitRow>
       </ActionForm>

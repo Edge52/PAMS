@@ -14,6 +14,7 @@ import { facilityOfAsset, facilityOfEvent, scopeWhere } from "@/lib/assets/acces
 import { distribute, expandAllocations, parseSerials, type DistMode } from "@/lib/assets/distribution";
 import { ASSET_CONDITIONS, ASSET_STATUSES, MAINTENANCE_STATUSES, MAINTENANCE_TYPES } from "@/lib/assets/filters";
 import { firstError, formObject, id, int, isoDate, num, oneOf, reqId, text, type FormState } from "@/lib/assets/forms";
+import { DIM_MAX, DIM_MIN } from "@/lib/assets/dimensions";
 import { MAX_IMPORT_ROWS, mapHeaders, validateRows, type ImportKey, type Lookups, type RowResult, type ValidRow } from "@/lib/assets/import";
 import { moveAsset } from "@/lib/assets/mutations";
 import { planPpmEvents, maintenanceTypeLabel } from "@/lib/assets/maintenance";
@@ -34,7 +35,17 @@ const AssetSchema = z.object({
   purchaseDate: isoDate("Purchase date"), installDate: isoDate("Install date"),
   warrantyMonths: int("Warranty months", 0, 240), warrantyEnd: isoDate("Warranty end"),
   purchaseCost: num("Purchase cost", 0, 1e11), currency: text(3), parentTag: text(48), notes: text(2000),
+  lengthM: num("Length", DIM_MIN, DIM_MAX), widthM: num("Width", DIM_MIN, DIM_MAX), heightM: num("Height", DIM_MIN, DIM_MAX),
 });
+
+/** Real size (wave 7): all three measures, or none (then the model's, type's or typical size is used). */
+function sizeOf(d: { lengthM?: number; widthM?: number; heightM?: number }): { error?: string; lengthM: number | null; widthM: number | null; heightM: number | null } {
+  const given = [d.lengthM, d.widthM, d.heightM].filter((v) => v != null).length;
+  if (given > 0 && given < 3) return { error: "Give length, width and height, or leave all three empty to use the typical size.", lengthM: null, widthM: null, heightM: null };
+  if (!given) return { lengthM: null, widthM: null, heightM: null };
+  const [l, w] = d.lengthM! >= d.widthM! ? [d.lengthM!, d.widthM!] : [d.widthM!, d.lengthM!];
+  return { lengthM: l, widthM: w, heightM: d.heightM! };
+}
 
 async function serialTaken(serial: string | undefined, exceptId?: number) {
   if (!serial) return null;
@@ -62,6 +73,8 @@ export async function createAssetAction(_: FormState, fd: FormData): Promise<For
   const dup = await serialTaken(d.serialNumber);
   if (dup) return { error: `Serial ${d.serialNumber} is already registered as ${dup}.` };
   if (d.installDate && d.purchaseDate && d.installDate < d.purchaseDate) return { error: "Install date is before the purchase date." };
+  const size = sizeOf(d);
+  if (size.error) return { error: size.error };
   let parentAssetId: number | null = null;
   if (d.parentTag) {
     const [par] = await db.select({ id: assets.id, facilityId: assets.facilityId }).from(assets).where(eq(assets.assetTag, d.parentTag.toUpperCase()));
@@ -76,6 +89,7 @@ export async function createAssetAction(_: FormState, fd: FormData): Promise<For
     warrantyMonths: d.warrantyMonths ?? null, warrantyEnd: d.warrantyEnd ?? null,
     purchaseCost: d.purchaseCost ?? null, currency: d.purchaseCost != null ? (d.currency ?? "USD").toUpperCase() : null,
     parentAssetId, notes: d.notes ?? null,
+    lengthM: size.lengthM, widthM: size.widthM, heightM: size.heightM,
   });
   revalidatePath("/assets");
   redirect(`/assets/${row.id}?notice=${encodeURIComponent(`${row.assetTag} registered.`)}`);
@@ -92,7 +106,10 @@ export async function updateAssetAction(_: FormState, fd: FormData): Promise<For
   await requireAssetAccess(d.assetId, me);
   const dup = await serialTaken(d.serialNumber, d.assetId);
   if (dup) return { error: `Serial ${d.serialNumber} is already registered as ${dup}.` };
+  const size = sizeOf(d);
+  if (size.error) return { error: size.error };
   await db.update(assets).set({
+    lengthM: size.lengthM, widthM: size.widthM, heightM: size.heightM,
     manufacturer: d.manufacturer ?? null, model: d.model ?? null, serialNumber: d.serialNumber ?? null,
     purchaseDate: d.purchaseDate ?? null, installDate: d.installDate ?? null, warrantyEnd: d.warrantyEnd ?? null,
     purchaseCost: d.purchaseCost != null ? String(d.purchaseCost) : null, currency: d.purchaseCost != null ? (d.currency ?? "USD").toUpperCase() : null,

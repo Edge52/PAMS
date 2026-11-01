@@ -11,6 +11,7 @@ import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/a
 import { scopeWhere } from "@/lib/assets/access";
 import { twinLive } from "@/lib/assets/twin-live";
 import { plansForFacility } from "@/lib/assets/plan-installed-server";
+import { sizesFor } from "@/lib/assets/dimensions-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "3D view" };
@@ -51,7 +52,12 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     roomId: assets.roomId, posX: assets.posX, posY: assets.posY, manufacturer: assets.manufacturer, model: assets.model, serial: assets.serialNumber,
   }).from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
     .leftJoin(group, eq(group.id, deviceTypes.parentId)).leftJoin(cat, eq(cat.id, group.parentId))
-    .where(sql`${assets.facilityId} = ${facility.id} and ${assets.status} <> 'DISPOSED' and ${assets.roomId} is not null`);
+    .where(sql`${assets.facilityId} = ${facility.id} and ${assets.status} <> 'DISPOSED'`);
+  const sizes = await sizesFor({ facilityId: facility.id });
+  const sized = assetRows.map((a) => {
+    const z = sizes.get(a.id);
+    return { ...a, dims: z?.dims ?? { l: 0.6, w: 0.5, h: 1 }, rot: z?.rot ?? null };
+  });
 
   const data: TwinData = {
     facility,
@@ -68,7 +74,8 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
       poly: r.polygon && r.polygon.length >= 3 ? r.polygon : rectPoly(r.x, r.y, r.w, r.h),
     })),
     departments: deptRows.map((d, i) => ({ ...d, color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] })),
-    assets: assetRows,
+    assets: sized.filter((a) => a.roomId != null),
+    unplaced: sized.filter((a) => a.roomId == null),
     lifts: (await db.select().from(liftCores).where(eq(liftCores.facilityId, facility.id)).orderBy(asc(liftCores.name)))
       .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
   };
