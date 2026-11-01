@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
 import { boqDepartments, boqLines, boqs, departmentTypes, deviceTypes, facilities, offerLines, projects, rfqs, standardSets } from "@/db/schema";
-import { CURRENCIES, num } from "@/lib/format";
+import { CURRENCIES, formatMoney, num } from "@/lib/format";
 import { convert, float, int, logActivity, str } from "@/lib/server-utils";
 import { TIERS } from "@/lib/boq/engine";
 import { cleanFeatures, cleanParams, featureLabel, paramUnit } from "@/lib/boq/questions";
@@ -14,6 +14,9 @@ import { PRICE_TIER_LABELS, PRICE_TIERS, type PriceTier } from "@/lib/boq/pricin
 import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { cancelApproval, pendingRequest, startApproval } from "@/lib/approvals/server";
 import { boqTotal } from "@/lib/procurement/tender";
+import { getBoqWorkspace } from "@/lib/boq/queries";
+import { fitLines } from "@/lib/boq/checks-server";
+import { describeChange, fitToBudget } from "@/lib/boq/fit-budget";
 
 /** Only drafts change: a BOQ under review is frozen so approvers approve exactly what was submitted. */
 const EDITABLE = ["DRAFT"] as const;
@@ -530,4 +533,38 @@ export async function resetLinePrice(fd: FormData) {
   await logActivity("boq", line.boqId, "repriced", `Line #${lineId} priced from the catalogue again${r.changed ? "" : " (price unchanged)"}.`);
   revalidatePath(`/boq/${line.boqId}`);
   redirect(`${back}&notice=${enc(r.noBand ? "This device has no catalogue price band — type the price by hand." : "Line priced from the catalogue.")}`);
+}
+
+/**
+ * Fit to budget: recompute the proposal on the server (never from the form) and apply it — optional lines set to 0,
+ * recommended lines moved to a lower price tier. Essential lines and hand-typed prices are left alone.
+ */
+export async function fitToBudgetAction(fd: FormData) {
+  const me = await requirePermission("boq.edit");
+  const boqId = int(fd, "boqId") ?? 0;
+  const back = `/boq/${boqId}?tab=checks`;
+  const boq = await loadEditableBoq(boqId, back, me);
+  if (boq.targetBudget == null) fail(back, "Set a target budget on the Departments tab first.");
+  const ws = await getBoqWorkspace(boqId);
+  const lines = ws ? await fitLines(ws) : null;
+  if (!ws || !lines) fail(back, `No exchange rate from USD to ${boq.currency}; add one under exchange rates.`);
+  const r = fitToBudget(lines, num(boq.targetBudget), boq.contingencyPct);
+  if (!r.changes.length) fail(back, r.reached ? "The BOQ is already within the target budget." : "Nothing left to cut: only essential lines and hand-typed prices remain.");
+  await db.transaction(async (tx) => {
+    for (const c of r.changes) {
+      if (c.kind === "drop") {
+        await tx.update(boqLines).set({ quantity: 0, isOverridden: true, notes: "Dropped to fit the target budget (optional item)." }).where(and(eq(boqLines.id, c.lineId), eq(boqLines.boqId, boqId)));
+      } else {
+        await tx.update(boqLines).set({ priceTier: c.to, unitPriceEstimate: c.unitPrice.toFixed(2), priceManual: false }).where(and(eq(boqLines.id, c.lineId), eq(boqLines.boqId, boqId)));
+      }
+    }
+    const money = (n: number) => formatMoney(n, boq.currency);
+    await logActivity("boq", boqId, "fitted_to_budget",
+      `Fit to budget: ${money(r.before)} → ${money(r.after)} (target ${money(r.target)}), ${r.changes.length} change${r.changes.length === 1 ? "" : "s"}:\n- ${r.changes.map(describeChange).join("\n- ")}`, me.name, tx);
+  });
+  revalidatePath(`/boq/${boqId}`);
+  const money = (n: number) => formatMoney(n, boq.currency, { compact: n >= 1e6 });
+  redirect(`${back}&notice=${enc(r.reached
+    ? `Within the target now: ${money(r.after)} after ${r.changes.length} changes.`
+    : `${r.changes.length} changes saved ${money(r.before - r.after)}, still ${money(r.after - r.target)} over: the rest is essential equipment or prices typed by hand.`)}`);
 }

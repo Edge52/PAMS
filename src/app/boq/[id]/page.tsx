@@ -11,6 +11,8 @@ import { ByDeviceTab } from "@/components/boq/tabs/by-device";
 import { ScopeTab } from "@/components/boq/tabs/scope";
 import { GapTab } from "@/components/boq/tabs/gap";
 import { AssumptionsTab } from "@/components/boq/tabs/assumptions";
+import { ChecksTab } from "@/components/boq/tabs/checks";
+import { boqChecks } from "@/lib/boq/checks-server";
 import { formatDate, formatMoney, formatNumber, num } from "@/lib/format";
 import { convert, getActivity } from "@/lib/server-utils";
 import { departmentTypeList, getBoqWorkspace, installedCounts, level3DeviceOptions, rulesForSet, type BoqWorkspace } from "@/lib/boq/queries";
@@ -28,6 +30,7 @@ const TABS = [
   { key: "device", label: "By device type" },
   { key: "scope", label: "Departments" },
   { key: "gap", label: "Plan vs installed" },
+  { key: "checks", label: "Checks" },
   { key: "assumptions", label: "Assumptions" },
   { key: "history", label: "History & files" },
 ] as const;
@@ -58,6 +61,7 @@ export default async function BoqPage({ params, searchParams }: {
   const locked = statusLocked || !mayEdit;
   const cur = boq.currency;
   const regenSummary = sp.regen ? (await getActivity("boq", boqId, 5)).find((a) => a.action === "regenerated")?.summary : null;
+  const checks = await boqChecks(ws);
   const units = ws.lines.reduce((s, l) => s + l.quantity, 0);
   const overrides = ws.lines.filter((l) => l.isOverridden).length;
   const manual = ws.lines.filter((l) => l.isManual).length;
@@ -117,6 +121,16 @@ export default async function BoqPage({ params, searchParams }: {
       </div>
 
       <PriceScenarios ws={ws} locked={locked} />
+      {checks.risks.length > 0 && tab !== "checks" && (
+        <p className="mb-5 flex flex-wrap items-center gap-2 text-sm">
+          {(["high", "medium", "low"] as const).map((sev) => {
+            const n = checks.risks.filter((r) => r.severity === sev).length;
+            return n ? <Badge key={sev} tone={sev === "high" ? "danger" : sev === "medium" ? "warn" : "info"}>{n} {sev}</Badge> : null;
+          })}
+          <span>{checks.risks.length === 1 ? "1 risk flag" : `${checks.risks.length} risk flags`}: {checks.risks[0].title}{checks.risks.length > 1 ? "…" : ""}</span>
+          <Link href={`/boq/${boq.id}?tab=checks`} className="font-semibold text-primary hover:underline">See the checks</Link>
+        </p>
+      )}
 
       <Panel className="mb-5" padded>
         <div className="flex flex-wrap items-center gap-2">
@@ -170,6 +184,7 @@ export default async function BoqPage({ params, searchParams }: {
       {tab === "device" && <ByDeviceTab ws={ws} />}
       {tab === "scope" && <ScopeData ws={ws} locked={locked} me={me} />}
       {tab === "gap" && <GapTab ws={ws} installed={await installedCounts(ws.depts.map((d) => d.departmentId).filter((x): x is number => !!x))} />}
+      {tab === "checks" && <ChecksTab ws={ws} checks={checks} locked={locked} />}
       {tab === "assumptions" && <AssumptionsTab ws={ws} rules={await rulesForSet(boq.standardSetId)} />}
       {tab === "history" && <History boqId={boq.id} />}
     </>
@@ -263,6 +278,7 @@ async function PriceScenarios({ ws, locked }: { ws: BoqWorkspace; locked: boolea
       </div>
       <p className="mt-3 text-xs text-muted">
         Current BOQ total {money(totals.grandTotal)}{target != null ? ` against a target of ${money(target)}` : ""}.
+        {target != null && totals.grandTotal > target && <> <Link href={`/boq/${boq.id}?tab=checks`} className="font-semibold text-primary hover:underline">Fit to budget</Link>.</>}
         {own ? ` ${own} departments or lines have their own tier (set them on the Departments tab or in a line's edit form).` : " Departments and single lines can have their own tier."}
         {sc.unpriced ? ` ${sc.unpriced} lines have no catalogue band and are left out of the scenarios.` : ""}
       </p>
