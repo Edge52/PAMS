@@ -78,14 +78,40 @@ Under **Assets** (release 2.2 / wave 3):
 - **Device performance and cost**: on each asset page — uptime, failures, mean time between failures and to repair,
   maintenance and parts cost against the purchase price.
 
+## Finding things and keeping the register tidy
+
+- **Search** (box at the top of every page): equipment by tag, serial number, maker, model or tag; device types; makes
+  and models; rooms; departments; work orders; suppliers, tenders and purchase orders; BOQs — only what your role and
+  hospitals allow.
+- **Makes and models** (**Device catalogue › Makes and models**): the brands and models of each device type, with a
+  reference price, end of sale and end of support. One click adds every make and model already typed into the
+  register. Equipment forms offer them as you type, so a model is always spelt the same way, and each asset shows its
+  model's support status.
+- **Fleet and standardisation** (`/assets/fleet`): per device type, how many makes and models the hospital runs, the
+  share on the most common model, units out of maker support or with no model recorded, and the hospital's
+  **preferred model** (set here, with the reason).
+- **Tags**: free labels on any asset (e.g. *loan*, *teaching*, *donated*), edited on the asset page; click a tag to list
+  every asset that has it, or filter the register with it.
+- **Executive summary** (**Reports › Executive summary**): one printable page per hospital — what needs attention first,
+  equipment availability and value, maintenance response and repair times, overdue maintenance, maker support,
+  contracts, warranties, deliveries and approvals. Print it or save it as a PDF.
+
 ## 3D view and CAD import
 
 **Assets › 3D view** shows a facility as an interactive 3D building with every registered device in its room. It works
 for any facility; floors imported from CAD show the real walls, doors, glazing and columns. What it does:
 
 - **Look around**: rotate, zoom, spread the floors apart, isolate a floor, filter by equipment type or status, search a
-  device and fly to it. Close up, devices take a shape for their kind (bed, monitor, ventilator, imaging, pump) and
-  rooms show their names; from afar they are glowing dots. Faults pulse in amber and red.
+  device and fly to it. Faults pulse in amber and red.
+- **Two looks** (under **View**, remembered in your browser): the glowing *digital twin*, and a light *architectural*
+  style with solid walls, floor slabs and pastel department colours that reads well in presentations and printouts.
+- **Readable from afar**: over the whole building walls are drawn low (a cutaway), so each floor reads as a plate of
+  coloured departments, with floor names beside the model and department names on the floors; basements fold away
+  unless you switch them on. Choose a floor and zoom in for full-height walls, doors, columns and room names.
+- **Devices**: close up, life-size models (bed, monitor on a pole, ventilator cart, scanner with its table, pump on an
+  IV pole) standing on a ring in their status colour; from afar, glowing dots.
+- **Selection**: a selected room (or the room of a selected device) is outlined with a glowing line, and the other
+  equipment steps back.
 - **Problem layers**: colour rooms or whole departments by open faults, overdue maintenance, devices past their service
   life, downtime over 12 months, equipment value or open recalls, with a legend and the most affected places.
 - **Live**: statuses refresh every minute (and when you come back to the tab) without reloading.
@@ -145,7 +171,11 @@ to review**.
 ## Updating an existing installation
 
 Pull the new code, run `npm install`, then `npm run db:migrate` (adds the new tables and columns; your data is kept).
-`npm run demo` does this by itself and adds any new demo data. Migrations so far: up to `0014_wave4_phasing`.
+`npm run demo` does this by itself and adds any new demo data. Migrations so far: up to `0015_wave5_models_tags`.
+
+For a real installation, load the hospital's floors and rooms from its CAD import **without** demo equipment with
+`npm run cad:load` (on the Docker server: `docker compose exec app npx tsx scripts/load-buildings.ts`). The going-live
+checklist, including the hospital's own email, is in [docs/deploy.md](docs/deploy.md#going-live-at-a-hospital-la-plaza-pilot).
 
 ## Run it locally with PostgreSQL
 
@@ -248,6 +278,8 @@ only touches `src/lib/storage.ts` and the `/files` route.
 | `src/lib/boq/questions.ts`, `templates.ts`, `engine.ts`, `pricing.ts` | Quick start: planning questions, hospital templates, the BOQ engine, price tiers. |
 | `src/lib/boq/fit-budget.ts`, `benchmarks.ts`, `risks.ts`, `room-requirements.ts`, `tco.ts`, `phasing.ts` | BOQ checks and planning (pure, unit-tested). |
 | `seed-data/boq-quickstart.json` | Workload rules, conditional rules and companion items for the quick start. |
+| `src/lib/assets/models.ts`, `tags.ts`, `src/lib/search.ts`, `src/lib/reports/executive-calc.ts` | Makes and models, fleet standardisation, asset tags, global search, executive summary. |
+| `scripts/load-buildings.ts` | Loads real buildings from `seed-data/cad/` without demo equipment (`npm run cad:load`). |
 | `tools/cad`, `seed-data/cad`, `scripts/seed/cad.ts` | DWG → building pipeline, imported buildings, and their import into the system. |
 | `src/lib/asset-factory.ts` | The single place assets are created (tags, defaults, warranty). |
 | `AGENTS.md` | Engineering conventions. |

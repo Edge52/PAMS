@@ -239,3 +239,28 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - `fitToBudgetAction` recomputes the proposal on the server; never apply a client-sent list.
 - Migration `0014_wave4_phasing`: `boq_departments.phase`, `boqs.opening_date`, `boqs.phase_months`.
 - Demo seed `scripts/seed/plan.ts` (runs last): La Plaza's approved fit-out plan BOQ, phased.
+
+# Wave 5 additions
+
+## Register data entry
+- Makes and models: table `device_models` (unique per device type + lower(maker) + lower(model)), pages `/catalogue/models`,
+  `/catalogue/models/new`, `/catalogue/models/[id]`, actions in `src/app/catalogue/actions.ts` (`catalogue.edit`). Assets keep their
+  `manufacturer` / `model` text; the catalogue is matched by name (`nameKey` in `src/lib/assets/models.ts`). Equipment forms use
+  `<ModelDatalists>` with `list="dl-makers"` / `list="dl-models"` (`modelSuggestions()` in `models-server.ts`).
+- Preferred models: `preferred_models` (per hospital and device type), set on `/assets/fleet` (`catalogue.edit` + facility access);
+  `fleetSummary()` is pure.
+- Tags: `assets.tags text[]` (lower case, `parseTags` in `src/lib/assets/tags.ts`), register filter `?tag=`, matched by `q` and search.
+- Global search: `globalSearch(q, me)` in `src/lib/search.ts`, page `/search`, box in the top bar. Every group checks the permission
+  and facility scope; add new groups the same way.
+- Executive summary: `/reports/executive` (`reports.view`), figures pure in `src/lib/reports/executive-calc.ts`.
+- Migration `0015_wave5_models_tags`. Demo seed `scripts/seed/models.ts` (runs after `plan`).
+- Go-live: `npm run cad:load` (`scripts/load-buildings.ts`) loads buildings without demo equipment; checklist in `docs/deploy.md`.
+
+## 3D view (visual)
+- Styles `"dark" | "light"` (`TwinScene.setStyle`, palette `PALETTE` in `scene.ts`); the choice lives in localStorage
+  (`hpams.twin.style`, read with `useSyncExternalStore` so the server renders the default).
+- Whole-building view draws walls at `CUTAWAY` height; full height when a floor is isolated or the camera is near. Basements
+  (`level < 0`) are hidden in the whole-building view unless `setShowBasements(true)`. Use `floorShown(id)` for visibility.
+- Device models come from `kindGeometry()` (merged primitives, y = 0 at the floor); status rings are one `InstancedMesh`.
+  `positionDevices()` sets every colour, so call it after any status, highlight or selection change.
+- Labels: `buildLabels()` makes floor tags, department labels and room labels; `updateLabels()` picks by zoom and drops overlaps.
