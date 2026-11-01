@@ -9,7 +9,10 @@ import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { PickResult, TwinScene } from "./scene";
 import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinData } from "./types";
-import { CORE_LABELS } from "./geometry";
+import { CORE_LABELS, coreKind, polygonArea, type Pt } from "./geometry";
+import { AVAILABLE, rankNearest, type Ranked } from "./nearest";
+import { PLAN_BANDS, planBand, spreadGhosts } from "@/lib/assets/plan-installed";
+import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server";
 import { bucketOf, colorFor, LAYER_INFO, LAYERS, legendFor, NEUTRAL, roomValues, type LayerId, type LiveMetrics, type Scope } from "./layers";
 
 const LIVE_EVERY_MS = 60_000;
@@ -27,8 +30,10 @@ function decodeLive(p: LivePayload): Map<number, LiveMetrics> {
  * HUD layout follows the view's own width (see hud-state): side columns of collapsible panels (folded by default
  * below 1100 px), or on phones one bottom sheet with tabs.
  */
-export function TwinView({ data, live: initialLive, views: initialViews, canManageViews }: {
+export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [] }: {
   data: TwinData; live: LivePayload; views: SavedView[]; canManageViews: boolean;
+  /** BOQs of this hospital the user may compare against (empty when they can't view BOQs). */
+  plans?: PlanChoice[];
 }) {
   const router = useRouter();
   const host = useRef<HTMLDivElement>(null);
@@ -45,6 +50,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [bloom, setBloom] = useState(true);
   const [cores, setCores] = useState(true);
   const [coreCounts, setCoreCounts] = useState<Record<string, number> | null>(null);
+  const [planId, setPlanId] = useState<number | null>(null);
+  const [plan, setPlan] = useState<PlanPayload | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [openDept, setOpenDept] = useState<number | null>(null);
+  const [nearest, setNearest] = useState<{ fromRoomId: number; type: string; results: Ranked[] } | null>(null);
+  const [routeTo, setRouteTo] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [cats, setCats] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
@@ -165,11 +176,49 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   // Problem layer → room colours.
   const layerValues = useMemo(() => roomValues(layer, scope, data.rooms, placed.map((a) => ({ roomId: a.roomId, metrics: live.get(a.id) }))), [layer, scope, data.rooms, placed, live]);
   const legend = useMemo(() => legendFor(layer, scope === "department" ? [...new Map(data.rooms.filter((r) => layerValues.has(r.id)).map((r) => [r.departmentId ?? -r.id, layerValues.get(r.id)!])).values()] : [...layerValues.values()]), [layer, scope, layerValues, data.rooms]);
+  // Plan vs installed: load the chosen BOQ's comparison.
+  useEffect(() => {
+    if (planId == null) return;
+    let stop = false;
+    (async () => {
+      try {
+        const res = await fetch(`/assets/3d/plan?facilityId=${data.facility.id}&boqId=${planId}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(await res.text());
+        const p = (await res.json()) as PlanPayload;
+        if (!stop) { setPlan(p); setPlanError(null); }
+      } catch (e) { if (!stop) { setPlan(null); setPlanError((e as Error).message || "The plan couldn't be loaded."); } }
+    })();
+    return () => { stop = true; };
+  }, [planId, data.facility.id]);
+  // Rooms that can hold equipment, per department (no stairs, lifts, shafts or corridors), biggest first.
+  const deptRooms = useMemo(() => {
+    const m = new Map<number, { id: number; area: number }[]>();
+    for (const r of data.rooms) {
+      if (r.departmentId == null || r.type === "CORRIDOR" || coreKind(r.name)) continue;
+      (m.get(r.departmentId) ?? m.set(r.departmentId, []).get(r.departmentId)!).push({ id: r.id, area: polygonArea(r.poly as Pt[]) });
+    }
+    return m;
+  }, [data.rooms]);
+  const planTint = useMemo(() => {
+    if (!plan) return null;
+    const band = new Map(plan.departments.map((d) => [d.departmentId, planBand(d.share)]));
+    const out = new Map<number, { color: string; level: number }>();
+    for (const r of data.rooms) {
+      const b = r.departmentId != null ? band.get(r.departmentId) : undefined;
+      if (b != null && b >= 0) out.set(r.id, { color: PLAN_BANDS[b].color, level: b });
+    }
+    return out;
+  }, [plan, data.rooms]);
   useEffect(() => {
     if (!ready) return;
+    sceneRef.current?.setGhosts(plan ? spreadGhosts(plan.departments.map((d) => ({ departmentId: d.departmentId, missing: d.missing })), deptRooms) : null);
+  }, [plan, deptRooms, ready]);
+  useEffect(() => {
+    if (!ready) return;
+    if (planTint) { sceneRef.current?.setRoomTint(planTint, NEUTRAL); return; }
     sceneRef.current?.setRoomTint(layer === "department" || !legend ? null
       : new Map([...layerValues].map(([id, v]) => [id, { color: colorFor(v, legend) ?? NEUTRAL, level: bucketOf(v, legend.breaks) }])), NEUTRAL);
-  }, [layer, layerValues, legend, ready]);
+  }, [layer, layerValues, legend, ready, planTint]);
   // The worst places, for the legend panel (rooms, or departments when grouped).
   const worst = useMemo(() => {
     if (layer === "department") return [];
@@ -299,6 +348,26 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     if (fl != null && fl !== floorId) { setFloorId(fl); sceneRef.current?.isolateFloor(fl, false); }
     sceneRef.current?.select(p);
   }
+  /** Rank the working devices of one type by walking distance from a room. */
+  function findNearest(fromRoomId: number, type: string) {
+    const s = sceneRef.current; const from = s?.spotOfRoom(fromRoomId);
+    if (!s || !from || !type) { setNearest(null); return; }
+    const candidates = placed.filter((a) => a.deviceType === type && AVAILABLE.has(statusOf(a.id, a.status)))
+      .map((a) => ({ id: a.id, ...s.spotOfAsset(a.id)! })).filter((c) => c.floorId != null);
+    setNearest({ fromRoomId, type, results: rankNearest(from, candidates, s.coreSpots()).slice(0, 6) });
+    setRouteTo(null); s.showRoute(null);
+  }
+  function showRouteTo(r: Ranked) {
+    const s = sceneRef.current; if (!s || !nearest) return;
+    const from = s.spotOfRoom(nearest.fromRoomId), to = s.spotOfAsset(r.id);
+    if (!from || !to) return;
+    const path = r.via ? [from, r.via, { ...r.via, floorId: to.floorId }, to] : [from, to];
+    // A route across floors needs the whole building on screen.
+    if (!r.sameFloor && floorId != null) { setFloorId(null); s.isolateFloor(null, false); }
+    s.showRoute(path); s.frameRoute(); setRouteTo(r.id);
+  }
+  function clearRoute() { sceneRef.current?.showRoute(null); setRouteTo(null); setNearest(null); }
+  const typeNames = useMemo(() => [...new Set(placed.map((a) => a.deviceType))].sort((a, b) => a.localeCompare(b)), [placed]);
   const toggle = (set: Set<string>, v: string, setter: (s: Set<string>) => void) => { const n = new Set(set); if (n.has(v)) n.delete(v); else n.add(v); setter(n); };
 
   const selAsset = selected?.kind === "asset" ? assetById.get(selected.id) : undefined;
@@ -417,6 +486,74 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               ))}
             </div>
           ) : <p className="mt-2 text-[13px] text-[#3cf5a6]">Nothing to show — no room is affected.</p>}
+        </>
+      )}
+    </div>
+  );
+  const planSummary = plan ? (() => {
+    const t = plan.departments.reduce((acc, d) => ({ planned: acc.planned + d.planned, installed: acc.installed + d.installed, inStock: acc.inStock + d.inStock, missing: acc.missing + d.missing, extra: acc.extra + d.extra }),
+      { planned: 0, installed: 0, inStock: 0, missing: 0, extra: 0 });
+    return t;
+  })() : null;
+  const planPanel = (
+    <div>
+      {plans.length === 0 ? (
+        <p className="text-xs text-[#8fb6cc]">No BOQ is linked to this hospital yet. Create one on the BOQs page with this hospital as its facility, then compare it here.</p>
+      ) : (
+        <>
+          <label className="block text-xs text-[#8fb6cc]" htmlFor="twin-plan">Compare the register with</label>
+          <select id="twin-plan" className="twin-input mt-1" value={planId ?? ""} onChange={(e) => { setPlan(null); setPlanError(null); setPlanId(e.target.value ? Number(e.target.value) : null); setOpenDept(null); }}>
+            <option value="">Off</option>
+            {plans.map((p) => <option key={p.id} value={p.id}>{p.name} v{p.version}{p.status === "APPROVED" ? "" : ` (${p.status === "DRAFT" ? "draft" : "under review"})`}</option>)}
+          </select>
+          {planError && <p role="alert" className="mt-1 text-xs text-[#ff8a96]">{planError}</p>}
+          {planId != null && !plan && !planError && <p className="mt-1 text-xs text-[#8fb6cc]">Comparing…</p>}
+          {plan && planSummary && (
+            <>
+              <p className="mt-2 text-[13px]">
+                <span className="text-white">{planSummary.installed.toLocaleString()} of {planSummary.planned.toLocaleString()}</span> planned units installed ·{" "}
+                <span className="text-[#ffb534]">{planSummary.missing.toLocaleString()} missing</span>
+                {planSummary.inStock > 0 && <> · {planSummary.inStock} delivered, not installed</>}
+                {planSummary.extra > 0 && <> · {planSummary.extra} beyond the plan</>}
+              </p>
+              <p className="mt-1 text-xs text-[#8fb6cc]">Rooms take their department&apos;s colour; white wireframes are planned devices not installed yet.</p>
+              <ul className="mt-2 space-y-1 text-[13px]" aria-label="Plan legend">
+                {PLAN_BANDS.map((b, i) => (
+                  <li key={b.label} className="flex items-center gap-2"><span className="size-3 rounded-sm" style={{ background: b.color }} /><span className="flex-1">{b.label}</span>
+                    <span className="text-[#8fb6cc]">{plan.departments.filter((d) => planBand(d.share) === i).length}</span></li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs text-[#8fb6cc]">Departments, least complete first</p>
+              <ul className="space-y-0.5">
+                {plan.departments.map((d) => (
+                  <li key={d.departmentId}>
+                    <button type="button" aria-expanded={openDept === d.departmentId} onClick={() => {
+                      setOpenDept(openDept === d.departmentId ? null : d.departmentId);
+                      const first = deptRooms.get(d.departmentId)?.slice().sort((a, b) => b.area - a.area)[0];
+                      if (first && openDept !== d.departmentId) focus({ kind: "room", id: first.id });
+                    }} className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-[#0c2a40]">
+                      <span className="size-2 shrink-0 rounded-full" style={{ background: PLAN_BANDS[Math.max(0, planBand(d.share))].color }} />
+                      <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                      <span className="shrink-0 text-[#8fb6cc]">{Math.round(d.share * 100)} %</span>
+                    </button>
+                    {openDept === d.departmentId && (
+                      <ul className="mb-1 ml-4 space-y-0.5 text-xs">
+                        {d.items.filter((i) => i.missing || i.extra || i.inStock).slice(0, 12).map((i) => (
+                          <li key={i.deviceTypeId} className="flex justify-between gap-2">
+                            <span className="min-w-0 truncate">{i.name}</span>
+                            <span className="shrink-0 text-[#8fb6cc]">{i.installed}/{i.planned}{i.missing ? <span className="text-[#ffb534]"> −{i.missing}</span> : null}{i.extra ? <span className="text-[#5fd6ff]"> +{i.extra}</span> : null}{i.inStock ? ` · ${i.inStock} in store` : ""}</span>
+                          </li>
+                        ))}
+                        {d.items.every((i) => !i.missing && !i.extra && !i.inStock) && <li className="text-[#3cf5a6]">Everything planned is installed.</li>}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {plan.unlinked.length > 0 && <p className="mt-2 text-xs text-[#8fb6cc]">Not compared (no department linked in the BOQ): {plan.unlinked.join(", ")}.</p>}
+              <Link href={`/boq/${plan.boq.id}?tab=gap`} className="mt-2 inline-block text-xs text-[#5fd6ff] hover:underline">Open the BOQ&apos;s plan vs installed</Link>
+            </>
+          )}
         </>
       )}
     </div>
@@ -555,6 +692,38 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               </ul>
             )
           )}
+          <div className="mt-3 border-t border-[#123a55] pt-2">
+            <label className="block text-[13px] font-semibold text-[#5fd6ff]" htmlFor="twin-nearest">Nearest working device from here</label>
+            <select id="twin-nearest" className="twin-input mt-1" value={nearest?.fromRoomId === selRoom.id ? nearest.type : ""}
+              onChange={(e) => findNearest(selRoom.id, e.target.value)}>
+              <option value="">Choose a device type…</option>
+              {typeNames.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            {nearest?.fromRoomId === selRoom.id && (
+              nearest.results.length === 0 ? <p className="mt-1 text-xs text-[#ff8a96]">No working {nearest.type.toLowerCase()} in this hospital right now.</p> : (
+                <ul className="mt-1 space-y-0.5" aria-label="Nearest devices">
+                  {nearest.results.map((r) => {
+                    const a = assetById.get(r.id)!; const room = roomById.get(a.roomId!);
+                    return (
+                      <li key={r.id}>
+                        <button type="button" onClick={() => showRouteTo(r)} aria-pressed={routeTo === r.id}
+                          className={`w-full rounded px-1.5 py-1 text-left text-[13px] hover:bg-[#0c2a40] ${routeTo === r.id ? "bg-[#0c2a40] ring-1 ring-[#2fd3ff]" : ""}`}>
+                          <span className="flex justify-between gap-2"><span className="truncate text-white">{room?.name ?? "Room"}</span><span className="shrink-0 text-[#5fd6ff]">≈ {Math.round(r.distance)} m</span></span>
+                          <span className="block text-[11px] text-[#8fb6cc]">{a.tag} · {r.sameFloor ? "same floor" : `${r.floors} floor${r.floors === 1 ? "" : "s"} ${(floorById.get(room!.floorId)?.elevation ?? 0) > (floorById.get(selRoom.floorId)?.elevation ?? 0) ? "up" : "down"}${r.via ? ` by the ${r.via.kind === "lift" ? "lift" : "stairs"}` : ""}`}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )
+            )}
+            {routeTo != null && (
+              <div className="mt-1 flex flex-wrap gap-2">
+                <button type="button" onClick={() => focus({ kind: "asset", id: routeTo })} className="twin-act">Open that device</button>
+                <button type="button" onClick={clearRoute} className="twin-act">Clear route</button>
+              </div>
+            )}
+          </div>
           <div className="mt-2 flex flex-wrap gap-3">
             <Link href={`/assets?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Room in the asset register</Link>
             {data.can.addAsset && <Link href={`/assets/new?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Add a device here</Link>}
@@ -618,6 +787,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             <HudPanel title="Problem layer" summary={LAYER_INFO[layer].label} open={panels.isOpen("layers")} onToggle={() => panels.toggle("layers")} bodyClassName="max-h-[50vh] overflow-y-auto">
               {layerPanel}
             </HudPanel>
+            {plans.length > 0 && (
+              <HudPanel title="Plan vs installed" summary={plan ? `${Math.round((planSummary!.installed / Math.max(1, planSummary!.planned)) * 100)} %` : "Off"} open={panels.isOpen("plan")} onToggle={() => panels.toggle("plan")} bodyClassName="max-h-[50vh] overflow-y-auto">
+                {planPanel}
+              </HudPanel>
+            )}
             <HudPanel title="Floor spacing" summary={`${explode.toFixed(1)}×`} open={panels.isOpen("view")} onToggle={() => panels.toggle("view")}>
               {viewControls}
             </HudPanel>
@@ -680,6 +854,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               {sheetTab === "filters" && (
                 <div className="space-y-3">
                   <section><h2 className="twin-h">Problem layer</h2>{layerPanel}</section>
+                  {plans.length > 0 && <section><h2 className="twin-h">Plan vs installed</h2>{planPanel}</section>}
                   <section><h2 className="twin-h">Status</h2>{statusList}</section>
                   <section><h2 className="twin-h">Equipment types</h2>{typeList}</section>
                 </div>

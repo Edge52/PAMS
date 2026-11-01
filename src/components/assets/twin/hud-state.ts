@@ -16,7 +16,9 @@ export function hudMode(width: number): HudMode {
   return "wide";
 }
 
-export type PanelId = "floors" | "view" | "status" | "find" | "types" | "layers" | "views";
+export type PanelId = "floors" | "view" | "status" | "find" | "types" | "layers" | "views" | "plan";
+/** Panels that start folded even on a wide screen (opened when needed). */
+const FOLDED_BY_DEFAULT: PanelId[] = ["plan"];
 export type PanelPrefs = Partial<Record<string, boolean>>;
 
 /** Preferences are remembered separately for compact and wide layouts, so a panel opened on a big screen still starts folded on a laptop. */
@@ -25,7 +27,7 @@ export const prefKey = (id: PanelId, mode: HudMode) => `${id}.${mode === "wide" 
 /** Open unless the user closed it; in compact mode closed unless the user opened it. */
 export function isPanelOpen(prefs: PanelPrefs, id: PanelId, mode: HudMode): boolean {
   const v = prefs[prefKey(id, mode)];
-  return v ?? mode === "wide";
+  return v ?? (mode === "wide" && !FOLDED_BY_DEFAULT.includes(id));
 }
 
 /** Parse the stored JSON, ignoring anything that isn't `{ [key]: boolean }`. */

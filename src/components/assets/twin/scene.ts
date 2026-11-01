@@ -114,6 +114,10 @@ export class TwinScene {
   private frameTimes: number[] = [];
   private lastFrame = 0;
   private perfChecked = false;
+  private ghostMesh: THREE.InstancedMesh | null = null;
+  private ghostSpots: { floorId: number; x: number; z: number }[] = [];
+  private routeLine: THREE.Group | null = null;
+  private routeSpots: { floorId: number; x: number; z: number }[] | null = null;
 
   constructor(private container: HTMLElement, private data: TwinData, private events: TwinEvents = {}) {
     this.reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -369,6 +373,8 @@ export class TwinScene {
     }
     this.applyFloorVisibility();
     this.positionDevices();
+    this.positionGhosts();
+    this.drawRoute();
   }
 
   /** Spread a room's unpinned devices inside its outline; pinned ones keep their spot (plan units → metres). */
@@ -555,6 +561,115 @@ export class TwinScene {
       m.depthWrite = !this.tinted && (m.userData.baseOpacity as number) > 0.5;
       m.needsUpdate = true;
     }
+  }
+
+  /* ───────────── Plan vs installed: ghosts of missing equipment ───────────── */
+
+  /** Wireframe ghosts for planned devices not installed yet: count per room id (null clears them). */
+  setGhosts(perRoom: Map<number, number> | null) {
+    if (this.ghostMesh) { this.scene.remove(this.ghostMesh); this.ghostMesh.geometry.dispose(); (this.ghostMesh.material as THREE.Material).dispose(); this.ghostMesh = null; }
+    this.ghostSpots = [];
+    if (!perRoom?.size) return;
+    for (const [roomId, n] of perRoom) {
+      const room = this.roomById.get(roomId); const f = room ? this.floorById.get(room.floorId) : null;
+      if (!room || !f) continue;
+      const s = this.u(f);
+      // Spots beyond the ones the room's own devices use, so ghosts sit beside the installed equipment.
+      const have = [...this.assetsById.values()].filter((a) => a.roomId === roomId).length;
+      const spots = spreadInRoom(room.poly as Pt[], have + n).slice(have);
+      for (const [x, y] of spots) this.ghostSpots.push({ floorId: f.id, x: x * s, z: y * s });
+    }
+    const geo = new THREE.OctahedronGeometry(0.42);
+    this.ghostMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: "#e9f6ff", wireframe: true, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false }), Math.max(1, this.ghostSpots.length));
+    this.ghostMesh.count = this.ghostSpots.length;
+    this.ghostMesh.renderOrder = 6;
+    this.scene.add(this.ghostMesh);
+    this.positionGhosts();
+  }
+
+  private positionGhosts() {
+    if (!this.ghostMesh) return;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+    this.ghostSpots.forEach((g, i) => {
+      const on = this.floors.has(g.floorId) && (this.isolated == null || this.isolated === g.floorId);
+      p.set(g.x, this.floorY(this.floorById.get(g.floorId)!) + DEVICE_HEIGHT, g.z);
+      const k = on ? 1 : 0; sc.set(k, k, k);
+      m.compose(p, q, sc); this.ghostMesh!.setMatrixAt(i, m);
+    });
+    this.ghostMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /* ───────────── Nearest available: positions and the route ───────────── */
+
+  /** A room's inside point in metres, with its floor and elevation. */
+  spotOfRoom(roomId: number): { floorId: number; elevation: number; x: number; z: number } | null {
+    const r = this.roomById.get(roomId); const f = r ? this.floorById.get(r.floorId) : null;
+    if (!r || !f) return null;
+    const [x, y] = interiorPoint(r.poly as Pt[]); const s = this.u(f);
+    return { floorId: f.id, elevation: f.elevation, x: x * s, z: y * s };
+  }
+
+  spotOfAsset(assetId: number): { floorId: number; elevation: number; x: number; z: number } | null {
+    const d = this.devicePos.get(assetId); const f = d ? this.floorById.get(d.floorId) : null;
+    return d && f ? { floorId: f.id, elevation: f.elevation, x: d.x, z: d.z } : null;
+  }
+
+  /** Lifts and stairs as points (metres), for routing between floors. */
+  coreSpots(): { floorId: number; elevation: number; x: number; z: number; kind: "lift" | "stair" }[] {
+    const out: { floorId: number; elevation: number; x: number; z: number; kind: "lift" | "stair" }[] = [];
+    for (const r of this.data.rooms) {
+      const k = coreKind(r.name); if (k !== "lift" && k !== "stair") continue;
+      const sp = this.spotOfRoom(r.id); if (sp) out.push({ ...sp, kind: k });
+    }
+    return out;
+  }
+
+  /** Draw a walking route through these points (metres; a change of floor rises through the core). null clears it. */
+  showRoute(spots: { floorId: number; x: number; z: number }[] | null) {
+    this.routeSpots = spots && spots.length >= 2 ? spots : null;
+    this.drawRoute();
+  }
+
+  private drawRoute() {
+    if (this.routeLine) {
+      this.scene.remove(this.routeLine);
+      this.routeLine.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose(); (m.material as THREE.Material | undefined)?.dispose(); });
+      this.routeLine = null;
+    }
+    if (!this.routeSpots) return;
+    const pts: THREE.Vector3[] = [];
+    const y = (floorId: number) => this.floorY(this.floorById.get(floorId)!) + 0.35;
+    this.routeSpots.forEach((sp, i) => {
+      const prev = this.routeSpots![i - 1];
+      if (prev && prev.floorId !== sp.floorId) pts.push(new THREE.Vector3(prev.x, y(sp.floorId), prev.z)); // up or down the core
+      pts.push(new THREE.Vector3(sp.x, y(sp.floorId), sp.z));
+    });
+    // A glowing tube (lines are one pixel wide on most GPUs), drawn over the walls, with a dot at each end.
+    const group = new THREE.Group();
+    const mat = () => new THREE.MeshBasicMaterial({ color: "#fff4b0", toneMapped: false, depthTest: false, transparent: true, opacity: 0.95 });
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i]; const len = a.distanceTo(b); if (len < 0.01) continue;
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, len, 8, 1, true), mat());
+      seg.position.copy(a).add(b).multiplyScalar(0.5);
+      seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+      seg.renderOrder = 9; group.add(seg);
+    }
+    for (const end of [pts[0], pts[pts.length - 1]]) {
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), mat());
+      dot.position.copy(end); dot.renderOrder = 9; group.add(dot);
+    }
+    this.routeLine = group;
+    this.scene.add(group);
+  }
+
+  /** Fly so the whole route is in view. */
+  frameRoute() {
+    if (!this.routeSpots) return;
+    const ps = this.routeSpots.map((sp) => new THREE.Vector3(sp.x, this.floorY(this.floorById.get(sp.floorId)!), sp.z));
+    const box = new THREE.Box3().setFromPoints(ps);
+    const c = box.getCenter(new THREE.Vector3()); const size = box.getSize(new THREE.Vector3());
+    this.userMoved = true;
+    this.flyTo(c, Math.max(45, Math.hypot(size.x, size.y, size.z) * 1.4), 1);
   }
 
   /** Show or hide stairs, lifts and shafts. */

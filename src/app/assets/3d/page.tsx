@@ -10,6 +10,7 @@ import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/assets/access";
 import { twinLive } from "@/lib/assets/twin-live";
+import { plansForFacility } from "@/lib/assets/plan-installed-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "3D view" };
@@ -73,5 +74,6 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     .where(sql`${twinViews.facilityId} = ${facility.id} and (${twinViews.shared} or ${twinViews.createdById} = ${me.id})`).orderBy(asc(twinViews.name));
   return <TwinView data={data} live={await twinLive(facility.id)}
     views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName }))}
-    canManageViews={can(me.role, "users.manage")} />;
+    canManageViews={can(me.role, "users.manage")}
+    plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []} />;
 }
