@@ -22,7 +22,7 @@ export const PERMISSIONS = [
   // read
   "boq.view", "procurement.view", "assets.view", "reports.view",
   // planning
-  "boq.edit", "boq.approve", "standards.edit",
+  "boq.edit", "boq.approve", "standards.edit", "flows.edit",
   // procurement
   "procurement.edit", "specs.edit", "suppliers.edit", "offers.edit", "award.recommend", "po.create", "po.issue", "goods.receive",
   // assets
@@ -41,8 +41,8 @@ const MATRIX: Record<Role, readonly Permission[]> = {
   DIRECTOR: [...VIEW, "boq.approve"],
   PROCUREMENT: [...VIEW, "procurement.edit", "specs.edit", "suppliers.edit", "offers.edit", "award.recommend", "po.create", "po.issue", "goods.receive", "contracts.edit"],
   FINANCE: [...VIEW],
-  PLANNER: [...VIEW, "boq.edit", "standards.edit"],
-  BIOMEDICAL: [...VIEW, "boq.edit", "specs.edit", "goods.receive", "assets.edit", "assets.move", "maintenance.edit", "facilities.edit", "catalogue.edit", "workorders.assign", "contracts.edit", "parts.edit", "recalls.edit", "assets.dispose"],
+  PLANNER: [...VIEW, "boq.edit", "standards.edit", "flows.edit"],
+  BIOMEDICAL: [...VIEW, "boq.edit", "flows.edit", "specs.edit", "goods.receive", "assets.edit", "assets.move", "maintenance.edit", "facilities.edit", "catalogue.edit", "workorders.assign", "contracts.edit", "parts.edit", "recalls.edit", "assets.dispose"],
   TECHNICIAN: [...VIEW, "assets.move", "maintenance.edit"],
   DEPARTMENT_HEAD: [...VIEW],
   VIEWER: [...VIEW],
@@ -62,7 +62,7 @@ export function permissionsOf(role: Role | string): Permission[] {
 /** Human text for an access error. */
 export const PERMISSION_LABELS: Record<Permission, string> = {
   "boq.view": "view BOQs", "procurement.view": "view procurement", "assets.view": "view assets", "reports.view": "view reports",
-  "boq.edit": "edit BOQs", "boq.approve": "approve BOQs", "standards.edit": "edit BOQ standards",
+  "boq.edit": "edit BOQs", "boq.approve": "approve BOQs", "standards.edit": "edit BOQ standards", "flows.edit": "edit patient pathways",
   "procurement.edit": "edit projects and RFQs", "specs.edit": "edit technical specifications", "suppliers.edit": "edit suppliers",
   "offers.edit": "record and evaluate offers", "award.recommend": "submit award recommendations", "po.create": "create purchase orders",
   "po.issue": "issue purchase orders", "goods.receive": "receive goods",

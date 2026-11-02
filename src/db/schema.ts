@@ -875,6 +875,72 @@ export const twinViews = pgTable("twin_views", {
   createdAt: createdAt(),
 }, (t) => [index("twin_views_facility_idx").on(t.facilityId)]);
 
+/** Patient pathways (wave 7, step 7b): how patients (later staff, supplies, waste) move through a hospital. */
+export const flowKind = pgEnum("flow_kind", ["PATIENT", "STAFF", "SUPPLIES", "WASTE"]);
+export const flowStatus = pgEnum("flow_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);
+
+/**
+ * A pathway version. Versions of one pathway share `lineageId` (the first version's id); publishing freezes a version,
+ * editing a published one makes a new draft, so analysis and comparisons stay reproducible.
+ */
+export const patientFlows = pgTable("patient_flows", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  lineageId: integer("lineage_id"),
+  version: integer("version").notNull().default(1),
+  name: text("name").notNull(),
+  kind: flowKind("kind").notNull().default("PATIENT"),
+  status: flowStatus("status").notNull().default("DRAFT"),
+  /** Patients a day entering the pathway (optional). */
+  dailyVolume: integer("daily_volume"),
+  /** Share of the day's patients arriving in each hour 0–23 (sums to 1); null → the starter's default or even. */
+  arrivalProfile: jsonb("arrival_profile").$type<number[]>(),
+  description: text("description"),
+  /** Starter it was copied from (e.g. "trauma"). */
+  starter: varchar("starter", { length: 32 }),
+  ownerName: text("owner_name"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+}, (t) => [index("patient_flows_facility_idx").on(t.facilityId), index("patient_flows_lineage_idx").on(t.lineageId)]);
+
+export const flowStepKind = pgEnum("flow_step_kind", ["START", "STEP", "END"]);
+export const flowTransport = pgEnum("flow_transport", ["FOOT", "WHEELCHAIR", "TROLLEY", "BED"]);
+export const flowUrgency = pgEnum("flow_urgency", ["ROUTINE", "URGENT"]);
+
+/** A step of a pathway: where (a department, or one room), typical time, who goes along, equipment needed. */
+export const flowSteps = pgTable("flow_steps", {
+  id: serial("id").primaryKey(),
+  flowId: integer("flow_id").notNull().references(() => patientFlows.id, { onDelete: "cascade" }),
+  /** Short key, unique in the pathway, used by arrows (kept across versions). */
+  key: varchar("key", { length: 24 }).notNull(),
+  label: text("label").notNull(),
+  kind: flowStepKind("kind").notNull().default("STEP"),
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  roomId: integer("room_id").references(() => rooms.id, { onDelete: "set null" }),
+  minutes: integer("minutes"),
+  accompanying: text("accompanying"),
+  /** Device type codes needed at this step (e.g. "LIF-VEN-TRN"). */
+  equipment: jsonb("equipment").$type<string[]>(),
+  notes: text("notes"),
+  sort: integer("sort").notNull().default(0),
+  x: real("x"),
+  y: real("y"),
+}, (t) => [uniqueIndex("flow_steps_key_uq").on(t.flowId, t.key)]);
+
+/** An arrow: share of patients taking it, how they move, urgency and a condition label. */
+export const flowLinks = pgTable("flow_links", {
+  id: serial("id").primaryKey(),
+  flowId: integer("flow_id").notNull().references(() => patientFlows.id, { onDelete: "cascade" }),
+  fromKey: varchar("from_key", { length: 24 }).notNull(),
+  toKey: varchar("to_key", { length: 24 }).notNull(),
+  /** Per cent of the patients at the "from" step who take this arrow. */
+  share: integer("share").notNull().default(100),
+  transport: flowTransport("transport").notNull().default("FOOT"),
+  urgency: flowUrgency("urgency").notNull().default("ROUTINE"),
+  condition: text("condition"),
+}, (t) => [index("flow_links_flow_idx").on(t.flowId)]);
+
 /** Who may use a lift in a route: beds and trolleys, the public, supplies and waste, or automated trolleys only. */
 export const liftKind = pgEnum("lift_kind", ["BED", "PUBLIC", "SERVICE", "AGV"]);
 

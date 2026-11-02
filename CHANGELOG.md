@@ -2,7 +2,7 @@
 
 ## Unreleased — wave 7 (in progress, branch `wave-7`)
 
-Migrations `0016`–`0017`. Update with `git pull` and `npm run demo`; your data is kept.
+Migrations `0016`–`0018`. Update with `git pull` and `npm run demo`; your data is kept.
 
 - **Lift cores**: declared once per hospital under Facilities › Lifts (bed, public, service, AGV; stops per floor;
   cars, capacity, typical wait). Suggested from lift lobbies in the drawings and marked *assumed* until confirmed. The
@@ -26,6 +26,13 @@ Migrations `0016`–`0017`. Update with `git pull` and `npm run demo`; your data
   panel: a walking-network layer with coverage per floor, and an early look at the trauma route (ambulance → Resus →
   CT → ICU by bed, distances and times per leg). "Nearest working device" now ranks by real walking time and draws
   the route.
+- **Patient pathways (step 7b)**: Planning › Patient pathways. A pathway is a set of steps (a place in the hospital,
+  minutes, who goes with the patient, equipment needed) joined by arrows with a share of patients, transport and
+  urgency. Five starters (trauma, elective surgery, maternity, outpatient imaging, ICU to CT and back) find this
+  hospital's departments and rooms by themselves. The page draws the pathway, works out patients a day at each step
+  and checks it as you edit: unreachable steps, dead ends, loops with no way out, shares not adding to 100 %.
+  Publishing freezes a version; changes go into a new draft version. Pathways export to a file and import into another
+  hospital, matched by department and room codes. Planners, biomedical engineers and admins edit; everyone can view.
 - Demo restarts no longer crash on the work-order seed.
 
 ## Release 3.0 — 1 Nov 2026

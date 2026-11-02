@@ -28,6 +28,7 @@ const sections: { title: string; links: NavLink[] }[] = [
     links: [
       { href: "/boq", label: "BOQs", need: "boq.view" },
       { href: "/boq/standards", label: "Standards & ratios", need: "boq.view" },
+      { href: "/flows", label: "Patient pathways", need: "assets.view" },
     ],
   },
   {
