@@ -12,6 +12,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, pointInPolygon, outlineFromRooms, polygonArea, presetCamera, spreadInRoom, wallsFromRooms, type CoreKind, type DeviceKind, type Pt } from "./geometry";
 import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinLift, type TwinRoom } from "./types";
 import type { Core } from "./nearest";
+import type { Network } from "./nav/network";
 
 /** Drawn wall height in metres (clear height below the ceiling after MEP; floors sit 5 m apart). */
 const WALL_HEIGHT = 3.3;
@@ -138,6 +139,7 @@ export class TwinScene {
   private labelInsets = { top: 0, right: 0, bottom: 0, left: 0 };
   private placing: { assetId: number; floorId: number; done: (p: { x: number; y: number } | null) => void } | null = null;
   private kindNominal = new Map<DeviceKind, THREE.Vector3>();
+  private navOverlay: { floorId: number; mesh: THREE.Mesh } | null = null;
   private drop: {
     spec: DropSpec; floorId: number; rot: number; ghost: THREE.Group; body: THREE.Mesh; foot: THREE.LineLoop; fx: number; fz: number;
     at: DropResult | null; hid: boolean; done: (r: DropResult | null) => void; onMove?: (r: DropResult | null) => void;
@@ -1603,6 +1605,52 @@ export class TwinScene {
     if (!this.raycaster.ray.intersectPlane(plane, hit)) { p.done(null); return; }
     const s = this.u(f);
     p.done({ x: hit.x / s, y: hit.z / s });
+  }
+
+  /* ───────────── Walking network overlay (wave 7, step 7a) ───────────── */
+
+  /**
+   * Show a floor's walking network on the floor: walkable area on the network in green, cut-off areas in grey, rooms
+   * closed to through-traffic in amber, assumed doors as yellow ticks and unreachable rooms as red dots. null hides it.
+   */
+  setNavOverlay(net: Network | null) {
+    if (this.navOverlay) {
+      const { floorId, mesh } = this.navOverlay;
+      this.floors.get(floorId)?.group.remove(mesh);
+      mesh.geometry.dispose();
+      const m = mesh.material as THREE.MeshBasicMaterial; m.map?.dispose(); m.dispose();
+      this.navOverlay = null;
+    }
+    if (!net) return;
+    const v = this.floors.get(net.floorId); if (!v) return;
+    const canvas = document.createElement("canvas"); canvas.width = net.w; canvas.height = net.h;
+    const ctx = canvas.getContext("2d")!;
+    const img = ctx.createImageData(net.w, net.h);
+    for (let i = 0; i < net.free.length; i++) {
+      if (!net.free[i]) continue;
+      const [r, g, b, a] = net.zone[i] ? [255, 181, 52, 120] : net.comp[i] === net.main ? [60, 245, 166, 95] : [150, 165, 180, 70];
+      img.data[i * 4] = r; img.data[i * 4 + 1] = g; img.data[i * 4 + 2] = b; img.data[i * 4 + 3] = a;
+    }
+    ctx.putImageData(img, 0, 0);
+    const px = (x: number) => (x - net.x0) / net.cell, pz = (z: number) => (z - net.z0) / net.cell;
+    ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.lineCap = "round";
+    for (const d of net.assumed) { ctx.beginPath(); ctx.moveTo(px(d.a[0]), pz(d.a[1])); ctx.lineTo(px(d.b[0]), pz(d.b[1])); ctx.stroke(); }
+    ctx.fillStyle = "#ff4f62";
+    const s = this.u(v.floor);
+    for (const id of net.unreachable) {
+      const r = this.roomById.get(id); if (!r) continue;
+      const [x, y] = interiorPoint(r.poly as Pt[]);
+      ctx.beginPath(); ctx.arc(px(x * s), pz(y * s), Math.max(4, 0.8 / net.cell), 0, Math.PI * 2); ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace; tex.magFilter = THREE.NearestFilter;
+    const W = net.w * net.cell, H = net.h * net.cell;
+    const geo = new THREE.PlaneGeometry(W, H); geo.rotateX(-Math.PI / 2);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+    mesh.position.set(net.x0 + W / 2, 0.07, net.z0 + H / 2);
+    mesh.renderOrder = 6;
+    v.group.add(mesh);
+    this.navOverlay = { floorId: net.floorId, mesh };
   }
 
   /* ───────────── Adding devices and dropping them on the plan (wave 7) ───────────── */

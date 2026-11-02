@@ -19,6 +19,13 @@ Migrations `0016`–`0017`. Update with `git pull` and `npm run demo`; your data
 - **Update drawings in place**: Facilities › (hospital) › Update drawings, or `npm run cad:update -- <file> [--apply]`.
   Revised drawings are matched by floor level and room code and checked on a review screen before anything changes.
   Equipment, history and lifts are kept, and rooms that still hold equipment are never removed.
+- **Walking routes (step 7a)**: routes follow corridors and doors on a walkable network built from each floor's
+  wall lines. Rooms cut off in the drawing get assumed doors, which are listed, and sterile rooms are closed to
+  through-traffic. Between floors, each journey uses only the lifts it may (beds by bed lifts) or stairs on foot,
+  with time by pace, lift wait and storeys. On La Plaza 97.7 % of rooms are on the network. The 3D view has a Routes
+  panel: a walking-network layer with coverage per floor, and an early look at the trauma route (ambulance → Resus →
+  CT → ICU by bed, distances and times per leg). "Nearest working device" now ranks by real walking time and draws
+  the route.
 - Demo restarts no longer crash on the work-order seed.
 
 ## Release 3.0 — 1 Nov 2026

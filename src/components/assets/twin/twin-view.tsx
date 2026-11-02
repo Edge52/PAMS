@@ -16,6 +16,8 @@ import { PLAN_BANDS, planBand, spreadGhosts } from "@/lib/assets/plan-installed"
 import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server";
 import { bucketOf, colorFor, LAYER_INFO, LAYERS, legendFor, NEUTRAL, roomValues, type LayerId, type LiveMetrics, type Scope } from "./layers";
 import { RenderPanel } from "./render/render-panel";
+import { RouteService, routeSpots } from "./nav/service";
+import { formatDuration, type Route } from "./nav/route";
 
 const LIVE_EVERY_MS = 60_000;
 
@@ -78,7 +80,15 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [plan, setPlan] = useState<PlanPayload | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [openDept, setOpenDept] = useState<number | null>(null);
-  const [nearest, setNearest] = useState<{ fromRoomId: number; type: string; results: Ranked[] } | null>(null);
+  const [nearest, setNearest] = useState<{ fromRoomId: number; type: string; results: (Ranked & { route?: Route | null })[]; routed?: boolean } | null>(null);
+  // Wave 7a: walking routes (networks built from each floor's drawing on first use).
+  const routes = useMemo(() => new RouteService(data, async (id) => {
+    const res = await fetch(`/assets/3d/geometry/${id}`);
+    return res.ok ? ((await res.json()) as FloorGeometry) : null;
+  }), [data]);
+  const [navOn, setNavOn] = useState(false);
+  const [navInfo, setNavInfo] = useState<string | null>(null);
+  const [trauma, setTrauma] = useState<{ busy?: boolean; error?: string; steps?: { from: string; to: string; route: Route }[]; total?: Route } | null>(null);
   const [routeTo, setRouteTo] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [cats, setCats] = useState<Set<string>>(new Set());
@@ -443,6 +453,39 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
   }, [ready]);
 
+  /* ── Wave 7a: walking network layer and the early-look trauma route ── */
+  useEffect(() => {
+    const s = sceneRef.current; if (!s || !ready) return;
+    if (!navOn || floorId == null) { s.setNavOverlay(null); return; }
+    let live = true;
+    void routes.network(floorId).then(async (net) => {
+      if (!live || !net) return;
+      s.setNavOverlay(net);
+      const c = await routes.coverage(floorId);
+      if (live && c) setNavInfo(`${Math.round(c.share * 100)} % of rooms on the walking network (${c.reached} of ${c.counted}) · ${c.assumed} assumed door${c.assumed === 1 ? "" : "s"} · ${c.unreachable} unreachable`);
+    });
+    return () => { live = false; };
+  }, [navOn, floorId, ready, routes]);
+  async function showTrauma() {
+    const s = sceneRef.current; if (!s) return;
+    setTrauma({ busy: true });
+    const level = (id: number) => floorById.get(id)?.level ?? 0;
+    const find = (re: RegExp, pref?: (r: (typeof data.rooms)[number]) => boolean) =>
+      [...data.rooms].filter((r) => re.test(r.name)).sort((a, b) => Number(pref ? !pref(a) : 0) - Number(pref ? !pref(b) : 0) || level(a.floorId) - level(b.floorId))[0];
+    const amb = find(/AMBULANCE/i) ?? find(/EMERGENCY|\bER\b/i);
+    const resus = find(/RESUS|TRAUMA/i, (r) => r.floorId === amb?.floorId);
+    const ct = find(/^CT\b/i, (r) => r.floorId === amb?.floorId);
+    const icu = find(/^(ALL )?ICU\b/i, (r) => level(r.floorId) > 0);
+    const stops = [amb, resus, ct, icu];
+    if (stops.some((r) => !r)) { setTrauma({ error: "This hospital's drawings don't have an ambulance entrance, resus room, CT room and ICU to route between." }); return; }
+    const res = await routes.through(stops.map((r) => r!.id), "bed");
+    if (!res) { setTrauma({ error: "No bed route found: check that a bed lift serves the ICU floor (Facilities › Lifts)." }); return; }
+    setTrauma({ steps: res.legs.map((rt, i) => ({ from: stops[i]!.name, to: stops[i + 1]!.name, route: rt })), total: res.route });
+    if (floorId != null) { setFloorId(null); s.isolateFloor(null, false); }
+    s.showRoute(routeSpots(res.route)); s.frameRoute();
+  }
+  function clearTrauma() { setTrauma(null); sceneRef.current?.showRoute(null); }
+
   async function clearSpot(assetId: number) {
     const fd = new FormData(); fd.set("assetId", String(assetId)); fd.set("posX", "0"); fd.set("posY", "0"); fd.set("clear", "1");
     const res = await twinPlaceAction(null, fd);
@@ -471,11 +514,28 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     if (!s || !from || !type) { setNearest(null); return; }
     const candidates = placed.filter((a) => a.deviceType === type && AVAILABLE.has(statusOf(a.id, a.status)))
       .map((a) => ({ id: a.id, ...s.spotOfAsset(a.id)! })).filter((c) => c.floorId != null);
-    setNearest({ fromRoomId, type, results: rankNearest(from, candidates, s.coreSpots()).slice(0, 6) });
+    const rough = rankNearest(from, candidates, s.coreSpots()).slice(0, 8);
+    setNearest({ fromRoomId, type, results: rough.slice(0, 6) });
     setRouteTo(null); s.showRoute(null);
+    // Then the real walking routes (corridors, doors, lifts that stop there), re-ranked by time.
+    void (async () => {
+      const start = await routes.roomPlace(fromRoomId); if (!start) return;
+      const withRoutes = await Promise.all(rough.map(async (r) => {
+        const sp = s.spotOfAsset(r.id); const a = assetById.get(r.id);
+        const rt = sp ? await routes.route(start, { floorId: sp.floorId, x: sp.x, z: sp.z, roomId: a?.roomId ?? null }, "foot") : null;
+        return { ...r, route: rt, distance: rt ? rt.metres : r.distance };
+      }));
+      withRoutes.sort((p, q) => (p.route && !p.route.estimated ? p.route.seconds : 1e9 + p.distance) - (q.route && !q.route.estimated ? q.route.seconds : 1e9 + q.distance));
+      setNearest((n) => (n && n.fromRoomId === fromRoomId && n.type === type ? { ...n, results: withRoutes.slice(0, 6), routed: true } : n));
+    })();
   }
-  function showRouteTo(r: Ranked) {
+  function showRouteTo(r: Ranked & { route?: Route | null }) {
     const s = sceneRef.current; if (!s || !nearest) return;
+    if (r.route) {
+      if (r.route.floorChanges && floorId != null) { setFloorId(null); s.isolateFloor(null, false); }
+      s.showRoute(routeSpots(r.route)); s.frameRoute(); setRouteTo(r.id);
+      return;
+    }
     const from = s.spotOfRoom(nearest.fromRoomId), to = s.spotOfAsset(r.id);
     if (!from || !to) return;
     const path = r.via ? [from, r.via, { ...r.via, ...(r.exit ?? {}), floorId: to.floorId }, to] : [from, to];
@@ -746,6 +806,36 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       {shareLink && <input readOnly value={shareLink} onFocus={(e) => e.currentTarget.select()} aria-label="Link to this view" className="twin-input mt-2 text-xs" />}
     </div>
   );
+  const routesPanel = (
+    <div className="space-y-2 text-sm">
+      <label className="flex items-start gap-2"><input type="checkbox" checked={navOn} onChange={(e) => { setNavOn(e.target.checked); setNavInfo(null); }} className="mt-0.5 accent-[#2fd3ff]" />
+        <span>Walking network<span className="block text-xs text-[#8fb6cc]">On the floor shown: walkable area (green), rooms closed to through-traffic (amber), assumed doors (yellow), unreachable rooms (red).</span></span>
+      </label>
+      {navOn && floorId == null && <p className="text-xs text-[#ffb534]">Choose a floor to see its network.</p>}
+      {navOn && floorId != null && <p className="text-xs text-[#b9ffe0]">{navInfo ?? "Building the network…"}</p>}
+      <div className="border-t border-[#123a55] pt-2">
+        <p className="text-xs text-[#8fb6cc]">Early look at patient pathways: a trauma patient by bed from the ambulance entrance to Resus, CT and the ICU.</p>
+        <div className="mt-1.5 flex gap-1.5">
+          <button type="button" onClick={showTrauma} disabled={trauma?.busy || !ready} className="twin-act">{trauma?.busy ? "Routing…" : "Show trauma route"}</button>
+          {trauma && !trauma.busy && <button type="button" onClick={clearTrauma} className="twin-act">Clear</button>}
+        </div>
+        {trauma?.error && <p role="alert" className="mt-1.5 text-xs text-[#ff8a96]">{trauma.error}</p>}
+        {trauma?.steps && trauma.total && (
+          <div className="mt-2 space-y-1">
+            {trauma.steps.map((st, i) => (
+              <div key={i} className="rounded border border-[#123a55] px-2 py-1">
+                <p className="text-[13px] text-white">{st.from} → {st.to}</p>
+                <p className="text-[11px] text-[#8fb6cc]">{Math.round(st.route.metres)} m · {formatDuration(st.route.seconds)}
+                  {st.route.legs.filter((l) => l.kind !== "walk").map((l) => ` · ${l.via}`).join("")}{st.route.estimated ? " · estimated (part not on the network)" : ""}</p>
+              </div>
+            ))}
+            <p className="text-[13px] font-semibold text-[#b9ffe0]">Total {Math.round(trauma.total.metres)} m · {formatDuration(trauma.total.seconds)} by bed · {trauma.total.liftTrips} lift trip{trauma.total.liftTrips === 1 ? "" : "s"}</p>
+            <p className="text-[11px] text-[#8fb6cc]">Bed pace 0.6 m/s; lift waits are assumptions until measured. Bed journeys use bed lifts only.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
   const placeFloors = data.floors.filter((f) => data.rooms.some((r) => r.floorId === f.id)).sort((a, b) => a.elevation - b.elevation);
   const placeList = (
     <div className="space-y-2">
@@ -882,8 +972,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                       <li key={r.id}>
                         <button type="button" onClick={() => showRouteTo(r)} aria-pressed={routeTo === r.id}
                           className={`w-full rounded px-1.5 py-1 text-left text-[13px] hover:bg-[#0c2a40] ${routeTo === r.id ? "bg-[#0c2a40] ring-1 ring-[#2fd3ff]" : ""}`}>
-                          <span className="flex justify-between gap-2"><span className="truncate text-white">{room?.name ?? "Room"}</span><span className="shrink-0 text-[#5fd6ff]">≈ {Math.round(r.distance)} m</span></span>
-                          <span className="block text-[11px] text-[#8fb6cc]">{a.tag} · {r.sameFloor ? "same floor" : `${r.floors} floor${r.floors === 1 ? "" : "s"} ${(floorById.get(room!.floorId)?.elevation ?? 0) > (floorById.get(selRoom.floorId)?.elevation ?? 0) ? "up" : "down"}${r.via ? ` by the ${r.via.kind === "lift" ? (r.via.name ?? "lift") : "stairs"}` : ""}`}</span>
+                          <span className="flex justify-between gap-2"><span className="truncate text-white">{room?.name ?? "Room"}</span><span className="shrink-0 text-[#5fd6ff]">{r.route && !r.route.estimated ? `${Math.round(r.route.metres)} m · ${formatDuration(r.route.seconds)}` : `≈ ${Math.round(r.distance)} m`}</span></span>
+                          <span className="block text-[11px] text-[#8fb6cc]">{a.tag} · {r.sameFloor ? "same floor" : `${r.floors} floor${r.floors === 1 ? "" : "s"} ${(floorById.get(room!.floorId)?.elevation ?? 0) > (floorById.get(selRoom.floorId)?.elevation ?? 0) ? "up" : "down"}${r.route ? (r.route.legs.find((l) => l.kind !== "walk")?.via ? ` by ${r.route.legs.find((l) => l.kind !== "walk")!.via}` : "") : r.via ? ` by the ${r.via.kind === "lift" ? (r.via.name ?? "lift") : "stairs"}` : ""}`}</span>
                         </button>
                       </li>
                     );
@@ -968,6 +1058,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             )}
             <HudPanel title="View" summary={`${style === "dark" ? "Digital twin" : "Architectural"} · ${explode.toFixed(1)}×`} open={panels.isOpen("view")} onToggle={() => panels.toggle("view")}>
               {viewControls}
+            </HudPanel>
+            <HudPanel title="Routes" summary={navOn ? "Network on" : trauma?.total ? "Trauma route" : undefined} open={panels.isOpen("routes")} onToggle={() => panels.toggle("routes")} bodyClassName="max-h-[45vh] overflow-y-auto">
+              {routesPanel}
             </HudPanel>
             <HudPanel title="Status" summary={statuses.size ? `${statuses.size} of ${visibleStatuses.length}` : "All"} open={panels.isOpen("status")} onToggle={() => panels.toggle("status")}>
               {statusList}
