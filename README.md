@@ -147,6 +147,8 @@ Added in wave 7 (branch `wave-7`):
   the drawings' lift lobbies and marked *assumed* until confirmed.
 - **Walking routes**: routes follow corridors and doors on a network built from each floor's wall lines, with lifts
   chosen by journey (beds by bed lifts) and times by pace. *Nearest working device* ranks by real walking time.
+  Openings and closures can be fixed by hand, and rooms carry an access zone (sterile and isolation rooms are closed
+  to through-traffic).
 - **Patient pathways** (Planning › Patient pathways): steps and arrows with shares, five starters, checks while you
   edit, versions, export and import, and a canvas to arrange and draw them. In 3D: each pathway on its real route,
   animated patients, a card with distance and time per patient, live **equipment readiness**, lift load, corridor
@@ -160,7 +162,9 @@ Added in wave 7 (branch `wave-7`):
 - **History**: replay the last 7–365 days of faults, repairs, moves and installations with a time slider.
 - **Walk mode**: first person on a floor, kept to the walkable space (keys, drag to look, or an on-screen stick).
 - **Keyboard shortcuts**: F find, 1–9 floors, 0 whole building, L look, R reset, W walk, Esc clear, ? help.
-- **Presentation renders**: furnished dollhouse images of a floor or department at up to 8K, and a floor book.
+- **Presentation renders**: furnished dollhouse images of a floor or department at up to 8K, and a floor book, with
+  installed and/or planned (BOQ) equipment, the hospital's logo, settings saved with a view, and room kits editable
+  under Planning › Room kits.
 - **Update drawings in place** (Facilities › Update drawings, or `npm run cad:update`): revised DWG exports are
   matched by floor and room code and reviewed before anything changes; equipment and history are kept.
 
@@ -208,7 +212,7 @@ see [docs/reference-figures.md](docs/reference-figures.md) and the review sheet 
 ## Updating an existing installation
 
 Pull the new code, run `npm install`, then `npm run db:migrate` (adds the new tables and columns; your data is kept).
-`npm run demo` does this by itself and adds any new demo data. Migrations so far: up to `0020_wave7_twin_tours` (wave 7: `0016`–`0020`).
+`npm run demo` does this by itself and adds any new demo data. Migrations so far: up to `0023_wave7_room_kits` (wave 7: `0016`–`0023`).
 
 For a real installation, load the hospital's floors and rooms from its CAD import **without** demo equipment with
 `npm run cad:load` (on the Docker server: `docker compose exec app npx tsx scripts/load-buildings.ts`). The going-live

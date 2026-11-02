@@ -31,6 +31,20 @@ describe("walking network", () => {
     expect(leg.metres).toBeGreaterThan(Math.hypot(16, 6) + 0.5);
     expect(leg.points.some(([x, z]) => Math.abs(z - 5) < 1.2 && x > 8 && x < 16)).toBe(true);
   });
+  it("applies manual fixes: an opening carved through a wall, a gap closed", () => {
+    // Close B's door: B now needs an assumed door; open a gap at x 4 instead and B is reached through it, not assumed.
+    const closed = buildNetwork(1, floorSegs(), rooms, { fixes: [{ kind: "CLOSE", a: [14, 6], b: [15, 6] }] });
+    expect(closed.assumed.map((a) => a.roomId)).toEqual([3]);
+    const opened = buildNetwork(1, floorSegs(false), rooms, { fixes: [{ kind: "OPEN", a: [4, 5.6], b: [4, 6.4] }] });
+    expect(opened.assumed).toEqual([]);
+    expect(opened.rooms.get(3)?.reached).toBe(true);
+  });
+  it("closes rooms by their zone when one is set", () => {
+    const zoned = buildNetwork(1, floorSegs(), rooms.map((r) => (r.id === 1 ? { ...r, zone: "ISOLATION" } : r)));
+    expect(zoned.zone.some((z) => z === 1)).toBe(true);
+    const open = buildNetwork(1, floorSegs(), rooms.map((r) => (r.id === 1 ? { ...r, name: "OPERATING ROOM", zone: "STAFF" } : r)));
+    expect(open.zone.some((z) => z === 1)).toBe(false); // a zone set by hand wins over the name
+  });
   it("gives a room the walls cut off an assumed door, and reports it", () => {
     const n = buildNetwork(1, floorSegs(false), rooms);
     expect(n.assumed.map((a) => a.roomId)).toEqual([3]);

@@ -3,19 +3,19 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
+import { addRouteFixAction, deleteRouteFixAction, setRoomZoneAction, addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
 import { formatDims } from "@/lib/assets/dimensions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { DropResult, PickResult, TwinScene, TwinStyle } from "./scene";
-import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinAsset, type TwinData } from "./types";
+import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinAsset, type TwinData, type TwinFix, type TwinRoom } from "./types";
 import { CORE_LABELS, coreKind, deviceKind, interiorPoint, polygonArea, type Pt } from "./geometry";
 import { AVAILABLE, rankNearest, type Ranked } from "./nearest";
 import { PLAN_BANDS, planBand, spreadGhosts } from "@/lib/assets/plan-installed";
 import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server";
 import { bucketOf, colorFor, LAYER_INFO, LAYERS, legendFor, NEUTRAL, roomValues, type LayerId, type LiveMetrics, type Scope } from "./layers";
-import { RenderPanel } from "./render/render-panel";
+import { RenderPanel, type RenderSettings } from "./render/render-panel";
 import { RouteService, routeSpots } from "./nav/service";
 import { formatDuration, type Route } from "./nav/route";
 import { capPauses, FLOW_COLORS, heatLegsOf, journeyOf, liftTripsOf, pathwayCard, samplePath, stepRoom, trackOf, tubeRadius, visits, type TwinFlow } from "./pathways";
@@ -74,6 +74,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [error, setError] = useState<string | null>(null);
   const [floorId, setFloorId] = useState<number | null>(null);
   const [renderOpen, setRenderOpen] = useState(false);
+  const [renderInit, setRenderInit] = useState<RenderSettings | null>(null);
   const [explode, setExplode] = useState(1.6);
   const [bloom, setBloom] = useState(true);
   // The look is a per-viewer preference, remembered in this browser only (the server renders the default).
@@ -99,6 +100,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   }), [data]);
   const [navOn, setNavOn] = useState(false);
   const [navInfo, setNavInfo] = useState<string | null>(null);
+  // Wave 7a: manual fixes to the walking network, rooms it can't reach, and access zones.
+  const [navVersion, setNavVersion] = useState(0);
+  const [fixes, setFixes] = useState<TwinFix[]>(data.fixes ?? []);
+  const [fixMode, setFixMode] = useState<{ kind: "OPEN" | "CLOSE"; a?: { x: number; y: number } } | null>(null);
+  const [unreachable, setUnreachable] = useState<number[]>([]);
+  const [zones, setZones] = useState<Map<number, TwinRoom["zone"]>>(new Map());
   const [trauma, setTrauma] = useState<{ busy?: boolean; error?: string; steps?: { from: string; to: string; route: Route }[]; total?: Route } | null>(null);
   const [routeTo, setRouteTo] = useState<number | null>(null);
   // Wave 7c: published pathways shown in the building, their routes (per arrow) and the animated patients.
@@ -512,9 +519,41 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       s.setNavOverlay(net);
       const c = await routes.coverage(floorId);
       if (live && c) setNavInfo(`${Math.round(c.share * 100)} % of rooms on the walking network (${c.reached} of ${c.counted}) · ${c.assumed} assumed door${c.assumed === 1 ? "" : "s"} · ${c.unreachable} unreachable`);
+      if (live) setUnreachable(net.unreachable);
     });
     return () => { live = false; };
-  }, [navOn, floorId, ready, routes]);
+  }, [navOn, floorId, ready, routes, navVersion]);
+  /** Pick the two ends of a fix on the floor shown, then save it and rebuild the floor's network. */
+  function startFix(kind: "OPEN" | "CLOSE") {
+    const s = sceneRef.current; if (!s || floorId == null) return;
+    setFixMode({ kind });
+    const pickEnd = (a?: { x: number; y: number }) => s.pickPoint((p) => {
+      if (!p) { setFixMode(null); return; }
+      if (!a) { setFixMode({ kind, a: { x: p.x, y: p.y } }); pickEnd({ x: p.x, y: p.y }); return; }
+      setFixMode(null);
+      void saveFix(kind, p.floorId, a, { x: p.x, y: p.y });
+    });
+    pickEnd();
+  }
+  async function saveFix(kind: "OPEN" | "CLOSE", fl: number, a: { x: number; y: number }, b: { x: number; y: number }) {
+    const fd = new FormData();
+    fd.set("floorId", String(fl)); fd.set("kind", kind); fd.set("x1", String(a.x)); fd.set("y1", String(a.y)); fd.set("x2", String(b.x)); fd.set("y2", String(b.y)); fd.set("note", "");
+    const res = await addRouteFixAction(null, fd);
+    if (res?.fix) { const next = [...fixes, res.fix]; setFixes(next); routes.setFixes(fl, next.filter((f) => f.floorId === fl)); setFlowRoutes(new Map()); setNavVersion((v) => v + 1); }
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
+  async function removeFix(f: TwinFix) {
+    const fd = new FormData(); fd.set("fixId", String(f.id));
+    const res = await deleteRouteFixAction(null, fd);
+    if (res?.deletedId) { const next = fixes.filter((x) => x.id !== f.id); setFixes(next); routes.setFixes(f.floorId, next.filter((x) => x.floorId === f.floorId)); setFlowRoutes(new Map()); setNavVersion((v) => v + 1); }
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
+  async function setZone(roomId: number, zone: string) {
+    const fd = new FormData(); fd.set("roomId", String(roomId)); fd.set("zone", zone);
+    const res = await setRoomZoneAction(null, fd);
+    if (res?.roomId) { setZones((m) => new Map(m).set(res.roomId!, res.zone ?? null)); routes.setZone(res.roomId, res.zone ?? null); setFlowRoutes(new Map()); setNavVersion((v) => v + 1); }
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
   async function showTrauma() {
     const s = sceneRef.current; if (!s) return;
     setTrauma({ busy: true });
@@ -826,7 +865,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         else if (e.key === " ") { e.preventDefault(); setTourPlay((p) => (p ? { ...p, paused: !p.paused } : p)); }
         return;
       }
-      const sc = shortcutFor(e, dropping != null || placingId != null || walking || pickingSpot);
+      if (fixMode && e.key === "Escape") { sceneRef.current?.cancelPickPoint(); setFixMode(null); return; }
+      const sc = shortcutFor(e, dropping != null || placingId != null || walking || pickingSpot || fixMode != null);
       if (!sc) return;
       e.preventDefault();
       if (sc.kind === "find") { if (mode === "phone") setSheetTab("find"); else if (!panels.isOpen("find")) panels.toggle("find"); setTimeout(() => document.getElementById("twin-search")?.focus(), 50); }
@@ -1281,6 +1321,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                   <span className="block truncate text-white">{v.name}</span>
                   <span className="block truncate text-[11px] text-[#8fb6cc]">{v.shared ? `Shared${v.by && !v.mine ? ` by ${v.by}` : ""}` : "Only you"}{st ? ` · ${describeView(st, st.floor != null ? floorById.get(st.floor)?.name ?? null : null, LAYER_INFO[st.layer].label)}` : ""}</span>
                 </button>
+                {v.render && <button type="button" onClick={() => { if (st) applyView(st); setRenderInit(v.render as RenderSettings); setRenderOpen(true); }} className="twin-act px-1.5! py-0.5! text-xs" title="Open the presentation render with this view's settings">Render</button>}
                 {(v.mine || canManageViews) && (
                   <form action={viewAction}>
                     <input type="hidden" name="op" value="delete" /><input type="hidden" name="viewId" value={v.id} />
@@ -1316,6 +1357,34 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       </label>
       {navOn && floorId == null && <p className="text-xs text-[#ffb534]">Choose a floor to see its network.</p>}
       {navOn && floorId != null && <p className="text-xs text-[#b9ffe0]">{navInfo ?? "Building the network…"}</p>}
+      {navOn && floorId != null && unreachable.length > 0 && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-[#ffb534]">Rooms routes can&apos;t reach ({unreachable.length})</summary>
+          <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto">{unreachable.map((id) => <li key={id}><button type="button" onClick={() => focus({ kind: "room", id })} className="text-left text-[#d6f3ff] hover:underline">{roomById.get(id)?.name ?? `Room ${id}`}</button></li>)}</ul>
+          {data.can.editFacility && <p className="mt-1 text-[11px] text-[#8fb6cc]">Open a gap into the room where its door is (Add an opening).</p>}
+        </details>
+      )}
+      {navOn && floorId != null && data.can.editFacility && (
+        <div className="space-y-1.5 border-t border-[#123a55] pt-2">
+          <p className="text-xs text-[#8fb6cc]">Fix the network where the drawing is wrong. Fixes are kept by position, so they survive rebuilding and drawing updates.</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => startFix("OPEN")} disabled={fixMode != null} className="twin-act">Add an opening</button>
+            <button type="button" onClick={() => startFix("CLOSE")} disabled={fixMode != null} className="twin-act">Close a gap</button>
+            {fixMode && <button type="button" onClick={() => { sceneRef.current?.cancelPickPoint(); setFixMode(null); }} className="twin-act">Cancel</button>}
+          </div>
+          {fixMode && <p className="text-xs text-[#ffc46b]">{fixMode.a ? "Now click the other end." : fixMode.kind === "OPEN" ? "Click one side of the wall where the door is…" : "Click one end of the gap to close…"}</p>}
+          {fixes.filter((f) => f.floorId === floorId).length > 0 && (
+            <ul className="space-y-0.5 text-xs">
+              {fixes.filter((f) => f.floorId === floorId).map((f) => (
+                <li key={f.id} className="flex items-center justify-between gap-2">
+                  <span className="text-[#d6f3ff]">{f.kind === "OPEN" ? "Opening" : "Closed gap"} · {Math.round(Math.hypot(f.x2 - f.x1, f.y2 - f.y1) / (floorById.get(f.floorId)?.unitsPerMetre || 10) * 10) / 10} m{f.by ? ` · ${f.by}` : ""}</span>
+                  <button type="button" onClick={() => void removeFix(f)} className="text-[#8fb6cc] hover:text-[#ff8a96]">Remove</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="border-t border-[#123a55] pt-2">
         <p className="text-xs text-[#8fb6cc]">Early look at patient pathways: a trauma patient by bed from the ambulance entrance to Resus, CT and the ICU.</p>
         <div className="mt-1.5 flex gap-1.5">
@@ -1654,6 +1723,22 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             )}
           </div>
           {notesBlock}
+          {!selAsset && (() => {
+            const z = zones.has(selRoom.id) ? zones.get(selRoom.id) : selRoom.zone ?? null;
+            return (
+              <div className="mt-3 border-t border-[#123a55] pt-2 text-[13px]">
+                <label className="flex items-center gap-2"><span className="font-semibold text-[#5fd6ff]">Access zone</span>
+                  {data.can.editFacility ? (
+                    <select value={z ?? ""} onChange={(e) => void setZone(selRoom.id, e.target.value)} className="twin-input w-auto! py-0.5">
+                      <option value="">From the name</option>
+                      {(["PUBLIC", "PATIENT", "STAFF", "STERILE", "ISOLATION"] as const).map((k) => <option key={k} value={k}>{k.charAt(0) + k.slice(1).toLowerCase()}</option>)}
+                    </select>
+                  ) : <span className="text-white">{z ? z.charAt(0) + z.slice(1).toLowerCase() : "From the name"}</span>}
+                </label>
+                <p className="mt-0.5 text-[11px] text-[#8fb6cc]">Sterile and isolation rooms are closed to through-traffic: routes only start or end in them.</p>
+              </div>
+            );
+          })()}
           <div className="mt-2 flex flex-wrap gap-3">
             <Link href={`/assets?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Room in the asset register</Link>
             {data.can.addAsset && <Link href={`/assets/new?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Add a device here</Link>}
@@ -1907,7 +1992,16 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           </div>
         </div>
       )}
-      {renderOpen && <RenderPanel data={{ ...data, assets: assetList }} floorId={floorId} onClose={() => setRenderOpen(false)} />}
+      {renderOpen && <RenderPanel data={{ ...data, assets: assetList }} floorId={floorId} plans={plans} initial={renderInit}
+        onClose={() => { setRenderOpen(false); setRenderInit(null); }}
+        onSaveView={async (name, shared, settings) => {
+          const v = currentView(); if (!v) return "The model isn't ready.";
+          const fd = new FormData();
+          fd.set("facilityId", String(data.facility.id)); fd.set("name", name); fd.set("state", encodeView(v)); fd.set("shared", shared ? "on" : ""); fd.set("render", JSON.stringify(settings));
+          const res = await saveViewAction(null, fd);
+          if (res?.view) setViews((l) => [...l, res.view!].sort((a, b) => a.name.localeCompare(b.name)));
+          return res?.error ?? null;
+        }} />}
     </div>
   );
 }

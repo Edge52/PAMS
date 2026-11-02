@@ -66,3 +66,25 @@ describe("placeKit", () => {
     expect(placeKit(rect(1, 1), roomLook("ICU (1)"))).toEqual([]);
   });
 });
+
+describe("editable kits", () => {
+  it("reads and writes kit lines as text", async () => {
+    const { formatItems, parseItems } = await import("./kits");
+    const { items, errors } = parseItems("bed per 11 m2 max 4 with bedside, monitor\ndesk 2\nchair");
+    expect(errors).toEqual([]);
+    expect(items).toEqual([{ model: "bed", perM2: 11, max: 4, with: ["bedside", "monitor"] }, { model: "desk", n: 2 }, { model: "chair", n: 1 }]);
+    expect(parseItems(formatItems(items)).items).toEqual(items);
+    expect(parseItems("sofa bed 3").errors[0]).toMatch(/Line 1/);
+    expect(parseItems("throne 1").errors[0]).toMatch(/isn't a model/);
+  });
+  it("uses a given rule set: name patterns first, then room types", async () => {
+    const { roomLook } = await import("./kits");
+    const rules = [
+      { label: "Wards", match: "ward", roomType: null, finish: "wood" as const, items: [{ model: "bed" as const, n: 2 }] },
+      { label: "Offices", match: null, roomType: "OFFICE", finish: "wood" as const, items: [{ model: "desk" as const, n: 1 }] },
+    ];
+    expect(roomLook("Ward 3", "OTHER", rules).items[0].model).toBe("bed");
+    expect(roomLook("Room 12", "OFFICE", rules).items[0].model).toBe("desk");
+    expect(roomLook("Room 12", "LAB", rules).items).toEqual([]);
+  });
+});

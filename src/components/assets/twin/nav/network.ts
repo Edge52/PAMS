@@ -14,7 +14,13 @@
 import { interiorPoint, pointInPolygon, polygonArea, type Pt } from "../geometry";
 import { rasterise } from "../render/walls";
 
-export type NavRoom = { id: number; name: string; poly: Pt[] };
+/** A room for routing; `zone` is its access zone when set (else read from its name). */
+export type NavRoom = { id: number; name: string; poly: Pt[]; zone?: string | null };
+/** A manual fix (metres): open a gap the drawing closes (a door it doesn't show), or close one it leaves open. */
+export type RouteFix = { kind: "OPEN" | "CLOSE"; a: Pt; b: Pt };
+/** Zones closed to through-traffic: a route may only start or end in them. */
+export const CLOSED_ZONES = new Set(["STERILE", "ISOLATION"]);
+export const closedToThrough = (r: NavRoom) => (r.zone ? CLOSED_ZONES.has(r.zone) : STERILE.test(r.name));
 export type Network = {
   floorId: number;
   w: number; h: number; cell: number; x0: number; z0: number;
@@ -38,7 +44,7 @@ export const STERILE = /OPERATING|THEATRE|C-SECTION|\bOR\b|SCRUB|STERILE|CSSD|CL
 /** Rooms that count for coverage: everything except shafts, risers and electrical/data rooms. */
 export const countsForCoverage = (name: string) => !TECH.test(name);
 
-export function buildNetwork(floorId: number, segs: number[], rooms: NavRoom[], opts: { cell?: number; doorMaxM?: number } = {}): Network {
+export function buildNetwork(floorId: number, segs: number[], rooms: NavRoom[], opts: { cell?: number; doorMaxM?: number; fixes?: RouteFix[] } = {}): Network {
   const cell = opts.cell ?? 0.25, doorMax = opts.doorMaxM ?? 1.2;
   // Bounds from rooms and walls.
   let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
@@ -61,6 +67,18 @@ export function buildNetwork(floorId: number, segs: number[], rooms: NavRoom[], 
   for (const r of rooms) fillPolygon(r.poly, w, h, x0, z0, cell, (i) => { inside[i] = 1; });
   inside = grow(inside, w, h, Math.max(1, Math.round(1 / cell)));
   for (let i = 0; i < free.length; i++) if (!inside[i]) free[i] = 0;
+  // Manual fixes, by position, so they survive rebuilding and re-imports: an opening ~0.9 m wide, a closure ~0.5 m.
+  for (const f of opts.fixes ?? []) {
+    const half = f.kind === "OPEN" ? Math.max(1, Math.round(0.45 / cell)) : Math.max(1, Math.round(0.25 / cell));
+    const n = Math.max(1, Math.ceil(Math.hypot(f.b[0] - f.a[0], f.b[1] - f.a[1]) / (cell / 2)));
+    for (let k = 0; k <= n; k++) {
+      const cx = Math.floor((f.a[0] + ((f.b[0] - f.a[0]) * k) / n - x0) / cell), cz = Math.floor((f.a[1] + ((f.b[1] - f.a[1]) * k) / n - z0) / cell);
+      for (let dz = -half; dz <= half; dz++) for (let dx = -half; dx <= half; dx++) {
+        const x = cx + dx, z = cz + dz; if (x < 0 || z < 0 || x >= w || z >= h) continue;
+        free[z * w + x] = f.kind === "OPEN" ? 1 : 0;
+      }
+    }
+  }
 
   const toCell = (x: number, z: number) => {
     const cx = Math.floor((x - x0) / cell), cz = Math.floor((z - z0) / cell);
@@ -148,7 +166,7 @@ export function buildNetwork(floorId: number, segs: number[], rooms: NavRoom[], 
 
   // Sterile zones.
   const zone = new Int32Array(w * h);
-  for (const r of rooms) if (STERILE.test(r.name)) fillPolygon(r.poly, w, h, x0, z0, cell, (i) => { zone[i] = r.id; });
+  for (const r of rooms) if (closedToThrough(r)) fillPolygon(r.poly, w, h, x0, z0, cell, (i) => { zone[i] = r.id; });
 
   const out = new Map<number, { x: number; z: number; cell: number; reached: boolean; name: string }>();
   const unreachable: number[] = [];

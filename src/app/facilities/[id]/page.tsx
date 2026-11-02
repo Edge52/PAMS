@@ -150,6 +150,11 @@ async function Overview({ fac, edit, canEdit, canAddAssets }: { fac: typeof faci
               <Field label="City"><Input name="city" defaultValue={fac.city ?? ""} /></Field>
               <Field label="Address"><Input name="address" defaultValue={fac.address ?? ""} /></Field>
               <Field label="Total beds"><Input name="totalBeds" type="number" min={0} defaultValue={fac.totalBeds} /></Field>
+              <Field label="Logo" hint="PNG, JPEG or WebP under 300 KB; on presentation renders and floor books">
+                <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" className="block text-sm" />
+                {fac.logo && <label className="mt-1 flex items-center gap-2 text-xs"><input type="checkbox" name="removeLogo" />Remove the current logo</label>}
+              </Field>
+              <Field label="Accent colour" hint="Title bars on renders and floor books"><Input name="brandColor" type="color" defaultValue={fac.brandColor ?? "#c62f2f"} className="h-9 w-20 p-1" /></Field>
             </FormGrid>
             <SubmitRow><Button>Save details</Button><LinkButton href={`/facilities/${fac.id}`} variant="ghost">Cancel</LinkButton></SubmitRow>
           </ActionForm>
@@ -163,6 +168,8 @@ async function Overview({ fac, edit, canEdit, canAddAssets }: { fac: typeof faci
             { label: "City", value: fac.city },
             { label: "Address", value: fac.address },
             { label: "Total beds", value: formatNumber(fac.totalBeds) },
+            // eslint-disable-next-line @next/next/no-img-element -- a small data URL
+            { label: "Logo", value: fac.logo ? <img src={fac.logo} alt={`${fac.name} logo`} className="h-10 w-auto" /> : null },
           ]} />
         )}
       </Panel>

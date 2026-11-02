@@ -134,6 +134,10 @@ export const facilities = pgTable("facilities", {
   city: text("city"),
   address: text("address"),
   totalBeds: integer("total_beds").notNull().default(0),
+  /** Logo for renders and floor books (wave 7): a small PNG/JPEG/WebP as a data URL. */
+  logo: text("logo"),
+  /** Accent colour for renders and floor books (#rrggbb). */
+  brandColor: varchar("brand_color", { length: 7 }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -198,6 +202,9 @@ export const departments = pgTable("departments", {
   costCenter: varchar("cost_center", { length: 32 }),
 }, (t) => [uniqueIndex("departments_facility_code_uq").on(t.facilityId, t.code)]);
 
+/** Access zone of a room for walking routes (wave 7): sterile and isolation rooms are closed to through-traffic. */
+export const accessZone = pgEnum("access_zone", ["PUBLIC", "PATIENT", "STAFF", "STERILE", "ISOLATION"]);
+
 export const rooms = pgTable("rooms", {
   id: serial("id").primaryKey(),
   floorId: integer("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
@@ -213,6 +220,8 @@ export const rooms = pgTable("rooms", {
   h: real("h").notNull().default(80),
   /** Optional polygon [[x,y],...] overriding the rectangle. */
   polygon: jsonb("polygon").$type<[number, number][]>(),
+  /** Access zone for routes; null = read from the room's name (theatres, airlocks, isolation… are closed). */
+  zone: accessZone("zone"),
 }, (t) => [
   uniqueIndex("rooms_floor_code_uq").on(t.floorId, t.code),
   index("rooms_department_idx").on(t.departmentId),
@@ -869,11 +878,39 @@ export const twinViews = pgTable("twin_views", {
   name: text("name").notNull(),
   /** Encoded view (see src/components/assets/twin/view-state.ts). */
   state: text("state").notNull(),
+  /** Presentation render settings saved with the view (wave 7), so a render or floor book can be remade in one click. */
+  render: jsonb("render").$type<Record<string, unknown>>(),
   shared: boolean("shared").notNull().default(false),
   createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdByName: text("created_by_name"),
   createdAt: createdAt(),
 }, (t) => [index("twin_views_facility_idx").on(t.facilityId)]);
+
+/** Manual fixes to the walking network (wave 7, step 7a): open a gap the drawing closes, or close one it leaves open. Plan units. */
+export const routeFixKind = pgEnum("route_fix_kind", ["OPEN", "CLOSE"]);
+export const routeFixes = pgTable("route_fixes", {
+  id: serial("id").primaryKey(),
+  floorId: integer("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+  kind: routeFixKind("kind").notNull(),
+  x1: real("x1").notNull(), y1: real("y1").notNull(), x2: real("x2").notNull(), y2: real("y2").notNull(),
+  note: text("note"),
+  createdByName: text("created_by_name"),
+  createdAt: createdAt(),
+}, (t) => [index("route_fixes_floor_idx").on(t.floorId)]);
+
+/** Room kits for presentation renders (wave 7, part F): editable copy of seed-data/room-kits.json. Empty = the built-in kits. */
+export const roomKits = pgTable("room_kits", {
+  id: serial("id").primaryKey(),
+  sort: integer("sort").notNull().default(0),
+  label: text("label").notNull(),
+  /** Pattern tested against the upper-cased room name; null for a room-type rule. */
+  match: text("match"),
+  roomType: roomType("room_type"),
+  finish: varchar("finish", { length: 16 }).notNull(),
+  items: jsonb("items").$type<{ model: string; n?: number; perM2?: number; max?: number; with?: string[] }[]>().notNull(),
+  updatedByName: text("updated_by_name"),
+  updatedAt: updatedAt(),
+});
 
 /** A stop on a guided tour: a view (encoded as in saved views), a caption and how long it stays on screen. */
 export type TourStop = { state: string; caption: string; seconds: number };

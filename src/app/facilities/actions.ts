@@ -63,6 +63,17 @@ export async function updateFacility(_: FormState, fd: FormData): Promise<FormSt
     await db.update(facilities).set({ ...p.data, nameAr: p.data.nameAr ?? null, governorate: p.data.governorate ?? null, city: p.data.city ?? null,
       address: p.data.address ?? null, type: p.data.type ?? "GENERAL_HOSPITAL", totalBeds: p.data.totalBeds ?? 0 }).where(eq(facilities.id, fid));
   } catch (e) { return { error: dbError(e) }; }
+  // Logo and colour for renders (wave 7): a new file replaces the logo; "remove" clears it.
+  const brand = String(fd.get("brandColor") ?? "");
+  const extra: { logo?: string | null; brandColor?: string | null } = { brandColor: /^#[0-9a-f]{6}$/i.test(brand) ? brand : null };
+  const file = fd.get("logo");
+  if (fd.get("removeLogo") === "on") extra.logo = null;
+  else if (file instanceof File && file.size) {
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) return { error: "The logo must be a PNG, JPEG or WebP image." };
+    if (file.size > 300_000) return { error: "Keep the logo under 300 KB (a few hundred pixels wide is plenty)." };
+    extra.logo = `data:${file.type};base64,${Buffer.from(await file.arrayBuffer()).toString("base64")}`;
+  }
+  await db.update(facilities).set(extra).where(eq(facilities.id, fid));
   revalidatePath(`/facilities/${fid}`);
   redirect(back(fid, "overview", "Facility details saved."));
 }

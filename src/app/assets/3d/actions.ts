@@ -7,7 +7,8 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, buildings, floors, rooms, twinNotes, twinTours, twinViews, users, type TourStop } from "@/db/schema";
+import { assets, buildings, floors, rooms, routeFixes, twinNotes, twinTours, twinViews, users, type TourStop } from "@/db/schema";
+import type { TwinFix, TwinRoom } from "@/components/assets/twin/types";
 import { can } from "@/lib/auth/permissions";
 import { decodeView } from "@/components/assets/twin/view-state";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
@@ -18,7 +19,7 @@ import { noteOf, type TwinNote } from "@/lib/assets/twin-notes";
 import { pointInPolygon, rectPoly, type Pt } from "@/components/assets/twin/geometry";
 
 export type TwinActionState = { ok?: string; error?: string; assetId?: number; roomId?: number; posX?: number | null; posY?: number | null } | null;
-export type SavedView = { id: number; name: string; state: string; shared: boolean; mine: boolean; by: string | null };
+export type SavedView = { id: number; name: string; state: string; shared: boolean; mine: boolean; by: string | null; render?: Record<string, unknown> | null };
 export type ViewActionState = { ok?: string; error?: string; view?: SavedView; deletedId?: number } | null;
 
 async function loadAsset(assetId: number) {
@@ -133,10 +134,20 @@ export async function saveViewAction(_: ViewActionState, fd: FormData): Promise<
   if (!p.success) return { error: firstError(p.error) };
   await requireFacilityAccess(p.data.facilityId, me);
   if (!decodeView(p.data.state)) return { error: "That view couldn't be read. Move the model a little and try again." };
+  // Render settings (wave 7): only known keys with simple values are kept.
+  let render: Record<string, unknown> | null = null;
+  const raw = fd.get("render");
+  if (typeof raw === "string" && raw) {
+    try {
+      const o = JSON.parse(raw) as Record<string, unknown>;
+      const keys = ["floorId", "departmentId", "view", "cutHeight", "look", "kits", "labels", "titleBlock", "transparent", "size", "equipment", "boqId"];
+      render = Object.fromEntries(Object.entries(o).filter(([k, v]) => keys.includes(k) && (v === null || ["number", "string", "boolean"].includes(typeof v)) && String(v).length <= 40));
+    } catch { return { error: "The render settings couldn't be read." }; }
+  }
   const [row] = await db.insert(twinViews).values({
-    facilityId: p.data.facilityId, name: p.data.name, state: p.data.state, shared: p.data.shared, createdById: me.id, createdByName: me.name,
+    facilityId: p.data.facilityId, name: p.data.name, state: p.data.state, shared: p.data.shared, createdById: me.id, createdByName: me.name, render,
   }).returning({ id: twinViews.id });
-  return { ok: `View “${p.data.name}” saved${p.data.shared ? " and shared" : ""}.`, view: { id: row.id, name: p.data.name, state: p.data.state, shared: p.data.shared, mine: true, by: me.name } };
+  return { ok: `View “${p.data.name}” saved${p.data.shared ? " and shared" : ""}.`, view: { id: row.id, name: p.data.name, state: p.data.state, shared: p.data.shared, mine: true, by: me.name, render } };
 }
 
 /** Delete a saved view: its author, or an administrator for shared views. */
@@ -253,4 +264,55 @@ export async function deleteTourAction(_: TourActionState, fd: FormData): Promis
   if (t.createdById !== me.id && !can(me.role, "users.manage")) return { error: "Only the person who made this tour can delete it." };
   await db.delete(twinTours).where(eq(twinTours.id, t.id));
   return { ok: `Tour “${t.name}” deleted.`, deletedId: t.id };
+}
+
+/* ── Walking network: manual fixes and access zones (wave 7, step 7a) ── */
+
+export type FixActionState = { ok?: string; error?: string; fix?: TwinFix; deletedId?: number; roomId?: number; zone?: TwinRoom["zone"] } | null;
+const FixSchema = z.object({
+  floorId: reqId("Floor"), kind: z.enum(["OPEN", "CLOSE"], { error: "Choose open or close." }),
+  x1: z.coerce.number().finite(), y1: z.coerce.number().finite(), x2: z.coerce.number().finite(), y2: z.coerce.number().finite(), note: text(300),
+});
+
+async function floorFacility(floorId: number) {
+  const [f] = await db.select({ facilityId: buildings.facilityId }).from(floors).innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(eq(floors.id, floorId));
+  return f?.facilityId ?? null;
+}
+
+/** Open a gap the drawing closes (a door it doesn't show) or close one it leaves open. Needs facilities.edit. */
+export async function addRouteFixAction(_: FixActionState, fd: FormData): Promise<FixActionState> {
+  const me = await requirePermission("facilities.edit");
+  const p = FixSchema.safeParse(formObject(fd));
+  if (!p.success) return { error: firstError(p.error) };
+  const fac = await floorFacility(p.data.floorId); if (fac == null) return { error: "That floor no longer exists." };
+  await requireFacilityAccess(fac, me);
+  const [row] = await db.insert(routeFixes).values({ ...p.data, note: p.data.note ?? null, createdByName: me.name }).returning();
+  return {
+    ok: p.data.kind === "OPEN" ? "Opening added; routes on this floor use it now." : "Gap closed; routes on this floor go round it now.",
+    fix: { id: row.id, floorId: row.floorId, kind: row.kind, x1: row.x1, y1: row.y1, x2: row.x2, y2: row.y2, note: row.note, by: row.createdByName },
+  };
+}
+
+export async function deleteRouteFixAction(_: FixActionState, fd: FormData): Promise<FixActionState> {
+  const me = await requirePermission("facilities.edit");
+  const id = Number(fd.get("fixId"));
+  const [f] = Number.isInteger(id) ? await db.select().from(routeFixes).where(eq(routeFixes.id, id)) : [];
+  if (!f) return { error: "That fix no longer exists." };
+  const fac = await floorFacility(f.floorId); if (fac != null) await requireFacilityAccess(fac, me);
+  await db.delete(routeFixes).where(eq(routeFixes.id, f.id));
+  return { ok: "Fix removed.", deletedId: f.id };
+}
+
+const ZONES = ["PUBLIC", "PATIENT", "STAFF", "STERILE", "ISOLATION"] as const;
+/** Set a room's access zone (empty = read from its name). Needs facilities.edit. */
+export async function setRoomZoneAction(_: FixActionState, fd: FormData): Promise<FixActionState> {
+  const me = await requirePermission("facilities.edit");
+  const roomId = Number(fd.get("roomId")); const raw = String(fd.get("zone") ?? "");
+  const zone = (ZONES as readonly string[]).includes(raw) ? (raw as (typeof ZONES)[number]) : null;
+  if (raw && !zone) return { error: "Choose a zone from the list." };
+  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name }).from(rooms).where(eq(rooms.id, roomId)) : [];
+  if (!r) return { error: "That room no longer exists." };
+  const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
+  await db.update(rooms).set({ zone }).where(eq(rooms.id, r.id));
+  return { ok: zone ? `${r.name}: ${zone.toLowerCase()} zone.` : `${r.name}: zone read from its name again.`, roomId: r.id, zone };
 }

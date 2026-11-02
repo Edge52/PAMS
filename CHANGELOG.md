@@ -2,7 +2,7 @@
 
 ## Unreleased — wave 7 (in progress, branch `wave-7`)
 
-Migrations `0016`–`0020`. Update with `git pull` and `npm run demo`; your data is kept.
+Migrations `0016`–`0023`. Update with `git pull` and `npm run demo`; your data is kept.
 
 - **Lift cores**: declared once per hospital under Facilities › Lifts (bed, public, service, AGV; stops per floor;
   cars, capacity, typical wait). Suggested from lift lobbies in the drawings and marked *assumed* until confirmed. The
@@ -75,6 +75,20 @@ Migrations `0016`–`0020`. Update with `git pull` and `npm run demo`; your data
 - **Keyboard shortcuts**: F find, 1–9 floors (as listed), 0 whole building, L look, R reset, W walk, Esc clear, ? to
   list them. Off while typing.
 - README and user guide cover the wave 7 features.
+- **Route fixes and access zones (rest of step 7a)**: with the walking network on, *Add an opening* (a door the
+  drawing doesn't show) or *Close a gap* (one it leaves open) by clicking its two ends. Fixes are kept by position, so
+  they survive rebuilding and drawing updates. Routes, pathways and nearest-device rankings use them at once. The
+  rooms routes can't reach are listed. Each room has an **access zone** (public, patient, staff, sterile, isolation,
+  or read from its name); sterile and isolation rooms are closed to through-traffic. Facilities editors change both.
+- **Renders (rest of part F1)**:
+  - *Equipment*: installed, planned (from a BOQ) or both. Planned units are drawn in pale blue in their department's
+    rooms, and the title block says which.
+  - A hospital's **logo and accent colour** (Facilities › details) appear on renders and floor books.
+  - Render settings can be **saved with a view**; *Render* on that view reopens them, so a book can be remade in one
+    click.
+  - **Room kits** are editable under Planning › Room kits (planners and biomedical engineers): name patterns or room
+    types, floor finish, and furniture lines like "bed per 11 m2 max 4 with bedside". The built-in set lives in
+    `seed-data/room-kits.json`.
 - Demo restarts no longer crash on the work-order seed.
 
 ## Release 3.0 — 1 Nov 2026

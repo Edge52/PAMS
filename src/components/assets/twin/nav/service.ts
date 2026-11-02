@@ -3,9 +3,9 @@
  * drawing, and routes between rooms or spots with the hospital's declared lifts and its stairs. Client side.
  */
 import { interiorPoint, type Pt } from "../geometry";
-import type { FloorGeometry, TwinData } from "../types";
+import type { FloorGeometry, TwinData, TwinFix, TwinRoom } from "../types";
 import type { Journey } from "../../../../lib/assets/lifts";
-import { buildNetwork, coverage, type NavRoom, type Network } from "./network";
+import { buildNetwork, coverage, type NavRoom, type Network, type RouteFix } from "./network";
 import { joinRoutes, route, stairsFrom, type LiftLink, type Place, type Route, type RouteWorld } from "./route";
 
 export class RouteService {
@@ -13,8 +13,11 @@ export class RouteService {
   private pending = new Map<number, Promise<Network | null>>();
   private lifts: LiftLink[];
   private stairs;
+  /** Manual fixes per floor (plan units); changing them rebuilds that floor's network. */
+  private fixes = new Map<number, TwinFix[]>();
 
   constructor(private data: TwinData, private loadGeometry: (floorId: number) => Promise<FloorGeometry | null>) {
+    for (const f of data.fixes ?? []) (this.fixes.get(f.floorId) ?? this.fixes.set(f.floorId, []).get(f.floorId)!).push(f);
     const s = (floorId: number) => 1 / (data.floors.find((f) => f.id === floorId)?.unitsPerMetre || 10);
     this.lifts = data.lifts.map((l) => ({
       id: l.id, name: l.name, kind: l.kind, waitSeconds: 45,
@@ -27,7 +30,7 @@ export class RouteService {
 
   private roomsOn(floorId: number): NavRoom[] {
     const s = 1 / (this.data.floors.find((f) => f.id === floorId)?.unitsPerMetre || 10);
-    return this.data.rooms.filter((r) => r.floorId === floorId && r.poly.length >= 3).map((r) => ({ id: r.id, name: r.name, poly: r.poly.map(([x, y]) => [x * s, y * s] as Pt) }));
+    return this.data.rooms.filter((r) => r.floorId === floorId && r.poly.length >= 3).map((r) => ({ id: r.id, name: r.name, zone: this.zones.get(r.id) ?? r.zone ?? null, poly: r.poly.map(([x, y]) => [x * s, y * s] as Pt) }));
   }
 
   /** The floor's network, built once. */
@@ -42,13 +45,25 @@ export class RouteService {
       // Floors drawn by hand have no wall lines: their room outlines are the walls.
       const rooms = this.roomsOn(floorId);
       const walls = segs.length ? segs : rooms.flatMap((r) => r.poly.flatMap((p, i) => [...p, ...r.poly[(i + 1) % r.poly.length]]));
-      const net = buildNetwork(floorId, walls, rooms);
+      const fixes: RouteFix[] = (this.fixes.get(floorId) ?? []).map((x) => ({ kind: x.kind, a: [x.x1 * s, x.y1 * s], b: [x.x2 * s, x.y2 * s] }));
+      const net = buildNetwork(floorId, walls, rooms, { fixes });
       this.nets.set(floorId, net);
       return net;
     })();
     this.pending.set(floorId, job);
     return job;
   }
+
+  /** Zones changed in this session (the data passed in is the page's first load). */
+  private zones = new Map<number, TwinRoom["zone"]>();
+  /** Fixes or zones changed: forget the floor's network so the next route rebuilds it. */
+  setFixes(floorId: number, fixes: TwinFix[]) { this.fixes.set(floorId, fixes); this.forget(floorId); }
+  setZone(roomId: number, zone: TwinRoom["zone"]) {
+    this.zones.set(roomId, zone);
+    const r = this.data.rooms.find((x) => x.id === roomId); if (r) this.forget(r.floorId);
+  }
+  fixesOn(floorId: number) { return this.fixes.get(floorId) ?? []; }
+  private forget(floorId: number) { this.nets.delete(floorId); this.pending.delete(floorId); }
 
   async coverage(floorId: number) {
     const n = await this.network(floorId);

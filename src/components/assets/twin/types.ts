@@ -21,6 +21,8 @@ export type TwinRoom = {
   name: string;
   type: string;
   departmentId: number | null;
+  /** Access zone when set (wave 7); null = read from the name. */
+  zone?: "PUBLIC" | "PATIENT" | "STAFF" | "STERILE" | "ISOLATION" | null;
   /** Outline in plan units (polygon, or the rectangle turned into 4 points). */
   poly: [number, number][];
 };
@@ -57,9 +59,9 @@ export type TwinAsset = {
 };
 
 export type TwinData = {
-  facility: { id: number; name: string; code: string };
+  facility: { id: number; name: string; code: string; logo?: string | null; brandColor?: string | null };
   /** What the signed-in user may do from the model (the server actions check again). */
-  can: { report: boolean; move: boolean; maintain: boolean; addAsset: boolean };
+  can: { report: boolean; move: boolean; maintain: boolean; addAsset: boolean; editFacility?: boolean };
   facilities: { id: number; name: string }[];
   floors: TwinFloor[];
   rooms: TwinRoom[];
@@ -69,6 +71,8 @@ export type TwinData = {
   lifts: TwinLift[];
   /** Devices of this hospital not in a room yet (newly registered, in store): the "To place" list. */
   unplaced: TwinAsset[];
+  /** Manual fixes to the walking network, per floor, plan units (wave 7a). */
+  fixes?: TwinFix[];
   /** Published patient pathways of this hospital (wave 7c). */
   flows?: TwinFlowData[];
 };
@@ -103,3 +107,5 @@ export const STATUS_LABELS: Record<string, string> = {
  */
 export type LiveRow = [number, string, number, 0 | 1, 0 | 1, number, number, 0 | 1];
 export type LivePayload = { at: string; rows: LiveRow[] };
+
+export type TwinFix = { id: number; floorId: number; kind: "OPEN" | "CLOSE"; x1: number; y1: number; x2: number; y2: number; note: string | null; by: string | null };

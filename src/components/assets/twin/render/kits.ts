@@ -9,6 +9,7 @@
  * Kit furniture is illustrative: the render says so, and registered equipment with an exact spot keeps it.
  */
 import { interiorPoint, pointInPolygon, polygonArea, type Pt } from "../geometry";
+import kitsJson from "../../../../../seed-data/room-kits.json";
 
 export type Finish = "vinyl" | "theatre" | "wet" | "wood" | "terrazzo" | "plant" | "concrete";
 export const FINISH_COLORS: Record<Finish, string> = {
@@ -37,64 +38,66 @@ export const MODEL_SIZE: Record<Model, { w: number; d: number; place: "wall" | "
 };
 
 /** A kit line: a model, how many (fixed, or one per so many m²), and an optional companion placed beside each one. */
-type KitLine = { model: Model; n?: number; perM2?: number; max?: number; with?: Model[] };
+export type KitLine = { model: Model; n?: number; perM2?: number; max?: number; with?: Model[] };
 type Kit = { finish: Finish; items: KitLine[] };
 
-/** First match wins. Patterns are tested against the upper-cased room name, then the room type. */
-const RULES: [RegExp, Kit][] = [
-  [/\b(TLT|WC|W\.C\.?|TOILET|LAVATORY)\b|TLT \(|\bW\.?E\.?\b/, { finish: "wet", items: [{ model: "wc", n: 1 }, { model: "basin", n: 1 }] }],
-  [/SHWR|SHOWER|BATH(ING)?\b/, { finish: "wet", items: [{ model: "shower", n: 1 }, { model: "basin", n: 1 }] }],
-  [/SOILED|DIRTY|DIRT(Y|S)? UTIL|WASTE|SLUICE/, { finish: "wet", items: [{ model: "counter", n: 1 }, { model: "cabinet", n: 1 }] }],
-  [/\bSTAIR|LIFT|ELEVATOR|SHAFT|\bDUCT\b|RISER/, { finish: "concrete", items: [] }],
-  [/ELEC|HVAC|MECH|PLANT|PUMP|GENERATOR|SERVER|DATA\b|T\.R\.|R\.M\.U|SWITCH/, { finish: "plant", items: [{ model: "cabinet", perM2: 6, max: 6 }] }],
-  [/C-SECTION|OPERATING|THEATRE|\bOR\b|HYBRID OR|GENERAL OR/, { finish: "theatre", items: [{ model: "or-table", n: 1 }, { model: "or-light", n: 2 }, { model: "anaesthesia", n: 1 }, { model: "trolley", n: 2 }, { model: "cabinet", n: 2 }] }],
-  [/CATH LAB|IR LAB|ANGIO/, { finish: "theatre", items: [{ model: "or-table", n: 1 }, { model: "or-light", n: 1 }, { model: "cabinet", n: 2 }, { model: "trolley", n: 1 }] }],
-  [/\bCT\b|\bMRI\b/, { finish: "vinyl", items: [{ model: "ct", n: 1 }, { model: "cabinet", n: 1 }] }],
-  [/\bRAD\b|X-?RAY|MAMMO|\bDXA\b|FLUORO/, { finish: "vinyl", items: [{ model: "xray", n: 1 }, { model: "cabinet", n: 1 }] }],
-  [/NICU|\bSCN\b|NURSERY|INCUBATOR/, { finish: "vinyl", items: [{ model: "incubator", perM2: 9, max: 8, with: ["monitor"] }, { model: "armchair", n: 1 }] }],
-  [/BABY|NEWBORN|NEONAT/, { finish: "vinyl", items: [{ model: "cot", perM2: 8, max: 4 }, { model: "counter", n: 1 }] }],
-  [/\bICU\b|CCU|CRITICAL|HDU|ISOLATION|ISO\b|P\/R|RECOVERY|PACU|RESUS|TRAUMA/, { finish: "vinyl", items: [{ model: "bed", perM2: 14, max: 6, with: ["monitor", "ventilator"] }, { model: "cabinet", n: 1 }] }],
-  [/MED\/?SURG|PATIENT ROOM|INPATIENT|\bWARD\b|SINGLE|DOUBLE|FAMILY SUITE|\bLDR\b|DELIVERY|POSTNATAL|ANTENATAL|OBS ROOM/, { finish: "vinyl", items: [{ model: "bed", perM2: 11, max: 4, with: ["bedside"] }, { model: "armchair", n: 1 }] }],
-  [/TREATMENT|PROCEDURE|EXAM|CONSULT|CLINIC|TRIAGE|INTAKE|DRESSING|ULTRASOUND|ECHO|TEE|STRESS/, { finish: "vinyl", items: [{ model: "couch", n: 1 }, { model: "desk", n: 1 }, { model: "basin", n: 1 }] }],
-  [/DENTAL|ORL|ENT\b/, { finish: "vinyl", items: [{ model: "dental-chair", n: 1 }, { model: "counter", n: 1 }, { model: "basin", n: 1 }] }],
-  [/NURSE STATION|NU-CONTROL|CONTROL STATION|WORKSTATION|RECEPTION|INFO|CONTROL\b/, { finish: "vinyl", items: [{ model: "workstation", perM2: 8, max: 3 }] }],
-  [/LAB\b|LABORATORY|SAMPLE|PATHOLOGY|BLOOD BANK/, { finish: "vinyl", items: [{ model: "lab-bench", perM2: 6, max: 6 }, { model: "fridge", n: 1 }] }],
-  [/PHARMACY|MEDS|MEDICATION|CLEAN(\/MEDS)?\b|CLEAN UTIL|STORE|STORAGE|LINEN|EQUIP|SUPPLY|ARCHIVE|HSKP|HOUSEKEEP|JANITOR/, { finish: "vinyl", items: [{ model: "shelving", perM2: 4, max: 8 }] }],
-  [/WAITING|LOBBY|ALCOVE|HALL|ENTRANCE|PUBLIC/, { finish: "terrazzo", items: [{ model: "waiting-row", perM2: 12, max: 8 }, { model: "plant", n: 1 }] }],
-  [/CORRIDOR|PASSAGE|AIR ?LOCK|ANTE|VESTIBULE|GOWNING|SCRUB/, { finish: "terrazzo", items: [] }],
-  [/MEETING|MULTI-?DIS|CONFERENCE|BOARD|MULTI PURPOSE|SEMINAR|TRAINING/, { finish: "wood", items: [{ model: "meeting-table", n: 1 }, { model: "cabinet", n: 1 }] }],
-  [/RESTAURANT|CAFE|CAFETERIA|DINING|PANTRY|NOURISH|KITCHEN|BREAK/, { finish: "terrazzo", items: [{ model: "dining-set", perM2: 10, max: 6 }, { model: "counter", n: 1 }] }],
-  [/LOUNGE|ON[ -]?CALL|DOCTOR ON DUTY|DUTY|HOUSING|SLEEP|REST\b/, { finish: "wood", items: [{ model: "sofa", n: 1 }, { model: "armchair", n: 1 }, { model: "bed", n: 1 }] }],
-  [/OFFICE|HEAD OF|SECRETARY|DIRECTOR|ADMIN|MANAGER|CEO|ACCOUNT|MARKETING|CONTRACTS/, { finish: "wood", items: [{ model: "desk", perM2: 9, max: 6 }, { model: "cabinet", n: 1 }] }],
-  [/LOCKER|CHANGE/, { finish: "vinyl", items: [{ model: "shelving", perM2: 3, max: 8 }] }],
-  [/LAUNDRY|WASH/, { finish: "wet", items: [{ model: "washer", perM2: 6, max: 6 }, { model: "counter", n: 1 }] }],
-];
-const BY_TYPE: Record<string, Kit> = {
-  PATIENT_ROOM: { finish: "vinyl", items: [{ model: "bed", perM2: 11, max: 4, with: ["bedside"] }] },
-  WARD: { finish: "vinyl", items: [{ model: "bed", perM2: 10, max: 8, with: ["bedside"] }] },
-  ICU_BAY: { finish: "vinyl", items: [{ model: "bed", perM2: 14, max: 6, with: ["monitor", "ventilator"] }] },
-  OPERATING_ROOM: { finish: "theatre", items: [{ model: "or-table", n: 1 }, { model: "or-light", n: 2 }, { model: "anaesthesia", n: 1 }] },
-  IMAGING_ROOM: { finish: "vinyl", items: [{ model: "xray", n: 1 }] },
-  LAB: { finish: "vinyl", items: [{ model: "lab-bench", perM2: 6, max: 6 }] },
-  PHARMACY: { finish: "vinyl", items: [{ model: "shelving", perM2: 4, max: 8 }] },
-  CONSULTATION: { finish: "vinyl", items: [{ model: "couch", n: 1 }, { model: "desk", n: 1 }] },
-  NURSE_STATION: { finish: "vinyl", items: [{ model: "workstation", n: 1 }] },
-  STORE: { finish: "vinyl", items: [{ model: "shelving", perM2: 4, max: 8 }] },
-  CORRIDOR: { finish: "terrazzo", items: [] },
-  WAITING: { finish: "terrazzo", items: [{ model: "waiting-row", perM2: 12, max: 8 }] },
-  OFFICE: { finish: "wood", items: [{ model: "desk", n: 1 }] },
-  TECHNICAL: { finish: "plant", items: [] },
-};
+/**
+ * A kit rule (seed-data/room-kits.json, editable under Planning › Room kits): a room-name pattern (tested against the
+ * upper-cased name) or a room type, the floor finish and the furniture. Name rules are tried in order first, then
+ * room types.
+ */
+export type KitRule = { id?: number; label: string; match: string | null; roomType: string | null; finish: Finish; items: KitLine[] };
+export const BUILTIN_KITS = (kitsJson as { kits: KitRule[] }).kits;
+export const FINISHES = Object.keys(FINISH_COLORS) as Finish[];
+export const MODELS = Object.keys(MODEL_SIZE) as Model[];
+
+const compiled = new WeakMap<KitRule[], { re: RegExp | null; rule: KitRule }[]>();
+function compile(rules: KitRule[]) {
+  let c = compiled.get(rules);
+  if (!c) {
+    c = rules.map((rule) => { let re: RegExp | null = null; try { re = rule.match ? new RegExp(rule.match, "i") : null; } catch { re = null; } return { re, rule }; });
+    compiled.set(rules, c);
+  }
+  return c;
+}
 const DEFAULT: Kit = { finish: "vinyl", items: [] };
 
 export type RoomLook = { finish: Finish; items: KitLine[]; kit: string };
 
 /** Finish and kit for a room from its name, then its type. `kit` names the rule that matched (for tests and debugging). */
-export function roomLook(name: string, type?: string | null): RoomLook {
+export function roomLook(name: string, type?: string | null, rules: KitRule[] = BUILTIN_KITS): RoomLook {
   const n = name.toUpperCase();
-  for (const [re, kit] of RULES) if (re.test(n)) return { ...kit, kit: re.source };
-  const t = type ? BY_TYPE[type] : undefined;
-  return t ? { ...t, kit: `type:${type}` } : { ...DEFAULT, kit: "default" };
+  const c = compile(rules);
+  for (const { re, rule } of c) if (re && re.test(n)) return { finish: rule.finish, items: rule.items, kit: rule.match! };
+  if (type) for (const { rule } of c) if (!rule.match && rule.roomType === type) return { finish: rule.finish, items: rule.items, kit: `type:${type}` };
+  return { ...DEFAULT, kit: "default" };
+}
+
+/* ── Kit lines as text, for the editor: "bed per 11 m2 max 4 with bedside, monitor" or "desk 2" ── */
+
+export function formatItems(items: KitLine[]): string {
+  return items.map((it) => [it.model, it.perM2 ? `per ${it.perM2} m2` : String(it.n ?? 1), it.perM2 && it.max ? `max ${it.max}` : "", it.with?.length ? `with ${it.with.join(", ")}` : ""]
+    .filter(Boolean).join(" ")).join("\n");
+}
+
+/** Read the editor's text back; errors name the line. */
+export function parseItems(text: string): { items: KitLine[]; errors: string[] } {
+  const items: KitLine[] = [], errors: string[] = [];
+  text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).forEach((line, i) => {
+    const m = /^([a-z-]+)(?:\s+(\d+)|\s+per\s+(\d+(?:\.\d+)?)\s*m2?(?:\s+max\s+(\d+))?)?(?:\s+with\s+([a-z-]+(?:\s*,\s*[a-z-]+)*))?$/i.exec(line);
+    if (!m) { errors.push(`Line ${i + 1} (“${line}”): write it like “bed 2” or “bed per 11 m2 max 4 with bedside”.`); return; }
+    const model = m[1].toLowerCase() as Model;
+    if (!MODELS.includes(model)) { errors.push(`Line ${i + 1}: “${m[1]}” isn't a model. Models: ${MODELS.join(", ")}.`); return; }
+    const withs = (m[5] ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean) as Model[];
+    const bad = withs.find((w) => !MODELS.includes(w));
+    if (bad) { errors.push(`Line ${i + 1}: “${bad}” isn't a model.`); return; }
+    const it: KitLine = { model };
+    if (m[3]) { it.perM2 = Number(m[3]); if (m[4]) it.max = Number(m[4]); } else it.n = m[2] ? Number(m[2]) : 1;
+    if ((it.n ?? 1) > 40 || (it.max ?? 0) > 40 || (it.perM2 != null && it.perM2 < 1)) { errors.push(`Line ${i + 1}: keep counts to 40 and at least 1 m² each.`); return; }
+    if (withs.length) it.with = withs;
+    items.push(it);
+  });
+  return { items, errors };
 }
 
 /** One placed item: centre (metres), rotation about the vertical (radians; 0 = facing +z), and its model. */

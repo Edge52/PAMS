@@ -17,9 +17,9 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { deviceKind, interiorPoint, polygonArea, type Pt } from "../geometry";
+import { deviceKind, interiorPoint, pointInPolygon, polygonArea, type Pt } from "../geometry";
 import type { FloorGeometry, TwinAsset, TwinData, TwinFloor, TwinRoom } from "../types";
-import { FINISH_COLORS, MODEL_SIZE, placeKit, roomLook, type Model, type Placement } from "./kits";
+import { BUILTIN_KITS, FINISH_COLORS, MODEL_SIZE, placeKit, roomLook, type KitRule, type Model, type Placement } from "./kits";
 import { modelGeometry } from "./furniture";
 import { layoutLabels, type LabelIn } from "./labels";
 import { wallMass } from "./walls";
@@ -42,6 +42,14 @@ export type RenderOptions = {
   facilityName: string;
   /** Frame one department (its rooms fill the image) instead of the whole floor. */
   departmentId?: number | null;
+  /** Equipment drawn: the register, a BOQ's plan, or both (planned-not-installed in a lighter tint). */
+  equipment?: "installed" | "planned" | "both";
+  /** Planned units per department (device type codes and counts), already chosen for the mode; and the BOQ's name. */
+  planned?: { departmentId: number; items: { code: string; n: number }[] }[];
+  planName?: string;
+  /** Hospital logo (an image URL or data URL) and accent colour for the title block. */
+  logo?: string | null;
+  brandColor?: string | null;
 };
 
 export const RENDER_SIZES = { "1080p": [1920, 1080], "4K": [3840, 2160], "8K": [7680, 4320] } as const;
@@ -53,7 +61,11 @@ const LOOKS: Record<RenderLook, { sky: string; ground: string; hemi: number; sun
 };
 const WALL_SIDE = "#f2f0eb", WALL_TOP = "#878d93", GLASS = "#9cc8db", DOOR = "#a98258";
 
-type Built = { group: THREE.Group; bounds: { x0: number; x1: number; z0: number; z1: number }; rooms: { room: TwinRoom; poly: Pt[] }[]; kitCount: number; registered: number };
+type Built = { group: THREE.Group; bounds: { x0: number; x1: number; z0: number; z1: number }; rooms: { room: TwinRoom; poly: Pt[] }[]; kitCount: number; registered: number; planned: number };
+
+/** A device type code's kind for drawing ("MON-PAT-HIGH" → group MON-PAT, category MON). */
+const kindOfCode = (code: string) => { const p = code.split("-"); return deviceKind(p.length >= 3 ? `${p[0]}-${p[1]}` : null, p[0]); };
+const PLAN_ROOMS = new Set(["PATIENT_ROOM", "WARD", "ICU_BAY", "OPERATING_ROOM", "PROCEDURE_ROOM", "IMAGING_ROOM", "CONSULTATION", "LAB", "NURSE_STATION"]);
 
 export class RenderStudio {
   private renderer: THREE.WebGLRenderer;
@@ -61,7 +73,7 @@ export class RenderStudio {
   private camera = new THREE.PerspectiveCamera(20, 16 / 9, 0.5, 2000);
   private built: { key: string; b: Built } | null = null;
 
-  constructor(private data: TwinData, private loadGeometry: (floorId: number) => Promise<FloorGeometry | null>) {
+  constructor(private data: TwinData, private loadGeometry: (floorId: number) => Promise<FloorGeometry | null>, private kits: KitRule[] = BUILTIN_KITS) {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(1);
     this.renderer.shadowMap.enabled = true;
@@ -118,13 +130,15 @@ export class RenderStudio {
     if (!o.transparent || band) { ctx.fillStyle = o.transparent ? "rgba(0,0,0,0)" : look.bg; ctx.fillRect(0, 0, o.width, o.height); }
     ctx.drawImage(image, 0, 0);
     if (o.labels) { progress("Placing labels…"); this.drawLabels(ctx, b, o.width, imgH); }
-    if (band) this.drawTitleBlock(ctx, o, floor, b, imgH, band);
+    const logo = band && o.logo ? await loadImage(o.logo).catch(() => null) : null;
+    if (band) this.drawTitleBlock(ctx, o, floor, b, imgH, band, logo);
     return out;
   }
 
   /** Build (or reuse) the furnished floor. */
   private async build(f: TwinFloor, o: RenderOptions): Promise<Built> {
-    const key = `${f.id}|${o.cutHeight}|${o.kits}`;
+    const eq = o.equipment ?? "installed";
+    const key = `${f.id}|${o.cutHeight}|${o.kits}|${eq}|${eq === "installed" ? "" : JSON.stringify(o.planned ?? [])}`;
     if (this.built?.key === key) return this.built.b;
     if (this.built) { this.scene.remove(this.built.b.group); disposeGroup(this.built.b.group); this.built = null; }
     const geo = await this.loadGeometry(f.id);
@@ -146,7 +160,7 @@ export class RenderStudio {
       const pos: number[] = [], col: number[] = [];
       const c = new THREE.Color();
       for (const { room, poly } of rooms) {
-        const look = roomLook(room.name, room.type);
+        const look = roomLook(room.name, room.type, this.kits);
         c.set(FINISH_COLORS[look.finish]).convertSRGBToLinear();
         const k = 0.97 + ((room.id * 37) % 7) / 100; // a little variation between rooms
         const g = new THREE.ShapeGeometry(new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, z))));
@@ -223,7 +237,23 @@ export class RenderStudio {
     // Equipment and furniture.
     const doorPts = clusterPoints(geo?.doors ?? [], s);
     const assetsByRoom = new Map<number, TwinAsset[]>();
-    for (const a of this.data.assets) if (a.roomId != null) { const l = assetsByRoom.get(a.roomId) ?? []; l.push(a); assetsByRoom.set(a.roomId, l); }
+    if (eq !== "planned") for (const a of this.data.assets) if (a.roomId != null) { const l = assetsByRoom.get(a.roomId) ?? []; l.push(a); assetsByRoom.set(a.roomId, l); }
+    // Planned units: each department's units spread round its care rooms on this floor, biggest first, up to 6 a room.
+    const plannedByRoom = new Map<number, Model[]>();
+    if (eq !== "installed") for (const d of o.planned ?? []) {
+      const own = rooms.filter((r) => r.room.departmentId === d.departmentId);
+      const care = own.filter((r) => PLAN_ROOMS.has(r.room.type) || roomLook(r.room.name, r.room.type, this.kits).items.length > 0);
+      const targets = (care.length ? care : own).map((r) => ({ id: r.room.id, area: Math.abs(polygonArea(r.poly)) })).sort((a, b) => b.area - a.area);
+      if (!targets.length) continue;
+      const units = d.items.flatMap((it) => Array.from({ length: Math.max(0, Math.min(200, it.n)) }, () => KIND_MODEL[kindOfCode(it.code)] ?? "cabinet"));
+      let k = 0;
+      for (const m of units) {
+        const t = targets[k % targets.length]; k++;
+        const l = plannedByRoom.get(t.id) ?? []; if (l.length >= 6) continue;
+        l.push(m); plannedByRoom.set(t.id, l);
+      }
+    }
+    const plannedPlacements: Placement[] = [];
     const placements: Placement[] = [];
     let kitCount = 0, registered = 0;
     for (const { room, poly } of rooms) {
@@ -249,12 +279,17 @@ export class RenderStudio {
       });
       placements.push(...exact, ...regPlaced);
       registered += exact.length + regPlaced.length;
+      const plannedHere = plannedByRoom.get(room.id);
+      if (plannedHere?.length) {
+        const pc = new Map<Model, number>(); for (const m of plannedHere) pc.set(m, (pc.get(m) ?? 0) + 1);
+        plannedPlacements.push(...placeKit(poly, { finish: "vinyl", kit: "planned", items: [...pc].map(([model, n]) => ({ model, n })) }, doorsHere, [...exact, ...regPlaced], 0.7));
+      }
       if (o.kits) {
-        const look = roomLook(room.name, room.type);
+        const look = roomLook(room.name, room.type, this.kits);
         // Don't add kit items of a kind the room already has registered (no kit beds beside real beds).
-        const have = new Set([...exact, ...regPlaced].map((p) => p.model));
+        const have = new Set([...exact, ...regPlaced, ...plannedPlacements.filter((p) => pointInPolygon([p.x, p.z], poly))].map((p) => p.model));
         const kit = { ...look, items: look.items.filter((it) => !have.has(it.model)) };
-        const k = placeKit(poly, kit, doorsHere, [...exact, ...regPlaced]);
+        const k = placeKit(poly, kit, doorsHere, [...exact, ...regPlaced, ...plannedPlacements.filter((p) => pointInPolygon([p.x, p.z], poly))]);
         kitCount += k.length; placements.push(...k);
       }
     }
@@ -278,8 +313,19 @@ export class RenderStudio {
       group.add(inst);
     }
 
+    // Planned equipment: the same models in a pale blue tint, so it reads as "to come".
+    if (plannedPlacements.length) {
+      const pmat = new THREE.MeshStandardMaterial({ color: "#9fd0ee", roughness: 0.5, transparent: true, opacity: 0.82 });
+      const pByModel = new Map<Model, Placement[]>();
+      for (const p of plannedPlacements) { const l = pByModel.get(p.model) ?? []; l.push(p); pByModel.set(p.model, l); }
+      for (const [model, list] of pByModel) {
+        const inst = new THREE.InstancedMesh(modelGeometry(model), pmat, list.length);
+        list.forEach((p, i) => { qn.setFromAxisAngle(up, p.rot); m4.compose(new THREE.Vector3(p.x, 0, p.z), qn, one); inst.setMatrixAt(i, m4); });
+        inst.castShadow = true; group.add(inst);
+      }
+    }
     this.scene.add(group);
-    const b = { group, bounds, rooms, kitCount, registered };
+    const b = { group, bounds, rooms, kitCount, registered, planned: plannedPlacements.length };
     this.built = { key, b };
     return b;
   }
@@ -344,7 +390,7 @@ export class RenderStudio {
   private drawLabels(ctx: CanvasRenderingContext2D, b: Built, w: number, h: number) {
     const items: LabelIn[] = [];
     for (const { room, poly } of b.rooms) {
-      const look = roomLook(room.name, room.type);
+      const look = roomLook(room.name, room.type, this.kits);
       if (look.finish === "concrete" || look.finish === "plant" || /^CORRIDOR$|PARTITION|SHAFT/i.test(room.name) || polygonArea(poly) < 5) continue;
       const pts = poly.map(([x, z]) => this.screenOf(x, z, w, h));
       const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
@@ -368,17 +414,30 @@ export class RenderStudio {
     }
   }
 
-  private drawTitleBlock(ctx: CanvasRenderingContext2D, o: RenderOptions, f: TwinFloor, b: Built, y0: number, band: number) {
+  private drawTitleBlock(ctx: CanvasRenderingContext2D, o: RenderOptions, f: TwinFloor, b: Built, y0: number, band: number, logo: HTMLImageElement | null = null) {
     const w = o.width, k = band / 80;
     ctx.fillStyle = "#ffffff"; ctx.fillRect(0, y0, w, band);
-    ctx.fillStyle = "#c62f2f"; ctx.fillRect(0, y0, w, Math.max(2, 3 * k));
+    ctx.fillStyle = o.brandColor && /^#[0-9a-f]{6}$/i.test(o.brandColor) ? o.brandColor : "#c62f2f"; ctx.fillRect(0, y0, w, Math.max(2, 3 * k));
     const font = (weight: number, size: number) => `${weight} ${Math.round(size * k)}px "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif`;
+    // The hospital's logo on the left, at most 60 % of the band high.
+    let tx = 28 * k;
+    if (logo && logo.naturalWidth) {
+      const lh = band * 0.6, lw = Math.min(band * 2.4, (logo.naturalWidth / logo.naturalHeight) * lh);
+      ctx.drawImage(logo, 24 * k, y0 + (band - lh) / 2 + 2 * k, lw, lw * (logo.naturalHeight / logo.naturalWidth));
+      tx = 24 * k + lw + 20 * k;
+    }
     ctx.textBaseline = "middle"; ctx.textAlign = "left";
-    ctx.fillStyle = "#1d252c"; ctx.font = font(700, 26); ctx.fillText(f.name.toUpperCase(), 28 * k, y0 + band * 0.42);
+    ctx.fillStyle = "#1d252c"; ctx.font = font(700, 26); ctx.fillText(f.name.toUpperCase(), tx, y0 + band * 0.42);
     ctx.fillStyle = "#5b6670"; ctx.font = font(500, 15);
-    ctx.fillText(`${o.facilityName} · ${new Date().toISOString().slice(0, 10)}`, 28 * k, y0 + band * 0.74);
+    ctx.fillText(`${o.facilityName} · ${new Date().toISOString().slice(0, 10)}`, tx, y0 + band * 0.74);
     // Right: what's shown, scale bar, north arrow.
-    const notes = [`Equipment: installed register (${b.registered})`, o.kits ? `Furniture: illustrative (${b.kitCount} items)` : "Furniture: not shown"];
+    const eqMode = o.equipment ?? "installed";
+    const notes = [
+      eqMode === "installed" ? `Equipment: installed register (${b.registered})`
+        : eqMode === "planned" ? `Equipment: planned, ${o.planName ?? "BOQ"} (${b.planned}, pale blue)`
+        : `Equipment: installed (${b.registered}) and still to come from ${o.planName ?? "the BOQ"} (${b.planned}, pale blue)`,
+      o.kits ? `Furniture: illustrative (${b.kitCount} items)` : "Furniture: not shown",
+    ];
     let px10 = 0;
     if (o.view !== "iso") {
       const cx = (b.bounds.x0 + b.bounds.x1) / 2, cz = (b.bounds.z0 + b.bounds.z1) / 2;
@@ -440,3 +499,7 @@ function nearPoly([x, z]: Pt, poly: Pt[], pad: number) {
 }
 
 export { MODEL_SIZE };
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("logo")); i.src = src; });
+}

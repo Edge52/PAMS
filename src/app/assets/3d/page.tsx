@@ -1,7 +1,7 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, patientFlows, rooms, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
+import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, patientFlows, rooms, routeFixes, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
 import { noteOf } from "@/lib/assets/twin-notes";
 import { equipmentNames, loadFlow } from "@/lib/flows/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
@@ -73,9 +73,10 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     steps: f.steps.map(({ id: _i, ...s }) => { void _i; return s; }), links: f.links.map(({ id: _i, ...l }) => { void _i; return l; }),
   }));
 
+  const [brand] = await db.select({ logo: facilities.logo, brandColor: facilities.brandColor }).from(facilities).where(eq(facilities.id, facility.id));
   const data: TwinData = {
-    facility,
-    can: { report: can(me.role, "workorders.report"), move: can(me.role, "assets.move"), maintain: can(me.role, "maintenance.edit"), addAsset: can(me.role, "assets.edit") },
+    facility: { ...facility, logo: brand?.logo ?? null, brandColor: brand?.brandColor ?? null },
+    can: { report: can(me.role, "workorders.report"), move: can(me.role, "assets.move"), maintain: can(me.role, "maintenance.edit"), addAsset: can(me.role, "assets.edit"), editFacility: can(me.role, "facilities.edit") },
     facilities: facs.map((f) => ({ id: f.id, name: f.name })),
     floors: floorRows.map(({ f, buildingName, hasCad }) => ({
       id: f.id, name: floorRows.filter((x) => x.f.level === f.level).length > 1 ? `${buildingName}, ${f.name}` : f.name, level: f.level, buildingName,
@@ -84,13 +85,15 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
       unitsPerMetre: f.unitsPerMetre ?? 10, hasCad: Boolean(hasCad),
     })),
     rooms: roomRows.filter((r) => r.type !== "CORRIDOR" || r.polygon).map((r) => ({
-      id: r.id, floorId: r.floorId, code: r.code, name: r.name, type: r.type, departmentId: r.departmentId,
+      id: r.id, floorId: r.floorId, code: r.code, name: r.name, type: r.type, departmentId: r.departmentId, zone: r.zone,
       poly: r.polygon && r.polygon.length >= 3 ? r.polygon : rectPoly(r.x, r.y, r.w, r.h),
     })),
     departments: deptRows.map((d, i) => ({ ...d, color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] })),
     assets: sized.filter((a) => a.roomId != null),
     unplaced: sized.filter((a) => a.roomId == null),
     flows,
+    fixes: floorIds.length ? (await db.select().from(routeFixes).where(inArray(routeFixes.floorId, floorIds)))
+      .map((f) => ({ id: f.id, floorId: f.floorId, kind: f.kind, x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2, note: f.note, by: f.createdByName })) : [],
     lifts: (await db.select().from(liftCores).where(eq(liftCores.facilityId, facility.id)).orderBy(asc(liftCores.name)))
       .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, cars: l.cars, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
   };
@@ -107,7 +110,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     .where(sql`${twinTours.facilityId} = ${facility.id} and (${twinTours.shared} or ${twinTours.createdById} = ${me.id})`).orderBy(asc(twinTours.name)))
     .map((t) => ({ id: t.id, name: t.name, stops: t.stops, shared: t.shared, mine: t.createdById === me.id, by: t.createdByName }));
   return <TwinView data={data} live={await twinLive(facility.id)} notes={notes} tours={tours} people={people} me={{ id: me.id, canEditAssets: can(me.role, "assets.edit") }}
-    views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName }))}
+    views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName, render: v.render ?? null }))}
     canManageViews={can(me.role, "users.manage")}
     plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []} />;
 }
