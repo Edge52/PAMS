@@ -16,9 +16,9 @@ export function hudMode(width: number): HudMode {
   return "wide";
 }
 
-export type PanelId = "floors" | "view" | "status" | "find" | "types" | "layers" | "views" | "plan" | "place" | "routes" | "pathways" | "notes";
+export type PanelId = "floors" | "view" | "status" | "find" | "types" | "layers" | "views" | "plan" | "place" | "routes" | "pathways" | "notes" | "tours" | "history";
 /** Panels that start folded even on a wide screen (opened when needed). */
-const FOLDED_BY_DEFAULT: PanelId[] = ["plan", "routes", "pathways"];
+const FOLDED_BY_DEFAULT: PanelId[] = ["plan", "routes", "pathways", "tours", "history"];
 export type PanelPrefs = Partial<Record<string, boolean>>;
 
 /** Preferences are remembered separately for compact and wide layouts, so a panel opened on a big screen still starts folded on a laptop. */

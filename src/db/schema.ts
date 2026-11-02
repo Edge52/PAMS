@@ -875,6 +875,22 @@ export const twinViews = pgTable("twin_views", {
   createdAt: createdAt(),
 }, (t) => [index("twin_views_facility_idx").on(t.facilityId)]);
 
+/** A stop on a guided tour: a view (encoded as in saved views), a caption and how long it stays on screen. */
+export type TourStop = { state: string; caption: string; seconds: number };
+
+/** Guided tours of the 3D view (wave 7, step 7f): saved views in order, with captions and timing. */
+export const twinTours = pgTable("twin_tours", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  stops: jsonb("stops").$type<TourStop[]>().notNull(),
+  shared: boolean("shared").notNull().default(false),
+  createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index("twin_tours_facility_idx").on(t.facilityId)]);
+
 /** Notes in the 3D model (wave 7, step 7e): on a room, a device or a point on a floor; open until someone closes them. */
 export const twinNoteStatus = pgEnum("twin_note_status", ["OPEN", "DONE"]);
 export const twinNotes = pgTable("twin_notes", {

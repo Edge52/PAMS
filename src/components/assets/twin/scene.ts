@@ -192,6 +192,11 @@ export class TwinScene {
   private flashes: { mesh: THREE.Mesh; t0: number }[] = [];
   private drag: { assetId: number; timer: number; x: number; y: number } | null = null;
   private dragging = false;
+  // Wave 7f: walking a floor in first person, and time-slider event markers.
+  private walk: { floorId: number; net: Network | null; yaw: number; pitch: number; keys: Set<string>; stick: { f: number; t: number }; last: number;
+    saved: { cam: THREE.Vector3; tgt: THREE.Vector3 }; look: { x: number; y: number } | null; onExit?: () => void } | null = null;
+  private eventMesh: THREE.InstancedMesh | null = null;
+  private eventSpots: { floorId: number; x: number; z: number; color: string; strength: number }[] = [];
   private heatCells: { floorId: number; x: number; z: number; perDay: number }[] | null = null;
   private style: TwinStyle = "dark";
   private bloomWanted = true;
@@ -560,6 +565,7 @@ export class TwinScene {
     this.drawPathways();
     this.drawHeat();
     this.drawNotes();
+    this.drawEvents();
     this.drawSelection();
   }
 
@@ -1217,6 +1223,111 @@ export class TwinScene {
     });
   }
 
+  /* ── Wave 7f: walk mode ── */
+
+  /**
+   * Walk a floor in first person at eye height, kept on the walkable network when there is one. Keys: W/S or ↑/↓
+   * move, A/D or ←/→ turn, Shift walks faster; drag to look around; `setWalkStick` drives it from an on-screen stick.
+   */
+  startWalk(floorId: number, net: Network | null, onExit?: () => void) {
+    const f = this.floorById.get(floorId); if (!f) return false;
+    if (this.isolated !== floorId) this.isolateFloor(floorId, false);
+    // Start at the walkable cell nearest the current view centre.
+    let x = this.controls.target.x, z = this.controls.target.z;
+    if (net) {
+      let best = -1, bd = Infinity;
+      for (let i = 0; i < net.free.length; i++) if (net.free[i] && net.comp[i] === net.main) {
+        const cx = net.x0 + ((i % net.w) + 0.5) * net.cell, cz = net.z0 + (Math.floor(i / net.w) + 0.5) * net.cell;
+        const d = (cx - x) ** 2 + (cz - z) ** 2; if (d < bd) { bd = d; best = i; }
+      }
+      if (best >= 0) { x = net.x0 + ((best % net.w) + 0.5) * net.cell; z = net.z0 + (Math.floor(best / net.w) + 0.5) * net.cell; }
+    }
+    const dir = this.controls.target.clone().sub(this.camera.position);
+    this.walk = {
+      floorId, net, yaw: Math.atan2(dir.x, dir.z), pitch: 0, keys: new Set(), stick: { f: 0, t: 0 }, last: performance.now(),
+      saved: { cam: this.camera.position.clone(), tgt: this.controls.target.clone() }, look: null, onExit,
+    };
+    this.flight = null; this.controls.enabled = false; this.controls.autoRotate = false;
+    this.camera.position.set(x, this.floorY(f) + 1.6, z);
+    this.camera.near = 0.05; this.camera.updateProjectionMatrix();
+    window.addEventListener("keydown", this.walkKey); window.addEventListener("keyup", this.walkKey);
+    const el = this.renderer.domElement;
+    el.addEventListener("pointerdown", this.walkLookStart); window.addEventListener("pointermove", this.walkLookMove); window.addEventListener("pointerup", this.walkLookEnd);
+    return true;
+  }
+  isWalking() { return this.walk != null; }
+  stopWalk() {
+    const w = this.walk; if (!w) return;
+    this.walk = null;
+    window.removeEventListener("keydown", this.walkKey); window.removeEventListener("keyup", this.walkKey);
+    this.renderer.domElement.removeEventListener("pointerdown", this.walkLookStart); window.removeEventListener("pointermove", this.walkLookMove); window.removeEventListener("pointerup", this.walkLookEnd);
+    this.camera.near = 0.5; this.camera.updateProjectionMatrix();
+    this.camera.position.copy(w.saved.cam); this.controls.target.copy(w.saved.tgt);
+    this.controls.enabled = true; this.controls.update(); this.idleSince = performance.now();
+    w.onExit?.();
+  }
+  /** Forward (−1…1) and turn (−1…1) from an on-screen stick. */
+  setWalkStick(f: number, t: number) { if (this.walk) this.walk.stick = { f: Math.max(-1, Math.min(1, f)), t: Math.max(-1, Math.min(1, t)) }; }
+  private walkKey = (e: KeyboardEvent) => {
+    const w = this.walk; if (!w) return;
+    const el = e.target as HTMLElement | null;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (e.type === "keydown" && k === "Escape") { this.stopWalk(); return; }
+    if (!["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Shift"].includes(k)) return;
+    e.preventDefault();
+    if (e.type === "keydown") w.keys.add(k); else w.keys.delete(k);
+  };
+  private walkLookStart = (e: PointerEvent) => { if (this.walk && e.button === 0) this.walk.look = { x: e.clientX, y: e.clientY }; };
+  private walkLookMove = (e: PointerEvent) => {
+    const w = this.walk; if (!w?.look) return;
+    w.yaw -= (e.clientX - w.look.x) * 0.005; w.pitch = Math.max(-1.2, Math.min(1.2, w.pitch - (e.clientY - w.look.y) * 0.004));
+    w.look = { x: e.clientX, y: e.clientY };
+  };
+  private walkLookEnd = () => { if (this.walk) this.walk.look = null; };
+  private walkable(x: number, z: number): boolean {
+    const n = this.walk?.net; if (!n) return true;
+    const cx = Math.floor((x - n.x0) / n.cell), cz = Math.floor((z - n.z0) / n.cell);
+    return cx >= 0 && cx < n.w && cz >= 0 && cz < n.h && n.free[cz * n.w + cx] === 1;
+  }
+  private updateWalk(now: number) {
+    const w = this.walk!; const dt = Math.min(0.1, (now - w.last) / 1000); w.last = now;
+    const k = w.keys;
+    const fwd = (k.has("w") || k.has("ArrowUp") ? 1 : 0) - (k.has("s") || k.has("ArrowDown") ? 1 : 0) + w.stick.f;
+    const turn = (k.has("a") || k.has("ArrowLeft") ? 1 : 0) - (k.has("d") || k.has("ArrowRight") ? 1 : 0) - w.stick.t;
+    w.yaw += turn * 1.8 * dt;
+    const speed = (k.has("Shift") ? 3.2 : 1.4) * dt * Math.max(-1, Math.min(1, fwd));
+    if (speed) {
+      const p = this.camera.position; const nx = p.x + Math.sin(w.yaw) * speed, nz = p.z + Math.cos(w.yaw) * speed;
+      // Slide along walls: try the move, then each axis on its own.
+      if (this.walkable(nx, nz)) { p.x = nx; p.z = nz; } else if (this.walkable(nx, p.z)) p.x = nx; else if (this.walkable(p.x, nz)) p.z = nz;
+    }
+    const look = new THREE.Vector3(Math.sin(w.yaw) * Math.cos(w.pitch), Math.sin(w.pitch), Math.cos(w.yaw) * Math.cos(w.pitch));
+    this.controls.target.copy(this.camera.position).add(look);
+    this.camera.lookAt(this.controls.target);
+  }
+
+  /* ── Wave 7f: time slider markers ── */
+
+  /** Event markers: a coloured column at each place, taller and brighter for more recent events (strength 0–1). */
+  setEvents(spots: { floorId: number; x: number; z: number; color: string; strength: number }[]) {
+    this.eventSpots = spots;
+    this.drawEvents();
+  }
+  private drawEvents() {
+    if (this.eventMesh) { this.scene.remove(this.eventMesh); this.eventMesh.geometry.dispose(); (this.eventMesh.material as THREE.Material).dispose(); this.eventMesh = null; }
+    const spots = this.eventSpots.filter((e) => this.floorById.has(e.floorId)); if (!spots.length) return;
+    const geo = new THREE.CylinderGeometry(0.45, 0.45, 1, 10); geo.translate(0, 0.5, 0);
+    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, opacity: 0.9, depthWrite: false }), spots.length);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), col = new THREE.Color();
+    spots.forEach((e, i) => {
+      const f = this.floorById.get(e.floorId)!;
+      pos.set(e.x, this.floorY(f) + 0.1, e.z); sc.set(1, 1 + 5 * e.strength, 1);
+      mesh.setMatrixAt(i, m.compose(pos, q, sc)); mesh.setColorAt(i, col.set(e.color).multiplyScalar(0.45 + 0.55 * e.strength));
+    });
+    mesh.renderOrder = 12; this.eventMesh = mesh; this.scene.add(mesh);
+  }
+
   /** Fly so these points are in view (a route, a pathway or one of its legs). */
   frameSpots(spots: { floorId: number; x: number; z: number }[]) {
     const ps = spots.filter((sp) => this.floorById.has(sp.floorId)).map((sp) => new THREE.Vector3(sp.x, this.floorY(this.floorById.get(sp.floorId)!), sp.z));
@@ -1480,7 +1591,7 @@ export class TwinScene {
     el.addEventListener("pointerdown", (e) => {
       down = { x: e.clientX, y: e.clientY };
       // Drag to move (wave 7e): press and hold on a device of the floor shown on its own, then drag it to a room.
-      if (e.button !== 0 || this.drop || this.placing || this.pointPick || this.isolated == null || !this.events.canDrag) return;
+      if (e.button !== 0 || this.drop || this.placing || this.pointPick || this.walk || this.isolated == null || !this.events.canDrag) return;
       const hit = this.pick(e);
       if (hit?.kind !== "asset" || !this.events.canDrag(hit.id) || this.devicePos.get(hit.id)?.floorId !== this.isolated) return;
       const assetId = hit.id;
@@ -1632,10 +1743,13 @@ export class TwinScene {
       this.controls.target.lerpVectors(this.flight.tFrom, this.flight.tTo, e);
       if (k >= 1) { this.flight = null; this.idleSince = now; }
     }
-    // Slow orbit when nobody has touched the view for a while.
-    this.controls.autoRotate = !this.reducedMotion && !this.flight && now - this.idleSince > 12000;
-    this.controls.autoRotateSpeed = 0.35;
-    this.controls.update();
+    if (this.walk) this.updateWalk(now);
+    else {
+      // Slow orbit when nobody has touched the view for a while.
+      this.controls.autoRotate = !this.reducedMotion && !this.flight && now - this.idleSince > 12000;
+      this.controls.autoRotateSpeed = 0.35;
+      this.controls.update();
+    }
     const t = this.clock.getElapsedTime();
     const near = this.camera.position.distanceTo(this.controls.target) < NEAR_DISTANCE;
     if (near !== this.near && this.deviceMesh) {

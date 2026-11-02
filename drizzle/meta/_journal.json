@@ -141,6 +141,13 @@
       "when": 1793653957591,
       "tag": "0019_wave7_twin_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793656174462,
+      "tag": "0020_wave7_twin_tours",
+      "breakpoints": true
     }
   ]
 }

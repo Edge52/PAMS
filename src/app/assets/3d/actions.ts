@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, buildings, floors, rooms, twinNotes, twinViews, users } from "@/db/schema";
+import { assets, buildings, floors, rooms, twinNotes, twinTours, twinViews, users, type TourStop } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { decodeView } from "@/components/assets/twin/view-state";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
@@ -209,4 +209,48 @@ export async function deleteNoteAction(_: NoteActionState, fd: FormData): Promis
   if (n.createdById !== me.id && !can(me.role, "assets.edit")) return { error: "Only the note's author or someone who edits assets can delete it." };
   await db.delete(twinNotes).where(eq(twinNotes.id, n.id));
   return { ok: "Note deleted.", deletedId: n.id };
+}
+
+/* ── Guided tours (wave 7, step 7f) ── */
+
+export type Tour = { id: number; name: string; stops: TourStop[]; shared: boolean; mine: boolean; by: string | null };
+export type TourActionState = { ok?: string; error?: string; tour?: Tour; deletedId?: number } | null;
+
+const TourSchema = z.object({
+  facilityId: reqId("Hospital"), tourId: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().optional()),
+  name: z.string().trim().min(1, "Give the tour a name.").max(80, "Keep the name under 80 characters."),
+  stops: z.string().max(60000), shared: z.preprocess((v) => v === "on" || v === "true", z.boolean()),
+});
+const StopSchema = z.array(z.object({ state: z.string().max(2000), caption: z.string().trim().max(400), seconds: z.coerce.number().int().min(2).max(120) })).min(1, "Add at least one stop.").max(40, "A tour can have up to 40 stops.");
+
+/** Save a new tour, or change one of your own. Anyone who can see the hospital may make tours. */
+export async function saveTourAction(_: TourActionState, fd: FormData): Promise<TourActionState> {
+  const me = await requirePermission("assets.view");
+  const p = TourSchema.safeParse(formObject(fd));
+  if (!p.success) return { error: firstError(p.error) };
+  await requireFacilityAccess(p.data.facilityId, me);
+  let raw: unknown; try { raw = JSON.parse(p.data.stops); } catch { return { error: "The tour's stops couldn't be read." }; }
+  const st = StopSchema.safeParse(raw);
+  if (!st.success) return { error: firstError(st.error) };
+  if (st.data.some((x) => !decodeView(x.state))) return { error: "One of the stops couldn't be read. Remove it and add the view again." };
+  if (p.data.tourId) {
+    const [t] = await db.select().from(twinTours).where(eq(twinTours.id, p.data.tourId));
+    if (!t || t.facilityId !== p.data.facilityId) return { error: "That tour no longer exists." };
+    if (t.createdById !== me.id && !can(me.role, "users.manage")) return { error: "Only the person who made this tour can change it." };
+    await db.update(twinTours).set({ name: p.data.name, stops: st.data, shared: p.data.shared }).where(eq(twinTours.id, t.id));
+    return { ok: `Tour “${p.data.name}” saved.`, tour: { id: t.id, name: p.data.name, stops: st.data, shared: p.data.shared, mine: t.createdById === me.id, by: t.createdByName } };
+  }
+  const [row] = await db.insert(twinTours).values({ facilityId: p.data.facilityId, name: p.data.name, stops: st.data, shared: p.data.shared, createdById: me.id, createdByName: me.name }).returning({ id: twinTours.id });
+  return { ok: `Tour “${p.data.name}” saved${p.data.shared ? " and shared" : ""}.`, tour: { id: row.id, name: p.data.name, stops: st.data, shared: p.data.shared, mine: true, by: me.name } };
+}
+
+export async function deleteTourAction(_: TourActionState, fd: FormData): Promise<TourActionState> {
+  const me = await requirePermission("assets.view");
+  const id = Number(fd.get("tourId"));
+  const [t] = Number.isInteger(id) ? await db.select().from(twinTours).where(eq(twinTours.id, id)) : [];
+  if (!t) return { error: "That tour no longer exists." };
+  await requireFacilityAccess(t.facilityId, me);
+  if (t.createdById !== me.id && !can(me.role, "users.manage")) return { error: "Only the person who made this tour can delete it." };
+  await db.delete(twinTours).where(eq(twinTours.id, t.id));
+  return { ok: `Tour “${t.name}” deleted.`, deletedId: t.id };
 }

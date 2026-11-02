@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { addNoteAction, deleteNoteAction, setNoteStatusAction, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
+import { addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
 import { formatDims } from "@/lib/assets/dimensions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
@@ -24,6 +24,7 @@ import type { PathDraw } from "./scene";
 import { readiness, readinessLine } from "@/lib/flows/readiness";
 import type { TwinNote } from "@/lib/assets/twin-notes";
 import { NoteComposer, NoteList } from "./notes";
+import { EVENT_COLORS, EVENT_LABELS, eventsAt, perDay, shortcutFor, SHORTCUTS, type TimeEvent } from "./timeline";
 
 const LIVE_EVERY_MS = 60_000;
 
@@ -52,7 +53,9 @@ function decodeLive(p: LivePayload): Map<number, LiveMetrics> {
  * HUD layout follows the view's own width (see hud-state): side columns of collapsible panels (folded by default
  * below 1100 px), or on phones one bottom sheet with tabs.
  */
-export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [], notes: initialNotes = [], people = [], me = { id: 0, canEditAssets: false } }: {
+export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [], notes: initialNotes = [], people = [], me = { id: 0, canEditAssets: false }, tours: initialTours = [] }: {
+  /** Guided tours of this hospital the user can see (wave 7f). */
+  tours?: Tour[];
   data: TwinData; live: LivePayload; views: SavedView[]; canManageViews: boolean;
   /** Notes in the model (wave 7e), people a note can be for, and who is looking. */
   notes?: TwinNote[]; people?: { id: number; name: string }[]; me?: { id: number; canEditAssets: boolean };
@@ -113,6 +116,20 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [noteBusy, setNoteBusy] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [pickingSpot, setPickingSpot] = useState(false);
+  // Wave 7f: guided tours, the time slider, walk mode and keyboard shortcuts.
+  const [tours, setTours] = useState<Tour[]>(initialTours);
+  const [tourEdit, setTourEdit] = useState<{ id?: number; name: string; shared: boolean; stops: { state: string; caption: string; seconds: number }[] } | null>(null);
+  const [tourPlay, setTourPlay] = useState<{ tour: Tour; i: number; paused: boolean } | null>(null);
+  const [history, setHistory] = useState<{ since: number; until: number; days: number; events: TimeEvent[] } | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyDays, setHistoryDays] = useState(30);
+  const [timeAt, setTimeAt] = useState(0);
+  const [timeWindow, setTimeWindow] = useState(1);
+  const [timePlaying, setTimePlaying] = useState(false);
+  const [timeKinds, setTimeKinds] = useState<Set<TimeEvent["kind"]>>(new Set(["fault", "repair", "move", "install"]));
+  const [walking, setWalking] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const keysRef = useRef<(e: KeyboardEvent) => void>(() => {});
   const dragRef = useRef<{ canDrag: (id: number) => boolean; start: (id: number) => void }>({ canDrag: () => false, start: () => {} });
   const [query, setQuery] = useState("");
   const [cats, setCats] = useState<Set<string>>(new Set());
@@ -709,6 +726,128 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       start: (id) => { const a = assetById.get(id); if (a) startDrop(a, null); },
     };
   });
+  /* ── Wave 7f: tours ── */
+  function addStop() {
+    const v = currentView(); if (!v) return;
+    setTourEdit((t) => ({ ...(t ?? { name: "", shared: false, stops: [] }), stops: [...(t?.stops ?? []), { state: encodeView(v), caption: "", seconds: 8 }] }));
+  }
+  async function saveTour() {
+    if (!tourEdit) return;
+    const fd = new FormData();
+    fd.set("facilityId", String(data.facility.id)); fd.set("tourId", tourEdit.id ? String(tourEdit.id) : ""); fd.set("name", tourEdit.name);
+    fd.set("shared", tourEdit.shared ? "true" : "false"); fd.set("stops", JSON.stringify(tourEdit.stops));
+    const res = await saveTourAction(null, fd);
+    if (res?.tour) { setTours((l) => [...l.filter((t) => t.id !== res.tour!.id), res.tour!].sort((a, b) => a.name.localeCompare(b.name))); setTourEdit(null); }
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
+  async function deleteTour(t: Tour) {
+    if (!window.confirm(`Delete the tour “${t.name}”?`)) return;
+    const fd = new FormData(); fd.set("tourId", String(t.id));
+    const res = await deleteTourAction(null, fd);
+    if (res?.deletedId) setTours((l) => l.filter((x) => x.id !== t.id));
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
+  function playTour(t: Tour) {
+    setTourPlay({ tour: t, i: 0, paused: false });
+    try { void root.current?.requestFullscreen?.(); } catch { /* not allowed: plays in the page */ }
+  }
+  function stopTour() {
+    setTourPlay(null);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  }
+  const tourStop = tourPlay ? tourPlay.tour.stops[tourPlay.i] : null;
+  useEffect(() => {
+    if (!tourStop) return;
+    const v = decodeView(tourStop.state); if (v) applyView(v, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- show each stop once
+  }, [tourPlay?.tour.id, tourPlay?.i]);
+  useEffect(() => {
+    if (!tourPlay || tourPlay.paused || !tourStop) return;
+    const t = setTimeout(() => setTourPlay((p) => (!p ? p : p.i + 1 < p.tour.stops.length ? { ...p, i: p.i + 1 } : (stopTourSoon(), null))), tourStop.seconds * 1000);
+    return () => clearTimeout(t);
+  }, [tourPlay, tourStop]);
+  function stopTourSoon() { if (document.fullscreenElement) void document.exitFullscreen().catch(() => {}); }
+  // A shared link (…&tour=<id>) plays that tour once the model is ready.
+  const tourParamDone = useRef(false);
+  useEffect(() => {
+    if (!ready || tourParamDone.current) return;
+    tourParamDone.current = true;
+    const t = tours.find((x) => x.id === Number(new URLSearchParams(window.location.search).get("tour")));
+    if (!t) return;
+    const h = setTimeout(() => setTourPlay({ tour: t, i: 0, paused: false }), 0); // full screen needs a click, so it plays in the page
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
+  }, [ready]);
+
+  /* ── Wave 7f: time slider ── */
+  async function loadHistory(days: number) {
+    setHistoryBusy(true);
+    try {
+      const res = await fetch(`/assets/3d/history?facilityId=${data.facility.id}&days=${days}`, { cache: "no-store" });
+      const j = await res.json() as { since: string; until: string; events: TimeEvent[]; error?: string };
+      if (!res.ok) throw new Error(j.error ?? String(res.status));
+      const until = Date.parse(j.until);
+      setHistory({ since: Date.parse(j.since), until, days, events: j.events }); setTimeAt(until);
+    } catch (e) { setToast({ error: `The history couldn't be loaded (${(e as Error).message}).` }); }
+    setHistoryBusy(false);
+  }
+  const shownEvents = useMemo(() => (history ? eventsAt(history.events, timeAt, timeWindow * 86400_000, timeKinds) : []), [history, timeAt, timeWindow, timeKinds]);
+  useEffect(() => {
+    const s = sceneRef.current; if (!s || !ready) return;
+    if (!history) { s.setEvents([]); return; }
+    s.setEvents(shownEvents.flatMap((e) => {
+      const sp = s.spotOfAsset(e.assetId) ?? (e.roomId ? s.spotOfRoom(e.roomId) : null);
+      return sp ? [{ floorId: sp.floorId, x: sp.x, z: sp.z, color: EVENT_COLORS[e.kind], strength: e.strength }] : [];
+    }));
+  }, [shownEvents, history, ready]);
+  useEffect(() => {
+    if (!timePlaying || !history) return;
+    // A day of history every half second.
+    const t = setInterval(() => setTimeAt((x) => { const n = x + 86400_000 / 4; if (n >= history.until) { setTimePlaying(false); return history.until; } return n; }), 125);
+    return () => clearInterval(t);
+  }, [timePlaying, history]);
+
+  /* ── Wave 7f: walk mode ── */
+  async function startWalk() {
+    const s = sceneRef.current; if (!s) return;
+    if (floorId == null) { setToast({ error: "Choose a floor first, then walk it." }); return; }
+    const net = await routes.network(floorId);
+    if (s.startWalk(floorId, net, () => setWalking(false))) { setWalking(true); setSelected(null); }
+  }
+  function stopWalk() { sceneRef.current?.stopWalk(); setWalking(false); }
+
+  /* ── Wave 7f: keyboard shortcuts ── */
+  useEffect(() => {
+    keysRef.current = (e) => {
+      if (tourPlay) {
+        if (e.key === "Escape") stopTour();
+        else if (e.key === "ArrowRight") setTourPlay((p) => (p && p.i + 1 < p.tour.stops.length ? { ...p, i: p.i + 1 } : p));
+        else if (e.key === "ArrowLeft") setTourPlay((p) => (p && p.i > 0 ? { ...p, i: p.i - 1 } : p));
+        else if (e.key === " ") { e.preventDefault(); setTourPlay((p) => (p ? { ...p, paused: !p.paused } : p)); }
+        return;
+      }
+      const sc = shortcutFor(e, dropping != null || placingId != null || walking || pickingSpot);
+      if (!sc) return;
+      e.preventDefault();
+      if (sc.kind === "find") { if (mode === "phone") setSheetTab("find"); else if (!panels.isOpen("find")) panels.toggle("find"); setTimeout(() => document.getElementById("twin-search")?.focus(), 50); }
+      else if (sc.kind === "floor") { const f = [...data.floors].sort((a, b) => b.elevation - a.elevation)[sc.index]; if (f) chooseFloor(f.id); }
+      else if (sc.kind === "building") chooseFloor(null);
+      else if (sc.kind === "look") setStyle(style === "dark" ? "light" : "dark");
+      else if (sc.kind === "reset") sceneRef.current?.frameAll();
+      else if (sc.kind === "walk") void startWalk();
+      else if (sc.kind === "help") setHelpOpen((o) => !o);
+      else if (sc.kind === "clear") {
+        if (helpOpen) setHelpOpen(false);
+        else { setSelected(null); sceneRef.current?.select(null, false); clearRoute(); clearTrauma(); setFlowSel([]); setPlaying(false); }
+      }
+    };
+  });
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => keysRef.current(e);
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
+
   function frameLeg(r: Route) {
     const s = sceneRef.current; if (!s) return;
     if (r.floorChanges && floorId != null) { setFloorId(null); s.isolateFloor(null, false); }
@@ -839,6 +978,10 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             {st === "dark" ? "Digital twin" : "Architectural"}
           </button>
         ))}
+      </div>
+      <div className="mb-3 flex items-center gap-2 text-xs">
+        <button type="button" onClick={walking ? stopWalk : () => void startWalk()} aria-pressed={walking} className="twin-act" title="First person on the floor shown, kept to the walkable space (W)">{walking ? "Stop walking" : "Walk this floor"}</button>
+        {floorId == null && !walking && <span className="text-[#8fb6cc]">Choose a floor first</span>}
       </div>
       <div className="mb-3 flex gap-1 text-xs" role="group" aria-label="Camera">
         {([["iso", "Isometric"], ["plan", "Plan"], ["eye", "Eye level"]] as const).map(([k, label]) => (
@@ -1015,6 +1158,113 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               <Link href={`/boq/${plan.boq.id}?tab=gap`} className="mt-2 inline-block text-xs text-[#5fd6ff] hover:underline">Open the BOQ&apos;s plan vs installed</Link>
             </>
           )}
+        </>
+      )}
+    </div>
+  );
+  const stopsOk = tourEdit && tourEdit.stops.length > 0 && tourEdit.name.trim();
+  const toursPanel = (
+    <div className="space-y-2 text-sm">
+      {!tourEdit && (
+        <>
+          {tours.length === 0 ? <p className="text-xs text-[#8fb6cc]">No tours yet. A tour plays saved views one after another, with a caption for each: for a board meeting or a walk-through of a new wing.</p> : (
+            <ul className="space-y-1">
+              {tours.map((t) => (
+                <li key={t.id} className="rounded border border-[#123a55] px-2 py-1">
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-white">{t.name}</span>
+                    <button type="button" onClick={() => playTour(t)} className="twin-act">Play</button>
+                  </div>
+                  <p className="text-[11px] text-[#8fb6cc]">{t.stops.length} stop{t.stops.length === 1 ? "" : "s"} · {Math.round(t.stops.reduce((a, x) => a + x.seconds, 0) / 6) / 10} min{t.shared ? " · shared" : ""}{!t.mine && t.by ? ` · by ${t.by}` : ""}</p>
+                  <div className="mt-0.5 flex gap-3 text-[11px]">
+                    <button type="button" onClick={async () => { const link = `${window.location.origin}/assets/3d?facilityId=${data.facility.id}&tour=${t.id}`; try { await navigator.clipboard.writeText(link); setToast({ ok: t.shared ? "Link to this tour copied." : "Link copied. Share the tour so others can open it." }); } catch { setShareLink(link); } }} className="text-[#5fd6ff] hover:underline">Copy link</button>
+                    {(t.mine || canManageViews) && <button type="button" onClick={() => setTourEdit({ id: t.id, name: t.name, shared: t.shared, stops: t.stops })} className="text-[#5fd6ff] hover:underline">Edit</button>}
+                    {(t.mine || canManageViews) && <button type="button" onClick={() => void deleteTour(t)} className="text-[#8fb6cc] hover:text-[#ff8a96]">Delete</button>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" onClick={() => setTourEdit({ name: "", shared: false, stops: [] })} className="twin-act">New tour</button>
+        </>
+      )}
+      {tourEdit && (
+        <div className="space-y-2">
+          <input value={tourEdit.name} onChange={(e) => setTourEdit({ ...tourEdit, name: e.target.value })} maxLength={80} placeholder="Tour name, e.g. New ICU wing" aria-label="Tour name" className="twin-input" />
+          <ol className="space-y-1.5">
+            {tourEdit.stops.map((st, i) => (
+              <li key={i} className="rounded border border-[#123a55] p-1.5">
+                <div className="flex items-center gap-1 text-[11px] text-[#8fb6cc]">
+                  <span className="flex-1">Stop {i + 1}{(() => { const v = decodeView(st.state); return v ? ` · ${v.floor != null ? floorById.get(v.floor)?.name ?? "" : "Whole building"}` : ""; })()}</span>
+                  <button type="button" onClick={() => { const v = decodeView(st.state); if (v) applyView(v); }} className="hover:text-white">Show</button>
+                  <button type="button" disabled={i === 0} onClick={() => setTourEdit({ ...tourEdit, stops: tourEdit.stops.map((x, j) => (j === i - 1 ? tourEdit.stops[i] : j === i ? tourEdit.stops[i - 1] : x)) })} className="px-1 hover:text-white disabled:opacity-40" aria-label="Move up">↑</button>
+                  <button type="button" disabled={i === tourEdit.stops.length - 1} onClick={() => setTourEdit({ ...tourEdit, stops: tourEdit.stops.map((x, j) => (j === i + 1 ? tourEdit.stops[i] : j === i ? tourEdit.stops[i + 1] : x)) })} className="px-1 hover:text-white disabled:opacity-40" aria-label="Move down">↓</button>
+                  <button type="button" onClick={() => setTourEdit({ ...tourEdit, stops: tourEdit.stops.filter((_, j) => j !== i) })} className="hover:text-[#ff8a96]" aria-label="Remove stop">✕</button>
+                </div>
+                <input value={st.caption} onChange={(e) => setTourEdit({ ...tourEdit, stops: tourEdit.stops.map((x, j) => (j === i ? { ...x, caption: e.target.value } : x)) })} maxLength={400} placeholder="Caption" aria-label={`Caption for stop ${i + 1}`} className="twin-input mt-1 text-xs" />
+                <label className="mt-1 flex items-center gap-1 text-[11px] text-[#8fb6cc]">Seconds
+                  <input type="number" min={2} max={120} value={st.seconds} onChange={(e) => setTourEdit({ ...tourEdit, stops: tourEdit.stops.map((x, j) => (j === i ? { ...x, seconds: Math.max(2, Math.min(120, Number(e.target.value) || 8)) } : x)) })} className="twin-input w-16! py-0.5" />
+                </label>
+              </li>
+            ))}
+          </ol>
+          <button type="button" onClick={addStop} className="twin-act">Add this view as a stop</button>
+          <label className="flex items-center gap-2 text-xs text-[#8fb6cc]"><input type="checkbox" checked={tourEdit.shared} onChange={(e) => setTourEdit({ ...tourEdit, shared: e.target.checked })} className="accent-[#2fd3ff]" />Share with the team</label>
+          <div className="flex gap-1.5">
+            <button type="button" onClick={() => void saveTour()} disabled={!stopsOk} className="twin-act">Save tour</button>
+            <button type="button" onClick={() => setTourEdit(null)} className="twin-act">Cancel</button>
+          </div>
+          <p className="text-[11px] text-[#8fb6cc]">Set up the model (floor, camera, layer, filters), then add it as a stop. Playing: ← → step, Space pauses, Esc ends.</p>
+        </div>
+      )}
+    </div>
+  );
+  const histo = history ? perDay(history.events.filter((e) => timeKinds.has(e.kind)), history.since, history.days) : [];
+  const histoMax = Math.max(1, ...histo);
+  const timePanel = (
+    <div className="space-y-2 text-sm">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <select value={historyDays} onChange={(e) => setHistoryDays(Number(e.target.value))} aria-label="How far back" className="twin-input w-auto! py-0.5">
+          {[7, 30, 90, 365].map((d) => <option key={d} value={d}>Last {d} days</option>)}
+        </select>
+        <button type="button" onClick={() => void loadHistory(historyDays)} disabled={historyBusy} className="twin-act">{historyBusy ? "Loading…" : history ? "Reload" : "Load"}</button>
+        {history && <button type="button" onClick={() => { setHistory(null); setTimePlaying(false); }} className="twin-act">Clear</button>}
+      </div>
+      {!history && <p className="text-xs text-[#8fb6cc]">Replay what happened: faults reported, repairs done, moves and installations, shown at each device. Device status at a past moment isn&apos;t stored, so it isn&apos;t replayed.</p>}
+      {history && (
+        <>
+          <div className="flex h-8 items-end gap-px" aria-hidden>{histo.map((n, i) => <div key={i} className="flex-1 bg-[#2f6b8f]" style={{ height: `${Math.max(4, (n / histoMax) * 100)}%` }} />)}</div>
+          <input type="range" min={history.since} max={history.until} step={3600_000} value={timeAt} onChange={(e) => { setTimeAt(Number(e.target.value)); setTimePlaying(false); }}
+            aria-label="Time" aria-valuetext={new Date(timeAt).toLocaleString()} className="w-full accent-[#2fd3ff]" />
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <button type="button" onClick={() => { if (timeAt >= history.until) setTimeAt(history.since); setTimePlaying((p) => !p); }} aria-pressed={timePlaying} className="twin-act">{timePlaying ? "Pause" : "Play"}</button>
+            <span className="text-white">{new Date(timeAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+            <select value={timeWindow} onChange={(e) => setTimeWindow(Number(e.target.value))} aria-label="Show events from the last" className="twin-input ml-auto w-auto! py-0.5">
+              {[1, 3, 7].map((d) => <option key={d} value={d}>{d === 1 ? "Last day" : `Last ${d} days`}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+            {(["fault", "repair", "move", "install"] as const).map((k) => (
+              <label key={k} className="flex items-center gap-1">
+                <input type="checkbox" checked={timeKinds.has(k)} onChange={() => setTimeKinds((s0) => { const n = new Set(s0); if (n.has(k)) n.delete(k); else n.add(k); return n; })} className="accent-[#2fd3ff]" />
+                <span aria-hidden className="inline-block size-2 rounded-full" style={{ background: EVENT_COLORS[k] }} />{EVENT_LABELS[k]} {history.events.filter((e) => e.kind === k).length}
+              </label>
+            ))}
+          </div>
+          {shownEvents.length > 0 ? (
+            <ul className="space-y-0.5 text-xs">
+              {shownEvents.slice(0, 8).map((e, i) => {
+                const a = assetById.get(e.assetId);
+                return (
+                  <li key={i}><button type="button" onClick={() => a && focus({ kind: "asset", id: a.id })} className="w-full rounded px-1 py-0.5 text-left hover:bg-[#0c2a40]">
+                    <span style={{ color: EVENT_COLORS[e.kind] }}>●</span> <span className="text-white">{a ? `${a.deviceType} ${a.tag}` : "A device"}</span>
+                    <span className="block text-[11px] text-[#8fb6cc]">{e.text} · {new Date(e.t).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                  </button></li>
+                );
+              })}
+              {shownEvents.length > 8 && <li className="text-[11px] text-[#8fb6cc]">and {shownEvents.length - 8} more in the model</li>}
+            </ul>
+          ) : <p className="text-xs text-[#8fb6cc]">Nothing in this window.</p>}
         </>
       )}
     </div>
@@ -1454,6 +1704,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           </span>
           <Link href="/assets/map" className="twin-ctl">2D map</Link>
           <button type="button" onClick={() => sceneRef.current?.frameAll()} className="twin-ctl">Reset view</button>
+          <button type="button" onClick={() => setHelpOpen((o) => !o)} aria-expanded={helpOpen} className="twin-ctl" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
         </div>
       </div>
 
@@ -1481,6 +1732,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             <HudPanel title="Pathways" summary={flowSel.length ? `${flowSel.length} shown${playing ? " · playing" : ""}` : flows.length ? `${flows.length}` : "None"} open={panels.isOpen("pathways")} onToggle={() => panels.toggle("pathways")} bodyClassName="max-h-[50vh] overflow-y-auto">
               {pathwaysPanel}
             </HudPanel>
+            <HudPanel title="History" summary={history ? `${shownEvents.length} shown` : "Off"} open={panels.isOpen("history")} onToggle={() => panels.toggle("history")} bodyClassName="max-h-[50vh] overflow-y-auto">
+              {timePanel}
+            </HudPanel>
             <HudPanel title="Status" summary={statuses.size ? `${statuses.size} of ${visibleStatuses.length}` : "All"} open={panels.isOpen("status")} onToggle={() => panels.toggle("status")}>
               {statusList}
             </HudPanel>
@@ -1499,6 +1753,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             </HudPanel>
             <HudPanel title="Notes" summary={`${notes.filter((n) => n.status === "OPEN").length} open`} open={panels.isOpen("notes")} onToggle={() => panels.toggle("notes")} bodyClassName="max-h-[35vh] overflow-y-auto">
               {notesPanel}
+            </HudPanel>
+            <HudPanel title="Tours" summary={tours.length ? `${tours.length}` : undefined} open={panels.isOpen("tours")} onToggle={() => panels.toggle("tours")} bodyClassName="max-h-[40vh] overflow-y-auto">
+              {toursPanel}
             </HudPanel>
             <HudPanel title="Views" summary={views.length ? `${views.length} saved` : undefined} open={panels.isOpen("views")} onToggle={() => panels.toggle("views")} bodyClassName="max-h-[35vh] overflow-y-auto">
               {viewsPanel}
@@ -1544,11 +1801,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           {!sheetTab && <p className="px-3 pb-2 pt-1 text-xs text-[#8fb6cc]">{floorName}{filterCount ? ` · ${filterCount} filter${filterCount === 1 ? "" : "s"} on` : ""} · tap a device for details</p>}
           {sheetTab && (
             <div id="twin-sheet" role="tabpanel" aria-labelledby={`twin-tab-${sheetTab}`} className="max-h-[45dvh] overflow-y-auto px-3 pb-4 pt-2">
-              {sheetTab === "floors" && <div className="space-y-3">{floorList}{viewControls}<section><h2 className="twin-h">Views</h2>{viewsPanel}</section></div>}
+              {sheetTab === "floors" && <div className="space-y-3">{floorList}{viewControls}<section><h2 className="twin-h">Views</h2>{viewsPanel}</section><section><h2 className="twin-h">Tours</h2>{toursPanel}</section></div>}
               {sheetTab === "filters" && (
                 <div className="space-y-3">
                   <section><h2 className="twin-h">Problem layer</h2>{layerPanel}</section>
                   <section><h2 className="twin-h">Pathways</h2>{pathwaysPanel}</section>
+                  <section><h2 className="twin-h">History</h2>{timePanel}</section>
                   {plans.length > 0 && <section><h2 className="twin-h">Plan vs installed</h2>{planPanel}</section>}
                   <section><h2 className="twin-h">Status</h2>{statusList}</section>
                   <section><h2 className="twin-h">Equipment types</h2>{typeList}</section>
@@ -1592,6 +1850,31 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           <button type="button" onClick={() => setToast(null)} className="text-xs text-[#8fb6cc] hover:text-white" aria-label="Dismiss">Close</button>
         </div>
       )}
+      {helpOpen && (
+        <div role="dialog" aria-label="Keyboard shortcuts" className="twin-card pointer-events-auto absolute left-1/2 top-24 z-30 w-[22rem] max-w-[calc(100%-2rem)] -translate-x-1/2 p-4">
+          <div className="mb-2 flex items-center justify-between"><h2 className="twin-h mb-0!">Keyboard shortcuts</h2><button type="button" onClick={() => setHelpOpen(false)} className="text-xs text-[#8fb6cc] hover:text-white">Close</button></div>
+          <dl className="grid grid-cols-[4.5rem_1fr] gap-x-3 gap-y-1 text-sm">{SHORTCUTS.map((k) => <div key={k.keys} className="contents"><dt><kbd className="rounded border border-[#1d4f6d] px-1.5 text-xs text-white">{k.keys}</kbd></dt><dd className="text-[#d6f3ff]">{k.what}</dd></div>)}</dl>
+          <p className="mt-2 text-[11px] text-[#8fb6cc]">Shortcuts are off while you type in a field.</p>
+        </div>
+      )}
+      {walking && (
+        <div className="pointer-events-auto absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-end gap-3">
+          <div className="twin-card px-3 py-2 text-xs text-[#d6f3ff]">Walking {floorName}: W A S D or arrows, Shift to hurry, drag to look. <button type="button" onClick={stopWalk} className="twin-act ml-2">Stop</button></div>
+          <WalkStick onMove={(f, t) => sceneRef.current?.setWalkStick(f, t)} />
+        </div>
+      )}
+      {tourPlay && tourStop && (
+        <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-[#020a12f2] to-transparent px-6 pb-6 pt-16">
+          <p className="mx-auto max-w-3xl text-center text-lg font-semibold text-white sm:text-2xl" aria-live="polite">{tourStop.caption || "\u00a0"}</p>
+          <div className="mx-auto mt-3 flex max-w-3xl items-center justify-center gap-2 text-sm">
+            <span className="text-[#8fb6cc]">{tourPlay.tour.name} · {tourPlay.i + 1} / {tourPlay.tour.stops.length}</span>
+            <button type="button" onClick={() => setTourPlay((p) => (p && p.i > 0 ? { ...p, i: p.i - 1 } : p))} disabled={tourPlay.i === 0} className="twin-act" aria-label="Previous stop">←</button>
+            <button type="button" onClick={() => setTourPlay((p) => (p ? { ...p, paused: !p.paused } : p))} className="twin-act">{tourPlay.paused ? "Play" : "Pause"}</button>
+            <button type="button" onClick={() => setTourPlay((p) => (p && p.i + 1 < p.tour.stops.length ? { ...p, i: p.i + 1 } : p))} disabled={tourPlay.i + 1 >= tourPlay.tour.stops.length} className="twin-act" aria-label="Next stop">→</button>
+            <button type="button" onClick={stopTour} className="twin-act">End</button>
+          </div>
+        </div>
+      )}
       {hover && hoverCard && (
         <div className="pointer-events-none absolute z-10 max-w-64 rounded-md border border-[#1d6f9a] bg-[#04121fe6] px-2.5 py-1.5 text-xs text-white backdrop-blur"
           style={{ left: hover.x + 14, top: hover.y + 10 }} aria-hidden>
@@ -1625,6 +1908,26 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         </div>
       )}
       {renderOpen && <RenderPanel data={{ ...data, assets: assetList }} floorId={floorId} onClose={() => setRenderOpen(false)} />}
+    </div>
+  );
+}
+
+/** On-screen stick for walk mode on tablets: push up to walk, sideways to turn. */
+function WalkStick({ onMove }: { onMove: (forward: number, turn: number) => void }) {
+  const [knob, setKnob] = useState<{ x: number; y: number } | null>(null);
+  const R = 36;
+  const update = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    let x = e.clientX - (r.left + r.width / 2), y = e.clientY - (r.top + r.height / 2);
+    const d = Math.hypot(x, y); if (d > R) { x = (x / d) * R; y = (y / d) * R; }
+    setKnob({ x, y }); onMove(-y / R, x / R);
+  };
+  const end = () => { setKnob(null); onMove(0, 0); };
+  return (
+    <div role="group" aria-label="Walk stick: push up to go forward, sideways to turn (keyboard: W A S D)"
+      onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); update(e); }} onPointerMove={(e) => { if (knob) update(e); }} onPointerUp={end} onPointerCancel={end}
+      className="twin-card relative size-24 touch-none rounded-full! p-0!">
+      <span className="absolute left-1/2 top-1/2 size-10 rounded-full bg-[#2fd3ff66] ring-1 ring-[#2fd3ff]" style={{ transform: `translate(calc(-50% + ${knob?.x ?? 0}px), calc(-50% + ${knob?.y ?? 0}px))` }} />
     </div>
   );
 }

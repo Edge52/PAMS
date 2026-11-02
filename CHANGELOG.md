@@ -2,7 +2,7 @@
 
 ## Unreleased — wave 7 (in progress, branch `wave-7`)
 
-Migrations `0016`–`0019`. Update with `git pull` and `npm run demo`; your data is kept.
+Migrations `0016`–`0020`. Update with `git pull` and `npm run demo`; your data is kept.
 
 - **Lift cores**: declared once per hospital under Facilities › Lifts (bed, public, service, AGV; stops per floor;
   cars, capacity, typical wait). Suggested from lift lobbies in the drawings and marked *assumed* until confirmed. The
@@ -64,6 +64,17 @@ Migrations `0016`–`0019`. Update with `git pull` and `npm run demo`; your data
   status, jobs and notes.
 - **Drag to move**: on a floor shown on its own, press and hold a device, then drag it to another room. It drops at
   real size, with *Undo* for 30 s, the same as *Move on plan*.
+- **Guided tours (step 7f)**: chain views of the model into a tour with a caption and timing per stop, play it full
+  screen (← → step, Space pauses, Esc ends), share it with the team, and copy a link that plays it.
+- **History time slider**: load the last 7, 30, 90 or 365 days and drag through them, or play them, a day every half
+  second. Faults (red), repairs (green), moves (blue) and installations (purple) rise at each device, fading with age.
+  The panel shows a per-day bar chart and the latest events. Device status at a past moment isn't stored, so it isn't
+  replayed.
+- **Walk mode**: *Walk this floor* (or W) puts you at eye height on the floor shown, kept to the walkable space. W A S
+  D or arrows, Shift to hurry, drag to look, Esc to stop; a round stick on tablets.
+- **Keyboard shortcuts**: F find, 1–9 floors (as listed), 0 whole building, L look, R reset, W walk, Esc clear, ? to
+  list them. Off while typing.
+- README and user guide cover the wave 7 features.
 - Demo restarts no longer crash on the work-order seed.
 
 ## Release 3.0 — 1 Nov 2026

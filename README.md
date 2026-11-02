@@ -141,6 +141,29 @@ for any facility; floors imported from CAD show the real walls, doors, glazing a
 - **Phones and tablets**: one bottom sheet with tabs on phones; the floor a link points at loads first and the rest
   stream in; a device that struggles switches itself to lighter graphics (no glow).
 
+Added in wave 7 (branch `wave-7`):
+
+- **Lift cores** (Facilities › Lifts): bed, public, service and AGV lifts with the floors they stop at, suggested from
+  the drawings' lift lobbies and marked *assumed* until confirmed.
+- **Walking routes**: routes follow corridors and doors on a network built from each floor's wall lines, with lifts
+  chosen by journey (beds by bed lifts) and times by pace. *Nearest working device* ranks by real walking time.
+- **Patient pathways** (Planning › Patient pathways): steps and arrows with shares, five starters, checks while you
+  edit, versions, export and import, and a canvas to arrange and draw them. In 3D: each pathway on its real route,
+  animated patients, a card with distance and time per patient, live **equipment readiness**, lift load, corridor
+  traffic and side-by-side comparison. **Analysis**: room load at the busiest hour, beds, scanners, with an Excel
+  report ([docs/pathway-analysis.md](docs/pathway-analysis.md)).
+- **Real-size equipment**: devices have a size (L × W × H) and are drawn at it; new devices are placed from a *To
+  place* list by dropping them on the plan, and any device can be dragged to another room (press and hold).
+- **Notes** on rooms, devices or spots, for a colleague, turned into a work order with a click; **live alerts** flash
+  new faults; **hover cards** sum up a room or device.
+- **Guided tours**: saved views in order with captions and timing, played full screen and shared by link.
+- **History**: replay the last 7–365 days of faults, repairs, moves and installations with a time slider.
+- **Walk mode**: first person on a floor, kept to the walkable space (keys, drag to look, or an on-screen stick).
+- **Keyboard shortcuts**: F find, 1–9 floors, 0 whole building, L look, R reset, W walk, Esc clear, ? help.
+- **Presentation renders**: furnished dollhouse images of a floor or department at up to 8K, and a floor book.
+- **Update drawings in place** (Facilities › Update drawings, or `npm run cad:update`): revised DWG exports are
+  matched by floor and room code and reviewed before anything changes; equipment and history are kept.
+
 La Plaza Hospital is imported from its DWG floor plans (`seed-data/cad/la-plaza.json`, 9 floors, 1,414 rooms with
 their real outlines, 5 m floor to floor, walls drawn 3.3 m high). Its equipment is an **illustrative fit-out generated
 from room names** (beds and monitors in ward rooms, the critical-care set in ICU bays, a CT in the CT room…), marked as
@@ -185,7 +208,7 @@ see [docs/reference-figures.md](docs/reference-figures.md) and the review sheet 
 ## Updating an existing installation
 
 Pull the new code, run `npm install`, then `npm run db:migrate` (adds the new tables and columns; your data is kept).
-`npm run demo` does this by itself and adds any new demo data. Migrations so far: up to `0015_wave5_models_tags`.
+`npm run demo` does this by itself and adds any new demo data. Migrations so far: up to `0020_wave7_twin_tours` (wave 7: `0016`–`0020`).
 
 For a real installation, load the hospital's floors and rooms from its CAD import **without** demo equipment with
 `npm run cad:load` (on the Docker server: `docker compose exec app npx tsx scripts/load-buildings.ts`). The going-live

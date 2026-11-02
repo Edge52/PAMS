@@ -1,7 +1,7 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, patientFlows, rooms, twinNotes, twinViews, userFacilities, users } from "@/db/schema";
+import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, patientFlows, rooms, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
 import { noteOf } from "@/lib/assets/twin-notes";
 import { equipmentNames, loadFlow } from "@/lib/flows/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
@@ -103,7 +103,10 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
   const people = await db.select({ id: users.id, name: users.name }).from(users)
     .where(sql`${users.active} and (${users.allFacilities} or ${users.role} = 'ADMIN' or exists(select 1 from ${userFacilities} uf where uf.user_id = ${users.id} and uf.facility_id = ${facility.id}))`)
     .orderBy(asc(users.name));
-  return <TwinView data={data} live={await twinLive(facility.id)} notes={notes} people={people} me={{ id: me.id, canEditAssets: can(me.role, "assets.edit") }}
+  const tours = (await db.select().from(twinTours)
+    .where(sql`${twinTours.facilityId} = ${facility.id} and (${twinTours.shared} or ${twinTours.createdById} = ${me.id})`).orderBy(asc(twinTours.name)))
+    .map((t) => ({ id: t.id, name: t.name, stops: t.stops, shared: t.shared, mine: t.createdById === me.id, by: t.createdByName }));
+  return <TwinView data={data} live={await twinLive(facility.id)} notes={notes} tours={tours} people={people} me={{ id: me.id, canEditAssets: can(me.role, "assets.edit") }}
     views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName }))}
     canManageViews={can(me.role, "users.manage")}
     plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []} />;

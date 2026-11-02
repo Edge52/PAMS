@@ -133,3 +133,17 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
   by room or department.
 - **Plan vs installed**: choose a BOQ; missing equipment shows as white wireframes.
 - Click a device or room for details and actions. **Views**: save, share, copy link, download an image.
+- **Pathways**: tick a published pathway to see it on its walking routes; *Play patients*; the card shows distance,
+  time, lift trips and whether the equipment each step needs is working. Show two to compare them, and switch on
+  *Corridor traffic*. Lift load is listed under the card.
+- **Notes**: select a room or device and *Add a note* (or *Note on a spot*); choose who it's for. Close it when done,
+  or turn a device note into a work order.
+- **History**: load the last 7–365 days and drag the slider (or *Play*): faults red, repairs green, moves blue,
+  installations purple, at each device.
+- **Tours**: *New tour*, set up the model, *Add this view as a stop*, write a caption, save. *Play* runs it full screen
+  (← → step, Space pauses, Esc ends); *Copy link* shares it.
+- **Walk this floor** (or W): first person on the floor shown. W A S D or arrows, Shift to hurry, drag to look, Esc to
+  stop. On a tablet, use the round stick.
+- **Move a device by hand**: on a floor shown on its own, press and hold a device, then drag it to a room. *Undo*
+  lasts 30 seconds.
+- Press **?** for all keyboard shortcuts.
