@@ -10,6 +10,7 @@ import {
   projects, purchaseOrders, rooms, workOrders,
 } from "@/db/schema";
 import { EmptyState, Panel, PageHeader, LinkButton, Stat, StatusBadge, Table, THead, Th, Td } from "@/components/ui";
+import { pathwayRisks } from "@/lib/flows/analysis-server";
 import { addDaysISO, addMonthsISO, daysUntil, formatDate, formatMoney, formatNumber, num, todayISO } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -84,6 +85,8 @@ export default async function Dashboard() {
       .orderBy(sql`case ${workOrders.priority} when 'URGENT' then 0 when 'HIGH' then 1 when 'NORMAL' then 2 else 3 end`, workOrders.reportedAt).limit(8)
     : [];
 
+  // Wave 7: published patient pathways whose steps lack working equipment right now.
+  const risks = can(me.role, "assets.view") ? await pathwayRisks(scope) : [];
   const total = assetTotals[0]?.n ?? 0;
   const byStatus = Object.fromEntries(statusRows.map((r) => [r.status, r.n]));
   const inService = (byStatus.IN_SERVICE ?? 0) + (byStatus.INSTALLED ?? 0);
@@ -119,6 +122,21 @@ export default async function Dashboard() {
               <li key={w.step.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm">
                 <Link href={w.request.href} className="font-semibold text-primary hover:underline">{w.request.title}</Link>
                 <span className="text-xs text-muted">{w.mode === "paper" ? `Record ${w.step.memberName ?? "member"}'s signature` : w.step.label} · since {formatDate(w.request.requestedAt)}</span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+
+      {risks.length > 0 && (
+        <Panel title={`Patient pathways at risk (${risks.length})`} className="mb-6" padded={false}
+          actions={<Link href="/flows/analysis" className="text-sm font-semibold text-primary hover:underline">Pathway analysis</Link>}>
+          <ul className="divide-y divide-line">
+            {risks.slice(0, 5).map((r) => (
+              <li key={r.id} className="px-4 py-2.5 text-sm">
+                <Link href={`/flows/${r.id}`} className="font-semibold text-primary hover:underline">{r.name}</Link>
+                <span className="text-xs text-muted"> · {r.problems.length} of {r.total} equipment needs not met</span>
+                <span className="block text-xs text-danger">{r.problems.slice(0, 2).join(" · ")}{r.problems.length > 2 ? ` · +${r.problems.length - 2} more` : ""}</span>
               </li>
             ))}
           </ul>

@@ -18,7 +18,8 @@ import { bucketOf, colorFor, LAYER_INFO, LAYERS, legendFor, NEUTRAL, roomValues,
 import { RenderPanel } from "./render/render-panel";
 import { RouteService, routeSpots } from "./nav/service";
 import { formatDuration, type Route } from "./nav/route";
-import { capPauses, FLOW_COLORS, journeyOf, pathwayCard, samplePath, stepRoom, trackOf, tubeRadius, visits, type TwinFlow } from "./pathways";
+import { capPauses, FLOW_COLORS, heatLegsOf, journeyOf, liftTripsOf, pathwayCard, samplePath, stepRoom, trackOf, tubeRadius, visits, type TwinFlow } from "./pathways";
+import { corridorHeat, liftLoad } from "@/lib/flows/analysis";
 import type { PathDraw } from "./scene";
 import { readiness, readinessLine } from "@/lib/flows/readiness";
 
@@ -101,6 +102,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [cardFlow, setCardFlow] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(60);
+  const [heatOn, setHeatOn] = useState(false);
   const [query, setQuery] = useState("");
   const [cats, setCats] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
@@ -504,9 +506,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => {
     if (!ready || flowParamDone.current) return;
     flowParamDone.current = true;
-    const id = Number(new URLSearchParams(window.location.search).get("flow"));
-    if (!id || !flows.some((f) => f.id === id)) return;
-    const t = setTimeout(() => { setFlowSel([id]); setCardFlow(id); if (!panels.isOpen("pathways")) panels.toggle("pathways"); }, 0);
+    const ids = (new URLSearchParams(window.location.search).get("flow") ?? "").split(",").map(Number).filter((id) => flows.some((f) => f.id === id));
+    if (!ids.length) return;
+    const t = setTimeout(() => { setFlowSel(ids); setCardFlow(ids[0]); if (!panels.isOpen("pathways")) panels.toggle("pathways"); }, 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
   }, [ready]);
@@ -565,6 +567,14 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     s.setPlay(sources.length ? sources : null, playSpeedRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- flowColor depends on flows only
   }, [playing, flowSel, flowRoutes, flows, ready]);
+  // Wave 7d: load of the shown pathways — lift trips and corridor traffic (patients a day per 2 m of corridor).
+  const shownWithRoutes = useMemo(() => flowSel.map((id) => ({ f: flows.find((x) => x.id === id), rs: flowRoutes.get(id) })).filter((x): x is { f: TwinFlow; rs: (Route | null)[] } => !!x.f && !!x.rs), [flowSel, flows, flowRoutes]);
+  const liftRows = useMemo(() => liftLoad(
+    shownWithRoutes.flatMap(({ f, rs }) => liftTripsOf(f, rs, (id) => floorById.get(id)?.level ?? 0)),
+    (name) => data.lifts.find((l) => l.name === name)?.cars ?? 1,
+  ), [shownWithRoutes, floorById, data.lifts]);
+  const heat = useMemo(() => (heatOn ? [...corridorHeat(shownWithRoutes.flatMap(({ f, rs }) => heatLegsOf(f, rs))).values()] : null), [heatOn, shownWithRoutes]);
+  useEffect(() => { if (ready) sceneRef.current?.setHeat(heat); }, [heat, ready]);
   function toggleFlow(id: number) {
     const on = !flowSel.includes(id);
     setFlowSel((sel) => (on ? [...sel, id] : sel.filter((x) => x !== id)));
@@ -952,7 +962,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={flowSel.includes(f.id)} onChange={() => toggleFlow(f.id)} className="accent-[#2fd3ff]" />
                   <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: flowColor(f.id) }} />
-                  <span className="min-w-0 truncate">{f.name}</span>
+                  <span className="min-w-0 truncate">{f.name}{f.status === "DRAFT" ? ` (v${f.version} draft)` : ""}</span>
                   {f.dailyVolume != null && <span className="ml-auto shrink-0 text-xs text-[#8fb6cc]">{f.dailyVolume}/day</span>}
                 </label>
               </li>
@@ -1020,6 +1030,52 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                 </div>
               )}
               <Link href={`/flows/${shownFlow.id}`} className="inline-block text-xs text-[#5fd6ff] hover:underline">Open the pathway</Link>
+            </div>
+          )}
+          {shownWithRoutes.length >= 2 && (
+            <div className="border-t border-[#123a55] pt-2">
+              <p className="twin-h mb-1!">Compare</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr><th className="text-left font-normal text-[#8fb6cc]" />{shownWithRoutes.map(({ f }) => <th key={f.id} className="px-1 text-right font-semibold" style={{ color: flowColor(f.id) }}>{f.name.split(/ [—-] /)[0]} v{f.version}{f.status === "DRAFT" ? " (draft)" : ""}</th>)}</tr></thead>
+                  <tbody>
+                    {([
+                      ["Walked", (c) => `${Math.round(c.metres)} m`],
+                      ["Moving", (c) => formatDuration(c.moveSeconds)],
+                      ["In care", (c) => (c.careMinutes >= 2880 ? `${(c.careMinutes / 1440).toFixed(1)} d` : c.careMinutes >= 120 ? `${Math.round(c.careMinutes / 60)} h` : `${Math.round(c.careMinutes)} min`)],
+                      ["Floor changes", (c) => c.floorChanges.toFixed(1)],
+                      ["Lift trips", (c) => c.liftTrips.toFixed(1)],
+                      ["Longest leg", (c) => (c.longest?.route ? `${Math.round(c.longest.route.metres)} m` : "—")],
+                    ] as [string, (c: ReturnType<typeof pathwayCard>) => string][]).map(([label, fmt]) => (
+                      <tr key={label} className="border-t border-[#123a55]"><td className="py-0.5 text-[#8fb6cc]">{label}</td>{shownWithRoutes.map(({ f, rs }) => <td key={f.id} className="px-1 text-right text-white">{fmt(pathwayCard(f, rs))}</td>)}</tr>
+                    ))}
+                    <tr className="border-t border-[#123a55]"><td className="py-0.5 text-[#8fb6cc]">Equipment</td>{shownWithRoutes.map(({ f }) => {
+                      const r = readiness(f.steps, data.rooms, placed.map((a) => ({ id: a.id, typeCode: a.typeCode, typeName: a.deviceType, roomId: a.roomId, status: a.status })), (a) => statusOf(a.id, a.status), f.names);
+                      return <td key={f.id} className={`px-1 text-right ${r.blocked ? "text-[#ff8a96]" : "text-[#3cf5a6]"}`}>{r.total ? `${r.ok}/${r.total}` : "—"}</td>;
+                    })}</tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-1 text-[11px] text-[#8fb6cc]">Per patient. To compare a draft with the published version, use “Show in 3D” on the draft.</p>
+            </div>
+          )}
+          {shownWithRoutes.length > 0 && (
+            <div className="border-t border-[#123a55] pt-2">
+              <p className="twin-h mb-1!">Load of these pathways</p>
+              <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={heatOn} onChange={(e) => setHeatOn(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
+                <span>Corridor traffic<span className="block text-xs text-[#8fb6cc]">Patients a day along each 2 m of corridor, blue (few) to red (busiest){heat?.length ? `; busiest ${Math.round(Math.max(...heat.map((c) => c.perDay)) * 10) / 10} a day` : ""}.</span></span>
+              </label>
+              {liftRows.length > 0 ? (
+                <ul className="mt-1.5 space-y-0.5 text-xs">
+                  {liftRows.map((r) => (
+                    <li key={r.lift} title={r.formula} className="flex justify-between gap-2">
+                      <span className="min-w-0 truncate text-white">{r.lift}</span>
+                      <span className={r.flag ? "font-semibold text-[#ff8a96]" : "text-[#8fb6cc]"}>{r.peakTrips} trips at peak · {Math.round(r.utilisation * 100)} %</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="mt-1 text-xs text-[#8fb6cc]">No lift trips on these pathways.</p>}
+              <p className="mt-1 text-[11px] text-[#8fb6cc]">Lift load: busiest-hour trips × round trip ÷ car time (hover for the working). Flag above 70 %. Only these pathways are counted. <Link href={`/flows/analysis?facilityId=${data.facility.id}`} className="text-[#5fd6ff] hover:underline">Room, bed and scanner load</Link></p>
             </div>
           )}
         </>

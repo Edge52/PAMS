@@ -70,7 +70,7 @@ export default async function FlowPage({ params, searchParams }: {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={tone}>{statusLabel}</Badge>
-            {flow.status === "PUBLISHED" && <a href={`/assets/3d?facilityId=${flow.facilityId}&flow=${flow.id}`} className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Show in 3D</a>}
+            {flow.status !== "ARCHIVED" && <a href={`/assets/3d?facilityId=${flow.facilityId}&flow=${[flow.id, ...versions.filter((v) => v.status === "PUBLISHED" && v.id !== flow.id).map((v) => v.id)].join(",")}`} className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Show in 3D</a>}
             <a href={`/flows/${flow.id}/export`} download className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Export file</a>
             {editing && (
               <form action={publishFlow}><input type="hidden" name="flowId" value={flow.id} />
@@ -111,7 +111,7 @@ export default async function FlowPage({ params, searchParams }: {
             ))}
             {ready.noPlace.length > 0 && <li className="text-muted">Not checked, no place yet: {ready.noPlace.join(", ")}</li>}
           </ul>
-          {flow.status === "DRAFT" && <p className="mt-2 text-xs text-muted">Publish the pathway to see it, and its readiness, in the 3D view.</p>}
+          
         </Panel>
       )}
 

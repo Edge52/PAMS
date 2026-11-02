@@ -5,10 +5,11 @@
 import { polygonArea, type Pt } from "./geometry";
 import type { TwinRoom } from "./types";
 import type { Journey } from "../../../lib/assets/lifts";
-import { stepVolumes, type Link, type Step, type Transport } from "../../../lib/flows/model";
+import { peakShare, stepVolumes, type Link, type Step, type Transport } from "../../../lib/flows/model";
+import type { LiftTrip } from "../../../lib/flows/analysis";
 import type { Route } from "./nav/route";
 
-export type TwinFlow = { id: number; name: string; version: number; dailyVolume: number | null; steps: Step[]; links: Link[]; names?: Record<string, string> };
+export type TwinFlow = { id: number; name: string; version: number; dailyVolume: number | null; steps: Step[]; links: Link[]; names?: Record<string, string>; arrivalProfile?: number[] | null; status?: "DRAFT" | "PUBLISHED" | "ARCHIVED" };
 
 /** Pathway colours: bright on the dark look, dark enough on the light one; never the status red or green. */
 export const FLOW_COLORS = ["#ffd166", "#5ee6ff", "#ff7ab6", "#b49bff", "#ff9f43", "#7cf0c6"];
@@ -132,4 +133,29 @@ export function capPauses(keys: Key[], maxSim: number): Key[] {
     if (k.pause && i > 0) { const dur = k.t - keys[i - 1].t; if (dur > maxSim) shift += dur - maxSim; }
     return { ...k, t: k.t - shift };
   });
+}
+
+/* ── Load (wave 7, step 7d): lift trips and corridor traffic of the shown pathways ── */
+
+/** Lift rides of a pathway: per lift, trips a day (by the shares), its busiest hour's share, storeys and journey. */
+export function liftTripsOf(flow: TwinFlow & { arrivalProfile?: number[] | null }, routes: (Route | null)[], level: (floorId: number) => number): LiftTrip[] {
+  if (!flow.dailyVolume) return [];
+  const vis = visits(flow.steps, flow.links), peak = peakShare(flow.arrivalProfile);
+  const out: LiftTrip[] = [];
+  flow.links.forEach((l, i) => {
+    const r = routes[i]; if (!r) return;
+    for (const leg of r.legs) if (leg.kind === "lift" && leg.via) out.push({
+      lift: leg.via, perDay: flow.dailyVolume! * (vis.links[i] ?? 0), peakShare: peak,
+      storeys: Math.abs(level(leg.toFloorId ?? leg.floorId) - level(leg.floorId)), journey: journeyOf(l.transport),
+    });
+  });
+  return out;
+}
+
+/** Walk legs of a pathway with patients a day on each, for the corridor traffic layer. */
+export function heatLegsOf(flow: TwinFlow, routes: (Route | null)[]): { floorId: number; points: [number, number][]; perDay: number }[] {
+  if (!flow.dailyVolume) return [];
+  const vis = visits(flow.steps, flow.links);
+  return flow.links.flatMap((_, i) => (routes[i]?.legs ?? []).filter((leg) => leg.kind === "walk")
+    .map((leg) => ({ floorId: leg.floorId, points: leg.points as [number, number][], perDay: flow.dailyVolume! * (vis.links[i] ?? 0) })));
 }

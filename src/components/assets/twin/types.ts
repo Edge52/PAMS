@@ -29,7 +29,7 @@ export type TwinDepartment = { id: number; name: string; code: string; color: st
 
 /** A declared lift core (Facilities › Lifts) and where it stops on each floor (plan units of that floor). */
 export type TwinLift = {
-  id: number; name: string; kind: "BED" | "PUBLIC" | "SERVICE" | "AGV"; inferred: boolean;
+  id: number; name: string; kind: "BED" | "PUBLIC" | "SERVICE" | "AGV"; inferred: boolean; cars: number;
   stops: { floorId: number; x: number; y: number }[];
 };
 
@@ -75,6 +75,7 @@ export type TwinData = {
 
 export type TwinFlowData = {
   id: number; name: string; version: number; dailyVolume: number | null;
+  arrivalProfile: number[] | null; status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   steps: import("../../../lib/flows/model").Step[]; links: import("../../../lib/flows/model").Link[];
   /** Catalogue names of the equipment codes its steps need. */
   names: Record<string, string>;

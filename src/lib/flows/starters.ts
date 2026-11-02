@@ -5,7 +5,9 @@
  */
 import type { FlowKind, Link, Step, StepKind, Transport, Urgency } from "./model";
 
-type StarterStep = { key: string; label: string; kind: StepKind; deptTypes?: string[]; room?: string; minutes?: number; accompanying?: string; equipment?: string[] };
+type StarterStep = { key: string; label: string; kind: StepKind; deptTypes?: string[]; room?: string;
+  /** Care spread over the department's rooms (clinic rooms, a ward): keep the department, pin a room only without one. */
+  wholeDept?: boolean; minutes?: number; accompanying?: string; equipment?: string[] };
 type StarterLink = { from: string; to: string; share?: number; transport?: Transport; urgency?: Urgency; condition?: string };
 export type Starter = { id: string; name: string; kind: FlowKind; dailyVolume: number; description: string; arrival: number[]; steps: StarterStep[]; links: StarterLink[] };
 
@@ -79,7 +81,7 @@ export const STARTERS: Starter[] = [
     description: "Clinic visit with imaging when needed. Assumed: 120 patients a day; 35 % sent for X-ray, 10 % for ultrasound, 5 % for CT.",
     steps: [
       { key: "s1", label: "Outpatient reception", kind: "START", deptTypes: ["OPD"], room: "RECEPTION|WAITING" },
-      { key: "s2", label: "Clinic consultation", kind: "STEP", deptTypes: ["OPD"], room: "EXAM|CONSULT|CLINIC", minutes: 20 },
+      { key: "s2", label: "Clinic consultation", kind: "STEP", deptTypes: ["OPD"], room: "EXAM|CONSULT|CLINIC", wholeDept: true, minutes: 20 },
       { key: "s3", label: "X-ray", kind: "STEP", deptTypes: ["RAD"], room: "\\bRAD\\b|X-?RAY", minutes: 15, equipment: ["IMG-XR-DR"] },
       { key: "s4", label: "Ultrasound", kind: "STEP", deptTypes: ["RAD"], room: "ULTRASOUND|\\bUS\\b", minutes: 25, equipment: ["IMG-US-GEN"] },
       { key: "s5", label: "CT scan", kind: "STEP", deptTypes: ["RAD"], room: "^CT\\b", minutes: 20, equipment: ["IMG-CT-128"] },
@@ -107,7 +109,8 @@ export type HospitalRoom = { id: number; name: string; departmentId: number | nu
 
 /**
  * A starter resolved against a hospital: department by type (first match in the order given), room by its name
- * pattern (in that department first, then anywhere, lowest floor first). Steps that find nothing keep no place
+ * pattern (in that department when there is one; anywhere for start and end steps or without one; lowest floor first). Steps spread over a department's
+ * rooms keep the department only. Steps that find nothing keep no place
  * and are listed, so they can be set by hand.
  */
 export function resolveStarter(st: Starter, depts: HospitalDept[], rooms: HospitalRoom[]): { steps: Step[]; links: Link[]; unresolved: string[] } {
@@ -115,10 +118,12 @@ export function resolveStarter(st: Starter, depts: HospitalDept[], rooms: Hospit
   const steps: Step[] = st.steps.map((s) => {
     const dept = (s.deptTypes ?? []).map((t) => depts.find((d) => d.typeCode === t)).find(Boolean) ?? null;
     let roomId: number | null = null;
-    if (s.room) {
+    if (s.room && !(s.wholeDept && dept)) {
       const re = new RegExp(s.room, "i");
       const sorted = [...rooms].sort((a, b) => a.level - b.level || a.id - b.id);
-      roomId = (dept ? sorted.find((r) => r.departmentId === dept.id && re.test(r.name)) : undefined)?.id ?? sorted.find((r) => re.test(r.name))?.id ?? null;
+      // Entrances and exits are often outside any department, so those may match anywhere.
+      const inDept = dept ? sorted.find((r) => r.departmentId === dept.id && re.test(r.name)) : undefined;
+      roomId = (inDept ?? (!dept || s.kind !== "STEP" ? sorted.find((r) => re.test(r.name)) : undefined))?.id ?? null;
     }
     const roomDept = roomId != null ? rooms.find((r) => r.id === roomId)?.departmentId ?? null : null;
     if (s.kind === "STEP" && !dept && roomId == null) unresolved.push(s.label);

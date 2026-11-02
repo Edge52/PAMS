@@ -66,4 +66,15 @@ describe("starters", () => {
     expect(r.steps.find((s) => s.key === "s3")).toMatchObject({ departmentId: 2, roomId: 12 });
     expect(r.unresolved).toEqual(["Emergency surgery", "Surgical ward"]);
   });
+  it("keeps clinic steps on the whole department, and never takes another department's room for a care step", () => {
+    const depts = [{ id: 1, typeCode: "OPD", name: "Outpatients" }, { id: 2, typeCode: "RAD", name: "Imaging" }];
+    const rooms = [
+      { id: 20, name: "Dental exam room", departmentId: 9, level: 0 }, { id: 21, name: "Waiting", departmentId: null, level: 0 },
+      { id: 22, name: "X-ray 1", departmentId: 9, level: 0 },
+    ];
+    const r = resolveStarter(STARTERS.find((s) => s.id === "outpatient-imaging")!, depts, rooms);
+    expect(r.steps.find((s) => s.key === "s1")).toMatchObject({ departmentId: 1, roomId: 21 }); // start: an entrance anywhere
+    expect(r.steps.find((s) => s.key === "s2")).toMatchObject({ departmentId: 1, roomId: null });
+    expect(r.steps.find((s) => s.key === "s3")).toMatchObject({ departmentId: 2, roomId: null });
+  });
 });

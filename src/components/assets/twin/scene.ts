@@ -181,6 +181,8 @@ export class TwinScene {
   private pathDraws: PathDraw[] | null = null;
   private play: { sources: PlaySource[]; speed: number; max: number; simT: number; last: number; movers: { mesh: THREE.Mesh; keys: Key[]; t0: number }[]; nextSpawn: number } | null = null;
   private playGroup = new THREE.Group();
+  private heatMesh: THREE.InstancedMesh | null = null;
+  private heatCells: { floorId: number; x: number; z: number; perDay: number }[] | null = null;
   private style: TwinStyle = "dark";
   private bloomWanted = true;
   private showBasements = false;
@@ -546,6 +548,7 @@ export class TwinScene {
     this.positionGhosts();
     this.drawRoute();
     this.drawPathways();
+    this.drawHeat();
     this.drawSelection();
   }
 
@@ -1110,6 +1113,29 @@ export class TwinScene {
     });
     this.pathGroup = group;
     this.scene.add(group);
+  }
+
+  /** Corridor traffic: 2 m tiles on the floor, blue (few patients a day) to red (the busiest stretch). null hides it. */
+  setHeat(cells: { floorId: number; x: number; z: number; perDay: number }[] | null) {
+    this.heatCells = cells && cells.length ? cells : null;
+    this.drawHeat();
+  }
+
+  private drawHeat() {
+    if (this.heatMesh) { this.scene.remove(this.heatMesh); this.heatMesh.geometry.dispose(); (this.heatMesh.material as THREE.Material).dispose(); this.heatMesh = null; }
+    const cells = this.heatCells?.filter((c) => this.floorById.has(c.floorId)); if (!cells?.length) return;
+    const max = Math.max(...cells.map((c) => c.perDay));
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1.9, 0.06, 1.9),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false }), cells.length);
+    const m = new THREE.Matrix4(), col = new THREE.Color();
+    const ramp = [new THREE.Color("#2f6bff"), new THREE.Color("#22d3a6"), new THREE.Color("#ffd166"), new THREE.Color("#ff4f62")];
+    cells.forEach((c, i) => {
+      m.makeTranslation(c.x, this.floorY(this.floorById.get(c.floorId)!) + 0.12, c.z); mesh.setMatrixAt(i, m);
+      const k = Math.sqrt(c.perDay / max) * (ramp.length - 1), j = Math.min(ramp.length - 2, Math.floor(k));
+      mesh.setColorAt(i, col.copy(ramp[j]).lerp(ramp[j + 1], k - j));
+    });
+    mesh.renderOrder = 8;
+    this.heatMesh = mesh; this.scene.add(mesh);
   }
 
   /** Fly so these points are in view (a route, a pathway or one of its legs). */

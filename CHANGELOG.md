@@ -40,6 +40,15 @@ Migrations `0016`–`0018`. Update with `git pull` and `npm run demo`; your data
   lift trips per patient (averaged over the branches), plus the longest leg; click a leg to fly to it. **Equipment
   readiness**: the card and the pathway page check each step's equipment in its room or department, live ("Intensive
   care: Ventilator, ICU in the room is out of action"). *Show in 3D* on a published pathway opens it there.
+- **Pathway analysis (step 7d)**: Planning › Patient pathways › *Analysis* puts every published pathway together.
+  It shows room load at the busiest hour (from each pathway's arrival profile), beds needed for long stays, scanner
+  load against yearly capacity, and equipment readiness. Each figure shows its working on hover, and the page
+  downloads as an Excel workbook with an Assumptions sheet. In the 3D view the Pathways panel adds lift load (busiest-hour
+  trips × round trip ÷ car time), a corridor traffic layer (patients a day per 2 m of corridor) and a side-by-side
+  comparison of the pathways shown. *Show in 3D* on a draft opens it next to the published version. The dashboard
+  lists published pathways missing working equipment. Starters now keep clinic steps on the whole department and
+  don't borrow another department's room. How every figure is worked out, with a worked example:
+  `docs/pathway-analysis.md`.
 - Demo restarts no longer crash on the work-order seed.
 
 ## Release 3.0 — 1 Nov 2026

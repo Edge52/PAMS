@@ -20,7 +20,7 @@ export const metadata = { title: "3D view" };
 /** Floor-to-floor height when a floor has no stored elevation (La Plaza: 5 m). */
 const FLOOR_TO_FLOOR_M = 5;
 
-export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string }> }) {
+export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string; flow?: string }> }) {
   const me = await requirePermission("assets.view");
   const scope = await facilityScope(me);
   const sp = await searchParams;
@@ -60,12 +60,15 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     return { ...a, dims: z?.dims ?? { l: 0.6, w: 0.5, h: 1 }, rot: z?.rot ?? null };
   });
 
+  // Published pathways, plus any version asked for by link (…&flow=12,14: a draft to compare with the published one).
+  const asked = (sp.flow ?? "").split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 6);
   const published = await db.select({ id: patientFlows.id }).from(patientFlows)
-    .where(sql`${patientFlows.facilityId} = ${facility.id} and ${patientFlows.status} = 'PUBLISHED'`).orderBy(asc(patientFlows.name));
+    .where(sql`${patientFlows.facilityId} = ${facility.id} and (${patientFlows.status} = 'PUBLISHED'${asked.length ? sql` or ${inArray(patientFlows.id, asked)}` : sql``})`)
+    .orderBy(asc(patientFlows.name), asc(patientFlows.version));
   const loaded = (await Promise.all(published.map((p) => loadFlow(p.id)))).filter((f) => f != null);
   const names = await equipmentNames(loaded.flatMap((f) => f.steps.flatMap((s) => s.equipment)));
   const flows = loaded.map((f) => ({ names,
-    id: f.flow.id, name: f.flow.name, version: f.flow.version, dailyVolume: f.flow.dailyVolume,
+    id: f.flow.id, name: f.flow.name, version: f.flow.version, dailyVolume: f.flow.dailyVolume, arrivalProfile: f.flow.arrivalProfile, status: f.flow.status,
     steps: f.steps.map(({ id: _i, ...s }) => { void _i; return s; }), links: f.links.map(({ id: _i, ...l }) => { void _i; return l; }),
   }));
 
@@ -88,7 +91,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     unplaced: sized.filter((a) => a.roomId == null),
     flows,
     lifts: (await db.select().from(liftCores).where(eq(liftCores.facilityId, facility.id)).orderBy(asc(liftCores.name)))
-      .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
+      .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, cars: l.cars, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
   };
   const views = await db.select().from(twinViews)
     .where(sql`${twinViews.facilityId} = ${facility.id} and (${twinViews.shared} or ${twinViews.createdById} = ${me.id})`).orderBy(asc(twinViews.name));
