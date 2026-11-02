@@ -1,7 +1,8 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, rooms, twinViews } from "@/db/schema";
+import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, patientFlows, rooms, twinViews } from "@/db/schema";
+import { equipmentNames, loadFlow } from "@/lib/flows/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { DEPARTMENT_PALETTE, rectPoly } from "@/components/assets/twin/geometry";
 import { TwinView } from "@/components/assets/twin/twin-view";
@@ -47,7 +48,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
 
   const group = alias(deviceTypes, "grp"), cat = alias(deviceTypes, "cat");
   const assetRows = await db.select({
-    id: assets.id, tag: assets.assetTag, deviceType: deviceTypes.name, category: sql<string>`coalesce(${cat.name}, ${group.name}, ${deviceTypes.name})`,
+    id: assets.id, tag: assets.assetTag, deviceType: deviceTypes.name, typeCode: deviceTypes.code, category: sql<string>`coalesce(${cat.name}, ${group.name}, ${deviceTypes.name})`,
     categoryCode: sql<string>`coalesce(${cat.code}, ${group.code}, ${deviceTypes.code})`, groupCode: sql<string | null>`case when ${cat.code} is null then null else ${group.code} end`, status: assets.status, criticality: assets.criticality,
     roomId: assets.roomId, posX: assets.posX, posY: assets.posY, manufacturer: assets.manufacturer, model: assets.model, serial: assets.serialNumber,
   }).from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
@@ -58,6 +59,15 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     const z = sizes.get(a.id);
     return { ...a, dims: z?.dims ?? { l: 0.6, w: 0.5, h: 1 }, rot: z?.rot ?? null };
   });
+
+  const published = await db.select({ id: patientFlows.id }).from(patientFlows)
+    .where(sql`${patientFlows.facilityId} = ${facility.id} and ${patientFlows.status} = 'PUBLISHED'`).orderBy(asc(patientFlows.name));
+  const loaded = (await Promise.all(published.map((p) => loadFlow(p.id)))).filter((f) => f != null);
+  const names = await equipmentNames(loaded.flatMap((f) => f.steps.flatMap((s) => s.equipment)));
+  const flows = loaded.map((f) => ({ names,
+    id: f.flow.id, name: f.flow.name, version: f.flow.version, dailyVolume: f.flow.dailyVolume,
+    steps: f.steps.map(({ id: _i, ...s }) => { void _i; return s; }), links: f.links.map(({ id: _i, ...l }) => { void _i; return l; }),
+  }));
 
   const data: TwinData = {
     facility,
@@ -76,6 +86,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     departments: deptRows.map((d, i) => ({ ...d, color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] })),
     assets: sized.filter((a) => a.roomId != null),
     unplaced: sized.filter((a) => a.roomId == null),
+    flows,
     lifts: (await db.select().from(liftCores).where(eq(liftCores.facilityId, facility.id)).orderBy(asc(liftCores.name)))
       .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
   };

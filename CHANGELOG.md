@@ -33,6 +33,13 @@ Migrations `0016`–`0018`. Update with `git pull` and `npm run demo`; your data
   and checks it as you edit: unreachable steps, dead ends, loops with no way out, shares not adding to 100 %.
   Publishing freezes a version; changes go into a new draft version. Pathways export to a file and import into another
   hospital, matched by department and room codes. Planners, biomedical engineers and admins edit; everyone can view.
+- **Pathways in 3D (step 7c)**: a Pathways panel in the 3D view shows published pathways in the building, one colour
+  each. Each arrow follows its real walking route (thicker for more patients, dashed where partly estimated), and the
+  steps get numbered markers. *Play patients* animates patients picked by the shares, at 10× to 600×; long stays are
+  shortened to a few seconds. The pathway card gives distance walked, time moving, time in care, floor changes and
+  lift trips per patient (averaged over the branches), plus the longest leg; click a leg to fly to it. **Equipment
+  readiness**: the card and the pathway page check each step's equipment in its room or department, live ("Intensive
+  care: Ventilator, ICU in the room is out of action"). *Show in 3D* on a published pathway opens it there.
 - Demo restarts no longer crash on the work-order seed.
 
 ## Release 3.0 — 1 Nov 2026

@@ -13,6 +13,7 @@ import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, pointInPol
 import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinLift, type TwinRoom } from "./types";
 import type { Core } from "./nearest";
 import type { Network } from "./nav/network";
+import { positionAt, type Key } from "./pathways";
 
 /** Drawn wall height in metres (clear height below the ceiling after MEP; floors sit 5 m apart). */
 const WALL_HEIGHT = 3.3;
@@ -175,6 +176,11 @@ export class TwinScene {
   private ghostSpots: { floorId: number; x: number; z: number }[] = [];
   private routeLine: THREE.Group | null = null;
   private routeSpots: { floorId: number; x: number; z: number }[] | null = null;
+  // Wave 7c: drawn pathways and the animated patients.
+  private pathGroup: THREE.Group | null = null;
+  private pathDraws: PathDraw[] | null = null;
+  private play: { sources: PlaySource[]; speed: number; max: number; simT: number; last: number; movers: { mesh: THREE.Mesh; keys: Key[]; t0: number }[]; nextSpawn: number } | null = null;
+  private playGroup = new THREE.Group();
   private style: TwinStyle = "dark";
   private bloomWanted = true;
   private showBasements = false;
@@ -539,6 +545,7 @@ export class TwinScene {
     this.positionDevices();
     this.positionGhosts();
     this.drawRoute();
+    this.drawPathways();
     this.drawSelection();
   }
 
@@ -1047,6 +1054,119 @@ export class TwinScene {
     this.flyTo(c, Math.max(45, Math.hypot(size.x, size.y, size.z) * 1.4), 1);
   }
 
+  /* ── Wave 7c: pathways ── */
+
+  /** Draw pathways: each arrow as its route (thicker for more patients, dashed when estimated) and numbered step markers. */
+  showPathways(draws: PathDraw[] | null) {
+    this.pathDraws = draws && draws.length ? draws : null;
+    this.drawPathways();
+  }
+
+  private drawPathways() {
+    if (this.pathGroup) {
+      this.scene.remove(this.pathGroup);
+      this.pathGroup.traverse((o) => {
+        const m = o as THREE.Mesh; m.geometry?.dispose();
+        const mat = m.material as THREE.MeshBasicMaterial | THREE.SpriteMaterial | undefined; mat?.map?.dispose(); mat?.dispose();
+      });
+      this.pathGroup = null;
+    }
+    if (!this.pathDraws) return;
+    const group = new THREE.Group();
+    const y = (floorId: number) => { const f = this.floorById.get(floorId); return f ? this.floorY(f) + 0.3 : null; };
+    const up = new THREE.Vector3(0, 1, 0);
+    this.pathDraws.forEach((d, di) => {
+      const mat = new THREE.MeshBasicMaterial({ color: d.color, toneMapped: false, depthTest: false, transparent: true, opacity: 0.9 });
+      for (const tube of d.tubes) {
+        const pts: THREE.Vector3[] = [];
+        tube.spots.forEach((sp, i) => {
+          const yy = y(sp.floorId); if (yy == null) return;
+          const prev = tube.spots[i - 1];
+          if (prev && prev.floorId !== sp.floorId) pts.push(new THREE.Vector3(prev.x, yy, prev.z)); // up or down the core
+          // Several pathways on one corridor sit side by side instead of on top of each other.
+          pts.push(new THREE.Vector3(sp.x + di * 0.45, yy + di * 0.05, sp.z + di * 0.45));
+        });
+        for (let i = 1; i < pts.length; i++) {
+          const a = pts[i - 1], b = pts[i]; const len = a.distanceTo(b); if (len < 0.01) continue;
+          const dir = b.clone().sub(a).normalize();
+          const pieces = tube.dashed ? Math.max(1, Math.floor(len / 2.4)) : 1;
+          const piece = tube.dashed ? Math.min(len, 1.4) : len;
+          for (let k = 0; k < pieces; k++) {
+            const start = tube.dashed ? (len / pieces) * k : 0;
+            const seg = new THREE.Mesh(new THREE.CylinderGeometry(tube.radius, tube.radius, piece, 8, 1, true), mat);
+            seg.position.copy(a).addScaledVector(dir, start + piece / 2);
+            seg.quaternion.setFromUnitVectors(up, dir);
+            seg.renderOrder = 9; group.add(seg);
+          }
+        }
+      }
+      for (const m of d.markers) {
+        const yy = y(m.floorId); if (yy == null) continue;
+        const sprite = badgeSprite(m.number, m.text, d.color);
+        sprite.position.set(m.x + di * 0.45, yy + 2.4, m.z + di * 0.45);
+        sprite.center.set(0.08, 0); // anchored at the number, above the room
+        sprite.renderOrder = 11; group.add(sprite);
+      }
+    });
+    this.pathGroup = group;
+    this.scene.add(group);
+  }
+
+  /** Fly so these points are in view (a route, a pathway or one of its legs). */
+  frameSpots(spots: { floorId: number; x: number; z: number }[]) {
+    const ps = spots.filter((sp) => this.floorById.has(sp.floorId)).map((sp) => new THREE.Vector3(sp.x, this.floorY(this.floorById.get(sp.floorId)!), sp.z));
+    if (!ps.length) return;
+    const box = new THREE.Box3().setFromPoints(ps);
+    const c = box.getCenter(new THREE.Vector3()); const size = box.getSize(new THREE.Vector3());
+    this.userMoved = true;
+    this.flyTo(c, Math.max(40, Math.hypot(size.x, size.y, size.z) * 1.4), 1);
+  }
+
+  /**
+   * Animated patients: each source hands out sampled journeys; markers move at `speed` × real time, up to `max` on
+   * screen at once (fewer on a slow device). null stops it.
+   */
+  setPlay(sources: PlaySource[] | null, speed = 60, max = 40) {
+    if (!sources || !sources.length) {
+      if (this.play) for (const m of this.play.movers) { this.playGroup.remove(m.mesh); (m.mesh.material as THREE.Material).dispose(); }
+      this.play = null; this.scene.remove(this.playGroup); return;
+    }
+    if (this.play) { this.play.sources = sources; this.play.speed = speed; this.play.max = max; return; }
+    this.play = { sources, speed, max, simT: 0, last: performance.now(), movers: [], nextSpawn: 0 };
+    this.scene.add(this.playGroup);
+  }
+  setPlaySpeed(speed: number) { if (this.play) this.play.speed = speed; }
+
+  private static moverGeo = new THREE.SphereGeometry(1.4, 16, 12);
+  private updatePlay(now: number) {
+    const p = this.play; if (!p) return;
+    const dt = Math.min(0.5, (now - p.last) / 1000); p.last = now;
+    p.simT += dt * p.speed;
+    const cap = this.perfChecked && !this.bloom.enabled ? Math.min(p.max, 15) : p.max;
+    // New patients arrive spread out: about one every (journey length ÷ cap) simulated seconds.
+    if (p.simT >= p.nextSpawn && p.movers.length < cap) {
+      const src = p.sources[Math.floor(Math.random() * p.sources.length)];
+      const keys = src.next();
+      if (keys.length >= 2) {
+        // Paler than the pathway's line so patients stand out on it, still tinted so pathways can be told apart.
+        const mesh = new THREE.Mesh(TwinScene.moverGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(src.color).lerp(new THREE.Color("#ffffff"), 0.65), toneMapped: false, depthTest: false }));
+        mesh.renderOrder = 12; this.playGroup.add(mesh);
+        p.movers.push({ mesh, keys, t0: p.simT });
+        p.nextSpawn = p.simT + Math.max(1, keys[keys.length - 1].t / cap);
+      } else p.nextSpawn = p.simT + 5;
+    }
+    p.movers = p.movers.filter((m) => {
+      const at = positionAt(m.keys, p.simT - m.t0);
+      const fa = at && this.floorById.get(at.floorId), fb = at && this.floorById.get(at.toFloorId);
+      if (!at || !fa || !fb) { this.playGroup.remove(m.mesh); (m.mesh.material as THREE.Material).dispose(); return false; }
+      const yy = this.floorY(fa) + (this.floorY(fb) - this.floorY(fa)) * at.f + 1.1;
+      m.mesh.position.set(at.x, yy, at.z);
+      return true;
+    });
+    // For browser tests: how many patients are on screen.
+    if (this.container.dataset.movers !== String(p.movers.length)) this.container.dataset.movers = String(p.movers.length);
+  }
+
   /** Show or hide stairs, lifts and shafts. */
   setCores(on: boolean) { this.coresOn = on; for (const v of this.floors.values()) if (v.cores) v.cores.visible = on; }
 
@@ -1404,6 +1524,7 @@ export class TwinScene {
     this.updateLabels(now);
     if (!this.reducedMotion && this.deviceMesh) this.pulseDevices(t);
     this.watchFrameRate(now);
+    this.updatePlay(now);
     if (this.selectionRing.visible && !this.reducedMotion) {
       const k = 1 + 0.15 * Math.sin(t * 3);
       this.selectionRing.scale.set(k, 1, k);
@@ -1806,4 +1927,31 @@ export class TwinScene {
 
   /** Rooms of a floor (for the UI). */
   roomsOn(floorId: number): TwinRoom[] { return this.data.rooms.filter((r) => r.floorId === floorId); }
+}
+
+export type PathDraw = {
+  color: string;
+  tubes: { spots: { floorId: number; x: number; z: number }[]; radius: number; dashed: boolean }[];
+  markers: { floorId: number; x: number; z: number; number: number; text: string }[];
+};
+export type PlaySource = { color: string; next: () => Key[] };
+
+/** A numbered step marker that always faces the camera. */
+function badgeSprite(n: number, text: string, color: string): THREE.Sprite {
+  const label = text.length > 26 ? `${text.slice(0, 25)}…` : text;
+  const c = document.createElement("canvas"); const g = c.getContext("2d")!;
+  const font = "600 30px system-ui, sans-serif"; g.font = font;
+  const w = Math.ceil(64 + g.measureText(label).width + 22), h = 56;
+  c.width = w; c.height = h;
+  g.font = font;
+  g.fillStyle = "rgba(4,16,26,0.86)"; g.beginPath(); g.roundRect(0, 0, w, h, 14); g.fill();
+  g.strokeStyle = color; g.lineWidth = 3; g.stroke();
+  g.fillStyle = color; g.beginPath(); g.arc(28, h / 2, 19, 0, Math.PI * 2); g.fill();
+  g.fillStyle = "#04101a"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(String(n), 28, h / 2 + 1);
+  g.fillStyle = "#ffffff"; g.textAlign = "left"; g.fillText(label, 56, h / 2 + 1);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  // Same size on screen at any distance, so step numbers stay readable from afar and don't swamp the view up close.
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, toneMapped: false, sizeAttenuation: false }));
+  const k = 0.0005; sprite.scale.set(w * k, h * k, 1);
+  return sprite;
 }

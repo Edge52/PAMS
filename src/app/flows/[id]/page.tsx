@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { facilities, patientFlows } from "@/db/schema";
+import { assets, deviceTypes, facilities, patientFlows } from "@/db/schema";
 import { Badge, Button, Field, FormGrid, Input, PageHeader, Panel, Table, Td, Textarea, Th, THead } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { Crumbs, NativeSelect, Notice } from "@/components/assets/bits";
@@ -13,7 +13,8 @@ import { formatDate } from "@/lib/format";
 import {
   checkFlow, FLOW_KIND_LABELS, FLOW_KINDS, STEP_KIND_LABELS, STEP_KINDS, stepVolumes, TRANSPORT_LABELS, TRANSPORTS, URGENCIES, type Step,
 } from "@/lib/flows/model";
-import { loadFlow, placesOf } from "@/lib/flows/server";
+import { equipmentNames, loadFlow, placesOf } from "@/lib/flows/server";
+import { readiness, readinessLine } from "@/lib/flows/readiness";
 import { deleteFlow, deleteLink, deleteStep, newVersionAction, publishFlow, saveFlowDetails, saveLink, saveStep } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +54,12 @@ export default async function FlowPage({ params, searchParams }: {
   const roomOpts = places.rooms.map((r) => ({ value: r.id, label: `${r.name}${r.code ? ` (${r.code})` : ""} · ${r.floorName}` }));
   const total = steps.reduce((t, s) => t + (s.minutes ?? 0), 0);
   const [tone, statusLabel] = STATUS[flow.status];
+  // Equipment readiness now: the needed device types in each step's room or department, and whether they work.
+  const codes = [...new Set(steps.flatMap((s) => s.equipment))];
+  const kit = codes.length ? await db.select({ id: assets.id, typeCode: deviceTypes.code, typeName: deviceTypes.name, roomId: assets.roomId, status: assets.status })
+    .from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
+    .where(and(eq(assets.facilityId, flow.facilityId), sql`${assets.status} <> 'DISPOSED'`, sql`${assets.roomId} is not null`)) : [];
+  const ready = readiness(steps, places.rooms, kit, undefined, await equipmentNames(codes));
 
   return (
     <>
@@ -63,6 +70,7 @@ export default async function FlowPage({ params, searchParams }: {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={tone}>{statusLabel}</Badge>
+            {flow.status === "PUBLISHED" && <a href={`/assets/3d?facilityId=${flow.facilityId}&flow=${flow.id}`} className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Show in 3D</a>}
             <a href={`/flows/${flow.id}/export`} download className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Export file</a>
             {editing && (
               <form action={publishFlow}><input type="hidden" name="flowId" value={flow.id} />
@@ -93,6 +101,19 @@ export default async function FlowPage({ params, searchParams }: {
         </Panel>
       )}
       {!issues.length && <p className="mt-3 text-sm text-ok">All checks pass: every step is reachable, leads to an end, and its arrows add up to 100 %.</p>}
+
+      {ready.total > 0 && (
+        <Panel title={`Equipment readiness: ${ready.blocked ? `${ready.total - ready.ok} of ${ready.total} needs not met` : `all ${ready.total} needs met`}`} className="mt-5">
+          <p className="mb-2 text-xs text-muted">Each step&apos;s equipment codes, looked up in its room (or its department when the room has none) as of now. In service or installed counts as working.</p>
+          <ul className="space-y-1 text-sm">
+            {ready.rows.map((r, i) => (
+              <li key={i} className="flex gap-2"><Badge tone={r.state === "ok" ? "ok" : "danger"}>{r.state === "ok" ? "Ready" : r.state === "down" ? "Down" : "Missing"}</Badge><span>{readinessLine(r)}</span></li>
+            ))}
+            {ready.noPlace.length > 0 && <li className="text-muted">Not checked, no place yet: {ready.noPlace.join(", ")}</li>}
+          </ul>
+          {flow.status === "DRAFT" && <p className="mt-2 text-xs text-muted">Publish the pathway to see it, and its readiness, in the 3D view.</p>}
+        </Panel>
+      )}
 
       <Panel title="Steps" className="mt-5">
         <Table>

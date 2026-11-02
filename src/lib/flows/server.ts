@@ -2,7 +2,7 @@ import "server-only";
 /** Patient pathways (wave 7, step 7b): loading, saving whole pathways, versions, and the JSON file format. */
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { buildings, departments, flowLinks, flowSteps, floors, patientFlows, rooms } from "@/db/schema";
+import { buildings, departments, deviceTypes, flowLinks, flowSteps, floors, patientFlows, rooms } from "@/db/schema";
 import type { FlowKind, Link, Step } from "./model";
 
 export type FlowRow = typeof patientFlows.$inferSelect;
@@ -102,4 +102,12 @@ export async function placesOf(facilityId: number) {
     .from(rooms).innerJoin(floors, eq(floors.id, rooms.floorId)).innerJoin(buildings, eq(buildings.id, floors.buildingId))
     .where(and(eq(buildings.facilityId, facilityId))).orderBy(asc(floors.level), asc(rooms.name));
   return { departments: ds, rooms: rs };
+}
+
+/** Catalogue names of equipment codes ("IMG-CT-128" → "CT scanner, 128-slice"), for readiness lines. */
+export async function equipmentNames(codes: string[]): Promise<Record<string, string>> {
+  const uniq = [...new Set(codes)];
+  if (!uniq.length) return {};
+  const rows = await db.select({ code: deviceTypes.code, name: deviceTypes.name }).from(deviceTypes).where(inArray(deviceTypes.code, uniq));
+  return Object.fromEntries(rows.map((r) => [r.code, r.name]));
 }

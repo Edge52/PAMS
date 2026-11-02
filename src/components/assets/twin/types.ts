@@ -37,6 +37,8 @@ export type TwinAsset = {
   id: number;
   tag: string;
   deviceType: string;
+  /** Device type code from the catalogue (e.g. "IMG-CT-128"), for pathway equipment readiness. */
+  typeCode: string;
   category: string;
   categoryCode: string;
   /** Level-2 group code (e.g. "LIF-VEN"), for the marker shape. */
@@ -67,6 +69,15 @@ export type TwinData = {
   lifts: TwinLift[];
   /** Devices of this hospital not in a room yet (newly registered, in store): the "To place" list. */
   unplaced: TwinAsset[];
+  /** Published patient pathways of this hospital (wave 7c). */
+  flows?: TwinFlowData[];
+};
+
+export type TwinFlowData = {
+  id: number; name: string; version: number; dailyVolume: number | null;
+  steps: import("../../../lib/flows/model").Step[]; links: import("../../../lib/flows/model").Link[];
+  /** Catalogue names of the equipment codes its steps need. */
+  names: Record<string, string>;
 };
 
 /** Linework of one CAD floor (flat segment arrays [x1, y1, x2, y2, …] in plan units). */

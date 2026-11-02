@@ -18,6 +18,9 @@ import { bucketOf, colorFor, LAYER_INFO, LAYERS, legendFor, NEUTRAL, roomValues,
 import { RenderPanel } from "./render/render-panel";
 import { RouteService, routeSpots } from "./nav/service";
 import { formatDuration, type Route } from "./nav/route";
+import { capPauses, FLOW_COLORS, journeyOf, pathwayCard, samplePath, stepRoom, trackOf, tubeRadius, visits, type TwinFlow } from "./pathways";
+import type { PathDraw } from "./scene";
+import { readiness, readinessLine } from "@/lib/flows/readiness";
 
 const LIVE_EVERY_MS = 60_000;
 
@@ -90,6 +93,14 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [navInfo, setNavInfo] = useState<string | null>(null);
   const [trauma, setTrauma] = useState<{ busy?: boolean; error?: string; steps?: { from: string; to: string; route: Route }[]; total?: Route } | null>(null);
   const [routeTo, setRouteTo] = useState<number | null>(null);
+  // Wave 7c: published pathways shown in the building, their routes (per arrow) and the animated patients.
+  const flows = useMemo(() => (data.flows ?? []) as TwinFlow[], [data.flows]);
+  const [flowSel, setFlowSel] = useState<number[]>([]);
+  const [flowRoutes, setFlowRoutes] = useState<Map<number, (Route | null)[]>>(new Map());
+  const [flowBusy, setFlowBusy] = useState(false);
+  const [cardFlow, setCardFlow] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [playSpeed, setPlaySpeed] = useState(60);
   const [query, setQuery] = useState("");
   const [cats, setCats] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
@@ -486,6 +497,94 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   }
   function clearTrauma() { setTrauma(null); sceneRef.current?.showRoute(null); }
 
+  /* ── Wave 7c: pathways in 3D ── */
+  const flowColor = (id: number) => FLOW_COLORS[Math.max(0, flows.findIndex((f) => f.id === id)) % FLOW_COLORS.length];
+  // A link from a pathway page (…&flow=<id>) shows that pathway once the model is ready.
+  const flowParamDone = useRef(false);
+  useEffect(() => {
+    if (!ready || flowParamDone.current) return;
+    flowParamDone.current = true;
+    const id = Number(new URLSearchParams(window.location.search).get("flow"));
+    if (!id || !flows.some((f) => f.id === id)) return;
+    const t = setTimeout(() => { setFlowSel([id]); setCardFlow(id); if (!panels.isOpen("pathways")) panels.toggle("pathways"); }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
+  }, [ready]);
+  // Route every arrow of the chosen pathways (once per pathway), then draw them.
+  useEffect(() => {
+    if (!ready) return;
+    const missing = flowSel.filter((id) => !flowRoutes.has(id));
+    if (!missing.length) return;
+    let live = true;
+    const t = setTimeout(() => setFlowBusy(true), 0);
+    void (async () => {
+      const add = new Map<number, (Route | null)[]>();
+      for (const id of missing) {
+        const f = flows.find((x) => x.id === id); if (!f) continue;
+        const roomOf = new Map(f.steps.map((st) => [st.key, stepRoom(st, data.rooms)]));
+        add.set(id, await Promise.all(f.links.map(async (l) => {
+          const a = roomOf.get(l.fromKey), b = roomOf.get(l.toKey);
+          if (!a || !b) return null;
+          const [pa, pb] = await Promise.all([routes.roomPlace(a.id), routes.roomPlace(b.id)]);
+          return pa && pb ? routes.route(pa, pb, journeyOf(l.transport)) : null;
+        })));
+      }
+      if (!live) return;
+      setFlowRoutes((m) => new Map([...m, ...add]));
+      setFlowBusy(false);
+    })();
+    return () => { live = false; clearTimeout(t); };
+  }, [flowSel, flowRoutes, flows, ready, routes, data.rooms]);
+  const flowDraws = useMemo((): PathDraw[] => flowSel.flatMap((id) => {
+    const f = flows.find((x) => x.id === id), rs = flowRoutes.get(id);
+    if (!f || !rs) return [];
+    const vis = visits(f.steps, f.links);
+    const s = sceneRef.current;
+    const markers = f.steps.map((st, i) => ({ st, i, room: stepRoom(st, data.rooms) })).filter((m) => m.room)
+      .map(({ st, i, room }) => { const sp = s?.spotOfRoom(room!.id); return sp ? { floorId: sp.floorId, x: sp.x, z: sp.z, number: i + 1, text: st.label } : null; })
+      .filter((m): m is NonNullable<typeof m> => m != null);
+    return [{
+      color: flowColor(id), markers,
+      tubes: f.links.map((_, i) => rs[i] ? { spots: routeSpots(rs[i]!), radius: tubeRadius(vis.links[i] ?? 0), dashed: rs[i]!.estimated } : null).filter((t): t is NonNullable<typeof t> => t != null),
+    }];
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flowColor depends on flows only
+  }), [flowSel, flowRoutes, flows, data.rooms]);
+  useEffect(() => {
+    const s = sceneRef.current; if (!s || !ready) return;
+    s.showPathways(flowDraws.length ? flowDraws : null);
+  }, [flowDraws, ready]);
+  // Play: patients sampled by the shares, moving at the chosen speed; long stays squeezed to a few seconds.
+  const playSpeedRef = useRef(playSpeed);
+  useEffect(() => { playSpeedRef.current = playSpeed; sceneRef.current?.setPlaySpeed(playSpeed); }, [playSpeed]);
+  useEffect(() => {
+    const s = sceneRef.current; if (!s || !ready) return;
+    const sources = playing ? flowSel.flatMap((id) => {
+      const f = flows.find((x) => x.id === id), rs = flowRoutes.get(id);
+      return f && rs ? [{ color: flowColor(id), next: () => capPauses(trackOf(samplePath(f.steps, f.links), f.links, f.steps, rs), 6 * playSpeedRef.current) }] : [];
+    }) : [];
+    s.setPlay(sources.length ? sources : null, playSpeedRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flowColor depends on flows only
+  }, [playing, flowSel, flowRoutes, flows, ready]);
+  function toggleFlow(id: number) {
+    const on = !flowSel.includes(id);
+    setFlowSel((sel) => (on ? [...sel, id] : sel.filter((x) => x !== id)));
+    if (on) {
+      setCardFlow(id);
+      // Pathways cross floors: show the whole building.
+      if (floorId != null) { setFloorId(null); sceneRef.current?.isolateFloor(null, false); }
+    } else if (cardFlow === id) setCardFlow(flowSel.find((x) => x !== id) ?? null);
+    if (!on && flowSel.length === 1) setPlaying(false);
+  }
+  function frameFlow(id: number) {
+    const rs = flowRoutes.get(id); const s = sceneRef.current;
+    if (rs && s) s.frameSpots(rs.flatMap((r) => (r ? routeSpots(r) : [])));
+  }
+  function frameLeg(r: Route) {
+    const s = sceneRef.current; if (!s) return;
+    if (r.floorChanges && floorId != null) { setFloorId(null); s.isolateFloor(null, false); }
+    s.frameSpots(routeSpots(r));
+  }
+
   async function clearSpot(assetId: number) {
     const fd = new FormData(); fd.set("assetId", String(assetId)); fd.set("posX", "0"); fd.set("posY", "0"); fd.set("clear", "1");
     const res = await twinPlaceAction(null, fd);
@@ -836,6 +935,97 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       </div>
     </div>
   );
+  const shownFlow = flows.find((f) => f.id === (cardFlow ?? flowSel[0]));
+  const shownRoutes = shownFlow ? flowRoutes.get(shownFlow.id) : undefined;
+  const card = shownFlow && shownRoutes ? pathwayCard(shownFlow, shownRoutes) : null;
+  const ready7c = shownFlow ? readiness(shownFlow.steps, data.rooms,
+    placed.map((a) => ({ id: a.id, typeCode: a.typeCode, typeName: a.deviceType, roomId: a.roomId, status: a.status })), (a) => statusOf(a.id, a.status), shownFlow.names) : null;
+  const pathwaysPanel = (
+    <div className="space-y-2 text-sm">
+      {!flows.length ? (
+        <p className="text-xs text-[#8fb6cc]">No published pathways for this hospital yet. <Link href={`/flows?facilityId=${data.facility.id}`} className="text-[#5fd6ff] hover:underline">Set one up</Link> (starters for trauma, surgery, maternity and imaging), publish it, and it shows here.</p>
+      ) : (
+        <>
+          <ul className="space-y-1">
+            {flows.map((f) => (
+              <li key={f.id}>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={flowSel.includes(f.id)} onChange={() => toggleFlow(f.id)} className="accent-[#2fd3ff]" />
+                  <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: flowColor(f.id) }} />
+                  <span className="min-w-0 truncate">{f.name}</span>
+                  {f.dailyVolume != null && <span className="ml-auto shrink-0 text-xs text-[#8fb6cc]">{f.dailyVolume}/day</span>}
+                </label>
+              </li>
+            ))}
+          </ul>
+          {flowBusy && <p className="text-xs text-[#8fb6cc]">Working out routes…</p>}
+          {flowSel.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-[#123a55] pt-2">
+              <button type="button" onClick={() => setPlaying((p) => !p)} disabled={flowBusy} aria-pressed={playing} className="twin-act">{playing ? "Stop" : "Play patients"}</button>
+              <label className="flex items-center gap-1 text-xs text-[#8fb6cc]">Speed
+                <select value={playSpeed} onChange={(e) => setPlaySpeed(Number(e.target.value))} className="twin-input w-auto! py-0.5">
+                  {[10, 60, 300, 600].map((v) => <option key={v} value={v}>{v}×</option>)}
+                </select>
+              </label>
+              <button type="button" onClick={() => frameFlow(cardFlow ?? flowSel[0])} className="twin-act">Fit to view</button>
+            </div>
+          )}
+          {flowSel.length > 1 && (
+            <div className="flex flex-wrap gap-1" role="group" aria-label="Pathway card">
+              {flowSel.map((id) => (
+                <button key={id} type="button" onClick={() => setCardFlow(id)} aria-pressed={shownFlow?.id === id}
+                  className={`rounded border px-1.5 py-0.5 text-xs ${shownFlow?.id === id ? "border-[#2fd3ff] text-white" : "border-[#1d4f6d] text-[#8fb6cc]"}`}>
+                  <span aria-hidden style={{ color: flowColor(id) }}>● </span>{flows.find((f) => f.id === id)?.name.split(/ [—-] /)[0]}
+                </button>
+              ))}
+            </div>
+          )}
+          {shownFlow && card && (
+            <div className="space-y-1.5 border-t border-[#123a55] pt-2">
+              <p className="text-[13px] font-semibold text-white"><span aria-hidden style={{ color: flowColor(shownFlow.id) }}>● </span>{shownFlow.name} <span className="font-normal text-[#8fb6cc]">v{shownFlow.version}</span></p>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                <dt className="text-[#8fb6cc]">Walked per patient</dt><dd className="text-right text-white">{Math.round(card.metres)} m</dd>
+                <dt className="text-[#8fb6cc]">Time moving</dt><dd className="text-right text-white">{formatDuration(card.moveSeconds)}</dd>
+                <dt className="text-[#8fb6cc]">Time in care</dt><dd className="text-right text-white">{card.careMinutes >= 2880 ? `${(card.careMinutes / 1440).toFixed(1)} days` : card.careMinutes >= 120 ? `${Math.round(card.careMinutes / 60)} h` : `${Math.round(card.careMinutes)} min`}</dd>
+                <dt className="text-[#8fb6cc]">Floor changes</dt><dd className="text-right text-white">{card.floorChanges.toFixed(1)}</dd>
+                <dt className="text-[#8fb6cc]">Lift trips</dt><dd className="text-right text-white">{card.liftTrips.toFixed(1)}</dd>
+              </dl>
+              <p className="text-[11px] text-[#8fb6cc]">Averages per patient: each arrow counts by the share of patients taking it. Estimates; lift waits are assumptions.</p>
+              {card.longest?.route && (
+                <p className="text-xs text-[#ffd166]">Longest leg: {card.longest.from} → {card.longest.to}, {Math.round(card.longest.route.metres)} m{card.longest.route.floorChanges ? `, ${card.longest.route.floorChanges} floor${card.longest.route.floorChanges === 1 ? "" : "s"}` : ""}, {formatDuration(card.longest.route.seconds)}</p>
+              )}
+              {(card.estimated > 0 || card.unrouted > 0) && (
+                <p className="text-xs text-[#ffb534]">{card.estimated > 0 ? `${card.estimated} leg${card.estimated === 1 ? "" : "s"} partly estimated (dashed)` : ""}{card.estimated && card.unrouted ? " · " : ""}{card.unrouted > 0 ? `${card.unrouted} not drawn (a step without a place)` : ""}</p>
+              )}
+              <ul className="space-y-0.5">
+                {card.legs.map((l) => (
+                  <li key={l.index}>
+                    <button type="button" disabled={!l.route} onClick={() => l.route && frameLeg(l.route)}
+                      className="w-full rounded px-1.5 py-0.5 text-left text-xs hover:bg-[#0c2a40] disabled:opacity-50">
+                      <span className="text-white">{l.from} → {l.to}</span>
+                      <span className="text-[#8fb6cc]">{l.share !== 100 ? ` · ${l.share} %` : ""}{l.route ? ` · ${Math.round(l.route.metres)} m · ${formatDuration(l.route.seconds)}` : " · no route"}{l.route?.estimated ? " · estimated" : ""}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {ready7c && ready7c.total > 0 && (
+                <div className="border-t border-[#123a55] pt-1.5">
+                  <p className={`text-xs font-semibold ${ready7c.blocked ? "text-[#ff8a96]" : "text-[#3cf5a6]"}`}>
+                    Equipment: {ready7c.blocked ? `${ready7c.total - ready7c.ok} of ${ready7c.total} needs not met` : `all ${ready7c.total} needs met`} (live)
+                  </p>
+                  <ul className="mt-0.5 space-y-0.5 text-[11px]">
+                    {ready7c.rows.filter((r) => r.state !== "ok").map((r, i) => <li key={i} className="text-[#ff8a96]">{readinessLine(r)}</li>)}
+                    {ready7c.noPlace.length > 0 && <li className="text-[#ffb534]">Not checked (no place): {ready7c.noPlace.join(", ")}</li>}
+                  </ul>
+                </div>
+              )}
+              <Link href={`/flows/${shownFlow.id}`} className="inline-block text-xs text-[#5fd6ff] hover:underline">Open the pathway</Link>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
   const placeFloors = data.floors.filter((f) => data.rooms.some((r) => r.floorId === f.id)).sort((a, b) => a.elevation - b.elevation);
   const placeList = (
     <div className="space-y-2">
@@ -1062,6 +1252,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             <HudPanel title="Routes" summary={navOn ? "Network on" : trauma?.total ? "Trauma route" : undefined} open={panels.isOpen("routes")} onToggle={() => panels.toggle("routes")} bodyClassName="max-h-[45vh] overflow-y-auto">
               {routesPanel}
             </HudPanel>
+            <HudPanel title="Pathways" summary={flowSel.length ? `${flowSel.length} shown${playing ? " · playing" : ""}` : flows.length ? `${flows.length}` : "None"} open={panels.isOpen("pathways")} onToggle={() => panels.toggle("pathways")} bodyClassName="max-h-[50vh] overflow-y-auto">
+              {pathwaysPanel}
+            </HudPanel>
             <HudPanel title="Status" summary={statuses.size ? `${statuses.size} of ${visibleStatuses.length}` : "All"} open={panels.isOpen("status")} onToggle={() => panels.toggle("status")}>
               {statusList}
             </HudPanel>
@@ -1126,6 +1319,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               {sheetTab === "filters" && (
                 <div className="space-y-3">
                   <section><h2 className="twin-h">Problem layer</h2>{layerPanel}</section>
+                  <section><h2 className="twin-h">Pathways</h2>{pathwaysPanel}</section>
                   {plans.length > 0 && <section><h2 className="twin-h">Plan vs installed</h2>{planPanel}</section>}
                   <section><h2 className="twin-h">Status</h2>{statusList}</section>
                   <section><h2 className="twin-h">Equipment types</h2>{typeList}</section>
