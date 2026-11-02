@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
+import { addNoteAction, deleteNoteAction, setNoteStatusAction, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
 import { formatDims } from "@/lib/assets/dimensions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { DropResult, PickResult, TwinScene, TwinStyle } from "./scene";
 import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinAsset, type TwinData } from "./types";
-import { CORE_LABELS, coreKind, deviceKind, polygonArea, type Pt } from "./geometry";
+import { CORE_LABELS, coreKind, deviceKind, interiorPoint, polygonArea, type Pt } from "./geometry";
 import { AVAILABLE, rankNearest, type Ranked } from "./nearest";
 import { PLAN_BANDS, planBand, spreadGhosts } from "@/lib/assets/plan-installed";
 import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server";
@@ -22,6 +22,8 @@ import { capPauses, FLOW_COLORS, heatLegsOf, journeyOf, liftTripsOf, pathwayCard
 import { corridorHeat, liftLoad } from "@/lib/flows/analysis";
 import type { PathDraw } from "./scene";
 import { readiness, readinessLine } from "@/lib/flows/readiness";
+import type { TwinNote } from "@/lib/assets/twin-notes";
+import { NoteComposer, NoteList } from "./notes";
 
 const LIVE_EVERY_MS = 60_000;
 
@@ -50,8 +52,10 @@ function decodeLive(p: LivePayload): Map<number, LiveMetrics> {
  * HUD layout follows the view's own width (see hud-state): side columns of collapsible panels (folded by default
  * below 1100 px), or on phones one bottom sheet with tabs.
  */
-export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [] }: {
+export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [], notes: initialNotes = [], people = [], me = { id: 0, canEditAssets: false } }: {
   data: TwinData; live: LivePayload; views: SavedView[]; canManageViews: boolean;
+  /** Notes in the model (wave 7e), people a note can be for, and who is looking. */
+  notes?: TwinNote[]; people?: { id: number; name: string }[]; me?: { id: number; canEditAssets: boolean };
   /** BOQs of this hospital the user may compare against (empty when they can't view BOQs). */
   plans?: PlanChoice[];
 }) {
@@ -103,6 +107,13 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [playing, setPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(60);
   const [heatOn, setHeatOn] = useState(false);
+  // Wave 7e: notes, the note being written (and where), and drag to move.
+  const [notes, setNotes] = useState<TwinNote[]>(initialNotes);
+  const [composer, setComposer] = useState<{ floorId: number; x: number; y: number; roomId: number | null; assetId: number | null; where: string } | null>(null);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [showDone, setShowDone] = useState(false);
+  const [pickingSpot, setPickingSpot] = useState(false);
+  const dragRef = useRef<{ canDrag: (id: number) => boolean; start: (id: number) => void }>({ canDrag: () => false, start: () => {} });
   const [query, setQuery] = useState("");
   const [cats, setCats] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
@@ -172,6 +183,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           onSlow: () => { setBloom(false); setToast({ ok: "Lighter graphics on this device: glow is off for a smoother picture. Switch it back on under View." }); },
           onSelect: (p) => { setSelected(p); if (p) setSheetTab("details"); },
           onHover: (p, s) => setHover(p && s ? { p, ...s } : null),
+          canDrag: (id) => dragRef.current.canDrag(id),
+          onDragStart: (id) => dragRef.current.start(id),
         });
         sceneRef.current = scene;
         // The floor a link points at loads first; the rest stream in behind it.
@@ -202,6 +215,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     s.setVisibleAssets(new Set(placed.filter((a) => (!cats.size || cats.has(a.categoryCode)) && (!statuses.size || statuses.has(live.get(a.id)?.status ?? a.status))).map((a) => a.id)));
   }, [cats, statuses, placed, ready, live]);
 
+  // Live alerts (wave 7e): a new fault since the last refresh flashes in the model, with a toast and "Go there".
+  const alertsRef = useRef<(prev: Map<number, LiveMetrics>, next: Map<number, LiveMetrics>) => void>(() => {});
+  const liveRef = useRef(live);
   // Live status: refresh every minute and when the tab comes back into view.
   useEffect(() => {
     let stop = false;
@@ -212,7 +228,10 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         if (!res.ok) throw new Error(String(res.status));
         const p = (await res.json()) as LivePayload;
         if (stop) return;
-        setLive(decodeLive(p)); setLiveAt(p.at); setLiveError(false);
+        const next = decodeLive(p);
+        alertsRef.current(liveRef.current, next);
+        liveRef.current = next; setLive(next);
+        setLiveAt(p.at); setLiveError(false);
       } catch { if (!stop) setLiveError(true); }
     };
     const t = window.setInterval(pull, LIVE_EVERY_MS);
@@ -589,6 +608,107 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     const rs = flowRoutes.get(id); const s = sceneRef.current;
     if (rs && s) s.frameSpots(rs.flatMap((r) => (r ? routeSpots(r) : [])));
   }
+  /* ── Wave 7e: notes, live alerts, drag to move ── */
+  useEffect(() => {
+    if (!ready) return;
+    sceneRef.current?.setNotes(notes.filter((n) => showDone || n.status === "OPEN").map((n) => ({ id: n.id, floorId: n.floorId, x: n.x, y: n.y, done: n.status === "DONE" })));
+  }, [notes, showDone, ready]);
+  const noteWhere = (n: TwinNote) => {
+    const a = n.assetId ? assetById.get(n.assetId) : undefined; const r = n.roomId ? roomById.get(n.roomId) : undefined;
+    return [a ? `${a.deviceType} ${a.tag}` : null, r?.name ?? null, floorById.get(n.floorId)?.name ?? null].filter(Boolean).join(" · ");
+  };
+  /** Open the composer for the selected device or room (a device's spot, or a point inside the room). */
+  function noteOnSelection() {
+    const s = sceneRef.current; if (!s) return;
+    if (selAsset) {
+      const sp = s.spotOfAsset(selAsset.id); const f = sp ? floorById.get(sp.floorId) : undefined; if (!sp || !f) return;
+      const k = f.unitsPerMetre || 10;
+      setComposer({ floorId: f.id, x: sp.x * k, y: sp.z * k, roomId: selAsset.roomId, assetId: selAsset.id, where: `${selAsset.deviceType} ${selAsset.tag}` });
+    } else if (selRoom) {
+      const [x, y] = interiorPoint(selRoom.poly as Pt[]);
+      setComposer({ floorId: selRoom.floorId, x, y, roomId: selRoom.id, assetId: null, where: selRoom.name });
+    }
+  }
+  function noteOnSpot() {
+    const s = sceneRef.current; if (!s) return;
+    if (floorId == null) { setToast({ error: "Choose a floor first, then click the spot for the note." }); return; }
+    setPickingSpot(true);
+    s.pickPoint((p) => {
+      setPickingSpot(false);
+      if (!p) return;
+      const r = p.roomId ? roomById.get(p.roomId) : undefined;
+      setComposer({ floorId: p.floorId, x: p.x, y: p.y, roomId: p.roomId, assetId: null, where: r ? `a spot in ${r.name}` : `a spot on ${floorById.get(p.floorId)?.name ?? "this floor"}` });
+    });
+  }
+  async function saveNote(text: string, assigneeId: number | null) {
+    if (!composer) return;
+    setNoteBusy(true);
+    const fd = new FormData();
+    fd.set("floorId", String(composer.floorId)); fd.set("x", String(composer.x)); fd.set("y", String(composer.y)); fd.set("text", text);
+    fd.set("roomId", composer.roomId ? String(composer.roomId) : ""); fd.set("assetId", composer.assetId ? String(composer.assetId) : "");
+    fd.set("assigneeId", assigneeId ? String(assigneeId) : "");
+    const res = await addNoteAction(null, fd);
+    setNoteBusy(false);
+    if (res?.note) { setNotes((l) => [res.note!, ...l]); setComposer(null); }
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
+  async function noteStatus(n: TwinNote, done: boolean) {
+    const fd = new FormData(); fd.set("noteId", String(n.id)); fd.set("status", done ? "DONE" : "OPEN");
+    const res = await setNoteStatusAction(null, fd);
+    if (res?.note) setNotes((l) => l.map((x) => (x.id === n.id ? res.note! : x)));
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
+  async function noteDelete(n: TwinNote) {
+    if (!window.confirm("Delete this note?")) return;
+    const fd = new FormData(); fd.set("noteId", String(n.id));
+    const res = await deleteNoteAction(null, fd);
+    if (res?.deletedId) setNotes((l) => l.filter((x) => x.id !== n.id));
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
+  function focusNote(n: TwinNote) {
+    if (n.assetId && assetById.has(n.assetId)) { focus({ kind: "asset", id: n.assetId }); return; }
+    if (n.roomId && roomById.has(n.roomId)) { focus({ kind: "room", id: n.roomId }); return; }
+    const s = sceneRef.current; const f = floorById.get(n.floorId); if (!s || !f) return;
+    setFloorId(f.id); s.isolateFloor(f.id, false);
+    const k = 1 / (f.unitsPerMetre || 10); s.frameSpots([{ floorId: f.id, x: n.x * k, z: n.y * k }]);
+  }
+  useEffect(() => {
+    if (!pickingSpot) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") sceneRef.current?.cancelPickPoint(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pickingSpot]);
+  // A link to a note (…&note=<id>, from a notification) opens it once the model is ready.
+  const noteParamDone = useRef(false);
+  useEffect(() => {
+    if (!ready || noteParamDone.current) return;
+    noteParamDone.current = true;
+    const n = notes.find((x) => x.id === Number(new URLSearchParams(window.location.search).get("note")));
+    if (!n) return;
+    const t = setTimeout(() => { focusNote(n); if (!panels.isOpen("notes")) panels.toggle("notes"); }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
+  }, [ready]);
+  useEffect(() => {
+    alertsRef.current = (prev, next) => {
+      const down = new Set(["UNDER_MAINTENANCE", "OUT_OF_SERVICE"]);
+      const fresh = [...next].filter(([id, m]) => {
+        const o = prev.get(id);
+        return o && (m.openJobs > o.openJobs || (down.has(m.status) && !down.has(o.status)));
+      }).map(([id]) => assetById.get(id)).filter((a): a is TwinAsset => !!a);
+      if (!fresh.length) return;
+      for (const a of fresh.slice(0, 10)) sceneRef.current?.flashAsset(a.id);
+      const a = fresh[0]; const room = a.roomId ? roomById.get(a.roomId) : undefined;
+      setToast({ ok: `New fault: ${a.deviceType} ${a.tag}${room ? ` in ${room.name}` : ""}${fresh.length > 1 ? ` (and ${fresh.length - 1} more)` : ""}.` });
+      setUndo({ label: "Go there", run: () => { focus({ kind: "asset", id: a.id }); setToast(null); setUndo(null); } });
+    };
+  });
+  useEffect(() => {
+    dragRef.current = {
+      canDrag: (id) => data.can.move && !dropping && assetById.has(id),
+      start: (id) => { const a = assetById.get(id); if (a) startDrop(a, null); },
+    };
+  });
   function frameLeg(r: Route) {
     const s = sceneRef.current; if (!s) return;
     if (r.floorChanges && floorId != null) { setFloorId(null); s.isolateFloor(null, false); }
@@ -659,8 +779,32 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const selAsset = selected?.kind === "asset" ? assetById.get(selected.id) : undefined;
   const selRoom = selected?.kind === "room" ? roomById.get(selected.id) : selAsset ? roomById.get(selAsset.roomId!) : undefined;
   const roomAssets = selected?.kind === "room" ? placed.filter((a) => a.roomId === selected.id) : [];
-  const hoverText = hover?.p?.kind === "asset" ? (() => { const a = assetById.get(hover.p.id); return a ? `${a.deviceType} · ${a.tag}` : ""; })()
-    : hover?.p?.kind === "room" ? (() => { const r = roomById.get(hover.p.id); return r ? `${r.name} · ${r.code}` : ""; })() : "";
+  // Hover cards (wave 7e): a room's equipment, devices down, open jobs and notes; a device's status and jobs.
+  const hoverCard = (() => {
+    if (!hover?.p) return null;
+    if (hover.p.kind === "asset") {
+      const a = assetById.get(hover.p.id); if (!a) return null;
+      const st = statusOf(a.id, a.status); const m = live.get(a.id);
+      const n = notes.filter((x) => x.status === "OPEN" && x.assetId === a.id).length;
+      return { title: a.deviceType, sub: `${a.tag}${a.roomId ? ` · ${roomById.get(a.roomId)?.name ?? ""}` : ""}`, lines: [
+        { text: STATUS_LABELS[st] ?? st, color: STATUS_COLORS[st] },
+        m?.openJobs ? { text: `${m.openJobs} open job${m.openJobs === 1 ? "" : "s"}`, color: "#ffb08a" } : null,
+        n ? { text: `${n} note${n === 1 ? "" : "s"}`, color: "#ffc46b" } : null,
+      ].filter((l): l is { text: string; color: string } => !!l) };
+    }
+    const r = roomById.get(hover.p.id); if (!r) return null;
+    const inRoom = placed.filter((a) => a.roomId === r.id);
+    const down = inRoom.filter((a) => !AVAILABLE.has(statusOf(a.id, a.status)) && statusOf(a.id, a.status) !== "IN_STOCK").length;
+    const jobs = inRoom.reduce((t, a) => t + (live.get(a.id)?.openJobs ?? 0), 0);
+    const n = notes.filter((x) => x.status === "OPEN" && x.roomId === r.id).length;
+    const dept = r.departmentId ? deptById.get(r.departmentId)?.name : undefined;
+    return { title: r.name, sub: [r.code, dept, floorById.get(r.floorId)?.name].filter(Boolean).join(" · "), lines: [
+      { text: inRoom.length ? `${inRoom.length} device${inRoom.length === 1 ? "" : "s"}` : "No equipment registered", color: "#d6f3ff" },
+      down ? { text: `${down} down`, color: "#ff8a96" } : null,
+      jobs ? { text: `${jobs} open job${jobs === 1 ? "" : "s"}`, color: "#ffb08a" } : null,
+      n ? { text: `${n} note${n === 1 ? "" : "s"}`, color: "#ffc46b" } : null,
+    ].filter((l): l is { text: string; color: string } => !!l) };
+  })();
 
   const sortedFloors = [...data.floors].sort((a, b) => b.elevation - a.elevation);
   const roomsByFloor = sortedFloors.map((f) => [f, data.rooms.filter((r) => r.floorId === f.id && r.type !== "CORRIDOR").sort((a, b) => a.name.localeCompare(b.name))] as const)
@@ -1129,6 +1273,31 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       )}
     </div>
   );
+  // Notes on the selection: the device's, or the room's (and its devices') when a room is selected.
+  const selNotes = notes.filter((n) => n.status === "OPEN" && (selAsset ? n.assetId === selAsset.id : selRoom ? n.roomId === selRoom.id : false));
+  const notesBlock = (
+    <div className="mt-3 border-t border-[#123a55] pt-2">
+      <p className="text-[13px] font-semibold text-[#5fd6ff]">Notes{selNotes.length ? ` (${selNotes.length})` : ""}</p>
+      {selNotes.length > 0 && <div className="mt-1"><NoteList notes={selNotes} whereOf={noteWhere} me={me} canReport={data.can.report} onFocus={focusNote} onStatus={noteStatus} onDelete={noteDelete} /></div>}
+      {composer && composer.floorId && (composer.assetId ? composer.assetId === selAsset?.id : composer.roomId === selRoom?.id && !selAsset) ? (
+        <div className="mt-1.5"><NoteComposer where={composer.where} people={people} busy={noteBusy} onSave={saveNote} onCancel={() => setComposer(null)} /></div>
+      ) : <button type="button" onClick={noteOnSelection} className="twin-act mt-1.5">Add a note {selAsset ? "on this device" : "in this room"}</button>}
+    </div>
+  );
+  const shownNotes = notes.filter((n) => showDone || n.status === "OPEN");
+  const composerOnSpot = composer && !composer.assetId && !(composer.roomId && selRoom?.id === composer.roomId && !selAsset);
+  const notesPanel = (
+    <div className="space-y-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={pickingSpot ? () => sceneRef.current?.cancelPickPoint() : noteOnSpot} className="twin-act" aria-pressed={pickingSpot}>{pickingSpot ? "Cancel" : "Note on a spot"}</button>
+        <label className="flex items-center gap-1.5 text-xs text-[#8fb6cc]"><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} className="accent-[#2fd3ff]" />Show closed</label>
+      </div>
+      {pickingSpot && <p className="text-xs text-[#ffc46b]">Click the spot on the floor shown.</p>}
+      {composerOnSpot && <NoteComposer where={composer!.where} people={people} busy={noteBusy} onSave={saveNote} onCancel={() => setComposer(null)} />}
+      <NoteList notes={shownNotes} whereOf={noteWhere} me={me} canReport={data.can.report} onFocus={focusNote} onStatus={noteStatus} onDelete={noteDelete} />
+      <p className="text-[11px] text-[#8fb6cc]">Select a room or device to add a note to it. Anyone who can see this hospital can add notes; the person a note is for gets a notification.</p>
+    </div>
+  );
   const detailsBody = (
     <>
       {selAsset && (
@@ -1175,7 +1344,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                 </form>
               </details>
               <div className="flex flex-wrap items-center gap-1.5">
-                {data.can.move && <button type="button" onClick={() => startDrop(selAsset, null)} disabled={dropping != null || placingId != null} className="twin-act" title="Pick it up and drop it anywhere at real size; R turns it">Move on plan</button>}
+                {data.can.move && <button type="button" onClick={() => startDrop(selAsset, null)} disabled={dropping != null || placingId != null} className="twin-act" title="Pick it up and drop it anywhere at real size; R turns it. On a floor shown on its own you can also press and hold the device, then drag it.">Move on plan</button>}
                 <button type="button" onClick={() => placeExactly(selAsset.id)} disabled={placingId != null} className="twin-act">Set exact spot</button>
                 {selAsset.posX != null && <button type="button" onClick={() => clearSpot(selAsset.id)} className="twin-act">Use automatic spot</button>}
               </div>
@@ -1234,6 +1403,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               </div>
             )}
           </div>
+          {notesBlock}
           <div className="mt-2 flex flex-wrap gap-3">
             <Link href={`/assets?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Room in the asset register</Link>
             {data.can.addAsset && <Link href={`/assets/new?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Add a device here</Link>}
@@ -1327,6 +1497,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               open={panels.isOpen("find")} onToggle={() => panels.toggle("find")}>
               {findBox}
             </HudPanel>
+            <HudPanel title="Notes" summary={`${notes.filter((n) => n.status === "OPEN").length} open`} open={panels.isOpen("notes")} onToggle={() => panels.toggle("notes")} bodyClassName="max-h-[35vh] overflow-y-auto">
+              {notesPanel}
+            </HudPanel>
             <HudPanel title="Views" summary={views.length ? `${views.length} saved` : undefined} open={panels.isOpen("views")} onToggle={() => panels.toggle("views")} bodyClassName="max-h-[35vh] overflow-y-auto">
               {viewsPanel}
             </HudPanel>
@@ -1381,7 +1554,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                   <section><h2 className="twin-h">Equipment types</h2>{typeList}</section>
                 </div>
               )}
-              {sheetTab === "find" && findBox}
+              {sheetTab === "find" && <div className="space-y-3">{findBox}<section><h2 className="twin-h">Notes</h2>{notesPanel}</section></div>}
               {sheetTab === "details" && (
                 <div>
                   <div className="mb-1 flex justify-end"><button type="button" onClick={closeDetails} className="text-xs text-[#8fb6cc] hover:text-white" aria-label="Close details">Close</button></div>
@@ -1419,9 +1592,13 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           <button type="button" onClick={() => setToast(null)} className="text-xs text-[#8fb6cc] hover:text-white" aria-label="Dismiss">Close</button>
         </div>
       )}
-      {hover && hoverText && (
-        <div className="pointer-events-none absolute z-10 rounded-md border border-[#1d6f9a] bg-[#04121fcc] px-2 py-1 text-xs text-white backdrop-blur"
-          style={{ left: hover.x + 14, top: hover.y + 10 }}>{hoverText}</div>
+      {hover && hoverCard && (
+        <div className="pointer-events-none absolute z-10 max-w-64 rounded-md border border-[#1d6f9a] bg-[#04121fe6] px-2.5 py-1.5 text-xs text-white backdrop-blur"
+          style={{ left: hover.x + 14, top: hover.y + 10 }} aria-hidden>
+          <p className="text-[13px] font-semibold">{hoverCard.title}</p>
+          <p className="text-[#8fb6cc]">{hoverCard.sub}</p>
+          {hoverCard.lines.length > 0 && <p className="mt-0.5">{hoverCard.lines.map((l, i) => <span key={i}>{i ? " · " : ""}<span style={{ color: l.color }}>{l.text}</span></span>)}</p>}
+        </div>
       )}
 
       {!ready && !error && (

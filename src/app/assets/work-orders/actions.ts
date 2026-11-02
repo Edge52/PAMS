@@ -9,7 +9,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, deviceTypes, maintenanceEvents, recallAssets, users, workOrders } from "@/db/schema";
+import { assets, deviceTypes, maintenanceEvents, recallAssets, twinNotes, users, workOrders } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { firstError, formObject, isoDate, num, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
@@ -48,6 +48,8 @@ const ReportSchema = z.object({
   type: oneOf("Job type", WORK_ORDER_TYPES),
   deviceDown: z.preprocess((v) => v === "on" || v === "true" || v === "1", z.boolean()),
   reporterContact: text(120),
+  /** A note in the 3D model being turned into this job (wave 7). */
+  noteId: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().optional()),
 });
 
 export async function reportFaultAction(_: FormState, fd: FormData): Promise<FormState> {
@@ -84,6 +86,8 @@ export async function reportFaultAction(_: FormState, fd: FormData): Promise<For
     await logActivity("work_order", row.id, "reported", `Reported by ${me.name}: ${d.title}${d.deviceDown ? " (device out of use)" : ""}`, me.name, tx);
     await logActivity("asset", a.id, "work_order", `${row.number} reported — ${d.title}`, me.name, tx);
     await applyAssetEffect("report", row, { actor: me.name }, tx);
+    if (d.noteId) await tx.update(twinNotes).set({ workOrderId: row.id })
+      .where(and(eq(twinNotes.id, d.noteId), eq(twinNotes.facilityId, a.facilityId), isNull(twinNotes.workOrderId)));
     return row;
   });
 

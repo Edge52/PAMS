@@ -3,19 +3,16 @@
  * right. Boxes show the step, its place and patients a day; arrows show their share. Server-rendered SVG, scrolls
  * sideways on a phone.
  */
-import { layoutFlow, type Link, type Step } from "@/lib/flows/model";
-
-const W = 176, H = 64, GX = 64, GY = 26, PAD = 16;
+import type { Link, Step } from "@/lib/flows/model";
+import { BOX_H as H, BOX_W as W, GAP_X as GX, PAD, stepPositions } from "./layout";
 
 export function FlowDiagram({ steps, links, volumes, placeOf, problems }: {
-  steps: Step[]; links: Link[]; volumes: Map<string, number> | null; placeOf: (s: Step) => string | null; problems: Set<string>;
+  steps: (Step & { x?: number | null; y?: number | null })[]; links: Link[]; volumes: Map<string, number> | null; placeOf: (s: Step) => string | null; problems: Set<string>;
 }) {
   if (!steps.length) return null;
-  const pos = layoutFlow(steps, links);
-  const cols = Math.max(...[...pos.values()].map((p) => p.col)) + 1;
-  const rows = Math.max(...[...pos.values()].map((p) => p.row)) + 1;
-  const width = PAD * 2 + cols * W + (cols - 1) * GX, height = PAD * 2 + rows * H + (rows - 1) * GY + 24;
-  const at = (k: string) => { const p = pos.get(k)!; return { x: PAD + p.col * (W + GX), y: PAD + p.row * (H + GY) }; };
+  const pos = stepPositions(steps, links);
+  const width = Math.max(...[...pos.values()].map((p) => p.x)) + W + PAD, height = Math.max(...[...pos.values()].map((p) => p.y)) + H + PAD + 40;
+  const at = (k: string) => pos.get(k)!;
   const fill = (s: Step) => (s.kind === "START" ? "var(--color-ok-soft)" : s.kind === "END" ? "var(--color-sunken)" : "var(--color-surface)");
   return (
     <div className="overflow-x-auto">
@@ -26,7 +23,7 @@ export function FlowDiagram({ steps, links, volumes, placeOf, problems }: {
         {links.map((l, i) => {
           if (!pos.has(l.fromKey) || !pos.has(l.toKey)) return null;
           const a = at(l.fromKey), b = at(l.toKey);
-          const back = pos.get(l.toKey)!.col <= pos.get(l.fromKey)!.col;
+          const back = pos.get(l.toKey)!.x <= pos.get(l.fromKey)!.x;
           const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2;
           const d = back
             ? `M${a.x + W / 2},${a.y + H} C${a.x + W / 2},${a.y + H + 40} ${b.x + W / 2},${b.y + H + 40} ${b.x + W / 2},${b.y + H}`

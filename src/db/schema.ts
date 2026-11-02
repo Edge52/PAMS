@@ -875,6 +875,29 @@ export const twinViews = pgTable("twin_views", {
   createdAt: createdAt(),
 }, (t) => [index("twin_views_facility_idx").on(t.facilityId)]);
 
+/** Notes in the 3D model (wave 7, step 7e): on a room, a device or a point on a floor; open until someone closes them. */
+export const twinNoteStatus = pgEnum("twin_note_status", ["OPEN", "DONE"]);
+export const twinNotes = pgTable("twin_notes", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  floorId: integer("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+  roomId: integer("room_id").references(() => rooms.id, { onDelete: "set null" }),
+  assetId: integer("asset_id").references(() => assets.id, { onDelete: "set null" }),
+  /** Plan point (plan units of the floor). */
+  x: real("x").notNull(),
+  y: real("y").notNull(),
+  text: text("text").notNull(),
+  status: twinNoteStatus("status").notNull().default("OPEN"),
+  assigneeId: integer("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  assigneeName: text("assignee_name"),
+  createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name"),
+  workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  closedByName: text("closed_by_name"),
+}, (t) => [index("twin_notes_facility_idx").on(t.facilityId, t.status)]);
+
 /** Patient pathways (wave 7, step 7b): how patients (later staff, supplies, waste) move through a hospital. */
 export const flowKind = pgEnum("flow_kind", ["PATIENT", "STAFF", "SUPPLIES", "WASTE"]);
 export const flowStatus = pgEnum("flow_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);

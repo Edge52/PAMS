@@ -6,6 +6,7 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/db";
 import { buildings, departments, flowLinks, flowSteps, floors, patientFlows, rooms } from "@/db/schema";
@@ -208,4 +209,42 @@ export async function deleteFlow(fd: FormData) {
   await logActivity("flow", flow.id, "deleted", `Draft “${flow.name}” v${flow.version} deleted`, me.name);
   revalidatePath("/flows");
   redirect(`/flows?notice=${encodeURIComponent("Draft deleted.")}`);
+}
+
+/* ── Canvas mode (wave 7, step 7e): positions and arrows drawn by hand ── */
+
+export type CanvasState = { ok?: string; error?: string } | null;
+
+/** Save where steps sit on the canvas (pixels, snapped by the canvas); null positions return to the automatic layout. */
+export async function saveLayoutAction(flowId: number, spots: { key: string; x: number | null; y: number | null }[]): Promise<CanvasState> {
+  const { flow } = await editable(flowId);
+  const ok = Array.isArray(spots) && spots.length <= 500 && spots.every((p) => typeof p.key === "string" && p.key.length <= 24
+    && (p.x === null || (Number.isFinite(p.x) && Math.abs(p.x) < 1e5)) && (p.y === null || (Number.isFinite(p.y) && Math.abs(p.y) < 1e5)));
+  if (!ok) return { error: "Those positions couldn't be read." };
+  await db.transaction(async (tx) => {
+    for (const p of spots) await tx.update(flowSteps).set({ x: p.x, y: p.y }).where(and(eq(flowSteps.flowId, flow.id), eq(flowSteps.key, p.key)));
+  });
+  revalidatePath(`/flows/${flow.id}`);
+  return { ok: spots.every((p) => p.x === null) ? "Laid out automatically." : "Saved." };
+}
+
+/** An arrow drawn on the canvas: it takes whatever share the step's other arrows leave (100 % for the first). */
+export async function quickLinkAction(flowId: number, fromKey: string, toKey: string): Promise<CanvasState> {
+  const { flow, me } = await editable(flowId);
+  if (fromKey === toKey) return { error: "An arrow needs two different steps." };
+  const keys = (await db.select({ key: flowSteps.key }).from(flowSteps).where(eq(flowSteps.flowId, flow.id))).map((r) => r.key);
+  if (!keys.includes(fromKey) || !keys.includes(toKey)) return { error: "Choose steps of this pathway." };
+  const out = await db.select({ toKey: flowLinks.toKey, share: flowLinks.share }).from(flowLinks).where(and(eq(flowLinks.flowId, flow.id), eq(flowLinks.fromKey, fromKey)));
+  if (out.some((l) => l.toKey === toKey)) return { error: "There is already an arrow between those steps." };
+  const share = Math.max(0, 100 - out.reduce((t, l) => t + l.share, 0));
+  await db.insert(flowLinks).values({ flowId: flow.id, fromKey, toKey, share, transport: "FOOT", urgency: "ROUTINE", condition: null });
+  await db.update(patientFlows).set({ updatedAt: new Date() }).where(eq(patientFlows.id, flow.id));
+  await logActivity("flow", flow.id, "updated", `Arrow ${fromKey} → ${toKey} drawn`, me.name);
+  revalidatePath(`/flows/${flow.id}`);
+  return { ok: share === 100 ? "Arrow added." : `Arrow added with ${share} %, what the step's other arrows leave. Set its share, transport and urgency below.` };
+}
+
+/** Diagram or canvas on the pathway page, remembered for this browser. */
+export async function setFlowModeAction(mode: "list" | "canvas"): Promise<void> {
+  (await cookies()).set("flowMode", mode === "canvas" ? "canvas" : "list", { path: "/flows", maxAge: 31536000, sameSite: "lax" });
 }

@@ -15,7 +15,7 @@ import { reportFaultAction } from "../actions";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Report a fault" };
 
-export default async function NewWorkOrderPage({ searchParams }: { searchParams: Promise<{ assetId?: string; tag?: string }> }) {
+export default async function NewWorkOrderPage({ searchParams }: { searchParams: Promise<{ assetId?: string; tag?: string; title?: string; noteId?: string }> }) {
   const me = await requirePermission("assets.view");
   const sp = await searchParams;
   const canReport = can(me.role, "workorders.report"), canWork = can(me.role, "maintenance.edit");
@@ -61,7 +61,8 @@ export default async function NewWorkOrderPage({ searchParams }: { searchParams:
                 </Field>
               )}
               {tag && !a && <p role="alert" className="text-sm text-danger">No device has the tag {tag}. Check the label.</p>}
-              <Field label="What is wrong?"><Input name="title" required maxLength={160} placeholder="e.g. Screen stays black, alarm sounding, cracked cable" /></Field>
+              {/^\d+$/.test(sp.noteId ?? "") && <input type="hidden" name="noteId" value={sp.noteId} />}
+              <Field label="What is wrong?"><Input name="title" required maxLength={160} defaultValue={sp.title?.slice(0, 160)} placeholder="e.g. Screen stays black, alarm sounding, cracked cable" /></Field>
               <Field label="Details" hint="When it started, error codes on screen, anything you already tried."><Textarea name="description" rows={4} /></Field>
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" name="deviceDown" className="mt-1" defaultChecked />

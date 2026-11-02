@@ -3,16 +3,18 @@
  * Actions the 3D view calls without leaving the model. Each returns a result instead of redirecting, so the scene
  * can update in place. Permission first, then the asset's facility, then the shared move logic (lib/assets/mutations).
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, rooms, twinViews } from "@/db/schema";
+import { assets, buildings, floors, rooms, twinNotes, twinViews, users } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { decodeView } from "@/components/assets/twin/view-state";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { firstError, formObject, reqId, text } from "@/lib/assets/forms";
 import { moveAsset } from "@/lib/assets/mutations";
+import { notifyUsers } from "@/lib/notifications";
+import { noteOf, type TwinNote } from "@/lib/assets/twin-notes";
 import { pointInPolygon, rectPoly, type Pt } from "@/components/assets/twin/geometry";
 
 export type TwinActionState = { ok?: string; error?: string; assetId?: number; roomId?: number; posX?: number | null; posY?: number | null } | null;
@@ -147,4 +149,64 @@ export async function deleteViewAction(_: ViewActionState, fd: FormData): Promis
   if (v.createdById !== me.id && !can(me.role, "users.manage")) return { error: "Only the person who saved this view can delete it." };
   await db.delete(twinViews).where(eq(twinViews.id, v.id));
   return { ok: `View “${v.name}” deleted.`, deletedId: v.id };
+}
+
+/* ── Notes in the model (wave 7, step 7e) ── */
+
+export type NoteActionState = { ok?: string; error?: string; note?: TwinNote; deletedId?: number } | null;
+
+const NoteSchema = z.object({
+  floorId: reqId("Floor"), roomId: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().optional()),
+  assetId: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().optional()),
+  x: z.coerce.number().finite(), y: z.coerce.number().finite(),
+  text: z.string().trim().min(1, "Write the note.").max(2000, "Keep the note under 2,000 characters."),
+  assigneeId: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().optional()),
+});
+
+/** Add a note on a room, a device or a spot. Anyone who can see the hospital may add notes. */
+export async function addNoteAction(_: NoteActionState, fd: FormData): Promise<NoteActionState> {
+  const me = await requirePermission("assets.view");
+  const p = NoteSchema.safeParse(formObject(fd));
+  if (!p.success) return { error: firstError(p.error) };
+  const d = p.data;
+  const [fl] = await db.select({ facilityId: buildings.facilityId }).from(floors).innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(eq(floors.id, d.floorId));
+  if (!fl) return { error: "That floor no longer exists." };
+  await requireFacilityAccess(fl.facilityId, me);
+  if (d.roomId) { const [r] = await db.select({ floorId: rooms.floorId }).from(rooms).where(eq(rooms.id, d.roomId)); if (r?.floorId !== d.floorId) return { error: "That room isn't on this floor." }; }
+  if (d.assetId) { const a = await loadAsset(d.assetId); if (!a || a.facilityId !== fl.facilityId) return { error: "That device isn't in this hospital." }; }
+  let assignee: { id: number; name: string } | undefined;
+  if (d.assigneeId) { [assignee] = await db.select({ id: users.id, name: users.name }).from(users).where(and(eq(users.id, d.assigneeId), eq(users.active, true))); if (!assignee) return { error: "Choose someone from the list." }; }
+  const [row] = await db.insert(twinNotes).values({
+    facilityId: fl.facilityId, floorId: d.floorId, roomId: d.roomId ?? null, assetId: d.assetId ?? null, x: d.x, y: d.y, text: d.text,
+    assigneeId: assignee?.id ?? null, assigneeName: assignee?.name ?? null, createdById: me.id, createdByName: me.name,
+  }).returning();
+  if (assignee && assignee.id !== me.id) {
+    await notifyUsers([assignee.id], { kind: "twin_note", title: `${me.name} left you a note in the 3D view`.slice(0, 200), body: d.text.slice(0, 300), href: `/assets/3d?facilityId=${fl.facilityId}&note=${row.id}`, dedupeKey: `twin_note:${row.id}` });
+  }
+  return { ok: assignee ? `Note added for ${assignee.name}.` : "Note added.", note: noteOf(row) };
+}
+
+/** Close or reopen a note: its author, its assignee, or anyone who edits assets. */
+export async function setNoteStatusAction(_: NoteActionState, fd: FormData): Promise<NoteActionState> {
+  const me = await requirePermission("assets.view");
+  const id = Number(fd.get("noteId")), done = fd.get("status") === "DONE";
+  const [n] = Number.isInteger(id) ? await db.select().from(twinNotes).where(eq(twinNotes.id, id)) : [];
+  if (!n) return { error: "That note no longer exists." };
+  await requireFacilityAccess(n.facilityId, me);
+  if (n.createdById !== me.id && n.assigneeId !== me.id && !can(me.role, "assets.edit")) return { error: "Only the note's author, the person it's for, or someone who edits assets can close it." };
+  const [row] = await db.update(twinNotes).set(done ? { status: "DONE", closedAt: new Date(), closedByName: me.name } : { status: "OPEN", closedAt: null, closedByName: null })
+    .where(eq(twinNotes.id, n.id)).returning();
+  return { ok: done ? "Note closed." : "Note reopened.", note: noteOf(row) };
+}
+
+/** Delete a note: its author, or anyone who edits assets. */
+export async function deleteNoteAction(_: NoteActionState, fd: FormData): Promise<NoteActionState> {
+  const me = await requirePermission("assets.view");
+  const id = Number(fd.get("noteId"));
+  const [n] = Number.isInteger(id) ? await db.select().from(twinNotes).where(eq(twinNotes.id, id)) : [];
+  if (!n) return { error: "That note no longer exists." };
+  await requireFacilityAccess(n.facilityId, me);
+  if (n.createdById !== me.id && !can(me.role, "assets.edit")) return { error: "Only the note's author or someone who edits assets can delete it." };
+  await db.delete(twinNotes).where(eq(twinNotes.id, n.id));
+  return { ok: "Note deleted.", deletedId: n.id };
 }

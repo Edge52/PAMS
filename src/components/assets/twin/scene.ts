@@ -113,6 +113,9 @@ export type DropResult = { floorId: number; roomId: number | null; x: number; y:
 export type TwinEvents = {
   onHover?: (p: PickResult, screen: { x: number; y: number } | null) => void;
   onSelect?: (p: PickResult) => void;
+  /** Drag to move: may this device be picked up, and it was (the view starts a drop for it). */
+  canDrag?: (assetId: number) => boolean;
+  onDragStart?: (assetId: number) => void;
   onProgress?: (loaded: number, total: number) => void;
   /** The device struggled to keep up; the scene has switched to lighter graphics (no glow, 1× pixels). */
   onSlow?: () => void;
@@ -182,6 +185,13 @@ export class TwinScene {
   private play: { sources: PlaySource[]; speed: number; max: number; simT: number; last: number; movers: { mesh: THREE.Mesh; keys: Key[]; t0: number }[]; nextSpawn: number } | null = null;
   private playGroup = new THREE.Group();
   private heatMesh: THREE.InstancedMesh | null = null;
+  // Wave 7e: notes in the model, picking a spot for a new one, and alert flashes.
+  private noteGroup: THREE.Group | null = null;
+  private noteSpots: { id: number; floorId: number; x: number; y: number; done: boolean }[] = [];
+  private pointPick: ((p: { floorId: number; x: number; y: number; roomId: number | null } | null) => void) | null = null;
+  private flashes: { mesh: THREE.Mesh; t0: number }[] = [];
+  private drag: { assetId: number; timer: number; x: number; y: number } | null = null;
+  private dragging = false;
   private heatCells: { floorId: number; x: number; z: number; perDay: number }[] | null = null;
   private style: TwinStyle = "dark";
   private bloomWanted = true;
@@ -549,6 +559,7 @@ export class TwinScene {
     this.drawRoute();
     this.drawPathways();
     this.drawHeat();
+    this.drawNotes();
     this.drawSelection();
   }
 
@@ -754,6 +765,7 @@ export class TwinScene {
       }
     }
     this.applyWallHeights();
+    if (this.noteSpots.length) this.drawNotes(); // only on floors shown
   }
 
   /** Walls full height on one floor or close up; a low cutaway over the whole building from afar. Doors and columns follow. */
@@ -1138,6 +1150,73 @@ export class TwinScene {
     this.heatMesh = mesh; this.scene.add(mesh);
   }
 
+  /** Note markers (plan units of each floor). Done notes are drawn faint. */
+  setNotes(notes: { id: number; floorId: number; x: number; y: number; done: boolean }[]) {
+    this.noteSpots = notes;
+    this.drawNotes();
+  }
+
+  private drawNotes() {
+    if (this.noteGroup) {
+      this.scene.remove(this.noteGroup);
+      this.noteGroup.traverse((o) => { const sp = o as THREE.Sprite; (sp.material as THREE.SpriteMaterial | undefined)?.map?.dispose(); (sp.material as THREE.Material | undefined)?.dispose(); });
+      this.noteGroup = null;
+    }
+    if (!this.noteSpots.length) return;
+    const g = new THREE.Group();
+    const tex = { open: noteTexture("#ffc46b"), done: noteTexture("#6f8798") };
+    for (const n of this.noteSpots) {
+      const f = this.floorById.get(n.floorId); if (!f) continue;
+      const v = this.floors.get(n.floorId); if (v && !v.group.visible) continue;
+      const s = this.u(f);
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: n.done ? tex.done : tex.open, depthTest: false, transparent: true, toneMapped: false, sizeAttenuation: false, opacity: n.done ? 0.6 : 1 }));
+      sp.center.set(0.5, 0); sp.scale.set(0.035, 0.035, 1);
+      sp.position.set(n.x * s, this.floorY(f) + 2.2, n.y * s);
+      sp.renderOrder = 13; sp.userData.noteId = n.id;
+      g.add(sp);
+    }
+    this.noteGroup = g; this.scene.add(g);
+  }
+
+  /** The next click on the floor shown on its own returns that spot (plan units) instead of selecting; Esc cancels. */
+  pickPoint(done: (p: { floorId: number; x: number; y: number; roomId: number | null } | null) => void) {
+    this.pointPick?.(null);
+    this.pointPick = done;
+    this.renderer.domElement.style.cursor = "crosshair";
+  }
+  cancelPickPoint() { const cb = this.pointPick; this.pointPick = null; this.renderer.domElement.style.cursor = "grab"; cb?.(null); }
+  private finishPickPoint(e: PointerEvent) {
+    const cb = this.pointPick; this.pointPick = null; this.renderer.domElement.style.cursor = "grab";
+    const f = this.isolated != null ? this.floorById.get(this.isolated) : undefined;
+    if (!cb) return;
+    if (!f) { cb(null); return; }
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hit = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.floorY(f)), hit)) { cb(null); return; }
+    const s = this.u(f), x = hit.x / s, y = hit.z / s;
+    const room = this.data.rooms.find((rm) => rm.floorId === f.id && pointInPolygon([x, y], rm.poly as Pt[])) ?? null;
+    cb({ floorId: f.id, x, y, roomId: room?.id ?? null });
+  }
+
+  /** A short expanding ring at a device (a new fault came in). */
+  flashAsset(assetId: number) {
+    if (this.reducedMotion) return;
+    const d = this.devicePos.get(assetId); const f = d ? this.floorById.get(d.floorId) : null; if (!d || !f) return;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.2, 40), new THREE.MeshBasicMaterial({ color: "#ff4f62", transparent: true, toneMapped: false, depthTest: false, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(d.x, this.floorY(f) + 0.2, d.z); ring.renderOrder = 14;
+    this.scene.add(ring); this.flashes.push({ mesh: ring, t0: performance.now() });
+  }
+  private updateFlashes(now: number) {
+    this.flashes = this.flashes.filter((fl) => {
+      const k = (now - fl.t0) / 2400;
+      if (k >= 3) { this.scene.remove(fl.mesh); fl.mesh.geometry.dispose(); (fl.mesh.material as THREE.Material).dispose(); return false; }
+      const p = k % 1; fl.mesh.scale.setScalar(1 + p * 6); (fl.mesh.material as THREE.MeshBasicMaterial).opacity = 1 - p;
+      return true;
+    });
+  }
+
   /** Fly so these points are in view (a route, a pathway or one of its legs). */
   frameSpots(spots: { floorId: number; x: number; z: number }[]) {
     const ps = spots.filter((sp) => this.floorById.has(sp.floorId)).map((sp) => new THREE.Vector3(sp.x, this.floorY(this.floorById.get(sp.floorId)!), sp.z));
@@ -1398,9 +1477,26 @@ export class TwinScene {
   private bindPointer() {
     const el = this.renderer.domElement;
     let down: { x: number; y: number } | null = null;
-    el.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY }; });
+    el.addEventListener("pointerdown", (e) => {
+      down = { x: e.clientX, y: e.clientY };
+      // Drag to move (wave 7e): press and hold on a device of the floor shown on its own, then drag it to a room.
+      if (e.button !== 0 || this.drop || this.placing || this.pointPick || this.isolated == null || !this.events.canDrag) return;
+      const hit = this.pick(e);
+      if (hit?.kind !== "asset" || !this.events.canDrag(hit.id) || this.devicePos.get(hit.id)?.floorId !== this.isolated) return;
+      const assetId = hit.id;
+      this.drag = { assetId, x: e.clientX, y: e.clientY, timer: window.setTimeout(() => {
+        if (!this.drag) return;
+        this.dragging = true; this.controls.enabled = false;
+        this.events.onDragStart?.(assetId);
+        this.moveDrop(e);
+      }, 350) };
+    });
+    const endDrag = () => { if (this.drag) window.clearTimeout(this.drag.timer); this.drag = null; if (this.dragging) { this.dragging = false; this.controls.enabled = true; } };
     el.addEventListener("pointerup", (e) => {
+      if (this.dragging) { const was = this.drop; endDrag(); if (was) this.finishDrop(e); down = null; return; }
+      endDrag();
       if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) {
+        if (this.pointPick) { this.finishPickPoint(e); down = null; return; }
         if (this.drop) { this.finishDrop(e); down = null; return; }
         if (this.placing) { this.finishPlacing(e); down = null; return; }
         const hit = this.pick(e);
@@ -1410,6 +1506,8 @@ export class TwinScene {
       down = null;
     });
     el.addEventListener("pointermove", (e) => {
+      if (this.drag && !this.dragging && Math.hypot(e.clientX - this.drag.x, e.clientY - this.drag.y) > 6) endDrag(); // it's an orbit, not a hold
+      if (this.dragging && this.drop) { this.moveDrop(e); return; }
       if (e.buttons) return;
       if (this.drop) { this.moveDrop(e); el.style.cursor = "crosshair"; return; }
       if (this.placing) { el.style.cursor = "crosshair"; return; }
@@ -1418,6 +1516,7 @@ export class TwinScene {
       this.events.onHover?.(hit, hit ? { x: e.offsetX, y: e.offsetY } : null);
     });
     el.addEventListener("pointerleave", () => this.events.onHover?.(null, null));
+    el.addEventListener("pointercancel", () => { if (this.dragging) this.cancelDrop(); endDrag(); });
   }
 
   private pick(e: PointerEvent): PickResult {
@@ -1551,6 +1650,7 @@ export class TwinScene {
     if (!this.reducedMotion && this.deviceMesh) this.pulseDevices(t);
     this.watchFrameRate(now);
     this.updatePlay(now);
+    if (this.flashes.length) this.updateFlashes(now);
     if (this.selectionRing.visible && !this.reducedMotion) {
       const k = 1 + 0.15 * Math.sin(t * 3);
       this.selectionRing.scale.set(k, 1, k);
@@ -1980,4 +2080,13 @@ function badgeSprite(n: number, text: string, color: string): THREE.Sprite {
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, toneMapped: false, sizeAttenuation: false }));
   const k = 0.0005; sprite.scale.set(w * k, h * k, 1);
   return sprite;
+}
+
+/** A note marker: a rounded square with a pencil mark. */
+function noteTexture(color: string): THREE.CanvasTexture {
+  const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d")!;
+  g.fillStyle = color; g.beginPath(); g.roundRect(6, 4, 52, 46, 10); g.fill();
+  g.beginPath(); g.moveTo(24, 50); g.lineTo(32, 62); g.lineTo(40, 50); g.fill();
+  g.fillStyle = "#04101a"; g.font = "700 30px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("✎", 32, 28);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }

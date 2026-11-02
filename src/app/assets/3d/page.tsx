@@ -1,7 +1,8 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, patientFlows, rooms, twinViews } from "@/db/schema";
+import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, patientFlows, rooms, twinNotes, twinViews, userFacilities, users } from "@/db/schema";
+import { noteOf } from "@/lib/assets/twin-notes";
 import { equipmentNames, loadFlow } from "@/lib/flows/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { DEPARTMENT_PALETTE, rectPoly } from "@/components/assets/twin/geometry";
@@ -95,7 +96,14 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
   };
   const views = await db.select().from(twinViews)
     .where(sql`${twinViews.facilityId} = ${facility.id} and (${twinViews.shared} or ${twinViews.createdById} = ${me.id})`).orderBy(asc(twinViews.name));
-  return <TwinView data={data} live={await twinLive(facility.id)}
+  // Notes: open ones, and those closed in the last 30 days. People who can see this hospital, for "For".
+  const notes = (await db.select().from(twinNotes)
+    .where(sql`${twinNotes.facilityId} = ${facility.id} and (${twinNotes.status} = 'OPEN' or ${twinNotes.closedAt} > now() - interval '30 days')`)
+    .orderBy(sql`${twinNotes.createdAt} desc`).limit(500)).map(noteOf);
+  const people = await db.select({ id: users.id, name: users.name }).from(users)
+    .where(sql`${users.active} and (${users.allFacilities} or ${users.role} = 'ADMIN' or exists(select 1 from ${userFacilities} uf where uf.user_id = ${users.id} and uf.facility_id = ${facility.id}))`)
+    .orderBy(asc(users.name));
+  return <TwinView data={data} live={await twinLive(facility.id)} notes={notes} people={people} me={{ id: me.id, canEditAssets: can(me.role, "assets.edit") }}
     views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName }))}
     canManageViews={can(me.role, "users.manage")}
     plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []} />;

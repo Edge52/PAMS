@@ -7,6 +7,9 @@ import { Badge, Button, Field, FormGrid, Input, PageHeader, Panel, Table, Td, Te
 import { ActionForm } from "@/components/assets/action-form";
 import { Crumbs, NativeSelect, Notice } from "@/components/assets/bits";
 import { FlowDiagram, fmtMin } from "@/components/flows/flow-diagram";
+import { FlowCanvas, ModeToggle } from "@/components/flows/flow-canvas";
+import { stepPositions } from "@/components/flows/layout";
+import { cookies } from "next/headers";
 import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate } from "@/lib/format";
@@ -54,6 +57,7 @@ export default async function FlowPage({ params, searchParams }: {
   const roomOpts = places.rooms.map((r) => ({ value: r.id, label: `${r.name}${r.code ? ` (${r.code})` : ""} · ${r.floorName}` }));
   const total = steps.reduce((t, s) => t + (s.minutes ?? 0), 0);
   const [tone, statusLabel] = STATUS[flow.status];
+  const mode = (await cookies()).get("flowMode")?.value === "canvas" ? "canvas" : "list";
   // Equipment readiness now: the needed device types in each step's room or department, and whether they work.
   const codes = [...new Set(steps.flatMap((s) => s.equipment))];
   const kit = codes.length ? await db.select({ id: assets.id, typeCode: deviceTypes.code, typeName: deviceTypes.name, roomId: assets.roomId, status: assets.status })
@@ -85,8 +89,18 @@ export default async function FlowPage({ params, searchParams }: {
       <Notice sp={sp} />
       {flow.status !== "DRAFT" && <p className="mb-4 rounded border border-line bg-sunken px-3 py-2 text-sm text-muted">This version is {statusLabel.toLowerCase()} and can&apos;t be changed{mayEdit ? "; “Edit as a new version” makes a draft copy" : ""}.</p>}
 
-      <Panel title="Pathway">
-        <FlowDiagram steps={steps} links={links} volumes={volumes} placeOf={placeOf} problems={problems} />
+      <Panel title="Pathway" actions={<ModeToggle mode={mode} />}>
+        {mode === "canvas" ? (() => {
+          const at = stepPositions(steps, links);
+          return (
+            <FlowCanvas flowId={flow.id} editable={editing} selected={{ step: editStep?.key, link: editLink?.id }}
+              steps={steps.map((s) => ({
+                key: s.key, label: s.label, kind: s.kind, x: at.get(s.key)!.x, y: at.get(s.key)!.y, place: placeOf(s), problem: problems.has(s.key),
+                minutes: s.minutes ? fmtMin(s.minutes) : null, perDay: volumes ? `${Math.round((volumes.get(s.key) ?? 0) * 10) / 10} a day` : null,
+              }))}
+              links={links.map((l) => ({ id: l.id, fromKey: l.fromKey, toKey: l.toKey, share: l.share, urgent: l.urgency === "URGENT", transport: TRANSPORT_LABELS[l.transport], condition: l.condition }))} />
+          );
+        })() : <FlowDiagram steps={steps} links={links} volumes={volumes} placeOf={placeOf} problems={problems} />}
         <p className="mt-2 text-xs text-muted">{steps.length} steps · {links.length} arrows{total ? ` · ${fmtMin(total)} of step time in all` : ""}{volumes ? ` · ${flow.dailyVolume} patients a day enter` : " · set patients a day to see the load at each step"}. Dashed arrows go back to an earlier step; red ones are urgent.</p>
       </Panel>
 

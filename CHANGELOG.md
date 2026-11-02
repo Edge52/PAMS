@@ -2,7 +2,7 @@
 
 ## Unreleased — wave 7 (in progress, branch `wave-7`)
 
-Migrations `0016`–`0018`. Update with `git pull` and `npm run demo`; your data is kept.
+Migrations `0016`–`0019`. Update with `git pull` and `npm run demo`; your data is kept.
 
 - **Lift cores**: declared once per hospital under Facilities › Lifts (bed, public, service, AGV; stops per floor;
   cars, capacity, typical wait). Suggested from lift lobbies in the drawings and marked *assumed* until confirmed. The
@@ -49,6 +49,21 @@ Migrations `0016`–`0018`. Update with `git pull` and `npm run demo`; your data
   lists published pathways missing working equipment. Starters now keep clinic steps on the whole department and
   don't borrow another department's room. How every figure is worked out, with a worked example:
   `docs/pathway-analysis.md`.
+- **Canvas mode for pathways (step 7e)**: *Canvas* on a pathway page. Drag steps around (they snap to a grid and stay
+  where you put them). Draw an arrow by dragging from a step's ● onto another step; it takes whatever share the
+  step's other arrows leave. Pan by dragging the background; zoom with the buttons or Ctrl + wheel. Click a step or
+  arrow to see it beside the canvas and edit it. Keyboard: Tab to a step, arrow keys move it. *Tidy up* returns to
+  the automatic layout. Your choice of diagram or canvas is remembered.
+- **Notes in the 3D view**: add a note on a selected room or device, or on any spot of the floor shown. A note can be
+  for someone, who then gets a notification. Notes show as markers in the model and in a Notes panel. They are
+  closed by their author, the person they're for, or anyone who edits assets. A note on a device turns into a work
+  order with one click and links to it.
+- **Live alerts**: a new fault (a new job, or a device going out of service) since the last minute's refresh flashes
+  at the device and pops up a message with *Go there*.
+- **Hover cards**: hovering a room shows its equipment, devices down, open jobs and notes; hovering a device shows its
+  status, jobs and notes.
+- **Drag to move**: on a floor shown on its own, press and hold a device, then drag it to another room. It drops at
+  real size, with *Undo* for 30 s, the same as *Move on plan*.
 - Demo restarts no longer crash on the work-order seed.
 
 ## Release 3.0 — 1 Nov 2026
