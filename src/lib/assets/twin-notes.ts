@@ -5,6 +5,8 @@ export type TwinNote = {
   id: number; floorId: number; roomId: number | null; assetId: number | null; x: number; y: number; text: string;
   status: "OPEN" | "DONE"; assigneeId: number | null; assigneeName: string | null; byId: number | null; byName: string | null;
   workOrderId: number | null; at: string; closedByName: string | null;
+  /** Photos attached (wave 8). */
+  photos?: { id: number; url: string; name: string }[];
 };
 
 export const noteOf = (n: typeof twinNotes.$inferSelect): TwinNote => ({

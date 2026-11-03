@@ -63,7 +63,7 @@ export default async function ContractPage({ params, searchParams }: {
     <>
       <PageHeader back={{ href: "/assets/contracts", label: "Service contracts" }}
         title={<span className="flex flex-wrap items-center gap-2">{c.number} <StatusBadge value={st.state} /></span>} description={c.title}
-        actions={canEdit && !edit && <LinkButton href={`${p}?edit=1`}>Edit contract</LinkButton>} />
+        actions={<><LinkButton href={`${p}/statement`}>Monthly statement</LinkButton>{canEdit && !edit && <LinkButton href={`${p}?edit=1`}>Edit contract</LinkButton>}</>} />
       <Notice sp={sp} />
       {st.state === "EXPIRING" && <p className="mb-4 rounded-[var(--radius-control)] border border-warn bg-warn-soft px-3 py-2 text-sm text-warn">Ends in {st.days} days. Decide whether to renew or re-tender.</p>}
 
@@ -87,6 +87,9 @@ export default async function ContractPage({ params, searchParams }: {
                 { label: "Value", value: c.value ? formatMoney(c.value, c.currency ?? "EGP") : null },
                 { label: "Per device a year", value: perAsset != null ? formatMoney(perAsset, c.currency ?? "EGP") : null },
                 { label: "Response time", value: c.responseHours ? `${c.responseHours} h` : null },
+                { label: "Repair time", value: c.repairHours ? `${c.repairHours} h` : null },
+                { label: "Uptime guarantee", value: c.uptimePct != null ? `${c.uptimePct} %` : null },
+                { label: "Penalties", value: c.penaltyPerLateHour || c.penaltyPerUptimePoint ? [c.penaltyPerLateHour && `${formatMoney(c.penaltyPerLateHour, c.currency ?? "EGP")} per late hour`, c.penaltyPerUptimePoint && `${formatMoney(c.penaltyPerUptimePoint, c.currency ?? "EGP")} per uptime point short`, c.penaltyCapPct != null && `capped at ${c.penaltyCapPct} % of the value`].filter(Boolean).join(", ") : null },
                 { label: "PPM visits a year", value: c.ppmVisitsPerYear },
                 { label: "Spare parts", value: c.includesParts ? "Included" : "Not included" },
                 { label: "Supplier's reference", value: c.vendorReference },

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, deviceModels, deviceTypes, facilities, preferredModels } from "@/db/schema";
+import { assets, deviceModels, deviceTypes, facilities, preferredModels, siteRequirements } from "@/db/schema";
 import { Badge, Button, Details, PageHeader, Panel, Table, Td, Th, THead } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { Notice } from "@/components/assets/bits";
@@ -13,7 +13,9 @@ import { deviceTypeOptions } from "@/lib/assets/queries";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatMoney, todayISO } from "@/lib/format";
-import { saveModelAction, setModelActiveAction } from "../../actions";
+import { saveModelAction, saveSiteRequirementsAction, setModelActiveAction } from "../../actions";
+import { SiteReqForm } from "@/components/assets/site-req-form";
+import { siteSummary } from "@/lib/assets/site-fit";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Make and model" };
@@ -29,14 +31,16 @@ export default async function ModelPage({ params, searchParams }: { params: Prom
   const { m } = row;
   const sp = await searchParams;
   const same = sql`lower(trim(${assets.manufacturer})) = ${m.manufacturer.toLowerCase()} and lower(trim(${assets.model})) = ${m.model.toLowerCase()}`;
-  const [byFacility, preferredIn] = await Promise.all([
+  const [byFacility, preferredIn, [site]] = await Promise.all([
     db.select({ id: facilities.id, name: facilities.name, n: sql<number>`count(*)::int`, down: sql<number>`count(*) filter (where ${assets.status} in ('OUT_OF_SERVICE','UNDER_MAINTENANCE'))::int` })
       .from(assets).innerJoin(facilities, eq(facilities.id, assets.facilityId))
       .where(and(eq(assets.deviceTypeId, m.deviceTypeId), same, sql`${assets.status} <> 'DISPOSED'`, scopeWhere(assets.facilityId, scope)))
       .groupBy(facilities.id, facilities.name),
     db.select({ name: facilities.name }).from(preferredModels).innerJoin(facilities, eq(facilities.id, preferredModels.facilityId))
       .where(and(eq(preferredModels.modelId, m.id), scopeWhere(preferredModels.facilityId, scope))),
+    db.select().from(siteRequirements).where(eq(siteRequirements.modelId, m.id)),
   ]);
+  const typical = !!site?.source?.toLowerCase().startsWith("typical");
   const st = supportState(m, todayISO());
   const canEdit = can(me.role, "catalogue.edit");
   return (
@@ -86,6 +90,16 @@ export default async function ModelPage({ params, searchParams }: { params: Prom
           m.notes ? <Panel title="Notes"><p className="whitespace-pre-line text-sm">{m.notes}</p></Panel> : <div />
         )}
       </div>
+      <Panel title="Site planning" className="mt-5" actions={site ? <>{typical ? <Badge tone="warn">Typical values</Badge> : site.verified ? <Badge tone="ok">Checked against the guide</Badge> : <Badge>Not checked</Badge>}{" "}<Link href="/assets/3d" className="text-sm text-primary hover:underline">Check a room in 3D</Link></> : null}>
+        {site ? (
+          <div className="mb-4 text-sm">
+            <ul className="grid gap-x-6 gap-y-0.5 sm:grid-cols-2">{siteSummary(site).map((l) => <li key={l}>{l}</li>)}</ul>
+            <p className="mt-2 text-xs text-muted">{site.source ? `Source: ${site.source}. ` : "No source given. "}{site.updatedByName ? `Updated by ${site.updatedByName}, ${formatDate(site.updatedAt)}.` : ""}</p>
+            {typical && <p className="mt-1 text-xs text-warn">Typical values for the modality, not this model&apos;s: replace them with the manufacturer&apos;s site planning guide.</p>}
+          </div>
+        ) : <p className="mb-4 text-sm text-muted">No site data yet. With it, the 3D model can check whether this model fits a room: footprint, service space, ceiling, door, floor load, services and, for MRI, the 5 gauss line.</p>}
+        {canEdit && <SiteReqForm modelId={m.id} action={saveSiteRequirementsAction} v={site ? Object.fromEntries(Object.entries(site).map(([k, x]) => [k, typeof x === "boolean" ? x : x == null ? "" : String(x)])) : null} />}
+      </Panel>
     </div>
   );
 }

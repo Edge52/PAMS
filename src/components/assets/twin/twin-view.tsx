@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { addRouteFixAction, deleteRouteFixAction, setRoomZoneAction, addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
+import { startTransition, useActionState, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { addNotePhotoAction, addRouteFixAction, deleteRouteFixAction, setRoomZoneAction, setWorkshopAction, addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
 import { formatDims } from "@/lib/assets/dimensions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
@@ -24,6 +24,8 @@ import type { PathDraw } from "./scene";
 import { readiness, readinessLine } from "@/lib/flows/readiness";
 import type { TwinNote } from "@/lib/assets/twin-notes";
 import { NoteComposer, NoteList } from "./notes";
+import { JobRibbon } from "./job-ribbon";
+import { FitPanel, type Outline } from "./fit-panel";
 import { EVENT_COLORS, EVENT_LABELS, eventsAt, perDay, shortcutFor, SHORTCUTS, type TimeEvent } from "./timeline";
 
 const LIVE_EVERY_MS = 60_000;
@@ -53,7 +55,9 @@ function decodeLive(p: LivePayload): Map<number, LiveMetrics> {
  * HUD layout follows the view's own width (see hud-state): side columns of collapsible panels (folded by default
  * below 1100 px), or on phones one bottom sheet with tabs.
  */
-export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [], notes: initialNotes = [], people = [], me = { id: 0, canEditAssets: false }, tours: initialTours = [] }: {
+export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [], notes: initialNotes = [], people = [], me = { id: 0, canEditAssets: false }, tours: initialTours = [], spotlight }: {
+  /** Devices to pick out on arrival (wave 9: a recall's pending devices), with a line saying why. */
+  spotlight?: { label: string; ids: number[] } | null;
   /** Guided tours of this hospital the user can see (wave 7f). */
   tours?: Tour[];
   data: TwinData; live: LivePayload; views: SavedView[]; canManageViews: boolean;
@@ -106,6 +110,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [fixMode, setFixMode] = useState<{ kind: "OPEN" | "CLOSE"; a?: { x: number; y: number } } | null>(null);
   const [unreachable, setUnreachable] = useState<number[]>([]);
   const [zones, setZones] = useState<Map<number, TwinRoom["zone"]>>(new Map());
+  const [workshops, setWorkshops] = useState<Set<number>>(() => new Set(data.rooms.filter((r) => r.workshop).map((r) => r.id)));
   const [trauma, setTrauma] = useState<{ busy?: boolean; error?: string; steps?: { from: string; to: string; route: Route }[]; total?: Route } | null>(null);
   const [routeTo, setRouteTo] = useState<number | null>(null);
   // Wave 7c: published pathways shown in the building, their routes (per arrow) and the animated patients.
@@ -177,6 +182,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const assetById = useMemo(() => new Map(assetList.map((a) => [a.id, a])), [assetList]);
   const deptById = useMemo(() => new Map(data.departments.map((d) => [d.id, d])), [data.departments]);
   const floorById = useMemo(() => new Map(data.floors.map((f) => [f.id, f])), [data.floors]);
+  const setOutlines = useCallback((o: Outline[] | null) => sceneRef.current?.setOutlines(o), []);
   const placed = useMemo(() => assetList.filter((a) => a.roomId && roomById.has(a.roomId)), [assetList, roomById]);
   const categories = useMemo(() => {
     const m = new Map<string, { code: string; name: string; n: number }>();
@@ -234,6 +240,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     return placed.filter((a) => [a.tag, a.deviceType, a.manufacturer, a.model, a.serial, roomById.get(a.roomId!)?.code, roomById.get(a.roomId!)?.name]
       .some((v) => v?.toLowerCase().includes(q))).slice(0, 200);
   }, [query, placed, roomById]);
+  const roomMatches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return data.rooms.filter((r) => r.type !== "CORRIDOR" && (r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))).slice(0, 8);
+  }, [query, data.rooms]);
   useEffect(() => {
     const s = sceneRef.current; if (!s || !ready) return;
     s.setVisibleAssets(new Set(placed.filter((a) => (!cats.size || cats.has(a.categoryCode)) && (!statuses.size || statuses.has(live.get(a.id)?.status ?? a.status))).map((a) => a.id)));
@@ -327,7 +338,20 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     }
     return [...layerValues].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, v]) => ({ id, name: `${roomById.get(id)?.name ?? "Room"} · ${roomById.get(id)?.code ?? ""}`, v, roomId: id }));
   }, [layer, scope, layerValues, data.rooms, deptById, roomById]);
-  useEffect(() => { if (ready) sceneRef.current?.setHighlight(new Set(matches.map((a) => a.id))); }, [matches, ready]);
+  useEffect(() => {
+    if (!ready) return;
+    // Until the user searches, a spotlight (?recall=) stays highlighted.
+    const ids = matches.length || !spotlight ? matches.map((a) => a.id) : spotlight.ids;
+    sceneRef.current?.setHighlight(new Set(ids));
+  }, [matches, ready, spotlight]);
+  useEffect(() => {
+    const s = sceneRef.current; if (!ready || !s || !spotlight?.ids.length) return;
+    setLayer("recalls");
+    const spots = spotlight.ids.map((id) => s.spotOfAsset(id)).filter((x) => x != null);
+    if (spots.length) s.frameSpots(spots);
+    setToast({ ok: spotlight.label });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
   useEffect(() => { if (ready) sceneRef.current?.setExplode(explode); }, [explode, ready]);
   // Room labels stay in the free middle of the view, clear of the title bar and the panel columns.
   useEffect(() => {
@@ -603,7 +627,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           const a = roomOf.get(l.fromKey), b = roomOf.get(l.toKey);
           if (!a || !b) return null;
           const [pa, pb] = await Promise.all([routes.roomPlace(a.id), routes.roomPlace(b.id)]);
-          return pa && pb ? routes.route(pa, pb, journeyOf(l.transport)) : null;
+          // Lift waits at the pathway's busiest hour.
+          const prof = f.arrivalProfile?.length === 24 ? f.arrivalProfile : null;
+          return pa && pb ? routes.route(pa, pb, journeyOf(l.transport), prof ? prof.indexOf(Math.max(...prof)) : null) : null;
         })));
       }
       if (!live) return;
@@ -721,6 +747,13 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     if (res?.deletedId) setNotes((l) => l.filter((x) => x.id !== n.id));
     setToast(res ? { ok: res.ok, error: res.error } : null);
   }
+  async function notePhoto(n: TwinNote, file: File) {
+    const fd = new FormData(); fd.set("noteId", String(n.id)); fd.set("photo", file);
+    setToast({ ok: "Uploading the photo…" });
+    const res = await addNotePhotoAction(null, fd);
+    if (res?.photo) setNotes((l) => l.map((x) => (x.id === n.id ? { ...x, photos: [...(x.photos ?? []), res.photo!] } : x)));
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
   function focusNote(n: TwinNote) {
     if (n.assetId && assetById.has(n.assetId)) { focus({ kind: "asset", id: n.assetId }); return; }
     if (n.roomId && roomById.has(n.roomId)) { focus({ kind: "room", id: n.roomId }); return; }
@@ -734,6 +767,25 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [pickingSpot]);
+  // A work order's "Show the route in 3D" (…&assetId=<id>&routeFrom=<room>): the route from the workshop to the device.
+  const routeParamDone = useRef(false);
+  useEffect(() => {
+    if (!ready || routeParamDone.current) return;
+    routeParamDone.current = true;
+    const sp = new URLSearchParams(window.location.search);
+    const fromRoom = Number(sp.get("routeFrom")), assetId = Number(sp.get("assetId"));
+    const s = sceneRef.current; if (!s || !fromRoom || !assetId) return;
+    void (async () => {
+      const a = assetById.get(assetId); const sp2 = s.spotOfAsset(assetId); const start = await routes.roomPlace(fromRoom);
+      if (!a || !sp2 || !start) return;
+      const rt = await routes.route(start, { floorId: sp2.floorId, x: sp2.x, z: sp2.z, roomId: a.roomId }, "foot", new Date().getHours());
+      if (!rt) return;
+      if (rt.floorChanges) { setFloorId(null); s.isolateFloor(null, false); }
+      s.showRoute(routeSpots(rt)); s.frameRoute();
+      setToast({ ok: `From the workshop to ${a.tag}: ${Math.round(rt.metres)} m, about ${formatDuration(rt.seconds)} on foot.` });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
+  }, [ready]);
   // A link to a note (…&note=<id>, from a notification) opens it once the model is ready.
   const noteParamDone = useRef(false);
   useEffect(() => {
@@ -930,7 +982,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       const start = await routes.roomPlace(fromRoomId); if (!start) return;
       const withRoutes = await Promise.all(rough.map(async (r) => {
         const sp = s.spotOfAsset(r.id); const a = assetById.get(r.id);
-        const rt = sp ? await routes.route(start, { floorId: sp.floorId, x: sp.x, z: sp.z, roomId: a?.roomId ?? null }, "foot") : null;
+        const rt = sp ? await routes.route(start, { floorId: sp.floorId, x: sp.x, z: sp.z, roomId: a?.roomId ?? null }, "foot", new Date().getHours()) : null;
         return { ...r, route: rt, distance: rt ? rt.metres : r.distance };
       }));
       withRoutes.sort((p, q) => (p.route && !p.route.estimated ? p.route.seconds : 1e9 + p.distance) - (q.route && !q.route.estimated ? q.route.seconds : 1e9 + q.distance));
@@ -1577,7 +1629,17 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         className="w-full rounded-md border border-[#1d4f6d] bg-[#04121f] px-2.5 py-1.5 text-sm text-white placeholder:text-[#4f7187] focus:border-[#2fd3ff] focus:outline-none" />
       {query.trim().length >= 2 && (
         <div className="mt-2 max-h-48 overflow-y-auto text-sm" aria-live="polite">
-          {matches.length === 0 ? <p className="text-[#8fb6cc]">No device matches “{query}”.</p> : (
+          {roomMatches.length > 0 && (
+            <div className="mb-2">
+              <p className="mb-1 text-xs text-[#8fb6cc]">Rooms</p>
+              {roomMatches.map((r) => (
+                <button key={`r${r.id}`} type="button" onClick={() => focus({ kind: "room", id: r.id })} className="block w-full rounded px-1.5 py-1 text-left hover:bg-[#0c2a40]">
+                  <span className="text-white">{r.name}</span> <span className="text-xs text-[#8fb6cc]">{r.code} · {floorById.get(r.floorId)?.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {matches.length === 0 ? (roomMatches.length ? null : <p className="text-[#8fb6cc]">Nothing matches “{query}”.</p>) : (
             <>
               <p className="mb-1 text-xs text-[#8fb6cc]">{matches.length === 200 ? "200+" : matches.length} found, highlighted in the model</p>
               {matches.slice(0, 50).map((a) => (
@@ -1597,7 +1659,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const notesBlock = (
     <div className="mt-3 border-t border-[#123a55] pt-2">
       <p className="text-[13px] font-semibold text-[#5fd6ff]">Notes{selNotes.length ? ` (${selNotes.length})` : ""}</p>
-      {selNotes.length > 0 && <div className="mt-1"><NoteList notes={selNotes} whereOf={noteWhere} me={me} canReport={data.can.report} onFocus={focusNote} onStatus={noteStatus} onDelete={noteDelete} /></div>}
+      {selNotes.length > 0 && <div className="mt-1"><NoteList notes={selNotes} whereOf={noteWhere} me={me} canReport={data.can.report} onFocus={focusNote} onStatus={noteStatus} onDelete={noteDelete} onPhoto={notePhoto} /></div>}
       {composer && composer.floorId && (composer.assetId ? composer.assetId === selAsset?.id : composer.roomId === selRoom?.id && !selAsset) ? (
         <div className="mt-1.5"><NoteComposer where={composer.where} people={people} busy={noteBusy} onSave={saveNote} onCancel={() => setComposer(null)} /></div>
       ) : <button type="button" onClick={noteOnSelection} className="twin-act mt-1.5">Add a note {selAsset ? "on this device" : "in this room"}</button>}
@@ -1613,7 +1675,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       </div>
       {pickingSpot && <p className="text-xs text-[#ffc46b]">Click the spot on the floor shown.</p>}
       {composerOnSpot && <NoteComposer where={composer!.where} people={people} busy={noteBusy} onSave={saveNote} onCancel={() => setComposer(null)} />}
-      <NoteList notes={shownNotes} whereOf={noteWhere} me={me} canReport={data.can.report} onFocus={focusNote} onStatus={noteStatus} onDelete={noteDelete} />
+      <NoteList notes={shownNotes} whereOf={noteWhere} me={me} canReport={data.can.report} onFocus={focusNote} onStatus={noteStatus} onDelete={noteDelete} onPhoto={notePhoto} />
       <p className="text-[11px] text-[#8fb6cc]">Select a room or device to add a note to it. Anyone who can see this hospital can add notes; the person a note is for gets a notification.</p>
     </div>
   );
@@ -1641,6 +1703,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             {data.can.maintain && <Link href={`/assets/${selAsset.id}#record-maintenance`} className="twin-act">Record maintenance</Link>}
             {(live.get(selAsset.id)?.openJobs ?? 0) > 0 && <Link href={`/assets/work-orders?tab=all&q=${encodeURIComponent(selAsset.tag)}`} className="twin-act">Open jobs</Link>}
           </div>
+          <JobRibbon assetId={selAsset.id} refreshKey={`${liveAt}-${live.get(selAsset.id)?.openJobs ?? 0}`} />
           {data.can.move && (
             <div className="mt-3 space-y-2 border-t border-[#123a55] pt-2">
               <details>
@@ -1736,9 +1799,24 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                   ) : <span className="text-white">{z ? z.charAt(0) + z.slice(1).toLowerCase() : "From the name"}</span>}
                 </label>
                 <p className="mt-0.5 text-[11px] text-[#8fb6cc]">Sterile and isolation rooms are closed to through-traffic: routes only start or end in them.</p>
+                {data.can.editFacility ? (
+                  <label className="mt-1.5 flex items-center gap-2"><input type="checkbox" checked={workshops.has(selRoom.id)} className="accent-[#2fd3ff]"
+                    onChange={async (e) => {
+                      const on = e.target.checked; const fd = new FormData(); fd.set("roomId", String(selRoom.id)); fd.set("on", on ? "1" : "0");
+                      const res = await setWorkshopAction(null, fd);
+                      if (res?.roomId) setWorkshops((w) => { const n = new Set(w); if (on) n.add(selRoom.id); else n.delete(selRoom.id); return n; });
+                      setToast(res ? { ok: res.ok, error: res.error } : null);
+                    }} />Biomedical workshop<span className="text-[11px] text-[#8fb6cc]">(work orders show the route from here)</span></label>
+                ) : workshops.has(selRoom.id) ? <p className="mt-1 text-[11px] text-[#b9ffe0]">Biomedical workshop</p> : null}
               </div>
             );
           })()}
+          {!selAsset && floorById.get(selRoom.floorId) && (
+            <FitPanel key={selRoom.id} room={selRoom} floor={floorById.get(selRoom.floorId)!} floorRooms={data.rooms.filter((r) => r.floorId === selRoom.floorId)}
+              models={data.siteModels ?? []} canEdit={!!data.can.editFacility} facilityId={data.facility.id} onOverlay={setOutlines}
+              onToast={(t) => setToast(t)}
+              pickPoint={(done) => { const sc = sceneRef.current; if (!sc) return; sc.isolateFloor(selRoom.floorId, false); setToast({ ok: "Click where the equipment's centre goes." }); sc.pickPoint((p) => done(p)); }} />
+          )}
           <div className="mt-2 flex flex-wrap gap-3">
             <Link href={`/assets?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Room in the asset register</Link>
             {data.can.addAsset && <Link href={`/assets/new?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Add a device here</Link>}
@@ -1993,6 +2071,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         </div>
       )}
       {renderOpen && <RenderPanel data={{ ...data, assets: assetList }} floorId={floorId} plans={plans} initial={renderInit}
+        liveCamera={sceneRef.current?.getCamera() ?? null} canSaveDocs={!!data.can.editFacility}
         onClose={() => { setRenderOpen(false); setRenderInit(null); }}
         onSaveView={async (name, shared, settings) => {
           const v = currentView(); if (!v) return "The model isn't ready.";

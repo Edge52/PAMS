@@ -35,12 +35,34 @@ export function criteriaProblem(c: RecallCriteria): string | null {
  */
 export function matchRecall(c: RecallCriteria, list: MatchAsset[]): MatchAsset[] {
   const man = norm(c.manufacturer), model = norm(c.modelPattern);
-  const serials = c.serialNumbers?.length ? new Set(c.serialNumbers.map(norm)) : null;
+  const serial = c.serialNumbers?.length ? serialMatcher(c.serialNumbers) : null;
   return list.filter((a) => a.status !== "DISPOSED"
     && (!c.deviceTypeId || a.deviceTypeId === c.deviceTypeId)
     && (!man || norm(a.manufacturer) === man)
     && (!model || norm(a.model).includes(model))
-    && (!serials || (a.serialNumber != null && serials.has(norm(a.serialNumber)))));
+    && (!serial || (a.serialNumber != null && serial(a.serialNumber))));
+}
+
+/** A serial range written "SN1000 to SN1999" or "SN1000..SN1999": same letters before the number, the number in between. */
+export function parseRange(entry: string): { prefix: string; lo: number; hi: number } | null {
+  const m = entry.split(/\s+to\s+|\.\./i);
+  if (m.length !== 2) return null;
+  const a = /^(.*?)(\d+)$/.exec(norm(m[0])), b = /^(.*?)(\d+)$/.exec(norm(m[1]));
+  if (!a || !b || a[1] !== b[1]) return null;
+  const lo = Number(a[2]), hi = Number(b[2]);
+  return hi >= lo && hi - lo <= 10_000_000 ? { prefix: a[1], lo, hi } : null;
+}
+
+/** Matches a serial against a list of serials and ranges (wave 9, D8). */
+export function serialMatcher(entries: string[]): (serial: string) => boolean {
+  const exact = new Set<string>(); const ranges: NonNullable<ReturnType<typeof parseRange>>[] = [];
+  for (const e of entries) { const r = parseRange(e); if (r) ranges.push(r); else exact.add(norm(e)); }
+  return (serial) => {
+    const s = norm(serial);
+    if (exact.has(s)) return true;
+    const m = /^(.*?)(\d+)$/.exec(s);
+    return !!m && ranges.some((r) => r.prefix === m[1] && Number(m[2]) >= r.lo && Number(m[2]) <= r.hi);
+  };
 }
 
 /** Serial list from free text: one per line or separated by commas/semicolons, de-duplicated, at most 5,000. */

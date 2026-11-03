@@ -1,0 +1,1 @@
+ALTER TABLE "lift_cores" ADD COLUMN "wait_by_hour" jsonb;

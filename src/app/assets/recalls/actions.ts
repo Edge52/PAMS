@@ -8,7 +8,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, recallAssets, recalls, workOrders } from "@/db/schema";
+import { assets, departments, recallAssets, recalls, workOrders } from "@/db/schema";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { firstError, formObject, id, isoDate, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
 import { criteriaProblem, matchRecall, parseSerials, RECALL_ACTIONS, RECALL_ASSET_STATUSES, recallProgress } from "@/lib/assets/recalls";
@@ -64,6 +64,20 @@ export async function createRecallAction(_: FormState, fd: FormData): Promise<Fo
       kind: "recall_issued", title: `${d.urgent ? "Urgent recall" : "Recall"} ${rec.number}: ${n} of your devices affected`,
       body: d.title, href: path(rec.id), dedupeKey: `recall:${rec.id}:${facilityId}`,
     }, facilityId);
+  }
+  // Department heads hear which of their departments' devices are affected (wave 9, D8).
+  if (hits.length) {
+    const depts = await db.select({ facilityId: assets.facilityId, name: departments.name, n: sql<number>`count(*)::int` }).from(assets)
+      .innerJoin(departments, eq(departments.id, assets.departmentId)).where(inArray(assets.id, hits.map((a) => a.id).slice(0, 5000)))
+      .groupBy(assets.facilityId, departments.name);
+    for (const [facilityId] of perFacility) {
+      const list = depts.filter((x) => x.facilityId === facilityId).sort((a, b) => b.n - a.n);
+      if (!list.length) continue;
+      await notifyRole("DEPARTMENT_HEAD", {
+        kind: "recall_issued", title: `${d.urgent ? "Urgent recall" : "Recall"} ${rec.number}: devices in ${list.slice(0, 3).map((x) => `${x.name} (${x.n})`).join(", ")}${list.length > 3 ? ` and ${list.length - 3} more departments` : ""}`,
+        body: `${d.title}. Biomedical engineering will contact you about each device.`, href: path(rec.id), dedupeKey: `recall:${rec.id}:${facilityId}:dept`,
+      }, facilityId);
+    }
   }
   revalidatePath("/assets/recalls");
   return go(rec.id, hits.length ? `${rec.number} recorded. ${hits.length} device${hits.length === 1 ? " is" : "s are"} affected.` : `${rec.number} recorded. No registered device matches it.`);

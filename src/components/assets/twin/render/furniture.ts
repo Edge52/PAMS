@@ -112,6 +112,12 @@ const BUILDERS: Record<Model, () => Part[]> = {
     const door = new THREE.CylinderGeometry(0.22, 0.22, 0.03, 20); door.rotateX(Math.PI / 2); door.translate(0, 0.5, 0.38);
     return [box(0.78, 0.9, 0.75, 0, 0.45, 0, C.white, 0.04), paint(door, C.dark)];
   },
+  // A standing figure for scale (wave 8): legs, body, arms and head, in muted scrub blue.
+  person: () => [
+    cyl(0.07, 0.8, -0.09, 0.4, 0, "#3e5566", 8), cyl(0.07, 0.8, 0.09, 0.4, 0, "#3e5566", 8),
+    cyl(0.17, 0.62, 0, 1.11, 0, "#7fa6bf", 12, 0.15), cyl(0.05, 0.58, -0.22, 1.1, 0, "#7fa6bf", 8), cyl(0.05, 0.58, 0.22, 1.1, 0, "#7fa6bf", 8),
+    ball(0.12, 0, 1.58, 0, "#c9a58a"),
+  ],
 };
 
 const cache = new Map<Model, THREE.BufferGeometry>();

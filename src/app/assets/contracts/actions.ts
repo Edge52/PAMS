@@ -19,6 +19,8 @@ const ContractSchema = z.object({
   vendorReference: text(120), startDate: isoDate("Start date"), endDate: isoDate("End date"),
   value: num("Contract value", 0, 1e11), currency: text(3), responseHours: int("Response time", 1, 2000), ppmVisitsPerYear: int("PPM visits", 0, 52),
   includesParts: z.preprocess((v) => v === "on" || v === "true", z.boolean()), contactName: text(120), contactPhone: text(48), notes: text(4000),
+  repairHours: int("Repair time", 1, 5000), uptimePct: num("Uptime guarantee", 50, 100), penaltyPerLateHour: num("Penalty per late hour", 0, 1e9),
+  penaltyPerUptimePoint: num("Penalty per uptime point", 0, 1e10), penaltyCapPct: num("Penalty cap", 0, 100),
 });
 
 function values(d: z.infer<typeof ContractSchema>) {
@@ -27,6 +29,8 @@ function values(d: z.infer<typeof ContractSchema>) {
     startDate: d.startDate!, endDate: d.endDate!, value: d.value != null ? String(d.value) : null, currency: d.value != null ? (d.currency ?? "EGP").toUpperCase() : null,
     responseHours: d.responseHours ?? null, ppmVisitsPerYear: d.ppmVisitsPerYear ?? null, includesParts: d.includesParts,
     contactName: d.contactName ?? null, contactPhone: d.contactPhone ?? null, notes: d.notes ?? null,
+    repairHours: d.repairHours ?? null, uptimePct: d.uptimePct ?? null, penaltyPerLateHour: d.penaltyPerLateHour != null ? String(d.penaltyPerLateHour) : null,
+    penaltyPerUptimePoint: d.penaltyPerUptimePoint != null ? String(d.penaltyPerUptimePoint) : null, penaltyCapPct: d.penaltyCapPct ?? null,
   };
 }
 

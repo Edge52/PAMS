@@ -14,7 +14,7 @@ export async function loadFlow(id: number) {
   const links = await db.select().from(flowLinks).where(eq(flowLinks.flowId, id)).orderBy(asc(flowLinks.id));
   return {
     flow,
-    steps: steps.map((s): Step & { id: number; x: number | null; y: number | null } => ({ id: s.id, key: s.key, label: s.label, kind: s.kind, departmentId: s.departmentId, roomId: s.roomId, minutes: s.minutes, accompanying: s.accompanying, equipment: s.equipment ?? [], notes: s.notes, x: s.x, y: s.y })),
+    steps: steps.map((s): Step & { id: number; x: number | null; y: number | null; roomCode: string | null; roomLabel: string | null } => ({ id: s.id, key: s.key, label: s.label, kind: s.kind, departmentId: s.departmentId, roomId: s.roomId, minutes: s.minutes, accompanying: s.accompanying, equipment: s.equipment ?? [], notes: s.notes, x: s.x, y: s.y, roomCode: s.roomCode, roomLabel: s.roomLabel })),
     links: links.map((l): Link & { id: number } => ({ id: l.id, fromKey: l.fromKey, toKey: l.toKey, share: l.share, transport: l.transport, urgency: l.urgency, condition: l.condition })),
   };
 }
@@ -24,6 +24,8 @@ export async function createFlow(input: {
   facilityId: number; name: string; kind?: FlowKind; dailyVolume?: number | null; arrivalProfile?: number[] | null; description?: string | null;
   starter?: string | null; ownerName?: string | null; lineageId?: number | null; version?: number; steps: (Step & { x?: number | null; y?: number | null })[]; links: Link[];
 }): Promise<number> {
+  const ids = input.steps.map((st) => st.roomId).filter((v): v is number => v != null);
+  const refs = new Map((ids.length ? await db.select({ id: rooms.id, code: rooms.code, name: rooms.name }).from(rooms).where(inArray(rooms.id, ids)) : []).map((r) => [r.id, r]));
   return db.transaction(async (tx) => {
     const [f] = await tx.insert(patientFlows).values({
       facilityId: input.facilityId, name: input.name, kind: input.kind ?? "PATIENT", dailyVolume: input.dailyVolume ?? null,
@@ -34,6 +36,8 @@ export async function createFlow(input: {
     if (input.steps.length) await tx.insert(flowSteps).values(input.steps.map((s, i) => ({
       flowId: f.id, key: s.key, label: s.label, kind: s.kind, departmentId: s.departmentId, roomId: s.roomId, minutes: s.minutes,
       accompanying: s.accompanying, equipment: s.equipment, notes: s.notes, sort: i, x: s.x ?? null, y: s.y ?? null,
+      roomCode: s.roomId != null ? refs.get(s.roomId)?.code ?? null : (s as { roomCode?: string | null }).roomCode ?? null,
+      roomLabel: s.roomId != null ? refs.get(s.roomId)?.name ?? null : (s as { roomLabel?: string | null }).roomLabel ?? null,
     })));
     if (input.links.length) await tx.insert(flowLinks).values(input.links.map((l) => ({
       flowId: f.id, fromKey: l.fromKey, toKey: l.toKey, share: l.share, transport: l.transport, urgency: l.urgency, condition: l.condition,

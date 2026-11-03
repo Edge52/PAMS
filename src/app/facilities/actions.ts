@@ -378,8 +378,16 @@ export async function saveLift(_: FormState, fd: FormData): Promise<FormState> {
       y: y != null ? y * upm : any?.y ?? (size?.h ?? 0) / 2,
     };
   });
+  // Wait by hour of day (wave 8): 24 numbers, or empty for the typical wait all day.
+  const rawHours = String(fd.get("waitByHour") ?? "").trim();
+  let waitByHour: number[] | null = null;
+  if (rawHours) {
+    const vals = rawHours.split(/[\s,;]+/).filter(Boolean).map(Number);
+    if (vals.length !== 24 || vals.some((n) => !Number.isFinite(n) || n < 0 || n > 900)) return { error: "Wait by hour needs 24 numbers (seconds, 0–900), from 00:00 to 23:00, separated by commas." };
+    waitByHour = vals.map((n) => Math.round(n));
+  }
   const v = {
-    name: d.name, kind, cars: d.cars ?? 1, carCapacity: d.carCapacity ?? null, waitSeconds: d.waitSeconds ?? 45, note: d.note ?? null,
+    name: d.name, kind, cars: d.cars ?? 1, carCapacity: d.carCapacity ?? null, waitSeconds: d.waitSeconds ?? 45, waitByHour, note: d.note ?? null,
     stops, inferred: old ? old.inferred && !confirmed : false,
   };
   let savedId = liftId;

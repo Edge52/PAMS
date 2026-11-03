@@ -216,6 +216,8 @@ export async function loadComparison(projectId: number, weights: Weights = norma
     id: offers.id, reference: offers.reference, status: offers.status, currency: offers.currency, validUntil: offers.validUntil,
     deliveryWeeks: offers.deliveryWeeks, warrantyMonths: offers.warrantyMonths, incoterm: offers.incoterm,
     supplierId: offers.supplierId, supplierName: suppliers.name,
+    tcoServiceAnnual: offers.tcoServiceAnnual, tcoConsumablesAnnual: offers.tcoConsumablesAnnual, tcoEnergyAnnual: offers.tcoEnergyAnnual,
+    tcoOtherAnnual: offers.tcoOtherAnnual, tcoUptimePct: offers.tcoUptimePct,
   }).from(offers).innerJoin(suppliers, eq(suppliers.id, offers.supplierId))
     .where(eq(offers.projectId, projectId)).orderBy(asc(offers.id));
   const competing = offerRows.filter((o) => !EXCLUDED_OFFER_STATUSES.includes(o.status));

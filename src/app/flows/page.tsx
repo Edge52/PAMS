@@ -42,7 +42,10 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader title="Patient pathways" description="How patients move through the hospital: steps, places, times and shares. Shown in the 3D view and used for load and readiness analysis."
-        actions={<Link href={`/flows/analysis?facilityId=${fac.id}`} className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Analysis</Link>} />
+        actions={<>
+          <Link href={`/flows/book?facilityId=${fac.id}`} className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Pathway book</Link>
+          <Link href={`/flows/analysis?facilityId=${fac.id}`} className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Analysis</Link>
+        </>} />
       <Notice sp={sp} />
       {facs.length > 1 && (
         <form className="mb-4 flex items-end gap-2" action="/flows">

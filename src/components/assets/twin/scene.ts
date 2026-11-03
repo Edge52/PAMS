@@ -186,6 +186,7 @@ export class TwinScene {
   private playGroup = new THREE.Group();
   private heatMesh: THREE.InstancedMesh | null = null;
   // Wave 7e: notes in the model, picking a spot for a new one, and alert flashes.
+  private outlineGroup: THREE.Group | null = null;
   private noteGroup: THREE.Group | null = null;
   private noteSpots: { id: number; floorId: number; x: number; y: number; done: boolean }[] = [];
   private pointPick: ((p: { floorId: number; x: number; y: number; roomId: number | null } | null) => void) | null = null;
@@ -1182,6 +1183,36 @@ export class TwinScene {
       g.add(sp);
     }
     this.noteGroup = g; this.scene.add(g);
+  }
+
+  /**
+   * Outlines drawn flat on a floor (wave 9, "will it fit"): equipment footprint, service space, the MRI 5 gauss line.
+   * Plan units; a light fill when `fill` is set. Null clears them.
+   */
+  setOutlines(shapes: { floorId: number; pts: [number, number][]; color: string; fill?: number; dashed?: boolean }[] | null) {
+    if (this.outlineGroup) {
+      this.scene.remove(this.outlineGroup);
+      this.outlineGroup.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose(); (m.material as THREE.Material | undefined)?.dispose(); });
+      this.outlineGroup = null;
+    }
+    if (!shapes?.length) return;
+    const g = new THREE.Group();
+    shapes.forEach((sh, i) => {
+      const f = this.floorById.get(sh.floorId); if (!f || sh.pts.length < 3) return;
+      const s = this.u(f), y = this.floorY(f) + 0.08 + i * 0.01;
+      const pts = sh.pts.map(([x, z]) => new THREE.Vector3(x * s, y, z * s));
+      const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
+        sh.dashed ? new THREE.LineDashedMaterial({ color: sh.color, dashSize: 0.4, gapSize: 0.25, toneMapped: false, depthTest: false })
+          : new THREE.LineBasicMaterial({ color: sh.color, toneMapped: false, depthTest: false }));
+      if (sh.dashed) line.computeLineDistances();
+      line.renderOrder = 12; g.add(line);
+      if (sh.fill) {
+        const shape = new THREE.Shape(sh.pts.map(([x, z]) => new THREE.Vector2(x * s, -z * s)));
+        const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: sh.color, transparent: true, opacity: sh.fill, depthWrite: false, depthTest: false, toneMapped: false, side: THREE.DoubleSide }));
+        mesh.rotation.x = -Math.PI / 2; mesh.position.y = y; mesh.renderOrder = 11; g.add(mesh);
+      }
+    });
+    this.outlineGroup = g; this.scene.add(g);
   }
 
   /** The next click on the floor shown on its own returns that spot (plan units) instead of selecting; Esc cancels. */

@@ -24,7 +24,7 @@ import { modelGeometry } from "./furniture";
 import { layoutLabels, type LabelIn } from "./labels";
 import { wallMass } from "./walls";
 
-export type RenderView = "dollhouse" | "iso" | "plan";
+export type RenderView = "dollhouse" | "iso" | "plan" | "eye" | "camera";
 export type RenderLook = "daylight" | "warm";
 export type RenderOptions = {
   floorId: number;
@@ -47,6 +47,13 @@ export type RenderOptions = {
   /** Planned units per department (device type codes and counts), already chosen for the mode; and the BOQ's name. */
   planned?: { departmentId: number; items: { code: string; n: number }[] }[];
   planName?: string;
+  /** Eye level (wave 8): stand in this room (else the frame's largest room). Current camera: the live view's, relative to the floor. */
+  eyeRoomId?: number | null;
+  camera?: { cam: [number, number, number]; tgt: [number, number, number] } | null;
+  /** Labels: room names, department names, both or none (overrides `labels` when set). */
+  labelMode?: "rooms" | "departments" | "both" | "none";
+  /** A few standing figures in waiting areas, lobbies and corridors, for scale. */
+  people?: boolean;
   /** Hospital logo (an image URL or data URL) and accent colour for the title block. */
   logo?: string | null;
   brandColor?: string | null;
@@ -119,7 +126,9 @@ export class RenderStudio {
       if (!pts.length) throw new Error("That department has no rooms on this floor.");
       frame = { x0: Math.min(...pts.map((p) => p[0])) - 1.5, x1: Math.max(...pts.map((p) => p[0])) + 1.5, z0: Math.min(...pts.map((p) => p[1])) - 1.5, z1: Math.max(...pts.map((p) => p[1])) + 1.5 };
     }
-    this.fitCamera(o.view, frame, o.width / imgH);
+    if (o.view === "eye") this.eyeCamera(b, frame, o.eyeRoomId ?? null, o.width / imgH);
+    else if (o.view === "camera" && o.camera) this.liveCamera(o.camera, o.width / imgH);
+    else this.fitCamera(o.view === "camera" ? "dollhouse" : o.view, frame, o.width / imgH);
 
     progress(`Rendering ${o.width} × ${o.height}…`);
     const image = await this.renderTiled(o.width, imgH, progress);
@@ -129,7 +138,8 @@ export class RenderStudio {
     const ctx = out.getContext("2d")!;
     if (!o.transparent || band) { ctx.fillStyle = o.transparent ? "rgba(0,0,0,0)" : look.bg; ctx.fillRect(0, 0, o.width, o.height); }
     ctx.drawImage(image, 0, 0);
-    if (o.labels) { progress("Placing labels…"); this.drawLabels(ctx, b, o.width, imgH); }
+    const mode = o.labelMode ?? (o.labels ? "rooms" : "none");
+    if (mode !== "none") { progress("Placing labels…"); this.drawLabels(ctx, b, o.width, imgH, mode); }
     const logo = band && o.logo ? await loadImage(o.logo).catch(() => null) : null;
     if (band) this.drawTitleBlock(ctx, o, floor, b, imgH, band, logo);
     return out;
@@ -138,7 +148,7 @@ export class RenderStudio {
   /** Build (or reuse) the furnished floor. */
   private async build(f: TwinFloor, o: RenderOptions): Promise<Built> {
     const eq = o.equipment ?? "installed";
-    const key = `${f.id}|${o.cutHeight}|${o.kits}|${eq}|${eq === "installed" ? "" : JSON.stringify(o.planned ?? [])}`;
+    const key = `${f.id}|${o.cutHeight}|${o.kits}|${o.people ? 1 : 0}|${eq}|${eq === "installed" ? "" : JSON.stringify(o.planned ?? [])}`;
     if (this.built?.key === key) return this.built.b;
     if (this.built) { this.scene.remove(this.built.b.group); disposeGroup(this.built.b.group); this.built = null; }
     const geo = await this.loadGeometry(f.id);
@@ -293,6 +303,21 @@ export class RenderStudio {
         kitCount += k.length; placements.push(...k);
       }
     }
+    if (o.people) {
+      // Seeded so the same floor gets the same figures every time.
+      let seed = f.id * 9301 + 49297;
+      const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+      for (const { room, poly } of rooms) {
+        if (!/WAITING|LOBBY|CORRIDOR|RECEPTION|NURSE STATION|ALCOVE|HALL|ENTRANCE|CAFE|RESTAURANT/i.test(room.name)) continue;
+        const a = Math.abs(polygonArea(poly)); const n = Math.min(5, Math.floor(a / 25)); if (!n) continue;
+        const xs = poly.map((p) => p[0]), zs = poly.map((p) => p[1]);
+        for (let k = 0, tries = 0; k < n && tries < 60; tries++) {
+          const x = Math.min(...xs) + rnd() * (Math.max(...xs) - Math.min(...xs)), z = Math.min(...zs) + rnd() * (Math.max(...zs) - Math.min(...zs));
+          if (!pointInPolygon([x, z], poly) || placements.some((p) => Math.hypot(p.x - x, p.z - z) < 0.9)) continue;
+          placements.push({ model: "person", x, z, rot: rnd() * Math.PI * 2 }); k++;
+        }
+      }
+    }
     const byModel = new Map<Model, Placement[]>();
     for (const p of placements) { const l = byModel.get(p.model) ?? []; l.push(p); byModel.set(p.model, l); }
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.05 });
@@ -387,7 +412,9 @@ export class RenderStudio {
     return [(p.x + 1) / 2 * w, (1 - p.y) / 2 * h];
   }
 
-  private drawLabels(ctx: CanvasRenderingContext2D, b: Built, w: number, h: number) {
+  private drawLabels(ctx: CanvasRenderingContext2D, b: Built, w: number, h: number, mode: "rooms" | "departments" | "both" = "rooms") {
+    if (mode !== "rooms") this.drawDepartmentLabels(ctx, b, w, h, mode === "both");
+    if (mode === "departments") return;
     const items: LabelIn[] = [];
     for (const { room, poly } of b.rooms) {
       const look = roomLook(room.name, room.type, this.kits);
@@ -412,6 +439,51 @@ export class RenderStudio {
         ctx.fillStyle = "#232b33"; ctx.fillText(line, l.x, y);
       });
     }
+  }
+
+  /** Department names, once per department at the middle of its rooms on this floor, larger than room names. */
+  private drawDepartmentLabels(ctx: CanvasRenderingContext2D, b: Built, w: number, h: number, withRooms: boolean) {
+    const scale = w / 1920;
+    const byDept = new Map<number, Pt[]>();
+    for (const { room, poly } of b.rooms) if (room.departmentId != null) (byDept.get(room.departmentId) ?? byDept.set(room.departmentId, []).get(room.departmentId)!).push(...poly);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+    for (const [id, pts] of byDept) {
+      const d = this.data.departments.find((x) => x.id === id); if (!d || pts.length < 3) continue;
+      const cx = pts.reduce((t, p) => t + p[0], 0) / pts.length, cz = pts.reduce((t, p) => t + p[1], 0) / pts.length;
+      const [x, y] = this.screenOf(cx, cz, w, h);
+      if (x < 0 || y < 0 || x > w || y > h) continue;
+      const size = Math.round((withRooms ? 20 : 24) * scale);
+      ctx.font = `800 ${size}px "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif`;
+      const text = d.name.toUpperCase();
+      ctx.lineWidth = Math.max(3, size * 0.4); ctx.strokeStyle = "rgba(255,255,255,0.92)"; ctx.strokeText(text, x, y - (withRooms ? size * 1.4 : 0));
+      ctx.fillStyle = "#1d252c"; ctx.fillText(text, x, y - (withRooms ? size * 1.4 : 0));
+    }
+  }
+
+  /** Eye level: standing in a room at 1.6 m, looking along its longer side. */
+  private eyeCamera(b: Built, frame: Built["bounds"], roomId: number | null, aspect: number) {
+    const inFrame = b.rooms.filter(({ poly }) => poly.some(([x, z]) => x >= frame.x0 && x <= frame.x1 && z >= frame.z0 && z <= frame.z1));
+    const pick = (roomId != null ? b.rooms.find((r) => r.room.id === roomId) : undefined)
+      ?? [...inFrame].filter((r) => !/CORRIDOR|STAIR|LIFT|SHAFT/i.test(r.room.name)).sort((p, q) => Math.abs(polygonArea(q.poly)) - Math.abs(polygonArea(p.poly)))[0];
+    if (!pick) { this.fitCamera("dollhouse", frame, aspect); return; }
+    const xs = pick.poly.map((p) => p[0]), zs = pick.poly.map((p) => p[1]);
+    const along = Math.max(...xs) - Math.min(...xs) >= Math.max(...zs) - Math.min(...zs);
+    const [ix, iz] = interiorPoint(pick.poly);
+    const from = along ? new THREE.Vector3(Math.min(...xs) + 0.6, 1.6, iz) : new THREE.Vector3(ix, 1.6, Math.min(...zs) + 0.6);
+    const to = along ? new THREE.Vector3(Math.max(...xs), 1.0, iz) : new THREE.Vector3(ix, 1.0, Math.max(...zs));
+    const cam = this.camera; cam.fov = 62; cam.aspect = aspect; cam.near = 0.05; cam.far = 400;
+    cam.position.copy(from); cam.lookAt(to); cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+  }
+
+  /** The live view's camera, with its target put on this floor. */
+  private liveCamera(c: { cam: [number, number, number]; tgt: [number, number, number] }, aspect: number) {
+    const cam = this.camera; const dy = c.tgt[1];
+    cam.fov = 40; cam.aspect = aspect;
+    cam.position.set(c.cam[0], Math.max(1.2, c.cam[1] - dy), c.cam[2]);
+    const tgt = new THREE.Vector3(c.tgt[0], 0, c.tgt[2]);
+    const d = cam.position.distanceTo(tgt);
+    cam.near = Math.max(0.05, d * 0.01); cam.far = d * 6 + 100;
+    cam.lookAt(tgt); cam.updateProjectionMatrix(); cam.updateMatrixWorld();
   }
 
   private drawTitleBlock(ctx: CanvasRenderingContext2D, o: RenderOptions, f: TwinFloor, b: Built, y0: number, band: number, logo: HTMLImageElement | null = null) {
@@ -439,7 +511,7 @@ export class RenderStudio {
       o.kits ? `Furniture: illustrative (${b.kitCount} items)` : "Furniture: not shown",
     ];
     let px10 = 0;
-    if (o.view !== "iso") {
+    if (o.view === "dollhouse" || o.view === "plan") {
       const cx = (b.bounds.x0 + b.bounds.x1) / 2, cz = (b.bounds.z0 + b.bounds.z1) / 2;
       const [ax] = this.screenOf(cx, cz, w, y0), [bx] = this.screenOf(cx + 10, cz, w, y0);
       px10 = Math.abs(bx - ax);

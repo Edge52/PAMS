@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, buildings, floors, rooms, routeFixes, twinNotes, twinTours, twinViews, users, type TourStop } from "@/db/schema";
+import { assets, buildings, documents, floors, rooms, routeFixes, twinNotes, twinTours, twinViews, users, type TourStop } from "@/db/schema";
 import type { TwinFix, TwinRoom } from "@/components/assets/twin/types";
 import { can } from "@/lib/auth/permissions";
 import { decodeView } from "@/components/assets/twin/view-state";
@@ -15,6 +15,7 @@ import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { firstError, formObject, reqId, text } from "@/lib/assets/forms";
 import { moveAsset } from "@/lib/assets/mutations";
 import { notifyUsers } from "@/lib/notifications";
+import { fileKind, storeFile } from "@/lib/storage";
 import { noteOf, type TwinNote } from "@/lib/assets/twin-notes";
 import { pointInPolygon, rectPoly, type Pt } from "@/components/assets/twin/geometry";
 
@@ -315,4 +316,74 @@ export async function setRoomZoneAction(_: FixActionState, fd: FormData): Promis
   const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
   await db.update(rooms).set({ zone }).where(eq(rooms.id, r.id));
   return { ok: zone ? `${r.name}: ${zone.toLowerCase()} zone.` : `${r.name}: zone read from its name again.`, roomId: r.id, zone };
+}
+
+/** Mark a room as (or no longer) a biomedical workshop (wave 8). Needs facilities.edit. */
+export async function setWorkshopAction(_: FixActionState, fd: FormData): Promise<FixActionState> {
+  const me = await requirePermission("facilities.edit");
+  const roomId = Number(fd.get("roomId")); const on = fd.get("on") === "1";
+  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name }).from(rooms).where(eq(rooms.id, roomId)) : [];
+  if (!r) return { error: "That room no longer exists." };
+  const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
+  await db.update(rooms).set({ workshop: on }).where(eq(rooms.id, r.id));
+  return { ok: on ? `${r.name} is marked as a workshop: work orders show the route from it.` : `${r.name} is no longer a workshop.`, roomId: r.id };
+}
+
+/* ── Photos on notes (wave 8, A8) ── */
+
+export type NotePhoto = { id: number; url: string; name: string };
+export type PhotoActionState = { ok?: string; error?: string; noteId?: number; photo?: NotePhoto } | null;
+
+/** Attach a photo (camera or file) to a note: anyone who may see the hospital, like notes themselves. */
+export async function addNotePhotoAction(_: PhotoActionState, fd: FormData): Promise<PhotoActionState> {
+  const me = await requirePermission("assets.view");
+  const noteId = Number(fd.get("noteId")); const file = fd.get("photo");
+  const [n] = Number.isInteger(noteId) ? await db.select({ id: twinNotes.id, facilityId: twinNotes.facilityId }).from(twinNotes).where(eq(twinNotes.id, noteId)) : [];
+  if (!n) return { error: "That note no longer exists." };
+  await requireFacilityAccess(n.facilityId, me);
+  if (!(file instanceof File) || !file.size) return { error: "Choose a photo." };
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || !fileKind(file.name)?.mime.startsWith("image/")) return { error: "Photos must be JPEG, PNG, WebP or GIF." };
+  if (file.size > 10 * 1024 * 1024) return { error: "Keep photos under 10 MB." };
+  const url = await storeFile(`twin_note/${n.id}`, file.name, new Uint8Array(await file.arrayBuffer()));
+  const [doc] = await db.insert(documents).values({ entityType: "twin_note", entityId: n.id, kind: "photo", fileName: file.name, sizeBytes: file.size, url }).returning({ id: documents.id });
+  return { ok: "Photo added.", noteId: n.id, photo: { id: doc.id, url, name: file.name } };
+}
+
+/** Keep a render (or a floor book) in the hospital's documents (wave 8, A10). Needs facilities.edit. */
+export async function saveRenderDocumentAction(_: PhotoActionState, fd: FormData): Promise<PhotoActionState> {
+  const me = await requirePermission("facilities.edit");
+  const facilityId = Number(fd.get("facilityId")); const file = fd.get("file");
+  if (!Number.isInteger(facilityId) || facilityId <= 0) return { error: "Choose a hospital." };
+  await requireFacilityAccess(facilityId, me);
+  if (!(file instanceof File) || !file.size) return { error: "Nothing to save." };
+  const kind = fileKind(file.name);
+  if (!kind || !/^(image\/(png|jpeg)|application\/(pdf|zip))$/.test(kind.mime)) return { error: "Renders are saved as PNG, JPEG, PDF or ZIP." };
+  if (file.size > 25 * 1024 * 1024) return { error: "That file is over 25 MB; save a smaller size or a JPEG." };
+  const url = await storeFile(`facility/${facilityId}`, file.name, new Uint8Array(await file.arrayBuffer()));
+  const [doc] = await db.insert(documents).values({ entityType: "facility", entityId: facilityId, kind: kind.mime.startsWith("image/") ? "photo" : "other", fileName: file.name, sizeBytes: file.size, url }).returning({ id: documents.id });
+  return { ok: `${file.name} saved to the hospital's documents.`, photo: { id: doc.id, url, name: file.name } };
+}
+
+/* ── Room site data (wave 9, "will it fit") ── */
+const siteNum = (fd: FormData, k: string, min: number, max: number): number | null | "bad" => {
+  const v = String(fd.get(k) ?? "").trim(); if (!v) return null;
+  const n = Number(v); return Number.isFinite(n) && n >= min && n <= max ? n : "bad";
+};
+export type RoomSite = { ceilingM: number | null; doorWidthM: number | null; doorHeightM: number | null; floorLoadKgM2: number | null; services: { chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number } | null };
+/** Record a room's surveyed site data: ceiling, door, floor load, services. Blank = not surveyed. Needs facilities.edit. */
+export async function setRoomSiteAction(_: unknown, fd: FormData): Promise<{ ok?: string; error?: string; roomId?: number; site?: RoomSite } | null> {
+  const me = await requirePermission("facilities.edit");
+  const roomId = Number(fd.get("roomId"));
+  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name }).from(rooms).where(eq(rooms.id, roomId)) : [];
+  if (!r) return { error: "That room no longer exists." };
+  const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
+  const vals = { ceilingM: siteNum(fd, "ceilingM", 1, 15), doorWidthM: siteNum(fd, "doorWidthM", 0.3, 6), doorHeightM: siteNum(fd, "doorHeightM", 1, 6), floorLoadKgM2: siteNum(fd, "floorLoadKgM2", 50, 20000), powerKva: siteNum(fd, "powerKva", 0, 5000) };
+  if (Object.values(vals).includes("bad")) return { error: "Check the figures: ceiling 1–15 m, door 0.3–6 m, floor load 50–20,000 kg/m², power 0–5,000 kVA." };
+  const tri = (k: string) => { const v = fd.get(k); return v === "yes" ? true : v === "no" ? false : undefined; };
+  const services: NonNullable<RoomSite["services"]> = {};
+  for (const k of ["chilledWater", "quenchPipe", "rfShield", "leadLined"] as const) { const v = tri(k); if (v !== undefined) services[k] = v; }
+  if (vals.powerKva != null) services.powerKva = vals.powerKva as number;
+  const site: RoomSite = { ceilingM: vals.ceilingM as number | null, doorWidthM: vals.doorWidthM as number | null, doorHeightM: vals.doorHeightM as number | null, floorLoadKgM2: vals.floorLoadKgM2 as number | null, services: Object.keys(services).length ? services : null };
+  await db.update(rooms).set(site).where(eq(rooms.id, r.id));
+  return { ok: `${r.name}: site data saved.`, roomId: r.id, site };
 }

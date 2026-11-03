@@ -43,6 +43,8 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
 **Service contracts and warranty claims** — **Service contracts**
 - **Add a contract**, then **Add devices** it covers. Each job then shows *warranty*, *contract* or *not
   covered*; record the claim status and reference on the job.
+- Add the contract's performance terms (repair time, uptime guarantee, penalties and cap) when editing it; then
+  **Monthly statement** prints the response and repair times, uptime and the penalty due, month by month.
 
 **Spare parts** — **Spare parts**
 - **Add a part** with its minimum level; on the part, *Receive or correct stock*; technicians **Book part** on a job. Low
@@ -50,12 +52,27 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
 
 **Recalls** — **Recalls**
 - **Record a notice** (type, maker, model, serial numbers) → **Record notice and find devices**. Matching devices are
-  listed; create an inspection job for each, mark devices actioned or not affected, then **Close recall**.
+  listed; create an inspection job for each, mark devices actioned or not affected, then **Close recall**. Serial
+  ranges are written `SN1000 to SN1999`. **Show … pending in 3D** opens the model with the pending devices highlighted.
 
 **Disposal and replacement**
 - From a device: **Propose disposal** → **Submit for approval** → the director approves → **Record as disposed** with the
   method and certificate.
 - **Replacement plan**: devices scored for replacement; select them and **Create replacement BOQ**.
+- **Capital plan**: the same devices placed by year over 5 or 10 years, per department, against the budget you enter
+  for each year. Pick a year, untick what you'll keep, and **Turn the ticked devices into a BOQ**.
+
+**Imaging use** — **Imaging use**
+- Enter each scanner's exams for the month (and the hours it was scheduled to run), or paste rows from the RIS:
+  `tag, month, exams, hours`. Set each type's planning capacity once. Scanners over capacity get a ready sentence for
+  tender justifications.
+
+**Will it fit?** — catalogue and 3D view
+- On a make and model's page, **Site planning**: enter the figures from the manufacturer's site planning guide, or
+  **Start from typical values** (marked *typical* until you replace them).
+- In the 3D view, select a room: **Edit survey** records its ceiling, door, floor load and services; **Check a make
+  and model** places it at the best spot, draws its footprint, service space and (MRI) 5 gauss line, and lists what
+  passes, fails or is still to confirm. **Readiness sheet** prints it for sign-off.
 
 **Keep the register tidy**
 - **Device catalogue › Makes and models**: **Add the makes and models in the register** once, then add support dates.
@@ -103,7 +120,9 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 
 1. **Projects & tenders** › create the project; add specifications per device type.
 2. **RFQs** › **New RFQ** from the approved BOQ (items and quantities are frozen).
-3. **Offers**: record each offer and its compliance line by line; **Compare offers** for the weighted score.
+3. **Offers**: record each offer and its compliance line by line; **Compare offers** for the weighted score. Add each
+   offer's running costs (service after warranty, consumables, energy, other, uptime guarantee) to see the **total
+   cost of ownership** over 5 or 10 years, next to what the same models have cost you to maintain.
 4. Set up the committees (Law 182); **Recommend award**; the members sign; the director approves.
 5. **Purchase orders** from the award → approval → **Issue** after the acceptance notice.
 6. **Receive goods** on the PO: each unit becomes a tagged asset.

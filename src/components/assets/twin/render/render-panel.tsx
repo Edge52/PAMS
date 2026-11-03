@@ -13,6 +13,7 @@ import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server
 export type RenderSettings = {
   floorId?: number; departmentId?: number | null; view?: RenderOptions["view"]; cutHeight?: number; look?: RenderOptions["look"];
   kits?: boolean; labels?: boolean; titleBlock?: boolean; transparent?: boolean; size?: "1080p" | "4K" | "8K";
+  labelMode?: "rooms" | "departments" | "both" | "none"; people?: boolean; format?: "png" | "jpeg"; eyeRoomId?: number | null;
   equipment?: "installed" | "planned" | "both"; boqId?: number | null;
 };
 
@@ -24,7 +25,11 @@ async function loadGeometry(id: number): Promise<FloorGeometry | null> {
   return res.ok ? ((await res.json()) as FloorGeometry) : null;
 }
 
-export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], initial, onSaveView }: {
+export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], initial, onSaveView, liveCamera, canSaveDocs = false }: {
+  /** The live view's camera (relative to the floor), for "Current view". */
+  liveCamera?: { cam: [number, number, number]; tgt: [number, number, number] } | null;
+  /** May save renders to the hospital's documents (facilities.edit). */
+  canSaveDocs?: boolean;
   data: TwinData; floorId: number | null; onClose: () => void;
   /** BOQs of the hospital, for drawing planned equipment. */
   plans?: PlanChoice[];
@@ -41,7 +46,11 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
   const [cutHeight, setCut] = useState(i0.cutHeight ?? 1.2);
   const [look, setLook] = useState<RenderOptions["look"]>(i0.look ?? "daylight");
   const [kits, setKits] = useState(i0.kits ?? true);
-  const [labels, setLabels] = useState(i0.labels ?? true);
+  const [labelMode, setLabelMode] = useState<"rooms" | "departments" | "both" | "none">(i0.labelMode ?? (i0.labels === false ? "none" : "rooms"));
+  const [people, setPeople] = useState(i0.people ?? false);
+  const [format, setFormat] = useState<"png" | "jpeg">(i0.format ?? "png");
+  const [eyeRoomId, setEyeRoomId] = useState<number | null>(i0.eyeRoomId ?? null);
+  const [docMsg, setDocMsg] = useState<string | null>(null);
   const [titleBlock, setTitleBlock] = useState(i0.titleBlock ?? true);
   const [transparent, setTransparent] = useState(i0.transparent ?? false);
   const [size, setSize] = useState<Size>(i0.size ?? "4K");
@@ -53,7 +62,7 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
   const [saveName, setSaveName] = useState<string | null>(null);
   const [saveShared, setSaveShared] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const settings = (): RenderSettings => ({ floorId, departmentId: deptValid, view, cutHeight, look, kits, labels, titleBlock, transparent, size, equipment, boqId });
+  const settings = (): RenderSettings => ({ floorId, departmentId: deptValid, view: view === "camera" ? "dollhouse" : view, cutHeight, look, kits, labelMode, people, format, eyeRoomId, titleBlock, transparent, size, equipment, boqId });
   // The chosen BOQ's plan, loaded when planned equipment is asked for.
   useEffect(() => {
     if (equipment === "installed" || boqId == null || plan?.boq.id === boqId) return;
@@ -96,7 +105,8 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
     return studio.current;
   }
   const opts = (w: number, h: number, floor = floorId, dept = deptValid): RenderOptions => ({
-    floorId: floor, departmentId: dept, view, cutHeight, kits, labels, look, width: w, height: h, titleBlock, transparent, facilityName: data.facility.name,
+    floorId: floor, departmentId: dept, view, cutHeight, kits, labels: labelMode !== "none", labelMode, people, eyeRoomId, camera: liveCamera ?? null,
+    look, width: w, height: h, titleBlock, transparent: transparent && format === "png", facilityName: data.facility.name,
     equipment: equipment !== "installed" && planned ? equipment : "installed", planned, planName: plan ? `${plan.boq.name} v${plan.boq.version}` : undefined,
     logo: data.facility.logo ?? null, brandColor: data.facility.brandColor ?? null,
   });
@@ -118,14 +128,47 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
     const c = await run("Making the preview…", (s) => s.render(opts(1280, 720), setBusy));
     if (c) setPreview(URL.createObjectURL(await toBlob(c, "image/jpeg", 0.9)));
   }
-  async function doDownload() {
-    const [w, h] = SIZES[size];
-    const c = await run(`Rendering ${size}…`, (s) => s.render(opts(w, h), setBusy));
-    if (!c) return;
-    const url = URL.createObjectURL(await toBlob(c));
-    const a = document.createElement("a"); a.href = url; a.download = `${fileBase()}-${size}.png`;
+  const saveBlob = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 15_000);
+  };
+  const ext = format === "jpeg" ? "jpg" : "png";
+  async function makeImage(): Promise<Blob | null> {
+    const [w, h] = SIZES[size];
+    const c = await run(`Rendering ${size}…`, (s) => s.render(opts(w, h), setBusy));
+    return c ? toBlob(c, format === "jpeg" ? "image/jpeg" : "image/png", format === "jpeg" ? 0.92 : undefined) : null;
+  }
+  async function doDownload() {
+    const b = await makeImage(); if (b) saveBlob(b, `${fileBase()}-${size}.${ext}`);
+  }
+  /** Keep the render in the hospital's documents (wave 8). */
+  async function doSaveDoc() {
+    const b = await makeImage(); if (!b) return;
+    const fd = new FormData(); fd.set("facilityId", String(data.facility.id)); fd.set("file", new File([b], `${fileBase()}-${size}.${ext}`, { type: b.type }));
+    setBusy("Saving to the hospital's documents…");
+    const { saveRenderDocumentAction } = await import("@/app/assets/3d/actions");
+    const res = await saveRenderDocumentAction(null, fd);
+    setBusy(null); setDocMsg(res?.error ?? res?.ok ?? null);
+  }
+  /** Every floor's image in one ZIP (wave 8). */
+  async function doZip() {
+    const [w, h] = size === "8K" ? SIZES["4K"] : SIZES[size];
+    const files: { name: string; data: Uint8Array }[] = [];
+    const ok = await run("Rendering every floor…", async (s) => {
+      for (const [i, f] of floors.entries()) {
+        if (!data.rooms.some((r) => r.floorId === f.id)) continue;
+        setBusy(`Floor ${i + 1} of ${floors.length}: ${f.name}…`);
+        const c = await s.render(opts(w, h, f.id, null), () => {});
+        const b = await toBlob(c, format === "jpeg" ? "image/jpeg" : "image/png", format === "jpeg" ? 0.92 : undefined);
+        files.push({ name: `${String(i + 1).padStart(2, "0")} ${f.name}.${ext}`.replace(/[\\/:*?"<>|]/g, "-"), data: new Uint8Array(await b.arrayBuffer()) });
+      }
+      return true;
+    });
+    if (!ok || !files.length) return;
+    const { zip } = await import("@/lib/zip");
+    saveBlob(new Blob([zip(files) as BlobPart], { type: "application/zip" }), `${data.facility.code}-floor-book-images.zip`.toLowerCase());
   }
   async function doBook() {
     const [w, h] = size === "8K" ? SIZES["4K"] : SIZES[size];
@@ -185,14 +228,22 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
                 {depts.map((d) => <option key={d.id} value={d.id}>{d.name} (close-up)</option>)}
               </select>
             </label>
-            <div><p className="mb-1 text-sm font-semibold">View</p>{radio("View", view, setView, [["dollhouse", "Dollhouse"], ["iso", "Isometric"], ["plan", "Plan"]])}</div>
+            <div><p className="mb-1 text-sm font-semibold">View</p>{radio("View", view, setView, [["dollhouse", "Dollhouse"], ["iso", "Isometric"], ["plan", "Plan"], ["eye", "Eye level"], ...(liveCamera ? [["camera", "Current view"] as ["camera", string]] : [])])}
+              {view === "eye" && (
+                <select value={eyeRoomId ?? ""} onChange={(e) => setEyeRoomId(e.target.value ? Number(e.target.value) : null)} aria-label="Room to stand in" className="mt-1 block w-full rounded-md border border-line bg-surface px-2 py-1.5 text-sm">
+                  <option value="">The largest room in view</option>
+                  {data.rooms.filter((r) => r.floorId === floorId && r.type !== "CORRIDOR").sort((a, b) => a.name.localeCompare(b.name)).map((r) => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
+                </select>
+              )}
+              {view === "camera" && <p className="mt-1 text-xs text-muted">The camera of the 3D view as it is now, on this floor.</p>}
+            </div>
             <label className="block text-sm font-semibold">Wall cut height: {cutHeight.toFixed(1)} m
               <input type="range" min={1} max={1.5} step={0.1} value={cutHeight} onChange={(e) => setCut(Number(e.target.value))} className="mt-1 block w-full" />
             </label>
             <div><p className="mb-1 text-sm font-semibold">Look</p>{radio("Look", look, setLook, [["daylight", "Daylight"], ["warm", "Warm interior"]])}</div>
             <div className="space-y-2">
               {check("Furniture", kits, setKits, "Room kits by room type (illustrative); registered equipment is always shown")}
-              {check("Room labels", labels, setLabels, "Names exactly as in the register")}
+              {check("People for scale", people, setPeople, "A few standing figures in waiting areas, lobbies and corridors")}
               {check("Title block", titleBlock, setTitleBlock, "Floor, hospital, date, scale bar, what's shown")}
               {check("Transparent background", transparent, setTransparent)}
             </div>
@@ -206,6 +257,9 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
               )}
               {equipment !== "installed" && <p className="mt-1 text-xs text-muted">{equipment === "planned" ? "Every unit the BOQ plans, in its department's rooms (pale blue)." : "The register, plus units the BOQ plans that aren't installed yet (pale blue)."}{!planned ? " Loading the BOQ…" : ""}</p>}
             </div>
+            <div><p className="mb-1 text-sm font-semibold">Labels</p>{radio("Labels", labelMode, setLabelMode, [["rooms", "Rooms"], ["departments", "Departments"], ["both", "Both"], ["none", "None"]])}
+              <p className="mt-1 text-xs text-muted">Names exactly as in the register.</p></div>
+            <div><p className="mb-1 text-sm font-semibold">File</p>{radio("File type", format, setFormat, [["png", "PNG"], ["jpeg", "JPEG (smaller)"]])}</div>
             <div><p className="mb-1 text-sm font-semibold">Size</p>{radio("Size", size, setSize, [["1080p", "1080p"], ["4K", "4K"], ["8K", "8K"]])}
               {size === "8K" && <p className="mt-1 text-xs text-muted">8K is rendered in tiles; it takes longer and needs a capable computer.</p>}</div>
           </div>
@@ -216,11 +270,14 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
                 : <p className="px-6 text-center text-sm text-muted">{busy ?? "Press Preview to see the render."}</p>}
             </div>
             {busy && preview && <p className="text-sm text-muted" aria-live="polite">{busy}</p>}
+            {docMsg && <p className="text-sm text-muted" aria-live="polite">{docMsg}</p>}
             {error && <p role="alert" className="text-sm text-danger">{error}</p>}
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={doPreview} disabled={!!busy} className="rounded-md border border-line px-3 py-1.5 text-sm font-semibold hover:border-primary disabled:opacity-50">Preview</button>
-              <button type="button" onClick={doDownload} disabled={!!busy} className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Download PNG ({size})</button>
+              <button type="button" onClick={doDownload} disabled={!!busy} className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Download {format === "jpeg" ? "JPEG" : "PNG"} ({size})</button>
               <button type="button" onClick={doBook} disabled={!!busy} className="rounded-md border border-line px-3 py-1.5 text-sm font-semibold hover:border-primary disabled:opacity-50">Floor book (all floors)</button>
+              <button type="button" onClick={doZip} disabled={!!busy} className="rounded-md border border-line px-3 py-1.5 text-sm font-semibold hover:border-primary disabled:opacity-50">All floors as images (ZIP)</button>
+              {canSaveDocs && <button type="button" onClick={doSaveDoc} disabled={!!busy} className="rounded-md border border-line px-3 py-1.5 text-sm font-semibold hover:border-primary disabled:opacity-50">Save to the hospital&apos;s documents</button>}
             </div>
             <p className="text-xs text-muted">The floor book renders every floor with these settings (whole floors, up to 4K) and opens it ready to print or save as PDF.</p>
             {onSaveView && (

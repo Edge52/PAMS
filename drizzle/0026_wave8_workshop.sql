@@ -1,0 +1,1 @@
+ALTER TABLE "rooms" ADD COLUMN "workshop" boolean DEFAULT false NOT NULL;

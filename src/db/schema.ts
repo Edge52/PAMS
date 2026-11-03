@@ -222,6 +222,15 @@ export const rooms = pgTable("rooms", {
   polygon: jsonb("polygon").$type<[number, number][]>(),
   /** Access zone for routes; null = read from the room's name (theatres, airlocks, isolation… are closed). */
   zone: accessZone("zone"),
+  /** The biomedical workshop (wave 8): work orders show the walking route from the nearest one to the device. */
+  workshop: boolean("workshop").notNull().default(false),
+  /** Site data for equipment planning (wave 9): clear ceiling height, door clear width and height (m), floor load (kg/m²),
+   *  and services present. Null = not surveyed yet. */
+  ceilingM: real("ceiling_m"),
+  doorWidthM: real("door_width_m"),
+  doorHeightM: real("door_height_m"),
+  floorLoadKgM2: real("floor_load_kg_m2"),
+  services: jsonb("services").$type<{ chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number }>(),
 }, (t) => [
   uniqueIndex("rooms_floor_code_uq").on(t.floorId, t.code),
   index("rooms_department_idx").on(t.departmentId),
@@ -489,6 +498,13 @@ export const offers = pgTable("offers", {
   incoterm: incoterm("incoterm"),
   deliveryWeeks: integer("delivery_weeks"),
   warrantyMonths: integer("warranty_months"),
+  /** Running costs per year in the offer's currency, for total cost of ownership (wave 9, D5): service contract after
+   *  the warranty, consumables, energy, and anything else (helium top-ups, licences); and the uptime it guarantees. */
+  tcoServiceAnnual: money("tco_service_annual"),
+  tcoConsumablesAnnual: money("tco_consumables_annual"),
+  tcoEnergyAnnual: money("tco_energy_annual"),
+  tcoOtherAnnual: money("tco_other_annual"),
+  tcoUptimePct: real("tco_uptime_pct"),
   paymentTerms: text("payment_terms"),
   status: offerStatus("status").notNull().default("RECEIVED"),
   technicalScore: real("technical_score"),   // 0–100, computed from compliance
@@ -731,6 +747,13 @@ export const serviceContracts = pgTable("service_contracts", {
   responseHours: integer("response_hours"),
   ppmVisitsPerYear: integer("ppm_visits_per_year"),
   includesParts: boolean("includes_parts").notNull().default(false),
+  /** Performance terms (wave 9, D6): repair within hours, guaranteed uptime %, penalties per late hour and per uptime
+   *  point short, capped at a % of the contract value. Null = not in the contract. */
+  repairHours: integer("repair_hours"),
+  uptimePct: real("uptime_pct"),
+  penaltyPerLateHour: money("penalty_per_late_hour"),
+  penaltyPerUptimePoint: money("penalty_per_uptime_point"),
+  penaltyCapPct: real("penalty_cap_pct"),
   contactName: text("contact_name"),
   contactPhone: varchar("contact_phone", { length: 48 }),
   notes: text("notes"),
@@ -860,6 +883,70 @@ export const deviceModels = pgTable("device_models", {
   uniqueIndex("device_models_unique").on(t.deviceTypeId, sql`lower(${t.manufacturer})`, sql`lower(${t.model})`),
   index("device_models_type_idx").on(t.deviceTypeId),
 ]);
+
+/**
+ * Site planning data of a device model (wave 9, "will it fit"): from the manufacturer's site planning guide. Metres,
+ * kilograms, kVA, kW. `fringe` is the MRI 0.5 mT (5 gauss) line as half-lengths along and across the magnet's axis.
+ */
+export const siteRequirements = pgTable("site_requirements", {
+  modelId: integer("model_id").primaryKey().references(() => deviceModels.id, { onDelete: "cascade" }),
+  /** Equipment footprint (the part that sits on the floor) and height. */
+  lengthM: real("length_m").notNull(),
+  widthM: real("width_m").notNull(),
+  heightM: real("height_m"),
+  /** Clear space needed around it for service and patient access. */
+  clearanceM: real("clearance_m").notNull().default(0.6),
+  minRoomLengthM: real("min_room_length_m"),
+  minRoomWidthM: real("min_room_width_m"),
+  minAreaM2: real("min_area_m2"),
+  minCeilingM: real("min_ceiling_m"),
+  doorWidthM: real("door_width_m"),
+  doorHeightM: real("door_height_m"),
+  weightKg: real("weight_kg"),
+  powerKva: real("power_kva"),
+  heatKw: real("heat_kw"),
+  chilledWater: boolean("chilled_water").notNull().default(false),
+  quenchPipe: boolean("quench_pipe").notNull().default(false),
+  rfShield: boolean("rf_shield").notNull().default(false),
+  leadLined: boolean("lead_lined").notNull().default(false),
+  fringeAlongM: real("fringe_along_m"),
+  fringeAcrossM: real("fringe_across_m"),
+  /** Where the figures come from (guide name, revision, page) and whether someone checked them. */
+  source: text("source"),
+  verified: boolean("verified").notNull().default(false),
+  notes: text("notes"),
+  updatedByName: text("updated_by_name"),
+  updatedAt: updatedAt(),
+});
+
+/** Imaging use per scanner per month (wave 9, D3): exams done and the hours it was scheduled to run. */
+export const imagingUsage = pgTable("imaging_usage", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  /** First day of the month. */
+  month: date("month").notNull(),
+  exams: integer("exams").notNull(),
+  scheduledHours: real("scheduled_hours"),
+  notes: text("notes"),
+  enteredByName: text("entered_by_name"),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex("imaging_usage_asset_month_uq").on(t.assetId, t.month)]);
+
+/** Planning capacity of a device type (exams a year per unit), for utilisation (wave 9, D3). Set by the hospital. */
+export const typeCapacity = pgTable("type_capacity", {
+  deviceTypeId: integer("device_type_id").primaryKey().references(() => deviceTypes.id, { onDelete: "cascade" }),
+  examsPerYear: integer("exams_per_year").notNull(),
+  note: text("note"),
+});
+
+/** Capital budget per hospital and year (wave 9, D4), to compare the replacement plan against. */
+export const capitalBudgets = pgTable("capital_budgets", {
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  amount: money("amount").notNull(),
+  currency: varchar("currency", { length: 3 }).notNull().default("EGP"),
+  notes: text("notes"),
+}, (t) => [primaryKey({ columns: [t.facilityId, t.year] })]);
 
 /** Standardisation (wave 5): the preferred model of a device type in one hospital. */
 export const preferredModels = pgTable("preferred_models", {
@@ -994,6 +1081,9 @@ export const flowSteps = pgTable("flow_steps", {
   kind: flowStepKind("kind").notNull().default("STEP"),
   departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
   roomId: integer("room_id").references(() => rooms.id, { onDelete: "set null" }),
+  /** The room's code and name when it was chosen (wave 8): if a drawing update removes the room, the step says which. */
+  roomCode: varchar("room_code", { length: 32 }),
+  roomLabel: text("room_label"),
   minutes: integer("minutes"),
   accompanying: text("accompanying"),
   /** Device type codes needed at this step (e.g. "LIF-VEN-TRN"). */
@@ -1039,6 +1129,8 @@ export const liftCores = pgTable("lift_cores", {
   carCapacity: integer("car_capacity"),
   /** Typical wait for a car, seconds (an assumption until measured). */
   waitSeconds: integer("wait_seconds").notNull().default(45),
+  /** Wait per hour of the day (24 values, seconds), when it varies (morning peaks); null = `waitSeconds` all day. */
+  waitByHour: jsonb("wait_by_hour").$type<number[]>(),
   /** Suggested from the drawings and not yet confirmed by a person. */
   inferred: boolean("inferred").notNull().default(false),
   note: text("note"),

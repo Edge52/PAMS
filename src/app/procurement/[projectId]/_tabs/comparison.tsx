@@ -9,6 +9,7 @@ import { formatMoney, formatNumber } from "@/lib/format";
 import type { OfferStatus } from "@/lib/procurement/labels";
 import { normalizeWeights, type CellResult } from "@/lib/procurement/scoring";
 import { loadComparison } from "@/lib/procurement/server";
+import { TcoPanel } from "./tco";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { approvalRequests } from "@/db/schema";
@@ -19,7 +20,7 @@ import { can } from "@/lib/auth/permissions";
 type Project = typeof projects.$inferSelect;
 const pct = (n: number | null | undefined) => (n == null ? "—" : n.toFixed(1));
 
-export async function ComparisonTab({ project, tw, me }: { project: Project; tw?: string; me: CurrentUser }) {
+export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { project: Project; tw?: string; me: CurrentUser; tcoYears?: string; tcoDown?: string }) {
   const allow = { edit: can(me.role, "offers.edit"), recommend: can(me.role, "award.recommend") };
   const weights = normalizeWeights(tw);
   const data = await loadComparison(project.id, weights);
@@ -161,6 +162,8 @@ export async function ComparisonTab({ project, tw, me }: { project: Project; tw?
         the line technically non-responsive: it gets no financial or combined score and cannot be best value. Financial score = lowest responsive price ÷
         this price × 100. Highlighted cells are the best combined score per item (ties go to the lower price).
       </p>
+
+      <TcoPanel data={data} projectId={project.id} years={tcoYears === "10" ? 10 : 5} downtimeCostPerDay={tcoDown && Number(tcoDown) >= 0 ? Number(tcoDown) : null} />
 
       {excluded.length > 0 && (
         <Panel title="Excluded from the evaluation">

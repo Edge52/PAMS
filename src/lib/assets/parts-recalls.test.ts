@@ -68,3 +68,16 @@ describe("recalls", () => {
     expect(recallProgress([]).done).toBe(true);
   });
 });
+
+describe("recall serial ranges (wave 9)", () => {
+  it("matches serials inside a range with the same prefix", async () => {
+    const { serialMatcher, parseRange } = await import("./recalls");
+    expect(parseRange("SN-1000 to SN-1999")).toEqual({ prefix: "sn", lo: 1000, hi: 1999 });
+    expect(parseRange("A10..B20")).toBeNull();
+    const m = serialMatcher(["SN1000 to SN1999", "X-7"]);
+    expect(m("sn 1500")).toBe(true);
+    expect(m("SN2000")).toBe(false);
+    expect(m("AB1500")).toBe(false);
+    expect(m("x7")).toBe(true);
+  });
+});
