@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, capitalBudgets, departments, deviceModels, facilities } from "@/db/schema";
+import { assets, capitalBudgets, departments, deviceModels, deviceTypes, equipmentRequests, facilities } from "@/db/schema";
+import { egpRates } from "@/lib/assets/lifecycle-server";
 import { Badge, Button, EmptyState, Field, Input, PageHeader, Panel, Stat, Table, Td, Th, THead } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { NativeSelect, Notice } from "@/components/assets/bits";
@@ -45,11 +46,18 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
     db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.facilityId, facilityId)),
   ]);
   const eos = new Map(models.map((m) => [m.id, m.eos]));
+  // Approved department requests (wave 12), costed from the device type's price range.
+  const rates = await egpRates();
+  const reqs = (await db.select({ r: equipmentRequests, typeName: deviceTypes.name, pmin: deviceTypes.priceMinUsd, pmax: deviceTypes.priceMaxUsd }).from(equipmentRequests)
+    .innerJoin(deviceTypes, eq(deviceTypes.id, equipmentRequests.deviceTypeId)).where(and(eq(equipmentRequests.facilityId, facilityId), eq(equipmentRequests.status, "APPROVED"))))
+    .filter((x) => x.r.planYear != null && years.includes(x.r.planYear))
+    .map((x) => { const mid = x.pmin != null || x.pmax != null ? (num(x.pmin ?? x.pmax) + num(x.pmax ?? x.pmin)) / 2 : null; return { ...x, egp: mid != null ? mid * (rates.get("USD") ?? 0) * x.r.quantity : 0 }; });
   const placed = plan.map((r) => ({ ...r, eos: eos.get(r.id) ?? null, ...plannedYear({ band: r.score.band, installDate: r.installDate, lifeYears: r.lifeYears, endOfSupport: eos.get(r.id) ?? null }, thisYear) }))
     .filter((r) => r.year != null && r.year <= years[years.length - 1]);
   const deptName = (id: number | null) => (id == null ? "No department" : depts.find((d) => d.id === id)?.name ?? "—");
-  const deptIds = [...new Set(placed.map((r) => r.departmentId))].sort((a, b) => deptName(a).localeCompare(deptName(b)));
-  const cell = (dept: number | null | "all", y: number) => placed.filter((r) => r.year === y && (dept === "all" || r.departmentId === dept)).reduce((s, r) => s + (r.estimateEgp ?? 0), 0);
+  const deptIds = [...new Set([...placed.map((r) => r.departmentId), ...reqs.map((x) => x.r.departmentId)])].sort((a, b) => deptName(a).localeCompare(deptName(b)));
+  const cell = (dept: number | null | "all", y: number) => placed.filter((r) => r.year === y && (dept === "all" || r.departmentId === dept)).reduce((s, r) => s + (r.estimateEgp ?? 0), 0)
+    + reqs.filter((x) => x.r.planYear === y && (dept === "all" || x.r.departmentId === dept)).reduce((s, x) => s + x.egp, 0);
   const budgetOf = (y: number) => { const b = budgets.find((x) => x.year === y); return b ? num(b.amount) : null; };
   const yearRows = placed.filter((r) => r.year === pick).sort((a, b) => b.score.score - a.score.score);
   const unpriced = placed.filter((r) => r.estimateEgp == null).length;
@@ -123,6 +131,13 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
             </Table>
           )}
           {yearRows.length > 300 && <p className="mt-2 text-sm text-muted">Showing the 300 highest scores of {formatNumber(yearRows.length)}.</p>}
+          {reqs.some((x) => x.r.planYear === pick) && (
+            <div className="mt-4 border-t border-line pt-3 text-sm">
+              <p className="mb-1 font-semibold">Approved department requests for {pick}</p>
+              <ul className="space-y-0.5">{reqs.filter((x) => x.r.planYear === pick).map((x) => <li key={x.r.id}>{x.r.number}: {x.r.quantity} × {x.typeName} <span className="text-muted">· {deptName(x.r.departmentId)} · about {egp(x.egp)}</span></li>)}</ul>
+              <Link href={`/assets/requests?facilityId=${facilityId}&tab=APPROVED`} className="text-primary hover:underline">Turn requests into a BOQ</Link>
+            </div>
+          )}
         </Panel>
       </ActionForm>
     </>

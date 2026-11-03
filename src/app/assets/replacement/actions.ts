@@ -8,23 +8,14 @@ import { eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { assets, boqDepartments, boqLines, boqs, departments, standardSets } from "@/db/schema";
+import { assets, boqDepartments, boqLines, boqs, departments } from "@/db/schema";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { defaultUnitPrices } from "@/lib/boq/generate";
 import { replacementPlan } from "@/lib/assets/lifecycle-server";
 import type { FormState } from "@/lib/assets/forms";
 import { convert, logActivity } from "@/lib/server-utils";
 
-const REPLACEMENT_SET = "HPAMS-REPLACEMENT";
-
-async function replacementSetId(): Promise<number> {
-  await db.insert(standardSets).values({
-    code: REPLACEMENT_SET, name: "Replacement plan (no ratio rules)", version: "1.0", isDefault: false,
-    description: "Used by BOQs created from the replacement plan. It has no rules, so regenerating such a BOQ keeps only its replacement lines.",
-  }).onConflictDoNothing();
-  const [s] = await db.select({ id: standardSets.id }).from(standardSets).where(eq(standardSets.code, REPLACEMENT_SET));
-  return s.id;
-}
+import { replacementSetId } from "@/lib/boq/replacement-set";
 
 export async function createReplacementBoqAction(_: FormState, fd: FormData): Promise<FormState> {
   const me = await requirePermission("boq.edit");
