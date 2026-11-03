@@ -69,7 +69,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
   const loaded = (await Promise.all(published.map((p) => loadFlow(p.id)))).filter((f) => f != null);
   const names = await equipmentNames(loaded.flatMap((f) => f.steps.flatMap((s) => s.equipment)));
   const flows = loaded.map((f) => ({ names,
-    id: f.flow.id, name: f.flow.name, version: f.flow.version, dailyVolume: f.flow.dailyVolume, arrivalProfile: f.flow.arrivalProfile, status: f.flow.status,
+    id: f.flow.id, name: f.flow.name, version: f.flow.version, dailyVolume: f.flow.dailyVolume, arrivalProfile: f.flow.arrivalProfile, status: f.flow.status, kind: f.flow.kind,
     steps: f.steps.map(({ id: _i, ...s }) => { void _i; return s; }), links: f.links.map(({ id: _i, ...l }) => { void _i; return l; }),
   }));
 

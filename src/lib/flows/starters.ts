@@ -102,6 +102,26 @@ export const STARTERS: Starter[] = [
     ],
     links: [{ from: "s1", to: "s2", transport: "BED", urgency: "URGENT" }, { from: "s2", to: "s3", transport: "BED" }],
   },
+  {
+    id: "cssd-theatres", name: "Clean supplies — CSSD to theatres", kind: "SUPPLIES", dailyVolume: 24, arrival: ELECTIVE,
+    description: "Sterile instrument trays and clean supplies taken by trolley from the CSSD to the theatres' clean store, then the empty trolley back. Assumed: 24 trolley trips a day on the theatre schedule. Checked against dirty and waste flows for shared corridors and lifts.",
+    steps: [
+      { key: "s1", label: "CSSD sterile store", kind: "START", deptTypes: ["CSSD"], room: "STERILE|CLEAN|STORE|CSSD" },
+      { key: "s2", label: "Theatre clean store", kind: "STEP", deptTypes: ["OR"], room: "CLEAN|STERILE|STORE|SET-?UP", minutes: 10, accompanying: "CSSD porter" },
+      { key: "s3", label: "Back to CSSD", kind: "END", deptTypes: ["CSSD"], room: "RECEIV|WASH|DIRTY|DECONT|CSSD" },
+    ],
+    links: [{ from: "s1", to: "s2", transport: "TROLLEY" }, { from: "s2", to: "s3", transport: "TROLLEY" }],
+  },
+  {
+    id: "ward-waste", name: "Waste — wards to the waste store", kind: "WASTE", dailyVolume: 12, arrival: profile([0, 0, 0, 0, 0, 0, 2, 3, 1, 1, 1, 1, 1, 2, 3, 1, 1, 1, 1, 1, 2, 1, 0, 0]),
+    description: "Clinical and general waste collected by trolley from ward dirty utility rooms to the hospital's waste store. Assumed: 12 collections a day, mostly early morning and mid-afternoon.",
+    steps: [
+      { key: "s1", label: "Ward dirty utility", kind: "START", deptTypes: ["WARD-MED", "WARD-SURG"], room: "DIRTY|SLUICE|SOILED|DISPOSAL" },
+      { key: "s2", label: "Waste store", kind: "STEP", room: "WASTE|REFUSE|SOILED HOLD|GARBAGE|BIN", minutes: 5, accompanying: "Housekeeping porter" },
+      { key: "s3", label: "Trolley back", kind: "END", deptTypes: ["WARD-MED", "WARD-SURG"], room: "DIRTY|SLUICE|SOILED|DISPOSAL" },
+    ],
+    links: [{ from: "s1", to: "s2", transport: "TROLLEY" }, { from: "s2", to: "s3", transport: "TROLLEY" }],
+  },
 ];
 
 export type HospitalDept = { id: number; typeCode: string | null; name: string };

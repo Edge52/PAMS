@@ -102,6 +102,13 @@ Under **Assets** (release 2.2 / wave 3):
 - Each tender's **Tender** tab: one or two envelopes with sealed prices, bonds, printable committee minutes, the
   technical evaluation sheet and validity extension letters.
 
+## Operations (wave 12)
+
+- **My department** and **equipment requests** (into the capital plan and a BOQ); **rounds and stock-take** on a
+  phone that work without signal; **maintenance budget**; **room data sheets**; room outlines in the layout editor;
+  moves between floors on the map; clean and dirty route checks.
+- Administration: **audit log** with export and **backups** with restore checks.
+
 ## Finding things and keeping the register tidy
 
 - **Search** (box at the top of every page): equipment by tag, serial number, maker, model or tag; device types; makes

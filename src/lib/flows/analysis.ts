@@ -172,3 +172,61 @@ export function corridorHeat(legs: { floorId: number; points: [number, number][]
   }
   return out;
 }
+
+/* ── Clean and dirty routes (wave 12, A7) ── */
+
+export type CdFlow = { name: string; kind: string; profile: number[] | null; legs: { floorId: number; points: [number, number][] }[]; lifts: string[] };
+export type CdResult = {
+  /** 2 m stretches of corridor that both clean and dirty flows walk (centres, metres). */
+  shared: { floorId: number; x: number; z: number; clean: string[]; dirty: string[] }[];
+  /** Lifts both use, and the hours of the day both are moving through them. */
+  lifts: { name: string; clean: string[]; dirty: string[]; hours: number[] }[];
+};
+
+/**
+ * Where clean supplies and dirty/waste flows meet: corridor cells both pass through, lifts both use, and the hours
+ * both are active in a shared lift (a flow without an arrival profile counts as active all day).
+ */
+export function cleanDirtyConflicts(flows: CdFlow[], cell = 2): CdResult {
+  const clean = flows.filter((f) => f.kind === "SUPPLIES"), dirty = flows.filter((f) => f.kind === "WASTE");
+  const cellsOf = (f: CdFlow) => {
+    const m = new Map<string, { floorId: number; x: number; z: number }>();
+    for (const leg of f.legs) for (let i = 1; i < leg.points.length; i++) {
+      const [ax, az] = leg.points[i - 1], [bx, bz] = leg.points[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / (cell / 2)));
+      for (let t = 0; t <= n; t++) {
+        const x = ax + ((bx - ax) * t) / n, z = az + ((bz - az) * t) / n;
+        const cx = Math.floor(x / cell), cz = Math.floor(z / cell), k = `${leg.floorId}:${cx}:${cz}`;
+        if (!m.has(k)) m.set(k, { floorId: leg.floorId, x: (cx + 0.5) * cell, z: (cz + 0.5) * cell });
+      }
+    }
+    return m;
+  };
+  const cMaps = clean.map((f) => ({ f, m: cellsOf(f) })), dMaps = dirty.map((f) => ({ f, m: cellsOf(f) }));
+  const shared = new Map<string, CdResult["shared"][number]>();
+  for (const c of cMaps) for (const d of dMaps) for (const [k, v] of c.m) if (d.m.has(k)) {
+    const s = shared.get(k) ?? { ...v, clean: [], dirty: [] };
+    if (!s.clean.includes(c.f.name)) s.clean.push(c.f.name);
+    if (!s.dirty.includes(d.f.name)) s.dirty.push(d.f.name);
+    shared.set(k, s);
+  }
+  const active = (f: CdFlow, h: number) => !f.profile || f.profile.length !== 24 || f.profile[h] > 0;
+  const liftNames = [...new Set(clean.flatMap((f) => f.lifts))].filter((n) => dirty.some((f) => f.lifts.includes(n)));
+  const lifts = liftNames.map((name) => {
+    const cs = clean.filter((f) => f.lifts.includes(name)), ds = dirty.filter((f) => f.lifts.includes(name));
+    const hours = Array.from({ length: 24 }, (_, h) => h).filter((h) => cs.some((f) => active(f, h)) && ds.some((f) => active(f, h)));
+    return { name, clean: cs.map((f) => f.name), dirty: ds.map((f) => f.name), hours };
+  });
+  return { shared: [...shared.values()], lifts };
+}
+
+/** Hours as ranges for reading: [7,8,9,13] → "07–10, 13–14". */
+export function hourRanges(hours: number[]): string {
+  const out: string[] = [];
+  for (let i = 0; i < hours.length; i++) {
+    const a = hours[i]; let b = a;
+    while (hours[i + 1] === b + 1) b = hours[++i];
+    out.push(`${String(a).padStart(2, "0")}–${String(b + 1).padStart(2, "0")}`);
+  }
+  return out.join(", ");
+}

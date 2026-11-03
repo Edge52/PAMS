@@ -142,3 +142,25 @@ export async function networkCoverage(facilityId: number, rebuild = false) {
   }
   return out;
 }
+
+/** Clean supplies against dirty and waste pathways (wave 12, A7), for the analysis report. */
+export async function cleanDirtyReport(facilityId: number) {
+  const { cleanDirtyConflicts } = await import("./analysis");
+  const { loadFlow } = await import("./server");
+  const { patientFlows } = await import("@/db/schema");
+  const ids = await db.select({ id: patientFlows.id }).from(patientFlows)
+    .where(sql`${patientFlows.facilityId} = ${facilityId} and ${patientFlows.status} = 'PUBLISHED' and ${patientFlows.kind} in ('SUPPLIES','WASTE')`);
+  const flows = (await Promise.all(ids.map((x) => loadFlow(x.id)))).filter((f) => f != null);
+  if (!flows.some((f) => f.flow.kind === "SUPPLIES") || !flows.some((f) => f.flow.kind === "WASTE")) return null;
+  const input = await Promise.all(flows.map(async (f) => {
+    const rs = await pathwayRoutes(facilityId, { steps: f.steps, links: f.links, arrivalProfile: f.flow.arrivalProfile });
+    return { name: f.flow.name, kind: f.flow.kind, profile: f.flow.arrivalProfile ?? null,
+      legs: rs.flatMap((r) => (r?.legs ?? []).filter((l) => l.kind === "walk").map((l) => ({ floorId: l.floorId, points: l.points as [number, number][] }))),
+      lifts: [...new Set(rs.flatMap((r) => (r?.legs ?? []).filter((l) => l.kind !== "walk" && l.via).map((l) => l.via!)))] };
+  }));
+  const r = cleanDirtyConflicts(input);
+  const floorName = new Map((await db.execute<{ id: number; name: string }>(sql`select f.id, f.name from floors f join buildings b on b.id = f.building_id where b.facility_id = ${facilityId}`)).rows.map((x) => [Number(x.id), String(x.name)]));
+  const perFloor = new Map<string, number>();
+  for (const c of r.shared) perFloor.set(floorName.get(c.floorId) ?? "Floor", (perFloor.get(floorName.get(c.floorId) ?? "Floor") ?? 0) + 2);
+  return { ...r, perFloor: [...perFloor.entries()], flows: flows.map((f) => ({ id: f.flow.id, name: f.flow.name, kind: f.flow.kind })) };
+}
