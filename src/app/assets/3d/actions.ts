@@ -363,3 +363,27 @@ export async function saveRenderDocumentAction(_: PhotoActionState, fd: FormData
   const [doc] = await db.insert(documents).values({ entityType: "facility", entityId: facilityId, kind: kind.mime.startsWith("image/") ? "photo" : "other", fileName: file.name, sizeBytes: file.size, url }).returning({ id: documents.id });
   return { ok: `${file.name} saved to the hospital's documents.`, photo: { id: doc.id, url, name: file.name } };
 }
+
+/* ── Room site data (wave 9, "will it fit") ── */
+const siteNum = (fd: FormData, k: string, min: number, max: number): number | null | "bad" => {
+  const v = String(fd.get(k) ?? "").trim(); if (!v) return null;
+  const n = Number(v); return Number.isFinite(n) && n >= min && n <= max ? n : "bad";
+};
+export type RoomSite = { ceilingM: number | null; doorWidthM: number | null; doorHeightM: number | null; floorLoadKgM2: number | null; services: { chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number } | null };
+/** Record a room's surveyed site data: ceiling, door, floor load, services. Blank = not surveyed. Needs facilities.edit. */
+export async function setRoomSiteAction(_: unknown, fd: FormData): Promise<{ ok?: string; error?: string; roomId?: number; site?: RoomSite } | null> {
+  const me = await requirePermission("facilities.edit");
+  const roomId = Number(fd.get("roomId"));
+  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name }).from(rooms).where(eq(rooms.id, roomId)) : [];
+  if (!r) return { error: "That room no longer exists." };
+  const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
+  const vals = { ceilingM: siteNum(fd, "ceilingM", 1, 15), doorWidthM: siteNum(fd, "doorWidthM", 0.3, 6), doorHeightM: siteNum(fd, "doorHeightM", 1, 6), floorLoadKgM2: siteNum(fd, "floorLoadKgM2", 50, 20000), powerKva: siteNum(fd, "powerKva", 0, 5000) };
+  if (Object.values(vals).includes("bad")) return { error: "Check the figures: ceiling 1–15 m, door 0.3–6 m, floor load 50–20,000 kg/m², power 0–5,000 kVA." };
+  const tri = (k: string) => { const v = fd.get(k); return v === "yes" ? true : v === "no" ? false : undefined; };
+  const services: NonNullable<RoomSite["services"]> = {};
+  for (const k of ["chilledWater", "quenchPipe", "rfShield", "leadLined"] as const) { const v = tri(k); if (v !== undefined) services[k] = v; }
+  if (vals.powerKva != null) services.powerKva = vals.powerKva as number;
+  const site: RoomSite = { ceilingM: vals.ceilingM as number | null, doorWidthM: vals.doorWidthM as number | null, doorHeightM: vals.doorHeightM as number | null, floorLoadKgM2: vals.floorLoadKgM2 as number | null, services: Object.keys(services).length ? services : null };
+  await db.update(rooms).set(site).where(eq(rooms.id, r.id));
+  return { ok: `${r.name}: site data saved.`, roomId: r.id, site };
+}

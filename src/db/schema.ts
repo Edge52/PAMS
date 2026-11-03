@@ -224,6 +224,13 @@ export const rooms = pgTable("rooms", {
   zone: accessZone("zone"),
   /** The biomedical workshop (wave 8): work orders show the walking route from the nearest one to the device. */
   workshop: boolean("workshop").notNull().default(false),
+  /** Site data for equipment planning (wave 9): clear ceiling height, door clear width and height (m), floor load (kg/m²),
+   *  and services present. Null = not surveyed yet. */
+  ceilingM: real("ceiling_m"),
+  doorWidthM: real("door_width_m"),
+  doorHeightM: real("door_height_m"),
+  floorLoadKgM2: real("floor_load_kg_m2"),
+  services: jsonb("services").$type<{ chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number }>(),
 }, (t) => [
   uniqueIndex("rooms_floor_code_uq").on(t.floorId, t.code),
   index("rooms_department_idx").on(t.departmentId),
@@ -862,6 +869,41 @@ export const deviceModels = pgTable("device_models", {
   uniqueIndex("device_models_unique").on(t.deviceTypeId, sql`lower(${t.manufacturer})`, sql`lower(${t.model})`),
   index("device_models_type_idx").on(t.deviceTypeId),
 ]);
+
+/**
+ * Site planning data of a device model (wave 9, "will it fit"): from the manufacturer's site planning guide. Metres,
+ * kilograms, kVA, kW. `fringe` is the MRI 0.5 mT (5 gauss) line as half-lengths along and across the magnet's axis.
+ */
+export const siteRequirements = pgTable("site_requirements", {
+  modelId: integer("model_id").primaryKey().references(() => deviceModels.id, { onDelete: "cascade" }),
+  /** Equipment footprint (the part that sits on the floor) and height. */
+  lengthM: real("length_m").notNull(),
+  widthM: real("width_m").notNull(),
+  heightM: real("height_m"),
+  /** Clear space needed around it for service and patient access. */
+  clearanceM: real("clearance_m").notNull().default(0.6),
+  minRoomLengthM: real("min_room_length_m"),
+  minRoomWidthM: real("min_room_width_m"),
+  minAreaM2: real("min_area_m2"),
+  minCeilingM: real("min_ceiling_m"),
+  doorWidthM: real("door_width_m"),
+  doorHeightM: real("door_height_m"),
+  weightKg: real("weight_kg"),
+  powerKva: real("power_kva"),
+  heatKw: real("heat_kw"),
+  chilledWater: boolean("chilled_water").notNull().default(false),
+  quenchPipe: boolean("quench_pipe").notNull().default(false),
+  rfShield: boolean("rf_shield").notNull().default(false),
+  leadLined: boolean("lead_lined").notNull().default(false),
+  fringeAlongM: real("fringe_along_m"),
+  fringeAcrossM: real("fringe_across_m"),
+  /** Where the figures come from (guide name, revision, page) and whether someone checked them. */
+  source: text("source"),
+  verified: boolean("verified").notNull().default(false),
+  notes: text("notes"),
+  updatedByName: text("updated_by_name"),
+  updatedAt: updatedAt(),
+});
 
 /** Standardisation (wave 5): the preferred model of a device type in one hospital. */
 export const preferredModels = pgTable("preferred_models", {

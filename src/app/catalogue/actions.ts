@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, deviceModels, deviceTypes, preferredModels } from "@/db/schema";
+import { assets, deviceModels, deviceTypes, preferredModels, siteRequirements } from "@/db/schema";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { parseChecklist } from "@/lib/assets/checklists";
 import { firstError, formObject, id as idField, isoDate, num as numField, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
@@ -119,4 +119,44 @@ export async function setPreferredModelAction(fd: FormData) {
   }
   revalidatePath("/assets/fleet");
   redirect(`${back}&notice=${encodeURIComponent(modelId ? "Preferred model saved." : "Preferred model cleared.")}#type-${deviceTypeId}`);
+}
+
+const SiteSchema = z.object({
+  modelId: reqId("Model"),
+  lengthM: numField("Length", 0.1, 30), widthM: numField("Width", 0.1, 30), heightM: numField("Height", 0.1, 10), clearanceM: numField("Service space", 0, 5),
+  minRoomLengthM: numField("Room length", 0.5, 60), minRoomWidthM: numField("Room width", 0.5, 60), minAreaM2: numField("Room area", 0.5, 2000), minCeilingM: numField("Ceiling", 1, 10),
+  doorWidthM: numField("Door width", 0.3, 6), doorHeightM: numField("Door height", 1, 6), weightKg: numField("Weight", 0, 100000),
+  powerKva: numField("Power", 0, 5000), heatKw: numField("Heat", 0, 5000), fringeAlongM: numField("5 gauss along", 0.1, 30), fringeAcrossM: numField("5 gauss across", 0.1, 30),
+  source: text(300), notes: text(2000),
+});
+
+/** Site planning data of a model (wave 9). "Verified" is only kept when someone ticks it; typical values never are. */
+export async function saveSiteRequirementsAction(_: FormState, fd: FormData): Promise<FormState> {
+  const me = await requirePermission("catalogue.edit");
+  const p = SiteSchema.safeParse(formObject(fd));
+  if (!p.success) return { error: firstError(p.error) };
+  const d = p.data;
+  if (fd.get("clear") === "1") {
+    await db.delete(siteRequirements).where(eq(siteRequirements.modelId, d.modelId));
+    revalidatePath(`/catalogue/models/${d.modelId}`);
+    return { ok: "Site data removed." };
+  }
+  if (d.lengthM == null || d.widthM == null) return { error: "Enter the equipment's length and width." };
+  if ((d.fringeAlongM == null) !== (d.fringeAcrossM == null)) return { error: "Enter both 5 gauss distances, or neither." };
+  const [m] = await db.select({ id: deviceModels.id, name: sql<string>`${deviceModels.manufacturer} || ' ' || ${deviceModels.model}` }).from(deviceModels).where(eq(deviceModels.id, d.modelId));
+  if (!m) return { error: "That model was removed." };
+  const typical = (d.source ?? "").toLowerCase().startsWith("typical");
+  const flag = (k: string) => fd.get(k) === "on";
+  const values = {
+    lengthM: d.lengthM, widthM: d.widthM, heightM: d.heightM ?? null, clearanceM: d.clearanceM ?? 0.6,
+    minRoomLengthM: d.minRoomLengthM ?? null, minRoomWidthM: d.minRoomWidthM ?? null, minAreaM2: d.minAreaM2 ?? null, minCeilingM: d.minCeilingM ?? null,
+    doorWidthM: d.doorWidthM ?? null, doorHeightM: d.doorHeightM ?? null, weightKg: d.weightKg ?? null, powerKva: d.powerKva ?? null, heatKw: d.heatKw ?? null,
+    chilledWater: flag("chilledWater"), quenchPipe: flag("quenchPipe"), rfShield: flag("rfShield"), leadLined: flag("leadLined"),
+    fringeAlongM: d.fringeAlongM ?? null, fringeAcrossM: d.fringeAcrossM ?? null,
+    source: d.source ?? null, verified: !typical && flag("verified"), notes: d.notes ?? null, updatedByName: me.name, updatedAt: new Date(),
+  };
+  await db.insert(siteRequirements).values({ modelId: d.modelId, ...values }).onConflictDoUpdate({ target: siteRequirements.modelId, set: values });
+  await logActivity("device_model", d.modelId, "site data saved", `${m.name}${typical ? " (typical values)" : values.verified ? " (verified)" : ""}`, me.name);
+  revalidatePath(`/catalogue/models/${d.modelId}`);
+  return { ok: typical ? "Saved. These are typical values: replace them from the manufacturer's site planning guide." : "Site data saved." };
 }

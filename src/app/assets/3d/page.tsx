@@ -1,7 +1,7 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, patientFlows, documents, rooms, routeFixes, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
+import { assets, buildings, departments, deviceModels, deviceTypes, siteRequirements, facilities, floorCad, floors, liftCores, patientFlows, documents, rooms, routeFixes, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
 import { noteOf } from "@/lib/assets/twin-notes";
 import { equipmentNames, loadFlow } from "@/lib/flows/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
@@ -86,6 +86,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     })),
     rooms: roomRows.filter((r) => r.type !== "CORRIDOR" || r.polygon).map((r) => ({
       id: r.id, floorId: r.floorId, code: r.code, name: r.name, type: r.type, departmentId: r.departmentId, zone: r.zone, workshop: r.workshop,
+      site: { ceilingM: r.ceilingM, doorWidthM: r.doorWidthM, doorHeightM: r.doorHeightM, floorLoadKgM2: r.floorLoadKgM2, services: r.services ?? null },
       poly: r.polygon && r.polygon.length >= 3 ? r.polygon : rectPoly(r.x, r.y, r.w, r.h),
     })),
     departments: deptRows.map((d, i) => ({ ...d, color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] })),
@@ -94,6 +95,13 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     flows,
     fixes: floorIds.length ? (await db.select().from(routeFixes).where(inArray(routeFixes.floorId, floorIds)))
       .map((f) => ({ id: f.id, floorId: f.floorId, kind: f.kind, x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2, note: f.note, by: f.createdByName })) : [],
+    siteModels: (await db.select({ s: siteRequirements, manufacturer: deviceModels.manufacturer, model: deviceModels.model, typeName: deviceTypes.name }).from(siteRequirements)
+      .innerJoin(deviceModels, eq(deviceModels.id, siteRequirements.modelId)).innerJoin(deviceTypes, eq(deviceTypes.id, deviceModels.deviceTypeId))
+      .where(eq(deviceModels.active, true)).orderBy(asc(deviceModels.manufacturer), asc(deviceModels.model)))
+      .map(({ s, manufacturer, model, typeName }) => ({ id: s.modelId, name: `${manufacturer} ${model}`, typeName, typical: !!s.source?.toLowerCase().startsWith("typical"), verified: s.verified,
+        req: { lengthM: s.lengthM, widthM: s.widthM, heightM: s.heightM, clearanceM: s.clearanceM, minRoomLengthM: s.minRoomLengthM, minRoomWidthM: s.minRoomWidthM, minAreaM2: s.minAreaM2, minCeilingM: s.minCeilingM,
+          doorWidthM: s.doorWidthM, doorHeightM: s.doorHeightM, weightKg: s.weightKg, powerKva: s.powerKva, heatKw: s.heatKw, chilledWater: s.chilledWater, quenchPipe: s.quenchPipe, rfShield: s.rfShield, leadLined: s.leadLined,
+          fringeAlongM: s.fringeAlongM, fringeAcrossM: s.fringeAcrossM } })),
     lifts: (await db.select().from(liftCores).where(eq(liftCores.facilityId, facility.id)).orderBy(asc(liftCores.name)))
       .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, cars: l.cars, waitSeconds: l.waitSeconds, waitByHour: l.waitByHour ?? null, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
   };

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { startTransition, useActionState, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { addNotePhotoAction, addRouteFixAction, deleteRouteFixAction, setRoomZoneAction, setWorkshopAction, addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
 import { formatDims } from "@/lib/assets/dimensions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
@@ -25,6 +25,7 @@ import { readiness, readinessLine } from "@/lib/flows/readiness";
 import type { TwinNote } from "@/lib/assets/twin-notes";
 import { NoteComposer, NoteList } from "./notes";
 import { JobRibbon } from "./job-ribbon";
+import { FitPanel, type Outline } from "./fit-panel";
 import { EVENT_COLORS, EVENT_LABELS, eventsAt, perDay, shortcutFor, SHORTCUTS, type TimeEvent } from "./timeline";
 
 const LIVE_EVERY_MS = 60_000;
@@ -179,6 +180,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const assetById = useMemo(() => new Map(assetList.map((a) => [a.id, a])), [assetList]);
   const deptById = useMemo(() => new Map(data.departments.map((d) => [d.id, d])), [data.departments]);
   const floorById = useMemo(() => new Map(data.floors.map((f) => [f.id, f])), [data.floors]);
+  const setOutlines = useCallback((o: Outline[] | null) => sceneRef.current?.setOutlines(o), []);
   const placed = useMemo(() => assetList.filter((a) => a.roomId && roomById.has(a.roomId)), [assetList, roomById]);
   const categories = useMemo(() => {
     const m = new Map<string, { code: string; name: string; n: number }>();
@@ -236,6 +238,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     return placed.filter((a) => [a.tag, a.deviceType, a.manufacturer, a.model, a.serial, roomById.get(a.roomId!)?.code, roomById.get(a.roomId!)?.name]
       .some((v) => v?.toLowerCase().includes(q))).slice(0, 200);
   }, [query, placed, roomById]);
+  const roomMatches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return data.rooms.filter((r) => r.type !== "CORRIDOR" && (r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))).slice(0, 8);
+  }, [query, data.rooms]);
   useEffect(() => {
     const s = sceneRef.current; if (!s || !ready) return;
     s.setVisibleAssets(new Set(placed.filter((a) => (!cats.size || cats.has(a.categoryCode)) && (!statuses.size || statuses.has(live.get(a.id)?.status ?? a.status))).map((a) => a.id)));
@@ -1607,7 +1614,17 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         className="w-full rounded-md border border-[#1d4f6d] bg-[#04121f] px-2.5 py-1.5 text-sm text-white placeholder:text-[#4f7187] focus:border-[#2fd3ff] focus:outline-none" />
       {query.trim().length >= 2 && (
         <div className="mt-2 max-h-48 overflow-y-auto text-sm" aria-live="polite">
-          {matches.length === 0 ? <p className="text-[#8fb6cc]">No device matches “{query}”.</p> : (
+          {roomMatches.length > 0 && (
+            <div className="mb-2">
+              <p className="mb-1 text-xs text-[#8fb6cc]">Rooms</p>
+              {roomMatches.map((r) => (
+                <button key={`r${r.id}`} type="button" onClick={() => focus({ kind: "room", id: r.id })} className="block w-full rounded px-1.5 py-1 text-left hover:bg-[#0c2a40]">
+                  <span className="text-white">{r.name}</span> <span className="text-xs text-[#8fb6cc]">{r.code} · {floorById.get(r.floorId)?.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {matches.length === 0 ? (roomMatches.length ? null : <p className="text-[#8fb6cc]">Nothing matches “{query}”.</p>) : (
             <>
               <p className="mb-1 text-xs text-[#8fb6cc]">{matches.length === 200 ? "200+" : matches.length} found, highlighted in the model</p>
               {matches.slice(0, 50).map((a) => (
@@ -1779,6 +1796,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               </div>
             );
           })()}
+          {!selAsset && floorById.get(selRoom.floorId) && (
+            <FitPanel key={selRoom.id} room={selRoom} floor={floorById.get(selRoom.floorId)!} floorRooms={data.rooms.filter((r) => r.floorId === selRoom.floorId)}
+              models={data.siteModels ?? []} canEdit={!!data.can.editFacility} facilityId={data.facility.id} onOverlay={setOutlines}
+              onToast={(t) => setToast(t)}
+              pickPoint={(done) => { const sc = sceneRef.current; if (!sc) return; sc.isolateFloor(selRoom.floorId, false); setToast({ ok: "Click where the equipment's centre goes." }); sc.pickPoint((p) => done(p)); }} />
+          )}
           <div className="mt-2 flex flex-wrap gap-3">
             <Link href={`/assets?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Room in the asset register</Link>
             {data.can.addAsset && <Link href={`/assets/new?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Add a device here</Link>}

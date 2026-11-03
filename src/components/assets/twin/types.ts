@@ -25,9 +25,13 @@ export type TwinRoom = {
   zone?: "PUBLIC" | "PATIENT" | "STAFF" | "STERILE" | "ISOLATION" | null;
   /** A biomedical workshop (wave 8). */
   workshop?: boolean;
+  /** Site data for equipment planning (wave 9); null/absent = not surveyed. */
+  site?: { ceilingM: number | null; doorWidthM: number | null; doorHeightM: number | null; floorLoadKgM2: number | null; services: { chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number } | null };
   /** Outline in plan units (polygon, or the rectangle turned into 4 points). */
   poly: [number, number][];
 };
+
+export type TwinSiteModel = { id: number; name: string; typeName: string; typical: boolean; verified: boolean; req: import("@/lib/assets/site-fit").SiteReq };
 
 export type TwinDepartment = { id: number; name: string; code: string; color: string };
 
@@ -77,6 +81,8 @@ export type TwinData = {
   unplaced: TwinAsset[];
   /** Manual fixes to the walking network, per floor, plan units (wave 7a). */
   fixes?: TwinFix[];
+  /** Makes and models with site planning data, for "Will it fit?" (wave 9). */
+  siteModels?: TwinSiteModel[];
   /** Published patient pathways of this hospital (wave 7c). */
   flows?: TwinFlowData[];
 };
