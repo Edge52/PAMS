@@ -2,7 +2,7 @@ import { Button, Field, FormGrid, Input, Panel, Select, Textarea } from "@/compo
 import { CURRENCIES, formatNumber } from "@/lib/format";
 import type { BoqWorkspace } from "@/lib/boq/queries";
 import {
-  deleteDepartment, importFacilityDepartments, regenerate, saveDepartment, saveDepartmentAnswers, setDepartmentPriceTier, updateBoqSettings,
+  deleteDepartment, importFacilityDepartments, refreshScopeFromDrawings, regenerate, saveDepartment, saveDepartmentAnswers, setDepartmentPriceTier, updateBoqSettings,
 } from "@/app/boq/actions";
 import { PRICE_TIER_LABELS, PRICE_TIERS } from "@/lib/boq/pricing";
 import { DEPARTMENT_QUESTIONS, FEATURES } from "@/lib/boq/questions";
@@ -25,10 +25,13 @@ export function ScopeTab({ ws, locked, deptTypes, facilities, projects, realDepa
     <div className="space-y-6">
       <Panel title="Departments in scope"
         actions={!locked && (
-          <form action={regenerate}>
-            <input type="hidden" name="boqId" value={boq.id} /><input type="hidden" name="tab" value="scope" />
-            <Button>Regenerate from standard</Button>
-          </form>
+          <span className="flex gap-2">
+            {boq.facilityId && <form action={refreshScopeFromDrawings}><input type="hidden" name="boqId" value={boq.id} /><Button variant="secondary">Update beds and rooms from the drawings</Button></form>}
+            <form action={regenerate}>
+              <input type="hidden" name="boqId" value={boq.id} /><input type="hidden" name="tab" value="scope" />
+              <Button>Regenerate from standard</Button>
+            </form>
+          </span>
         )}>
         <p className="mb-3 text-sm text-muted">
           Edits here change the inputs only. Press &ldquo;Regenerate from standard&rdquo; to recalculate the lines — your overrides and hand-added lines are kept.

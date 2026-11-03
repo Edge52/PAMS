@@ -35,6 +35,8 @@ export async function facilityScope(d: DB, facilityId: number): Promise<ScopeRow
       id: departments.id, type: departments.departmentTypeCode, name: departments.name, beds: departments.beds,
       rooms: sql<number>`count(${rooms.id}) filter (where ${rooms.type} not in (${sql.join(
         NON_CLINICAL_ROOM_TYPES.map((t) => sql`${t}`), sql`, `)}))::int`,
+      // Beds drawn in the rooms (wave 12): used when the department's declared beds are missing or fewer.
+      roomBeds: sql<number>`coalesce(sum(${rooms.beds}), 0)::int`,
     })
     .from(departments)
     .leftJoin(rooms, eq(rooms.departmentId, departments.id))
@@ -43,7 +45,7 @@ export async function facilityScope(d: DB, facilityId: number): Promise<ScopeRow
     .orderBy(departments.id);
   return rows
     .filter((r) => r.type)
-    .map((r) => ({ departmentTypeCode: r.type!, departmentId: r.id, label: r.name, beds: r.beds, rooms: r.rooms, instances: 1 }));
+    .map((r) => ({ departmentTypeCode: r.type!, departmentId: r.id, label: r.name, beds: Math.max(r.beds ?? 0, r.roomBeds ?? 0), rooms: r.rooms, instances: 1 }));
 }
 
 export async function loadRules(d: DB, standardSetId: number): Promise<RuleInput[]> {

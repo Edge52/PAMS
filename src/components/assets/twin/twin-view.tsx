@@ -1819,6 +1819,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           )}
           <div className="mt-2 flex flex-wrap gap-3">
             <Link href={`/assets?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Room in the asset register</Link>
+            <Link href={`/facilities/${data.facility.id}/rooms/${selRoom.id}/sheet`} className="text-sm text-[#5fd6ff] hover:underline">Room data sheet</Link>
             {data.can.addAsset && <Link href={`/assets/new?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Add a device here</Link>}
           </div>
         </div>

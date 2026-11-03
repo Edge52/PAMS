@@ -277,6 +277,8 @@ const LayoutRoom = z.object({
   departmentId: z.number().int().positive().nullable(),
   beds: z.number().int().min(0).max(500),
   x: z.number().min(-1).max(20000), y: z.number().min(-1).max(20000), w: z.number().min(5).max(20000), h: z.number().min(5).max(20000),
+  /** Outline (wave 12): at least 3 corners; null keeps the rectangle. */
+  polygon: z.array(z.tuple([z.number().min(-200000).max(200000), z.number().min(-200000).max(200000)])).min(3).max(2000).nullable().optional(),
 });
 const LayoutSchema = z.object({ floorId: z.number().int().positive(), rooms: z.array(LayoutRoom).max(1000) });
 
@@ -320,8 +322,10 @@ export async function saveFloorLayout(input: unknown): Promise<LayoutResult> {
       // Free codes first so swapping codes between rooms does not trip the unique index.
       for (const r of list) if (r.id) await tx.update(rooms).set({ code: `__tmp_${r.id}` }).where(and(eq(rooms.id, r.id), eq(rooms.floorId, floorId)));
       for (const [i, r] of list.entries()) {
+        const poly = r.polygon ?? null;
+        const box = poly ? (() => { const xs = poly.map((q) => q[0]), ys = poly.map((q) => q[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(5, Math.max(...xs) - Math.min(...xs)), h: Math.max(5, Math.max(...ys) - Math.min(...ys)) }; })() : r;
         const v = { code: r.code, name: r.name, type: r.type as (typeof ROOM_TYPES)[number], departmentId: r.departmentId, beds: r.beds,
-          x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) };
+          x: Math.max(0, Math.round(box.x)), y: Math.max(0, Math.round(box.y)), w: Math.round(box.w), h: Math.round(box.h), ...(r.polygon !== undefined ? { polygon: poly } : {}) };
         if (r.id) {
           await tx.update(rooms).set(v).where(and(eq(rooms.id, r.id), eq(rooms.floorId, floorId)));
           if (r.departmentId) await tx.update(assets).set({ departmentId: r.departmentId }).where(eq(assets.roomId, r.id));
