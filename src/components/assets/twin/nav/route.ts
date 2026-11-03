@@ -20,7 +20,11 @@ export type Place = { floorId: number; x: number; z: number; roomId?: number | n
 export type Leg = { floorId: number; kind: "walk" | "lift" | "stairs"; points: Pt[]; metres: number; seconds: number; estimated?: boolean; via?: string; toFloorId?: number };
 export type Route = { legs: Leg[]; metres: number; seconds: number; floorChanges: number; liftTrips: number; estimated: boolean };
 
-export type LiftLink = { id: number; name: string; kind: LiftKind; waitSeconds: number; stops: Map<number, Pt> };
+export type LiftLink = { id: number; name: string; kind: LiftKind; waitSeconds: number; waitByHour?: number[] | null; stops: Map<number, Pt> };
+
+/** A lift's wait at an hour of the day (its hourly value when set, else its typical wait). */
+export const waitAt = (l: Pick<LiftLink, "waitSeconds" | "waitByHour">, hour?: number | null) =>
+  hour != null && l.waitByHour?.length === 24 && Number.isFinite(l.waitByHour[((Math.floor(hour) % 24) + 24) % 24]) ? l.waitByHour[((Math.floor(hour) % 24) + 24) % 24] : l.waitSeconds;
 export type StairLink = { name: string; stops: Map<number, Pt> };
 
 /* ── On one floor ── */
@@ -153,7 +157,7 @@ export type RouteWorld = {
   stairs: StairLink[];
 };
 
-export function route(world: RouteWorld, a: Place, b: Place, journey: Journey): Route | null {
+export function route(world: RouteWorld, a: Place, b: Place, journey: Journey, hour?: number | null): Route | null {
   const na = world.network(a.floorId), nb = world.network(b.floorId);
   if (!na || !nb) return null;
   if (a.floorId === b.floorId) return summarise([floorRoute(na, a, b, journey)]);
@@ -164,7 +168,7 @@ export function route(world: RouteWorld, a: Place, b: Place, journey: Journey): 
     const p = l.stops.get(a.floorId), q = l.stops.get(b.floorId); if (!p || !q) continue;
     const up = floorRoute(na, a, { floorId: a.floorId, x: p[0], z: p[1] }, journey);
     const down = floorRoute(nb, { floorId: b.floorId, x: q[0], z: q[1] }, b, journey);
-    const ride: Leg = { floorId: a.floorId, toFloorId: b.floorId, kind: "lift", points: [p, q], metres: 0, seconds: l.waitSeconds + storeys * LIFT_STOREY_S, via: l.name };
+    const ride: Leg = { floorId: a.floorId, toFloorId: b.floorId, kind: "lift", points: [p, q], metres: 0, seconds: waitAt(l, hour) + storeys * LIFT_STOREY_S, via: l.name };
     options.push([up, ride, down]);
   }
   if (journey === "foot") for (const st of world.stairs) {

@@ -17,6 +17,7 @@ import {
   checkFlow, FLOW_KIND_LABELS, FLOW_KINDS, STEP_KIND_LABELS, STEP_KINDS, stepVolumes, TRANSPORT_LABELS, TRANSPORTS, URGENCIES, type Step,
 } from "@/lib/flows/model";
 import { equipmentNames, loadFlow, placesOf } from "@/lib/flows/server";
+import { pathwayBuildingIssues } from "@/lib/flows/route-server";
 import { readiness, readinessLine } from "@/lib/flows/readiness";
 import { deleteFlow, deleteLink, deleteStep, newVersionAction, publishFlow, saveFlowDetails, saveLink, saveStep } from "../actions";
 
@@ -42,7 +43,10 @@ export default async function FlowPage({ params, searchParams }: {
 
   const editing = flow.status === "DRAFT" && can(me.role, "flows.edit");
   const mayEdit = can(me.role, "flows.edit");
-  const issues = checkFlow(steps, links);
+  // Structure first, then the checks that need the building (routes, lifts, rooms removed by a drawing update).
+  const structural = checkFlow(steps, links);
+  const building = structural.some((i) => i.level === "error") ? [] : await pathwayBuildingIssues(flow.facilityId, steps, links, flow.arrivalProfile).catch(() => []);
+  const issues = [...structural, ...building].sort((a, b) => (a.level === b.level ? 0 : a.level === "error" ? -1 : 1));
   const errors = issues.filter((i) => i.level === "error");
   const problems = new Set(issues.filter((i) => i.stepKey).map((i) => i.stepKey!));
   const volumes = flow.dailyVolume ? stepVolumes(steps, links, flow.dailyVolume) : null;
@@ -75,6 +79,7 @@ export default async function FlowPage({ params, searchParams }: {
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={tone}>{statusLabel}</Badge>
             {flow.status !== "ARCHIVED" && <a href={`/assets/3d?facilityId=${flow.facilityId}&flow=${[flow.id, ...versions.filter((v) => v.status === "PUBLISHED" && v.id !== flow.id).map((v) => v.id)].join(",")}`} className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Show in 3D</a>}
+            <Link href={`/flows/${flow.id}/sheet`} className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Print sheet</Link>
             <a href={`/flows/${flow.id}/export`} download className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Export file</a>
             {editing && (
               <form action={publishFlow}><input type="hidden" name="flowId" value={flow.id} />
@@ -109,7 +114,8 @@ export default async function FlowPage({ params, searchParams }: {
           <ul className="space-y-1 text-sm">
             {issues.map((i, n) => (
               <li key={n} className="flex gap-2"><Badge tone={i.level === "error" ? "danger" : "warn"}>{i.level === "error" ? "Fix" : "Check"}</Badge>
-                <span>{i.message}{editing && i.stepKey && <> <Link href={`?edit=${i.stepKey}#step-form`} className="text-primary hover:underline">Edit step</Link></>}</span></li>
+                <span>{i.message}{editing && i.stepKey && <> <Link href={`?edit=${i.stepKey}#step-form`} className="text-primary hover:underline">Edit step</Link></>}
+                  {"floorId" in i && i.floorId != null && <> <Link href={`/assets/3d?facilityId=${flow.facilityId}&floorId=${i.floorId}`} className="text-primary hover:underline">Fix in 3D</Link></>}</span></li>
             ))}
           </ul>
         </Panel>

@@ -16,6 +16,7 @@ import { firstError, formObject, id, int, oneOf, reqId, reqText, text, type Form
 import { checkFlow, FLOW_KINDS, nextKey, STEP_KINDS, TRANSPORTS, URGENCIES } from "@/lib/flows/model";
 import { resolveStarter, STARTERS } from "@/lib/flows/starters";
 import { createFlow, loadFlow, newVersion, resolveFile, type FlowFile } from "@/lib/flows/server";
+import { pathwayBuildingIssues } from "@/lib/flows/route-server";
 
 const page = (fid: number, notice?: string, error?: string) =>
   `/flows/${fid}${notice ? `?notice=${encodeURIComponent(notice)}` : error ? `?error=${encodeURIComponent(error)}` : ""}`;
@@ -111,18 +112,20 @@ export async function saveStep(_: FormState, fd: FormData): Promise<FormState> {
   const d = p.data;
   // The room must be in this hospital; its department fills in when none is chosen.
   let departmentId = d.departmentId ?? null;
+  let roomRef: { roomCode: string | null; roomLabel: string | null } = { roomCode: null, roomLabel: null };
   if (d.roomId) {
-    const [r] = await db.select({ dept: rooms.departmentId, fac: buildings.facilityId }).from(rooms).innerJoin(floors, eq(floors.id, rooms.floorId))
+    const [r] = await db.select({ dept: rooms.departmentId, fac: buildings.facilityId, code: rooms.code, name: rooms.name }).from(rooms).innerJoin(floors, eq(floors.id, rooms.floorId))
       .innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(eq(rooms.id, d.roomId));
     if (!r || r.fac !== flow.facilityId) return { error: "That room isn't in this hospital." };
     departmentId ??= r.dept;
+    roomRef = { roomCode: r.code, roomLabel: r.name };
   }
   if (departmentId) {
     const [dep] = await db.select({ fac: departments.facilityId }).from(departments).where(eq(departments.id, departmentId));
     if (!dep || dep.fac !== flow.facilityId) return { error: "That department isn't in this hospital." };
   }
   const equipment = (d.equipment ?? "").split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
-  const values = { label: d.label, kind: d.kind ?? "STEP", departmentId, roomId: d.roomId ?? null, minutes: d.minutes ?? null, accompanying: d.accompanying ?? null, equipment, notes: d.notes ?? null };
+  const values = { label: d.label, kind: d.kind ?? "STEP", departmentId, roomId: d.roomId ?? null, ...roomRef, minutes: d.minutes ?? null, accompanying: d.accompanying ?? null, equipment, notes: d.notes ?? null };
   if (d.key) {
     await db.update(flowSteps).set(values).where(and(eq(flowSteps.flowId, flow.id), eq(flowSteps.key, d.key)));
   } else {
@@ -184,7 +187,8 @@ export async function deleteLink(fd: FormData) {
 export async function publishFlow(fd: FormData) {
   const { flow, me } = await editable(Number(fd.get("flowId")));
   const f = (await loadFlow(flow.id))!;
-  const errors = checkFlow(f.steps, f.links).filter((i) => i.level === "error");
+  let errors = checkFlow(f.steps, f.links).filter((i) => i.level === "error");
+  if (!errors.length) errors = (await pathwayBuildingIssues(flow.facilityId, f.steps, f.links, flow.arrivalProfile)).filter((i) => i.level === "error");
   if (errors.length) redirect(page(flow.id, undefined, `Fix ${errors.length} problem${errors.length === 1 ? "" : "s"} before publishing: ${errors[0].message}`));
   await db.update(patientFlows).set({ status: "ARCHIVED" })
     .where(and(eq(patientFlows.lineageId, flow.lineageId ?? flow.id), eq(patientFlows.status, "PUBLISHED"), ne(patientFlows.id, flow.id)));

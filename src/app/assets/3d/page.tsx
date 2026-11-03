@@ -95,7 +95,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     fixes: floorIds.length ? (await db.select().from(routeFixes).where(inArray(routeFixes.floorId, floorIds)))
       .map((f) => ({ id: f.id, floorId: f.floorId, kind: f.kind, x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2, note: f.note, by: f.createdByName })) : [],
     lifts: (await db.select().from(liftCores).where(eq(liftCores.facilityId, facility.id)).orderBy(asc(liftCores.name)))
-      .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, cars: l.cars, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
+      .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, cars: l.cars, waitSeconds: l.waitSeconds, waitByHour: l.waitByHour ?? null, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
   };
   const views = await db.select().from(twinViews)
     .where(sql`${twinViews.facilityId} = ${facility.id} and (${twinViews.shared} or ${twinViews.createdById} = ${me.id})`).orderBy(asc(twinViews.name));

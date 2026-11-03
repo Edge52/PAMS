@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { facilities } from "@/db/schema";
+import { facilities, flowSteps, patientFlows, rooms } from "@/db/schema";
 import { Badge, Button, EmptyState, Field, LinkButton, PageHeader, Panel, Stat, Table, Td, Th, THead } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { Notice } from "@/components/assets/bits";
@@ -33,6 +33,11 @@ export default async function DrawingsPage({ params, searchParams }: { params: P
   const plan = b ? await planFor(db, fac.id, b) : null;
   const base = `/facilities/${fac.id}`;
   const order: RoomChangeKind[] = ["kept", "removed", "added", "renamed", "reshaped", "department"];
+  // Pathway steps in rooms this update removes (wave 8): they'll need a new room before the pathway can be published.
+  const removedIds = plan ? plan.changes.filter((c) => c.kind === "removed" && c.roomId != null).map((c) => c.roomId!) : [];
+  const affected = removedIds.length ? await db.select({ flowId: patientFlows.id, flow: patientFlows.name, version: patientFlows.version, status: patientFlows.status, step: flowSteps.label, room: rooms.name })
+    .from(flowSteps).innerJoin(patientFlows, eq(patientFlows.id, flowSteps.flowId)).innerJoin(rooms, eq(rooms.id, flowSteps.roomId))
+    .where(and(inArray(flowSteps.roomId, removedIds), ne(patientFlows.status, "ARCHIVED"))) : [];
 
   return (
     <>
@@ -78,6 +83,14 @@ export default async function DrawingsPage({ params, searchParams }: { params: P
             <p className="rounded-[var(--radius-control)] bg-warn-soft px-3 py-2 text-sm text-warn">
               {plan.counts.kept} room{plan.counts.kept === 1 ? " is" : "s are"} no longer in the drawing but still hold equipment. They&apos;re kept; move their devices, then remove the rooms.
             </p>
+          )}
+          {affected.length > 0 && (
+            <Panel title={`Pathways affected (${new Set(affected.map((a) => a.flowId)).size})`} className="mb-5">
+              <p className="mb-2 text-sm text-muted">These steps are in rooms this update removes. After applying, each needs its new room before the pathway can be published again.</p>
+              <ul className="space-y-1 text-sm">
+                {affected.map((a, i) => <li key={i}><Link href={`/flows/${a.flowId}`} className="font-semibold text-primary hover:underline">{a.flow} v{a.version}</Link> · {a.step} in {a.room}{a.status === "PUBLISHED" ? " (published)" : ""}</li>)}
+              </ul>
+            </Panel>
           )}
           <Panel title={`Changes (${plan.changes.length})`}>
             {plan.changes.length === 0 ? <EmptyState title="No changes">The rooms in this file match the hospital&apos;s rooms. Applying only refreshes the walls and doors.</EmptyState> : (

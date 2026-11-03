@@ -20,7 +20,7 @@ export class RouteService {
     for (const f of data.fixes ?? []) (this.fixes.get(f.floorId) ?? this.fixes.set(f.floorId, []).get(f.floorId)!).push(f);
     const s = (floorId: number) => 1 / (data.floors.find((f) => f.id === floorId)?.unitsPerMetre || 10);
     this.lifts = data.lifts.map((l) => ({
-      id: l.id, name: l.name, kind: l.kind, waitSeconds: 45,
+      id: l.id, name: l.name, kind: l.kind, waitSeconds: l.waitSeconds ?? 45, waitByHour: l.waitByHour ?? null,
       stops: new Map(l.stops.map((st) => [st.floorId, [st.x * s(st.floorId), st.y * s(st.floorId)] as Pt])),
     }));
     this.stairs = stairsFrom(data.rooms.filter((r) => /\bstair/i.test(r.name) && r.poly.length >= 3).map((r) => {
@@ -88,9 +88,9 @@ export class RouteService {
     };
   }
 
-  async route(a: Place, b: Place, journey: Journey): Promise<Route | null> {
+  async route(a: Place, b: Place, journey: Journey, hour?: number | null): Promise<Route | null> {
     await Promise.all([this.network(a.floorId), this.network(b.floorId)]);
-    return route(this.world(), a, b, journey);
+    return route(this.world(), a, b, journey, hour);
   }
 
   /** A route through several rooms in order (a pathway's steps). */

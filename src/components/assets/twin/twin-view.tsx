@@ -603,7 +603,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           const a = roomOf.get(l.fromKey), b = roomOf.get(l.toKey);
           if (!a || !b) return null;
           const [pa, pb] = await Promise.all([routes.roomPlace(a.id), routes.roomPlace(b.id)]);
-          return pa && pb ? routes.route(pa, pb, journeyOf(l.transport)) : null;
+          // Lift waits at the pathway's busiest hour.
+          const prof = f.arrivalProfile?.length === 24 ? f.arrivalProfile : null;
+          return pa && pb ? routes.route(pa, pb, journeyOf(l.transport), prof ? prof.indexOf(Math.max(...prof)) : null) : null;
         })));
       }
       if (!live) return;
@@ -930,7 +932,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       const start = await routes.roomPlace(fromRoomId); if (!start) return;
       const withRoutes = await Promise.all(rough.map(async (r) => {
         const sp = s.spotOfAsset(r.id); const a = assetById.get(r.id);
-        const rt = sp ? await routes.route(start, { floorId: sp.floorId, x: sp.x, z: sp.z, roomId: a?.roomId ?? null }, "foot") : null;
+        const rt = sp ? await routes.route(start, { floorId: sp.floorId, x: sp.x, z: sp.z, roomId: a?.roomId ?? null }, "foot", new Date().getHours()) : null;
         return { ...r, route: rt, distance: rt ? rt.metres : r.distance };
       }));
       withRoutes.sort((p, q) => (p.route && !p.route.estimated ? p.route.seconds : 1e9 + p.distance) - (q.route && !q.route.estimated ? q.route.seconds : 1e9 + q.distance));

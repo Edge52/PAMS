@@ -32,6 +32,8 @@ export type TwinDepartment = { id: number; name: string; code: string; color: st
 /** A declared lift core (Facilities › Lifts) and where it stops on each floor (plan units of that floor). */
 export type TwinLift = {
   id: number; name: string; kind: "BED" | "PUBLIC" | "SERVICE" | "AGV"; inferred: boolean; cars: number;
+  /** Typical wait (seconds), and per hour of day when set (wave 8). */
+  waitSeconds?: number; waitByHour?: number[] | null;
   stops: { floorId: number; x: number; y: number }[];
 };
 

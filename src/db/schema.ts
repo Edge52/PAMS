@@ -994,6 +994,9 @@ export const flowSteps = pgTable("flow_steps", {
   kind: flowStepKind("kind").notNull().default("STEP"),
   departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
   roomId: integer("room_id").references(() => rooms.id, { onDelete: "set null" }),
+  /** The room's code and name when it was chosen (wave 8): if a drawing update removes the room, the step says which. */
+  roomCode: varchar("room_code", { length: 32 }),
+  roomLabel: text("room_label"),
   minutes: integer("minutes"),
   accompanying: text("accompanying"),
   /** Device type codes needed at this step (e.g. "LIF-VEN-TRN"). */
@@ -1039,6 +1042,8 @@ export const liftCores = pgTable("lift_cores", {
   carCapacity: integer("car_capacity"),
   /** Typical wait for a car, seconds (an assumption until measured). */
   waitSeconds: integer("wait_seconds").notNull().default(45),
+  /** Wait per hour of the day (24 values, seconds), when it varies (morning peaks); null = `waitSeconds` all day. */
+  waitByHour: jsonb("wait_by_hour").$type<number[]>(),
   /** Suggested from the drawings and not yet confirmed by a person. */
   inferred: boolean("inferred").notNull().default(false),
   note: text("note"),

@@ -169,6 +169,20 @@
       "when": 1793658155664,
       "tag": "0023_wave7_room_kits",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793665227978,
+      "tag": "0024_wave8_step_room_refs",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793665304491,
+      "tag": "0025_wave8_lift_wait_by_hour",
+      "breakpoints": true
     }
   ]
 }
