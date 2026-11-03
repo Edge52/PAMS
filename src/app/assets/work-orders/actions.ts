@@ -9,7 +9,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, deviceTypes, maintenanceEvents, recallAssets, twinNotes, users, workOrders } from "@/db/schema";
+import { assets, deviceTypes, documents, maintenanceEvents, recallAssets, twinNotes, users, workOrders } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { firstError, formObject, isoDate, num, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
@@ -86,8 +86,15 @@ export async function reportFaultAction(_: FormState, fd: FormData): Promise<For
     await logActivity("work_order", row.id, "reported", `Reported by ${me.name}: ${d.title}${d.deviceDown ? " (device out of use)" : ""}`, me.name, tx);
     await logActivity("asset", a.id, "work_order", `${row.number} reported — ${d.title}`, me.name, tx);
     await applyAssetEffect("report", row, { actor: me.name }, tx);
-    if (d.noteId) await tx.update(twinNotes).set({ workOrderId: row.id })
-      .where(and(eq(twinNotes.id, d.noteId), eq(twinNotes.facilityId, a.facilityId), isNull(twinNotes.workOrderId)));
+    if (d.noteId) {
+      const linked = await tx.update(twinNotes).set({ workOrderId: row.id })
+        .where(and(eq(twinNotes.id, d.noteId), eq(twinNotes.facilityId, a.facilityId), isNull(twinNotes.workOrderId))).returning({ id: twinNotes.id });
+      // The note's photos go with it (wave 8): same files, listed on the job too.
+      if (linked.length) {
+        const ph = await tx.select().from(documents).where(and(eq(documents.entityType, "twin_note"), eq(documents.entityId, d.noteId)));
+        if (ph.length) await tx.insert(documents).values(ph.map((p) => ({ entityType: "work_order", entityId: row.id, kind: "photo", fileName: p.fileName, sizeBytes: p.sizeBytes, url: p.url })));
+      }
+    }
     return row;
   });
 

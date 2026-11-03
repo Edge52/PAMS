@@ -20,7 +20,7 @@ export const FINISH_COLORS: Record<Finish, string> = {
 export type Model =
   | "bed" | "bedside" | "chair" | "armchair" | "sofa" | "desk" | "workstation" | "counter" | "shelving" | "cabinet" | "wc" | "basin"
   | "shower" | "or-table" | "or-light" | "anaesthesia" | "trolley" | "incubator" | "cot" | "couch" | "dental-chair" | "ct" | "xray"
-  | "waiting-row" | "meeting-table" | "dining-set" | "lab-bench" | "fridge" | "monitor" | "ventilator" | "iv-pole" | "plant" | "washer";
+  | "waiting-row" | "meeting-table" | "dining-set" | "lab-bench" | "fridge" | "monitor" | "ventilator" | "iv-pole" | "plant" | "washer" | "person";
 
 /** Footprint (width along the wall × depth into the room, metres) and how the item is placed. */
 export const MODEL_SIZE: Record<Model, { w: number; d: number; place: "wall" | "centre" | "free" }> = {
@@ -35,6 +35,7 @@ export const MODEL_SIZE: Record<Model, { w: number; d: number; place: "wall" | "
   "meeting-table": { w: 1.2, d: 2.4, place: "centre" }, "dining-set": { w: 1.6, d: 1.6, place: "centre" }, "lab-bench": { w: 2.4, d: 0.75, place: "wall" },
   fridge: { w: 0.7, d: 0.7, place: "wall" }, monitor: { w: 0.5, d: 0.4, place: "free" }, ventilator: { w: 0.55, d: 0.55, place: "free" },
   "iv-pole": { w: 0.45, d: 0.45, place: "free" }, plant: { w: 0.6, d: 0.6, place: "wall" }, washer: { w: 0.8, d: 0.8, place: "wall" },
+  person: { w: 0.5, d: 0.35, place: "centre" },
 };
 
 /** A kit line: a model, how many (fixed, or one per so many m²), and an optional companion placed beside each one. */

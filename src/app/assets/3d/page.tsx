@@ -1,7 +1,7 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, patientFlows, rooms, routeFixes, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
+import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, liftCores, patientFlows, documents, rooms, routeFixes, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
 import { noteOf } from "@/lib/assets/twin-notes";
 import { equipmentNames, loadFlow } from "@/lib/flows/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
@@ -103,6 +103,11 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
   const notes = (await db.select().from(twinNotes)
     .where(sql`${twinNotes.facilityId} = ${facility.id} and (${twinNotes.status} = 'OPEN' or ${twinNotes.closedAt} > now() - interval '30 days')`)
     .orderBy(sql`${twinNotes.createdAt} desc`).limit(500)).map(noteOf);
+  if (notes.length) {
+    const photos = await db.select({ id: documents.id, entityId: documents.entityId, url: documents.url, name: documents.fileName }).from(documents)
+      .where(sql`${documents.entityType} = 'twin_note' and ${inArray(documents.entityId, notes.map((n) => n.id))}`);
+    for (const n of notes) n.photos = photos.filter((p) => p.entityId === n.id).map(({ id, url, name }) => ({ id, url, name }));
+  }
   const people = await db.select({ id: users.id, name: users.name }).from(users)
     .where(sql`${users.active} and (${users.allFacilities} or ${users.role} = 'ADMIN' or exists(select 1 from ${userFacilities} uf where uf.user_id = ${users.id} and uf.facility_id = ${facility.id}))`)
     .orderBy(asc(users.name));

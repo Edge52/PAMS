@@ -5,23 +5,26 @@ import "server-only";
  */
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, boqs, disposals, serviceContracts, workOrders, deliveries, documents, offers, projects, purchaseOrders, rfqs, techSpecs } from "@/db/schema";
+import { assets, boqs, disposals, facilities, twinNotes, serviceContracts, workOrders, deliveries, documents, offers, projects, purchaseOrders, rfqs, techSpecs } from "@/db/schema";
 import { can, type Permission } from "./auth/permissions";
 import { facilityScope, getCurrentUser, requireFacilityAccess, requirePermission, type CurrentUser } from "./auth/session";
 
-export const ENTITY_TYPES = ["offer", "po", "asset", "spec", "supplier", "project", "delivery", "boq", "rfq", "work_order", "contract", "disposal"] as const;
+export const ENTITY_TYPES = ["offer", "po", "asset", "spec", "supplier", "project", "delivery", "boq", "rfq", "work_order", "contract", "disposal", "twin_note", "facility"] as const;
 type EntityType = (typeof ENTITY_TYPES)[number];
 
 /** Which module's read permission covers each kind of record's attachments. */
 export const VIEW_PERMISSION: Record<EntityType, Permission> = {
   offer: "procurement.view", po: "procurement.view", asset: "assets.view", spec: "procurement.view", supplier: "procurement.view",
   project: "procurement.view", delivery: "procurement.view", boq: "boq.view", rfq: "procurement.view", work_order: "assets.view", contract: "assets.view", disposal: "assets.view",
+  twin_note: "assets.view", facility: "assets.view",
 };
 
 /** Who may attach to / remove from each kind of record. */
 export const EDIT_PERMISSION: Record<EntityType, Permission> = {
   offer: "offers.edit", po: "po.create", asset: "assets.edit", spec: "specs.edit", supplier: "suppliers.edit",
   project: "procurement.edit", delivery: "goods.receive", boq: "boq.edit", rfq: "procurement.edit", work_order: "maintenance.edit", contract: "contracts.edit", disposal: "assets.dispose",
+  // Notes (wave 8): anyone who can add notes may add photos. Hospital documents (saved renders): facility editors.
+  twin_note: "assets.view", facility: "facilities.edit",
 };
 
 /** The facility a record belongs to (null = none, visible to all), or undefined when the record doesn't exist. */
@@ -38,6 +41,8 @@ export async function facilityOfEntity(entityType: string, id: number): Promise<
     case "disposal": return one(db.select({ f: disposals.facilityId }).from(disposals).where(eq(disposals.id, id)));
     case "contract": return one(db.select({ f: serviceContracts.facilityId }).from(serviceContracts).where(eq(serviceContracts.id, id)));
     case "work_order": return one(db.select({ f: workOrders.facilityId }).from(workOrders).where(eq(workOrders.id, id)));
+    case "twin_note": return one(db.select({ f: twinNotes.facilityId }).from(twinNotes).where(eq(twinNotes.id, id)));
+    case "facility": return one(db.select({ f: facilities.id }).from(facilities).where(eq(facilities.id, id)));
     case "delivery": return one(db.select({ f: purchaseOrders.facilityId }).from(deliveries).innerJoin(purchaseOrders, eq(purchaseOrders.id, deliveries.poId)).where(eq(deliveries.id, id)));
     default: return null; // suppliers have no facility
   }

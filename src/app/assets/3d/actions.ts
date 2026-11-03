@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, buildings, floors, rooms, routeFixes, twinNotes, twinTours, twinViews, users, type TourStop } from "@/db/schema";
+import { assets, buildings, documents, floors, rooms, routeFixes, twinNotes, twinTours, twinViews, users, type TourStop } from "@/db/schema";
 import type { TwinFix, TwinRoom } from "@/components/assets/twin/types";
 import { can } from "@/lib/auth/permissions";
 import { decodeView } from "@/components/assets/twin/view-state";
@@ -15,6 +15,7 @@ import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { firstError, formObject, reqId, text } from "@/lib/assets/forms";
 import { moveAsset } from "@/lib/assets/mutations";
 import { notifyUsers } from "@/lib/notifications";
+import { fileKind, storeFile } from "@/lib/storage";
 import { noteOf, type TwinNote } from "@/lib/assets/twin-notes";
 import { pointInPolygon, rectPoly, type Pt } from "@/components/assets/twin/geometry";
 
@@ -326,4 +327,39 @@ export async function setWorkshopAction(_: FixActionState, fd: FormData): Promis
   const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
   await db.update(rooms).set({ workshop: on }).where(eq(rooms.id, r.id));
   return { ok: on ? `${r.name} is marked as a workshop: work orders show the route from it.` : `${r.name} is no longer a workshop.`, roomId: r.id };
+}
+
+/* ── Photos on notes (wave 8, A8) ── */
+
+export type NotePhoto = { id: number; url: string; name: string };
+export type PhotoActionState = { ok?: string; error?: string; noteId?: number; photo?: NotePhoto } | null;
+
+/** Attach a photo (camera or file) to a note: anyone who may see the hospital, like notes themselves. */
+export async function addNotePhotoAction(_: PhotoActionState, fd: FormData): Promise<PhotoActionState> {
+  const me = await requirePermission("assets.view");
+  const noteId = Number(fd.get("noteId")); const file = fd.get("photo");
+  const [n] = Number.isInteger(noteId) ? await db.select({ id: twinNotes.id, facilityId: twinNotes.facilityId }).from(twinNotes).where(eq(twinNotes.id, noteId)) : [];
+  if (!n) return { error: "That note no longer exists." };
+  await requireFacilityAccess(n.facilityId, me);
+  if (!(file instanceof File) || !file.size) return { error: "Choose a photo." };
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || !fileKind(file.name)?.mime.startsWith("image/")) return { error: "Photos must be JPEG, PNG, WebP or GIF." };
+  if (file.size > 10 * 1024 * 1024) return { error: "Keep photos under 10 MB." };
+  const url = await storeFile(`twin_note/${n.id}`, file.name, new Uint8Array(await file.arrayBuffer()));
+  const [doc] = await db.insert(documents).values({ entityType: "twin_note", entityId: n.id, kind: "photo", fileName: file.name, sizeBytes: file.size, url }).returning({ id: documents.id });
+  return { ok: "Photo added.", noteId: n.id, photo: { id: doc.id, url, name: file.name } };
+}
+
+/** Keep a render (or a floor book) in the hospital's documents (wave 8, A10). Needs facilities.edit. */
+export async function saveRenderDocumentAction(_: PhotoActionState, fd: FormData): Promise<PhotoActionState> {
+  const me = await requirePermission("facilities.edit");
+  const facilityId = Number(fd.get("facilityId")); const file = fd.get("file");
+  if (!Number.isInteger(facilityId) || facilityId <= 0) return { error: "Choose a hospital." };
+  await requireFacilityAccess(facilityId, me);
+  if (!(file instanceof File) || !file.size) return { error: "Nothing to save." };
+  const kind = fileKind(file.name);
+  if (!kind || !/^(image\/(png|jpeg)|application\/(pdf|zip))$/.test(kind.mime)) return { error: "Renders are saved as PNG, JPEG, PDF or ZIP." };
+  if (file.size > 25 * 1024 * 1024) return { error: "That file is over 25 MB; save a smaller size or a JPEG." };
+  const url = await storeFile(`facility/${facilityId}`, file.name, new Uint8Array(await file.arrayBuffer()));
+  const [doc] = await db.insert(documents).values({ entityType: "facility", entityId: facilityId, kind: kind.mime.startsWith("image/") ? "photo" : "other", fileName: file.name, sizeBytes: file.size, url }).returning({ id: documents.id });
+  return { ok: `${file.name} saved to the hospital's documents.`, photo: { id: doc.id, url, name: file.name } };
 }

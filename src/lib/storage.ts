@@ -55,7 +55,7 @@ export function safeFileName(name: string): string {
  * `folder` is built by our code (e.g. "offer/12", "plans"); it is still validated.
  */
 export async function storeFile(folder: string, originalName: string, bytes: Uint8Array): Promise<string> {
-  if (!/^[a-z]+(\/\d+)?$/.test(folder)) throw new Error("Invalid storage folder");
+  if (!/^[a-z]+(_[a-z]+)*(\/\d+)?$/.test(folder)) throw new Error("Invalid storage folder"); // e.g. "offer/12", "work_order/3"
   if (!fileKind(originalName)) throw new Error(`Upload ${ALLOWED_EXTENSIONS_LABEL}.`);
   const dir = path.join(UPLOAD_ROOT, folder);
   await mkdir(dir, { recursive: true });

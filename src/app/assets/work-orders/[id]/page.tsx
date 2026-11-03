@@ -93,7 +93,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
         title={<span className="flex flex-wrap items-center gap-2">{wo.number} <StatusBadge value={wo.status} /> <StatusBadge value={wo.priority} />{late && <Badge tone="danger">Past response target</Badge>}</span>}
         description={wo.title}
         actions={<>
-          {r.roomId && <LinkButton href={`/assets/3d?assetId=${wo.assetId}`} variant="ghost">Show in 3D</LinkButton>}
+          {r.roomId && <LinkButton href={`/assets/3d?facilityId=${wo.facilityId}&assetId=${wo.assetId}`} variant="ghost">Show in 3D</LinkButton>}
           <LinkButton href={`/assets/${wo.assetId}`}>Open device</LinkButton>
         </>} />
       <Notice sp={sp} />

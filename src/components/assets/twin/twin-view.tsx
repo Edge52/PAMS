@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { addRouteFixAction, deleteRouteFixAction, setRoomZoneAction, setWorkshopAction, addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
+import { addNotePhotoAction, addRouteFixAction, deleteRouteFixAction, setRoomZoneAction, setWorkshopAction, addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
 import { formatDims } from "@/lib/assets/dimensions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
@@ -24,6 +24,7 @@ import type { PathDraw } from "./scene";
 import { readiness, readinessLine } from "@/lib/flows/readiness";
 import type { TwinNote } from "@/lib/assets/twin-notes";
 import { NoteComposer, NoteList } from "./notes";
+import { JobRibbon } from "./job-ribbon";
 import { EVENT_COLORS, EVENT_LABELS, eventsAt, perDay, shortcutFor, SHORTCUTS, type TimeEvent } from "./timeline";
 
 const LIVE_EVERY_MS = 60_000;
@@ -722,6 +723,13 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     const fd = new FormData(); fd.set("noteId", String(n.id));
     const res = await deleteNoteAction(null, fd);
     if (res?.deletedId) setNotes((l) => l.filter((x) => x.id !== n.id));
+    setToast(res ? { ok: res.ok, error: res.error } : null);
+  }
+  async function notePhoto(n: TwinNote, file: File) {
+    const fd = new FormData(); fd.set("noteId", String(n.id)); fd.set("photo", file);
+    setToast({ ok: "Uploading the photo…" });
+    const res = await addNotePhotoAction(null, fd);
+    if (res?.photo) setNotes((l) => l.map((x) => (x.id === n.id ? { ...x, photos: [...(x.photos ?? []), res.photo!] } : x)));
     setToast(res ? { ok: res.ok, error: res.error } : null);
   }
   function focusNote(n: TwinNote) {
@@ -1619,7 +1627,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const notesBlock = (
     <div className="mt-3 border-t border-[#123a55] pt-2">
       <p className="text-[13px] font-semibold text-[#5fd6ff]">Notes{selNotes.length ? ` (${selNotes.length})` : ""}</p>
-      {selNotes.length > 0 && <div className="mt-1"><NoteList notes={selNotes} whereOf={noteWhere} me={me} canReport={data.can.report} onFocus={focusNote} onStatus={noteStatus} onDelete={noteDelete} /></div>}
+      {selNotes.length > 0 && <div className="mt-1"><NoteList notes={selNotes} whereOf={noteWhere} me={me} canReport={data.can.report} onFocus={focusNote} onStatus={noteStatus} onDelete={noteDelete} onPhoto={notePhoto} /></div>}
       {composer && composer.floorId && (composer.assetId ? composer.assetId === selAsset?.id : composer.roomId === selRoom?.id && !selAsset) ? (
         <div className="mt-1.5"><NoteComposer where={composer.where} people={people} busy={noteBusy} onSave={saveNote} onCancel={() => setComposer(null)} /></div>
       ) : <button type="button" onClick={noteOnSelection} className="twin-act mt-1.5">Add a note {selAsset ? "on this device" : "in this room"}</button>}
@@ -1635,7 +1643,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       </div>
       {pickingSpot && <p className="text-xs text-[#ffc46b]">Click the spot on the floor shown.</p>}
       {composerOnSpot && <NoteComposer where={composer!.where} people={people} busy={noteBusy} onSave={saveNote} onCancel={() => setComposer(null)} />}
-      <NoteList notes={shownNotes} whereOf={noteWhere} me={me} canReport={data.can.report} onFocus={focusNote} onStatus={noteStatus} onDelete={noteDelete} />
+      <NoteList notes={shownNotes} whereOf={noteWhere} me={me} canReport={data.can.report} onFocus={focusNote} onStatus={noteStatus} onDelete={noteDelete} onPhoto={notePhoto} />
       <p className="text-[11px] text-[#8fb6cc]">Select a room or device to add a note to it. Anyone who can see this hospital can add notes; the person a note is for gets a notification.</p>
     </div>
   );
@@ -1663,6 +1671,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             {data.can.maintain && <Link href={`/assets/${selAsset.id}#record-maintenance`} className="twin-act">Record maintenance</Link>}
             {(live.get(selAsset.id)?.openJobs ?? 0) > 0 && <Link href={`/assets/work-orders?tab=all&q=${encodeURIComponent(selAsset.tag)}`} className="twin-act">Open jobs</Link>}
           </div>
+          <JobRibbon assetId={selAsset.id} refreshKey={`${liveAt}-${live.get(selAsset.id)?.openJobs ?? 0}`} />
           {data.can.move && (
             <div className="mt-3 space-y-2 border-t border-[#123a55] pt-2">
               <details>
@@ -2024,6 +2033,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         </div>
       )}
       {renderOpen && <RenderPanel data={{ ...data, assets: assetList }} floorId={floorId} plans={plans} initial={renderInit}
+        liveCamera={sceneRef.current?.getCamera() ?? null} canSaveDocs={!!data.can.editFacility}
         onClose={() => { setRenderOpen(false); setRenderInit(null); }}
         onSaveView={async (name, shared, settings) => {
           const v = currentView(); if (!v) return "The model isn't ready.";

@@ -4,6 +4,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, buildings, departments, departmentTypes, facilities, floors, liftCores, rooms, routeFixes } from "@/db/schema";
 import { networkCoverage } from "@/lib/flows/route-server";
+import { DocumentsPanel } from "@/components/documents-panel";
 import {
   Badge, Button, Details, EmptyState, Field, FormGrid, Input, LinkButton, PageHeader, Panel, Stat, StatusBadge, TabLinks, Table, Td, Th, THead,
 } from "@/components/ui";
@@ -176,6 +177,8 @@ async function Overview({ fac, edit, canEdit, canAddAssets }: { fac: typeof faci
           ]} />
         )}
       </Panel>
+      <DocumentsPanel entityType="facility" entityId={fac.id} returnPath={`/facilities/${fac.id}`} title="Hospital documents" kinds={["photo", "other", "manual", "certificate"]}
+        emptyHint="Renders and floor books saved from the 3D view land here; you can also attach plans or certificates." />
     </div>
   );
 }
