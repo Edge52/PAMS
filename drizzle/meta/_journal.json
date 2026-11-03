@@ -183,6 +183,13 @@
       "when": 1793665304491,
       "tag": "0025_wave8_lift_wait_by_hour",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793665643307,
+      "tag": "0026_wave8_workshop",
+      "breakpoints": true
     }
   ]
 }

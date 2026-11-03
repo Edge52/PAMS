@@ -85,7 +85,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
       unitsPerMetre: f.unitsPerMetre ?? 10, hasCad: Boolean(hasCad),
     })),
     rooms: roomRows.filter((r) => r.type !== "CORRIDOR" || r.polygon).map((r) => ({
-      id: r.id, floorId: r.floorId, code: r.code, name: r.name, type: r.type, departmentId: r.departmentId, zone: r.zone,
+      id: r.id, floorId: r.floorId, code: r.code, name: r.name, type: r.type, departmentId: r.departmentId, zone: r.zone, workshop: r.workshop,
       poly: r.polygon && r.polygon.length >= 3 ? r.polygon : rectPoly(r.x, r.y, r.w, r.h),
     })),
     departments: deptRows.map((d, i) => ({ ...d, color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] })),

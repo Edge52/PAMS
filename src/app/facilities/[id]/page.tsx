@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, buildings, departments, departmentTypes, facilities, floors, liftCores, rooms } from "@/db/schema";
+import { assets, buildings, departments, departmentTypes, facilities, floors, liftCores, rooms, routeFixes } from "@/db/schema";
+import { networkCoverage } from "@/lib/flows/route-server";
 import {
   Badge, Button, Details, EmptyState, Field, FormGrid, Input, LinkButton, PageHeader, Panel, Stat, StatusBadge, TabLinks, Table, Td, Th, THead,
 } from "@/components/ui";
@@ -44,7 +45,7 @@ export default async function FacilityPage({ params, searchParams }: { params: P
   await requireFacilityAccess(fac.id, me);
   const canEdit = can(me.role, "facilities.edit");
   const canAddAssets = can(me.role, "assets.edit");
-  const tab = (["overview", "buildings", "departments", "rooms", "lifts"] as const).find((t) => t === one(sp, "tab")) ?? "overview";
+  const tab = (["overview", "buildings", "departments", "rooms", "lifts", "network"] as const).find((t) => t === one(sp, "tab")) ?? "overview";
   const base = `/facilities/${fac.id}`;
 
   return (
@@ -65,11 +66,13 @@ export default async function FacilityPage({ params, searchParams }: { params: P
         { key: "departments", label: "Departments", href: `${base}?tab=departments` },
         { key: "rooms", label: "Rooms", href: `${base}?tab=rooms` },
         { key: "lifts", label: "Lifts", href: `${base}?tab=lifts` },
+        { key: "network", label: "Walking network", href: `${base}?tab=network` },
       ]} />
       <Notice sp={sp} />
       {tab === "overview" && <Overview fac={fac} edit={canEdit && one(sp, "edit") === "1"} canEdit={canEdit} canAddAssets={canAddAssets} />}
       {tab === "buildings" && <BuildingsTab facilityId={fac.id} edit={canEdit ? one(sp, "edit") : undefined} canEdit={canEdit} />}
       {tab === "departments" && <DepartmentsTab facilityId={fac.id} edit={canEdit ? numParam(sp, "edit") : null} canEdit={canEdit} />}
+      {tab === "network" && <NetworkTab facilityId={fac.id} rebuild={one(sp, "rebuild") === "1"} />}
       {tab === "lifts" && <LiftsTab facilityId={fac.id} edit={canEdit ? one(sp, "edit") : undefined} canEdit={canEdit} />}
       {tab === "rooms" && <RoomsTab facilityId={fac.id} floorId={numParam(sp, "floorId")} edit={canEdit ? one(sp, "edit") : undefined} canEdit={canEdit} />}
     </>
@@ -369,6 +372,51 @@ async function DepartmentsTab({ facilityId, edit, canEdit }: { facilityId: numbe
 
 /* ───────────── Lifts (wave 7) ───────────── */
 
+/** Walking network (wave 8, A5): coverage per floor, rooms routes can't reach, manual fixes, zones and workshops. */
+async function NetworkTab({ facilityId, rebuild }: { facilityId: number; rebuild: boolean }) {
+  const cov = await networkCoverage(facilityId, rebuild);
+  const fl = await db.select({ id: floors.id }).from(floors).innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(eq(buildings.facilityId, facilityId));
+  const ids = fl.map((f) => f.id);
+  const [fixes, zoned] = ids.length ? await Promise.all([
+    db.select().from(routeFixes).where(inArray(routeFixes.floorId, ids)),
+    db.select({ id: rooms.id, name: rooms.name, code: rooms.code, zone: rooms.zone, workshop: rooms.workshop, floorId: rooms.floorId }).from(rooms)
+      .where(and(inArray(rooms.floorId, ids), sql`(${rooms.zone} is not null or ${rooms.workshop})`)),
+  ]) : [[], []];
+  const counted = cov.reduce((t, c) => t + c.counted, 0), reached = cov.reduce((t, c) => t + c.reached, 0);
+  const floorName = (id: number) => cov.find((c) => c.floorId === id)?.floor ?? "";
+  return (
+    <div className="space-y-5">
+      <p className="text-sm text-muted">Routes for pathways, nearest devices and work orders follow this network, built from each floor&apos;s walls.
+        {counted ? <> In all, <b className="text-ink">{Math.round((reached / counted) * 100)} %</b> of rooms are on it ({reached} of {counted}).</> : null}{" "}
+        Fix it in the <Link href={`/assets/3d?facilityId=${facilityId}`} className="text-primary hover:underline">3D view</Link> (Routes panel).{" "}
+        <Link href={`?tab=network&rebuild=1`} className="text-primary hover:underline">Rebuild now</Link></p>
+      <Table>
+        <THead><tr><Th>Floor</Th><Th align="right">Rooms on the network</Th><Th align="right">Assumed doors</Th><Th>Can&apos;t be reached</Th></tr></THead>
+        <tbody>{cov.map((c) => (
+          <tr key={c.floorId}>
+            <Td className="font-semibold"><Link href={`/assets/3d?facilityId=${facilityId}&floorId=${c.floorId}`} className="text-primary hover:underline">{c.floor}</Link></Td>
+            <Td align="right"><span className={c.share < 0.95 ? "font-semibold text-warn" : undefined}>{Math.round(c.share * 100)} %</span> <span className="text-xs text-muted">({c.reached} of {c.counted})</span></Td>
+            <Td align="right">{c.assumed}</Td>
+            <Td><span className="text-xs">{c.unreachable.length ? c.unreachable.slice(0, 6).map((u) => u.name).join(", ") + (c.unreachable.length > 6 ? ` +${c.unreachable.length - 6}` : "") : "—"}</span></Td>
+          </tr>
+        ))}</tbody>
+      </Table>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Panel title={`Manual fixes (${fixes.length})`}>
+          {fixes.length === 0 ? <p className="text-sm text-muted">None. Add openings or close gaps in the 3D view when the drawing is wrong.</p> : (
+            <ul className="space-y-1 text-sm">{fixes.map((f) => <li key={f.id}>{f.kind === "OPEN" ? "Opening" : "Closed gap"} on {floorName(f.floorId)}{f.createdByName ? ` · ${f.createdByName}` : ""}{f.note ? ` · ${f.note}` : ""}</li>)}</ul>
+          )}
+        </Panel>
+        <Panel title="Zones and workshops set by hand">
+          {zoned.length === 0 ? <p className="text-sm text-muted">None: zones are read from room names (theatres, airlocks, isolation… are closed to through-traffic).</p> : (
+            <ul className="space-y-1 text-sm">{zoned.map((r) => <li key={r.id}>{r.name} <span className="text-muted">({r.code}, {floorName(r.floorId)})</span>{r.zone ? ` · ${r.zone.toLowerCase()} zone` : ""}{r.workshop ? " · workshop" : ""}</li>)}</ul>
+          )}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
 async function LiftsTab({ facilityId, edit, canEdit }: { facilityId: number; edit?: string; canEdit: boolean }) {
   const [list, fls] = await Promise.all([
     db.select().from(liftCores).where(eq(liftCores.facilityId, facilityId)).orderBy(asc(liftCores.name)),
@@ -409,7 +457,7 @@ async function LiftsTab({ facilityId, edit, canEdit }: { facilityId: number; edi
                     <Td className="text-sm">{st.length ? <>{floorName.get(st[0].floorId)} → {floorName.get(st[st.length - 1].floorId)} <span className="text-muted">({st.length} floors)</span></> : <span className="text-danger">No floors</span>}</Td>
                     <Td align="right">{l.cars}</Td>
                     <Td align="right">{l.carCapacity ?? <span className="text-faint">—</span>}</Td>
-                    <Td align="right">{l.waitSeconds} s</Td>
+                    <Td align="right">{l.waitSeconds} s{l.waitByHour?.length === 24 && <span className="block text-xs text-muted" title={l.waitByHour.map((w, h) => `${String(h).padStart(2, "0")}:00 ${w} s`).join("\n")}>by hour, {Math.min(...l.waitByHour)}–{Math.max(...l.waitByHour)} s</span>}</Td>
                     <Td>{l.inferred ? <Badge tone="warn">Assumed</Badge> : <Badge tone="ok">Confirmed</Badge>}</Td>
                     <Td>
                       <span className="flex justify-end gap-3 text-sm whitespace-nowrap">
@@ -444,6 +492,9 @@ async function LiftsTab({ facilityId, edit, canEdit }: { facilityId: number; edi
             <Field label="Cars"><Input name="cars" type="number" min={1} max={20} required defaultValue={editing?.cars ?? 1} /></Field>
             <Field label="People per car" hint="Optional"><Input name="carCapacity" type="number" min={1} max={60} defaultValue={editing?.carCapacity ?? ""} /></Field>
             <Field label="Typical wait (seconds)" hint="An assumption until measured"><Input name="waitSeconds" type="number" min={0} max={900} required defaultValue={editing?.waitSeconds ?? 45} /></Field>
+            <Field label="Wait by hour (optional)" hint="24 values in seconds, 00:00 to 23:00, e.g. longer at the 08:00 rush; empty = the typical wait all day" className="sm:col-span-2">
+              <Input name="waitByHour" defaultValue={editing?.waitByHour?.join(", ") ?? ""} placeholder="30, 30, 30, 30, 30, 30, 40, 70, 90, 60, …" />
+            </Field>
             <Field label="Position across (m)" hint={editing ? "Leave empty to keep where it stops" : "From the plan's left edge; empty = middle"}><Input name="x" type="number" step="0.1" /></Field>
             <Field label="Position down (m)" hint="From the plan's top edge"><Input name="y" type="number" step="0.1" /></Field>
           </FormGrid>

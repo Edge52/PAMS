@@ -21,6 +21,8 @@ import { can, ROLE_LABELS } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { CURRENCIES, formatDateTime, formatMoney } from "@/lib/format";
 import { getActivity } from "@/lib/server-utils";
+import { workshopRoute } from "@/lib/flows/route-server";
+import { formatDuration } from "@/components/assets/twin/nav/route";
 import {
   assignWorkOrderAction, cancelWorkOrderAction, completeWorkOrderAction, progressWorkOrderAction, signOffWorkOrderAction, updateClaimAction,
 } from "../actions";
@@ -58,6 +60,8 @@ export default async function WorkOrderPage({ params, searchParams }: {
   await requireFacilityAccess(r.wo.facilityId, me);
   const wo = r.wo;
   const now = new Date();
+  // Walking route from the workshop to the device (wave 8): only for open jobs, and it never blocks the page.
+  const ws = r.roomId && !["COMPLETED", "CLOSED", "CANCELLED"].includes(wo.status) ? await workshopRoute(wo.facilityId, r.roomId).catch(() => null) : null;
   const canAssign = can(me.role, "workorders.assign"), canWork = can(me.role, "maintenance.edit");
   const actions = new Set(allowedActions(wo, { id: me.id, canAssign, canWork }));
   const partsOpen = canWork && (["ASSIGNED", "IN_PROGRESS", "ON_HOLD", "COMPLETED"] as string[]).includes(wo.status);
@@ -153,6 +157,14 @@ export default async function WorkOrderPage({ params, searchParams }: {
               { label: "Location", value: [r.facilityName, r.departmentName, r.roomName && `${r.roomName} (${r.roomCode})`].filter(Boolean).join(" › ") },
             ]} />
             {r.floorId && <p className="mt-3 text-sm"><Link href={`/assets/map?floorId=${r.floorId}&assetId=${wo.assetId}`} className="text-primary hover:underline">Find it on the floor map</Link></p>}
+            {ws?.best && (
+              <p className="mt-2 text-sm">
+                From the workshop ({ws.best.from.name}): <b>{Math.round(ws.best.route.metres)} m</b>, about {formatDuration(ws.best.route.seconds)} on foot
+                {ws.best.route.legs.filter((l) => l.kind !== "walk").map((l) => `, ${l.via}`).join("")}{ws.best.route.estimated ? " (partly estimated)" : ""}.{" "}
+                <Link href={`/assets/3d?facilityId=${wo.facilityId}&assetId=${wo.assetId}&routeFrom=${ws.best.from.id}`} className="text-primary hover:underline">Show the route in 3D</Link>
+              </p>
+            )}
+            {ws && ws.workshops === 0 && r.roomId && <p className="mt-2 text-xs text-muted">Mark the biomedical workshop in the 3D view (select its room) to see the route from it here.</p>}
           </Panel>
 
           {(usedRows.length > 0 || partsOpen) && (

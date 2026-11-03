@@ -222,6 +222,8 @@ export const rooms = pgTable("rooms", {
   polygon: jsonb("polygon").$type<[number, number][]>(),
   /** Access zone for routes; null = read from the room's name (theatres, airlocks, isolation… are closed). */
   zone: accessZone("zone"),
+  /** The biomedical workshop (wave 8): work orders show the walking route from the nearest one to the device. */
+  workshop: boolean("workshop").notNull().default(false),
 }, (t) => [
   uniqueIndex("rooms_floor_code_uq").on(t.floorId, t.code),
   index("rooms_department_idx").on(t.departmentId),

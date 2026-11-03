@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { addRouteFixAction, deleteRouteFixAction, setRoomZoneAction, addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
+import { addRouteFixAction, deleteRouteFixAction, setRoomZoneAction, setWorkshopAction, addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
 import { formatDims } from "@/lib/assets/dimensions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
@@ -106,6 +106,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [fixMode, setFixMode] = useState<{ kind: "OPEN" | "CLOSE"; a?: { x: number; y: number } } | null>(null);
   const [unreachable, setUnreachable] = useState<number[]>([]);
   const [zones, setZones] = useState<Map<number, TwinRoom["zone"]>>(new Map());
+  const [workshops, setWorkshops] = useState<Set<number>>(() => new Set(data.rooms.filter((r) => r.workshop).map((r) => r.id)));
   const [trauma, setTrauma] = useState<{ busy?: boolean; error?: string; steps?: { from: string; to: string; route: Route }[]; total?: Route } | null>(null);
   const [routeTo, setRouteTo] = useState<number | null>(null);
   // Wave 7c: published pathways shown in the building, their routes (per arrow) and the animated patients.
@@ -736,6 +737,25 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [pickingSpot]);
+  // A work order's "Show the route in 3D" (…&assetId=<id>&routeFrom=<room>): the route from the workshop to the device.
+  const routeParamDone = useRef(false);
+  useEffect(() => {
+    if (!ready || routeParamDone.current) return;
+    routeParamDone.current = true;
+    const sp = new URLSearchParams(window.location.search);
+    const fromRoom = Number(sp.get("routeFrom")), assetId = Number(sp.get("assetId"));
+    const s = sceneRef.current; if (!s || !fromRoom || !assetId) return;
+    void (async () => {
+      const a = assetById.get(assetId); const sp2 = s.spotOfAsset(assetId); const start = await routes.roomPlace(fromRoom);
+      if (!a || !sp2 || !start) return;
+      const rt = await routes.route(start, { floorId: sp2.floorId, x: sp2.x, z: sp2.z, roomId: a.roomId }, "foot", new Date().getHours());
+      if (!rt) return;
+      if (rt.floorChanges) { setFloorId(null); s.isolateFloor(null, false); }
+      s.showRoute(routeSpots(rt)); s.frameRoute();
+      setToast({ ok: `From the workshop to ${a.tag}: ${Math.round(rt.metres)} m, about ${formatDuration(rt.seconds)} on foot.` });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
+  }, [ready]);
   // A link to a note (…&note=<id>, from a notification) opens it once the model is ready.
   const noteParamDone = useRef(false);
   useEffect(() => {
@@ -1738,6 +1758,15 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                   ) : <span className="text-white">{z ? z.charAt(0) + z.slice(1).toLowerCase() : "From the name"}</span>}
                 </label>
                 <p className="mt-0.5 text-[11px] text-[#8fb6cc]">Sterile and isolation rooms are closed to through-traffic: routes only start or end in them.</p>
+                {data.can.editFacility ? (
+                  <label className="mt-1.5 flex items-center gap-2"><input type="checkbox" checked={workshops.has(selRoom.id)} className="accent-[#2fd3ff]"
+                    onChange={async (e) => {
+                      const on = e.target.checked; const fd = new FormData(); fd.set("roomId", String(selRoom.id)); fd.set("on", on ? "1" : "0");
+                      const res = await setWorkshopAction(null, fd);
+                      if (res?.roomId) setWorkshops((w) => { const n = new Set(w); if (on) n.add(selRoom.id); else n.delete(selRoom.id); return n; });
+                      setToast(res ? { ok: res.ok, error: res.error } : null);
+                    }} />Biomedical workshop<span className="text-[11px] text-[#8fb6cc]">(work orders show the route from here)</span></label>
+                ) : workshops.has(selRoom.id) ? <p className="mt-1 text-[11px] text-[#b9ffe0]">Biomedical workshop</p> : null}
               </div>
             );
           })()}

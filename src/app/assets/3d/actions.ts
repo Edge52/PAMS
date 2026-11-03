@@ -316,3 +316,14 @@ export async function setRoomZoneAction(_: FixActionState, fd: FormData): Promis
   await db.update(rooms).set({ zone }).where(eq(rooms.id, r.id));
   return { ok: zone ? `${r.name}: ${zone.toLowerCase()} zone.` : `${r.name}: zone read from its name again.`, roomId: r.id, zone };
 }
+
+/** Mark a room as (or no longer) a biomedical workshop (wave 8). Needs facilities.edit. */
+export async function setWorkshopAction(_: FixActionState, fd: FormData): Promise<FixActionState> {
+  const me = await requirePermission("facilities.edit");
+  const roomId = Number(fd.get("roomId")); const on = fd.get("on") === "1";
+  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name }).from(rooms).where(eq(rooms.id, roomId)) : [];
+  if (!r) return { error: "That room no longer exists." };
+  const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
+  await db.update(rooms).set({ workshop: on }).where(eq(rooms.id, r.id));
+  return { ok: on ? `${r.name} is marked as a workshop: work orders show the route from it.` : `${r.name} is no longer a workshop.`, roomId: r.id };
+}

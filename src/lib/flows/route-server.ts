@@ -111,3 +111,34 @@ export async function pathwaySheetData(flowId: number): Promise<import("@/compon
     issues: [...structural, ...building],
   };
 }
+
+/** The walking route from the nearest biomedical workshop room to a room (work orders, wave 8 A4). */
+export async function workshopRoute(facilityId: number, toRoomId: number) {
+  const { svc, data } = await routeServiceFor(facilityId);
+  const ws = await db.select({ id: rooms.id, name: rooms.name }).from(rooms).innerJoin(floors, eq(floors.id, rooms.floorId))
+    .innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(sql`${buildings.facilityId} = ${facilityId} and ${rooms.workshop}`);
+  if (!ws.length || !data.rooms.some((r) => r.id === toRoomId)) return { workshops: ws.length, best: null };
+  const to = await svc.roomPlace(toRoomId); if (!to) return { workshops: ws.length, best: null };
+  let best: { from: { id: number; name: string }; route: NonNullable<Awaited<ReturnType<typeof svc.route>>> } | null = null;
+  for (const w of ws) {
+    const from = await svc.roomPlace(w.id); if (!from) continue;
+    const r = await svc.route(from, to, "foot", new Date().getHours());
+    if (r && (!best || r.seconds < best.route.seconds)) best = { from: w, route: r };
+  }
+  return { workshops: ws.length, best };
+}
+
+/** Walking network figures per floor for the Facilities page (wave 8, A5). */
+export async function networkCoverage(facilityId: number, rebuild = false) {
+  if (rebuild) cache.delete(facilityId);
+  const { svc, data } = await routeServiceFor(facilityId);
+  const out: { floorId: number; floor: string; level: number; counted: number; reached: number; share: number; assumed: number; unreachable: { id: number; name: string }[] }[] = [];
+  for (const f of [...data.floors].sort((a, b) => b.level - a.level)) {
+    if (!data.rooms.some((r) => r.floorId === f.id)) continue;
+    const c = await svc.coverage(f.id); const net = await svc.network(f.id);
+    if (!c || !net) continue;
+    out.push({ floorId: f.id, floor: f.name, level: f.level, counted: c.counted, reached: c.reached, share: c.share, assumed: c.assumed,
+      unreachable: net.unreachable.map((id) => ({ id, name: data.rooms.find((r) => r.id === id)?.name ?? `Room ${id}` })) });
+  }
+  return out;
+}

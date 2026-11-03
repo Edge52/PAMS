@@ -23,6 +23,8 @@ export type TwinRoom = {
   departmentId: number | null;
   /** Access zone when set (wave 7); null = read from the name. */
   zone?: "PUBLIC" | "PATIENT" | "STAFF" | "STERILE" | "ISOLATION" | null;
+  /** A biomedical workshop (wave 8). */
+  workshop?: boolean;
   /** Outline in plan units (polygon, or the rectangle turned into 4 points). */
   poly: [number, number][];
 };
