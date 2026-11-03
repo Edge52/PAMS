@@ -55,7 +55,9 @@ function decodeLive(p: LivePayload): Map<number, LiveMetrics> {
  * HUD layout follows the view's own width (see hud-state): side columns of collapsible panels (folded by default
  * below 1100 px), or on phones one bottom sheet with tabs.
  */
-export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [], notes: initialNotes = [], people = [], me = { id: 0, canEditAssets: false }, tours: initialTours = [] }: {
+export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [], notes: initialNotes = [], people = [], me = { id: 0, canEditAssets: false }, tours: initialTours = [], spotlight }: {
+  /** Devices to pick out on arrival (wave 9: a recall's pending devices), with a line saying why. */
+  spotlight?: { label: string; ids: number[] } | null;
   /** Guided tours of this hospital the user can see (wave 7f). */
   tours?: Tour[];
   data: TwinData; live: LivePayload; views: SavedView[]; canManageViews: boolean;
@@ -336,7 +338,20 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     }
     return [...layerValues].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, v]) => ({ id, name: `${roomById.get(id)?.name ?? "Room"} · ${roomById.get(id)?.code ?? ""}`, v, roomId: id }));
   }, [layer, scope, layerValues, data.rooms, deptById, roomById]);
-  useEffect(() => { if (ready) sceneRef.current?.setHighlight(new Set(matches.map((a) => a.id))); }, [matches, ready]);
+  useEffect(() => {
+    if (!ready) return;
+    // Until the user searches, a spotlight (?recall=) stays highlighted.
+    const ids = matches.length || !spotlight ? matches.map((a) => a.id) : spotlight.ids;
+    sceneRef.current?.setHighlight(new Set(ids));
+  }, [matches, ready, spotlight]);
+  useEffect(() => {
+    const s = sceneRef.current; if (!ready || !s || !spotlight?.ids.length) return;
+    setLayer("recalls");
+    const spots = spotlight.ids.map((id) => s.spotOfAsset(id)).filter((x) => x != null);
+    if (spots.length) s.frameSpots(spots);
+    setToast({ ok: spotlight.label });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
   useEffect(() => { if (ready) sceneRef.current?.setExplode(explode); }, [explode, ready]);
   // Room labels stay in the free middle of the view, clear of the title bar and the panel columns.
   useEffect(() => {

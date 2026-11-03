@@ -9,6 +9,7 @@ import { OfferLinesEditor, type BoqLineOption, type DeviceTypeOption } from "./o
 export type OfferHeader = {
   supplierId?: number | null; reference?: string; offerDate?: string; validUntil?: string | null; currency?: string;
   incoterm?: string | null; deliveryWeeks?: number | null; warrantyMonths?: number | null; paymentTerms?: string | null; notes?: string | null;
+  tcoServiceAnnual?: string | null; tcoConsumablesAnnual?: string | null; tcoEnergyAnnual?: string | null; tcoOtherAnnual?: string | null; tcoUptimePct?: number | null;
 };
 
 export function OfferForm({ action, projectId, rfqId, header, lines, suppliers, deviceTypes, boqLines, submitLabel }: {
@@ -44,6 +45,16 @@ export function OfferForm({ action, projectId, rfqId, header, lines, suppliers, 
           </Field>
         </FormGrid>
         <Field label="Notes" className="mt-4"><Textarea name="notes" rows={2} defaultValue={header.notes ?? ""} /></Field>
+      </Panel>
+      <Panel title="Running costs (for total cost of ownership)">
+        <p className="mb-3 text-sm text-muted">From the offer&apos;s commercial terms, in the offer currency, for the whole offer. Leave blank what the offer doesn&apos;t state.</p>
+        <FormGrid cols={4}>
+          <Field label="Service contract a year" hint="After the warranty"><Input type="number" min={0} step="0.01" name="tcoServiceAnnual" defaultValue={header.tcoServiceAnnual ?? ""} /></Field>
+          <Field label="Consumables a year"><Input type="number" min={0} step="0.01" name="tcoConsumablesAnnual" defaultValue={header.tcoConsumablesAnnual ?? ""} /></Field>
+          <Field label="Energy a year"><Input type="number" min={0} step="0.01" name="tcoEnergyAnnual" defaultValue={header.tcoEnergyAnnual ?? ""} /></Field>
+          <Field label="Other a year" hint="Helium, licences…"><Input type="number" min={0} step="0.01" name="tcoOtherAnnual" defaultValue={header.tcoOtherAnnual ?? ""} /></Field>
+          <Field label="Uptime guarantee (%)"><Input type="number" min={50} max={100} step="0.1" name="tcoUptimePct" defaultValue={header.tcoUptimePct ?? ""} /></Field>
+        </FormGrid>
       </Panel>
       <Panel title="Lines">
         <OfferLinesEditor initial={lines} deviceTypes={deviceTypes} boqLines={boqLines} defaultCurrency={header.currency ?? "USD"} />

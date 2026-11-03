@@ -31,7 +31,7 @@ export default async function RecallPage({ params, searchParams }: {
   const canEdit = can(me.role, "recalls.edit");
   const [devices, activity] = await Promise.all([
     db.select({ ra: recallAssets, tag: assets.assetTag, model: assets.model, serial: assets.serialNumber, assetStatus: assets.status,
-      department: departments.name, facility: facilities.name, woNumber: workOrders.number, woStatus: workOrders.status })
+      department: departments.name, facility: facilities.name, facilityId: assets.facilityId, roomId: assets.roomId, woNumber: workOrders.number, woStatus: workOrders.status })
       .from(recallAssets).innerJoin(assets, eq(assets.id, recallAssets.assetId)).innerJoin(facilities, eq(facilities.id, assets.facilityId))
       .leftJoin(departments, eq(departments.id, assets.departmentId)).leftJoin(workOrders, eq(workOrders.id, recallAssets.workOrderId))
       .where(and(eq(recallAssets.recallId, r.id), scope === null ? undefined : scope.length ? inArray(assets.facilityId, scope) : sql`false`))
@@ -41,6 +41,9 @@ export default async function RecallPage({ params, searchParams }: {
   const prog = recallProgress(devices.map((d) => d.ra));
   const withoutJob = devices.filter((d) => d.ra.status === "PENDING" && !d.ra.workOrderId).length;
   const multi = scope === null || scope.length > 1;
+  // Pending devices placed in a room, per hospital, for "Show in 3D".
+  const in3d = new Map<number, { name: string; n: number }>();
+  for (const d of devices) if (d.ra.status === "PENDING" && d.roomId) in3d.set(d.facilityId, { name: d.facility, n: (in3d.get(d.facilityId)?.n ?? 0) + 1 });
 
   return (
     <>
@@ -66,13 +69,16 @@ export default async function RecallPage({ params, searchParams }: {
               { label: "Device type", value: row.typeName ? <Link href={`/catalogue/${row.typeCode}`} className="text-primary hover:underline">{row.typeName}</Link> : "Any" },
               { label: "Manufacturer", value: r.manufacturer },
               { label: "Model contains", value: r.modelPattern },
-              { label: "Serial numbers", value: r.serialNumbers?.length ? `${r.serialNumbers.length} listed` : "All serials" },
+              { label: "Serial numbers", value: r.serialNumbers?.length ? (r.serialNumbers.length <= 6 ? r.serialNumbers.join(", ") : `${r.serialNumbers.length} listed or ranges`) : "All serials" },
             ]} />
             {r.description && <p className="mt-4 whitespace-pre-wrap text-sm">{r.description}</p>}
             <div className="mt-4"><Meter pct={prog.pct} tone={prog.pending ? "warn" : "ok"} label="Devices dealt with" /></div>
           </Panel>
 
-          <Panel title={`Affected devices${multi ? "" : " in your hospital"}`} padded={false}>
+          <Panel title={`Affected devices${multi ? "" : " in your hospital"}`} padded={false}
+            actions={in3d.size ? <span className="flex flex-wrap gap-3 text-sm">{[...in3d].map(([fid, f]) => (
+              <Link key={fid} href={`/assets/3d?facilityId=${fid}&recall=${r.id}`} className="text-primary hover:underline">Show {f.n} pending in 3D{in3d.size > 1 ? ` (${f.name})` : ""}</Link>
+            ))}</span> : null}>
             {devices.length === 0 ? <p className="p-4 text-sm text-muted">No device in your register matches this notice.{canEdit && r.status === "OPEN" ? " If devices were added since, check the register again." : ""}</p> : (
               <ul className="divide-y divide-line">{devices.map((d) => (
                 <li key={d.ra.assetId} className="grid gap-2 px-4 py-2.5 text-sm sm:grid-cols-[1fr_auto]">

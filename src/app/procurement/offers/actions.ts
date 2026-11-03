@@ -9,7 +9,7 @@ import { boqLines, deviceTypes, offerCompliance, offerLines, offers, projects, p
 import { formatMoney, lineTotal } from "@/lib/format";
 import { logActivity } from "@/lib/server-utils";
 import {
-  currency, fail, formObject, idParam, jsonField, optDate, optInt, optStr, reqDate, reqStr, zodErrors, type ActionState,
+  currency, fail, formObject, idParam, jsonField, optDate, optInt, optNum, optStr, reqDate, reqStr, zodErrors, type ActionState,
 } from "@/lib/procurement/forms";
 import { humanizeEnum, INCOTERMS, OFFER_STATUSES, offerActions, type OfferStatus } from "@/lib/procurement/labels";
 import { planOfferLines } from "@/lib/procurement/offer-lines";
@@ -32,6 +32,9 @@ const headerSchema = z.object({
   incoterm: z.preprocess((v) => (v === "" ? undefined : v), z.enum(INCOTERMS, { error: "Choose an Incoterm from the list" }).optional()),
   deliveryWeeks: optInt("Delivery must be a whole number of weeks", 0, 520),
   warrantyMonths: optInt("Warranty must be a whole number of months", 0, 240),
+  tcoServiceAnnual: optNum("Service a year must be an amount"), tcoConsumablesAnnual: optNum("Consumables a year must be an amount"),
+  tcoEnergyAnnual: optNum("Energy a year must be an amount"), tcoOtherAnnual: optNum("Other running costs must be an amount"),
+  tcoUptimePct: optNum("Uptime must be a percentage", 50, 100),
   paymentTerms: optStr(500),
   notes: optStr(4000),
 });
@@ -74,6 +77,9 @@ const headerValues = (d: z.infer<typeof headerSchema>) => ({
   projectId: d.projectId, rfqId: d.rfqId ?? null, supplierId: d.supplierId, reference: d.reference, offerDate: d.offerDate,
   validUntil: d.validUntil ?? null, currency: d.currency, incoterm: d.incoterm ?? null, deliveryWeeks: d.deliveryWeeks ?? null,
   warrantyMonths: d.warrantyMonths ?? null, paymentTerms: d.paymentTerms ?? null, notes: d.notes ?? null,
+  tcoServiceAnnual: d.tcoServiceAnnual != null ? String(d.tcoServiceAnnual) : null, tcoConsumablesAnnual: d.tcoConsumablesAnnual != null ? String(d.tcoConsumablesAnnual) : null,
+  tcoEnergyAnnual: d.tcoEnergyAnnual != null ? String(d.tcoEnergyAnnual) : null, tcoOtherAnnual: d.tcoOtherAnnual != null ? String(d.tcoOtherAnnual) : null,
+  tcoUptimePct: d.tcoUptimePct ?? null,
 });
 
 export async function createOffer(_prev: ActionState, fd: FormData): Promise<ActionState> {

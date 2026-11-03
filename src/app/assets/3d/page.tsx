@@ -1,7 +1,7 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceModels, deviceTypes, siteRequirements, facilities, floorCad, floors, liftCores, patientFlows, documents, rooms, routeFixes, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
+import { assets, buildings, departments, deviceModels, deviceTypes, siteRequirements, facilities, floorCad, floors, liftCores, patientFlows, recallAssets, recalls, documents, rooms, routeFixes, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
 import { noteOf } from "@/lib/assets/twin-notes";
 import { equipmentNames, loadFlow } from "@/lib/flows/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
@@ -21,7 +21,7 @@ export const metadata = { title: "3D view" };
 /** Floor-to-floor height when a floor has no stored elevation (La Plaza: 5 m). */
 const FLOOR_TO_FLOOR_M = 5;
 
-export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string; flow?: string }> }) {
+export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string; flow?: string; recall?: string }> }) {
   const me = await requirePermission("assets.view");
   const scope = await facilityScope(me);
   const sp = await searchParams;
@@ -125,5 +125,16 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
   return <TwinView data={data} live={await twinLive(facility.id)} notes={notes} tours={tours} people={people} me={{ id: me.id, canEditAssets: can(me.role, "assets.edit") }}
     views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName, render: v.render ?? null }))}
     canManageViews={can(me.role, "users.manage")}
-    plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []} />;
+    plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []}
+    spotlight={await recallSpotlight(Number(sp.recall), facility.id)} />;
+}
+
+/** A recall's pending devices in this hospital (…&recall=<id>), to pick out in the model. */
+async function recallSpotlight(recallId: number, facilityId: number) {
+  if (!Number.isInteger(recallId) || recallId <= 0) return null;
+  const [r] = await db.select({ number: recalls.number, title: recalls.title }).from(recalls).where(eq(recalls.id, recallId));
+  if (!r) return null;
+  const ids = (await db.select({ id: assets.id }).from(recallAssets).innerJoin(assets, eq(assets.id, recallAssets.assetId))
+    .where(sql`${recallAssets.recallId} = ${recallId} and ${recallAssets.status} = 'PENDING' and ${assets.facilityId} = ${facilityId}`)).map((x) => x.id);
+  return { ids, label: `${r.number}: ${ids.length} pending device${ids.length === 1 ? "" : "s"} highlighted (${r.title}).` };
 }

@@ -498,6 +498,13 @@ export const offers = pgTable("offers", {
   incoterm: incoterm("incoterm"),
   deliveryWeeks: integer("delivery_weeks"),
   warrantyMonths: integer("warranty_months"),
+  /** Running costs per year in the offer's currency, for total cost of ownership (wave 9, D5): service contract after
+   *  the warranty, consumables, energy, and anything else (helium top-ups, licences); and the uptime it guarantees. */
+  tcoServiceAnnual: money("tco_service_annual"),
+  tcoConsumablesAnnual: money("tco_consumables_annual"),
+  tcoEnergyAnnual: money("tco_energy_annual"),
+  tcoOtherAnnual: money("tco_other_annual"),
+  tcoUptimePct: real("tco_uptime_pct"),
   paymentTerms: text("payment_terms"),
   status: offerStatus("status").notNull().default("RECEIVED"),
   technicalScore: real("technical_score"),   // 0–100, computed from compliance
@@ -740,6 +747,13 @@ export const serviceContracts = pgTable("service_contracts", {
   responseHours: integer("response_hours"),
   ppmVisitsPerYear: integer("ppm_visits_per_year"),
   includesParts: boolean("includes_parts").notNull().default(false),
+  /** Performance terms (wave 9, D6): repair within hours, guaranteed uptime %, penalties per late hour and per uptime
+   *  point short, capped at a % of the contract value. Null = not in the contract. */
+  repairHours: integer("repair_hours"),
+  uptimePct: real("uptime_pct"),
+  penaltyPerLateHour: money("penalty_per_late_hour"),
+  penaltyPerUptimePoint: money("penalty_per_uptime_point"),
+  penaltyCapPct: real("penalty_cap_pct"),
   contactName: text("contact_name"),
   contactPhone: varchar("contact_phone", { length: 48 }),
   notes: text("notes"),
@@ -904,6 +918,35 @@ export const siteRequirements = pgTable("site_requirements", {
   updatedByName: text("updated_by_name"),
   updatedAt: updatedAt(),
 });
+
+/** Imaging use per scanner per month (wave 9, D3): exams done and the hours it was scheduled to run. */
+export const imagingUsage = pgTable("imaging_usage", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  /** First day of the month. */
+  month: date("month").notNull(),
+  exams: integer("exams").notNull(),
+  scheduledHours: real("scheduled_hours"),
+  notes: text("notes"),
+  enteredByName: text("entered_by_name"),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex("imaging_usage_asset_month_uq").on(t.assetId, t.month)]);
+
+/** Planning capacity of a device type (exams a year per unit), for utilisation (wave 9, D3). Set by the hospital. */
+export const typeCapacity = pgTable("type_capacity", {
+  deviceTypeId: integer("device_type_id").primaryKey().references(() => deviceTypes.id, { onDelete: "cascade" }),
+  examsPerYear: integer("exams_per_year").notNull(),
+  note: text("note"),
+});
+
+/** Capital budget per hospital and year (wave 9, D4), to compare the replacement plan against. */
+export const capitalBudgets = pgTable("capital_budgets", {
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  amount: money("amount").notNull(),
+  currency: varchar("currency", { length: 3 }).notNull().default("EGP"),
+  notes: text("notes"),
+}, (t) => [primaryKey({ columns: [t.facilityId, t.year] })]);
 
 /** Standardisation (wave 5): the preferred model of a device type in one hospital. */
 export const preferredModels = pgTable("preferred_models", {

@@ -75,12 +75,22 @@ Under **Assets** (release 2.2 / wave 3):
 - **Spare parts** (`/assets/parts`): stock per hospital with minimum levels, receipts, issues to jobs and adjustments.
   Stock never goes below zero; crossing the minimum notifies the biomedical team; parts costs add up on each job.
 - **Recalls and field safety notices** (`/assets/recalls`): match the affected devices by type, maker, model and serial
-  numbers, raise inspection jobs, and track each device to actioned or not affected.
+  numbers or serial ranges (`SN1000 to SN1999`), raise inspection jobs, notify the biomedical team and department
+  heads, show the pending devices in 3D, and track each device to actioned or not affected.
 - **Disposal** (`/assets/disposals`): request, approval by the director (an approval rule you can change), then the
   disposal record (method, certificate). The device is condemned on approval and disposed when recorded.
 - **Replacement plan** (`/assets/replacement`): devices scored 0–100 by age against service life, repair cost,
   failures, downtime, criticality and condition (an open recall adds to it); selected devices become a draft BOQ for
   their replacement.
+- **Capital plan** (`/assets/capital-plan`): every device placed in the year it should be replaced (by score, life and
+  the maker's end of support), costed per department and year against a budget, with a year's list turned into a BOQ.
+- **Imaging use** (`/assets/imaging`): monthly exams per scanner (entered or pasted from the RIS) against a planning
+  capacity, uptime, exams per hour of uptime, exams lost to downtime, and ready-made lines for tender justifications.
+- **Contract performance**: response, repair and uptime terms with penalties on each service contract, and a printable
+  monthly statement with the penalty due.
+- **Will it fit?** Site planning data on each make and model (footprint, service space, ceiling, door, floor load,
+  services, MRI 5 gauss line) checked against a room's survey in the 3D view, with a printable site readiness sheet.
+  Typical values to start from are marked as typical until replaced from the manufacturer's site planning guide.
 - **Device performance and cost**: on each asset page — uptime, failures, mean time between failures and to repair,
   maintenance and parts cost against the purchase price.
 

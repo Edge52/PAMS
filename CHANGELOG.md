@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased — waves 8 and 9 (branch `wave-8`)
+
+Migrations `0024`–`0028`. Update with `git pull` and `npm run demo`; your data is kept. The demo adds clearly labelled
+demo figures (imaging use, budgets, contract terms, offer running costs, typical site values) only where none exist.
+
+**Wave 8 — pathways, routes and the 3D view**
+- **Pathway building checks**: publishing is blocked when a step's room was removed by a drawing update or a bed leg
+  between floors has no bed lift; warnings for estimated routes, staff-only rooms crossed and unknown equipment codes,
+  each with *Fix in 3D*. Drawing reviews list the pathways affected.
+- **Printable pathway sheet** and a **pathway book** of every published pathway.
+- **Lift waits by hour**, used for routes at the pathway's busiest hour.
+- **Workshop route**: mark biomedical workshops in 3D; work orders show the walking distance and time from the nearest.
+- **Walking network** tab on each hospital: coverage per floor, unreachable rooms, fixes, zones and workshops.
+- **Photos on notes** (camera on phones), copied to the work order a note becomes. Fixes uploads to work orders.
+- **Jobs in 3D**: a progress ribbon for a device's open jobs.
+- **Render options**: eye-level and current-view renders, labels, people for scale, JPEG, all floors as a ZIP, and
+  saving a render to the hospital's documents.
+- The 3D find box lists rooms as well as devices.
+
+**Wave 9 — imaging and equipment planning**
+- **Will it fit?** Site requirements per make and model, room surveys, a fit check with outlines in 3D (best spot,
+  turn, place by hand, MRI 5 gauss line and the rooms it reaches) and a printable site readiness sheet.
+- **Imaging use**: monthly exams per scanner against planning capacity, uptime, exams lost to downtime, paste import.
+- **Capital plan**: replacement by year and department against a budget, turned into a BOQ.
+- **Total cost of ownership** in the offer comparison, with our own maintenance history for the same models.
+- **Contract performance**: response, repair and uptime terms, penalties and a monthly statement.
+- **Recalls**: serial ranges, department heads notified, pending devices shown in 3D.
+
+Not done here: go-live hardening (C4) needs the production server and its settings.
+
 ## Unreleased — wave 7 (in progress, branch `wave-7`)
 
 Migrations `0016`–`0023`. Update with `git pull` and `npm run demo`; your data is kept.

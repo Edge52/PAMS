@@ -37,7 +37,7 @@ export default async function NewRecallPage() {
                 <Field label="Device type"><DeviceTypeSelect types={types} placeholder="Any type" /></Field>
                 <Field label="Manufacturer" hint="As recorded on the devices; case and dashes don't matter."><Input name="manufacturer" maxLength={120} /></Field>
                 <Field label="Model contains"><Input name="modelPattern" maxLength={120} placeholder="e.g. V500" /></Field>
-                <Field label="Affected serial numbers" hint="One per line or comma separated. Leave blank if every serial is affected."><Textarea name="serials" rows={3} className="font-mono text-[13px]" /></Field>
+                <Field label="Affected serial numbers" hint="One per line or comma separated; ranges as “SN1000 to SN1999”. Leave blank if every serial is affected."><Textarea name="serials" rows={3} className="font-mono text-[13px]" /></Field>
               </FormGrid>
             </fieldset>
             <Button>Record notice and find devices</Button>

@@ -36,7 +36,7 @@ export async function generateMetadata({ params }: { params: Promise<{ projectId
 
 export default async function ProjectPage({ params, searchParams }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ tab?: string; tw?: string }>;
+  searchParams: Promise<{ tab?: string; tw?: string; tcoYears?: string; tcoDown?: string }>;
 }) {
   const me = await requirePermission("procurement.view");
   const { projectId } = await params;
@@ -88,7 +88,7 @@ export default async function ProjectPage({ params, searchParams }: {
       {tab === "specs" && <SpecsTab project={project} me={me} />}
       {tab === "rfqs" && <RfqsTab project={project} me={me} />}
       {tab === "offers" && <OffersTab project={project} me={me} />}
-      {tab === "comparison" && <ComparisonTab project={project} tw={sp.tw} me={me} />}
+      {tab === "comparison" && <ComparisonTab project={project} tw={sp.tw} me={me} tcoYears={sp.tcoYears} tcoDown={sp.tcoDown} />}
       {tab === "committees" && <CommitteesTab project={project} me={me} />}
       {tab === "pos" && <PurchaseOrdersTab project={project} me={me} />}
       {tab === "documents" && (
