@@ -37,6 +37,30 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
     );
   }
 
+  // Two-envelope tender (wave 10): until the financial envelopes are opened, only the technical result is shown.
+  if (project.twoEnvelope && !project.financialOpenedAt) {
+    return (
+      <div className="space-y-5">
+        <Notice tone="info">Two-envelope tender: the financial envelopes are sealed, so prices and financial scores are hidden. Finish the technical evaluation, then open them on the <Link href={`/procurement/${project.id}?tab=tender`} className="font-semibold underline">Tender</Link> tab.</Notice>
+        <div className="overflow-x-auto rounded-[var(--radius-panel)] border border-line bg-surface">
+          <table className="w-full min-w-[640px] border-collapse text-[13px]">
+            <thead className="bg-sunken text-left text-muted"><tr><th className="px-3 py-2">Device type</th>{offers.map((o) => <th key={o.id} className="border-l border-line px-3 py-2">{o.supplierName}</th>)}</tr></thead>
+            <tbody>{types.map((t) => {
+              const row = evaluation.rows.find((r) => r.key === t.id)!;
+              return (
+                <tr key={t.id} className="border-t border-line">
+                  <td className="px-3 py-2 font-semibold">{t.name}</td>
+                  {offers.map((o) => { const c = row.cells.find((x) => x.offerId === o.id); return <td key={o.id} className="border-l border-line px-3 py-2">{!c ? <span className="text-muted">not quoted</span> : !c.technical.responsive ? <Badge tone="danger">Non-responsive</Badge> : `${pct(c.technical.score)} %`}</td>; })}
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        </div>
+        <Link href={`/procurement/${project.id}/evaluation-sheet`} className="text-sm font-semibold text-primary hover:underline">Technical evaluation sheet (printable)</Link>
+      </div>
+    );
+  }
+
   const pendingAwards = new Set((await db.select({ id: approvalRequests.entityId }).from(approvalRequests)
     .where(and(eq(approvalRequests.entity, "AWARD"), eq(approvalRequests.status, "PENDING"), inArray(approvalRequests.entityId, offers.map((o) => o.id))))).map((r) => r.id));
   const missing = Object.entries(fx).filter(([, f]) => f == null).map(([c]) => c);

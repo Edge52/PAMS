@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased — wave 10 (branch `wave-10`)
+
+Migration `0029`. Update with `git pull` and `npm run demo`; your data is kept. The demo adds a budget line per
+hospital (labelled demo) only when none exist.
+
+- **Budgets**: budget lines per hospital and year, optionally per department or project. POs are charged to a line;
+  each line shows spent (approved invoices), committed (approved POs not yet invoiced) and waiting for approval.
+  Finance is notified when a PO takes a line past 80 % or 100 %.
+- **Supplier invoices and three-way match**: record an invoice from the PO; it is checked against the quantities
+  ordered and received and the PO price (1 % tolerance). Approve, approve with a reason, reject, mark paid. CSV
+  export for finance.
+- **Framework agreements**: agreed items and prices with a supplier up to a ceiling; a call-off drafts a PO at those
+  prices within the dates, the ceiling and each item's limit.
+- **Supplier scorecards** on each supplier: on-time delivery, acceptance without issues, warranty response, invoices
+  matching the PO, graded A–D.
+- **Delivery, installation and acceptance**: a checklist per device type (default list until you set your own);
+  biomedical engineering fills it and signs, the department signs; acceptance puts the device in service and starts
+  its warranty for the months on the PO.
+- **Tender tab** on each project: one or two envelopes (prices stay sealed in the comparison and on offers until the
+  financial envelopes are opened, and an award can't be recommended before), bid and performance bonds against the
+  required 1.5 % and 5 % with expiry, printable committee minutes (opening, technical, financial, award) and a
+  validity extension letter per offer.
+- **Technical evaluation sheet**: every specification clause against every offer with the offered value and the
+  datasheet page (new *Page* column when recording compliance), mandatory failures highlighted, for the committee to
+  sign.
+- New permissions: `budgets.edit`, `invoices.edit` (procurement, finance), `invoices.approve` (finance).
+
+Check the bond rates, the two-envelope steps and the minutes' wording against the Law 182/2018 executive
+regulations before relying on them.
+
 ## Unreleased — waves 8 and 9 (branch `wave-8`)
 
 Migrations `0024`–`0028`. Update with `git pull` and `npm run demo`; your data is kept. The demo adds clearly labelled

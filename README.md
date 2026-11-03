@@ -94,6 +94,14 @@ Under **Assets** (release 2.2 / wave 3):
 - **Device performance and cost**: on each asset page — uptime, failures, mean time between failures and to repair,
   maintenance and parts cost against the purchase price.
 
+## Money and tender law (wave 10)
+
+- **Budgets** (`/procurement/budgets`), **supplier invoices** with three-way match and a finance CSV export
+  (`/procurement/invoices`), **framework agreements** with call-off POs (`/procurement/frameworks`).
+- **Supplier scorecards**, and **delivery, installation and acceptance** checklists that start the warranty.
+- Each tender's **Tender** tab: one or two envelopes with sealed prices, bonds, printable committee minutes, the
+  technical evaluation sheet and validity extension letters.
+
 ## Finding things and keeping the register tidy
 
 - **Search** (box at the top of every page): equipment by tag, serial number, maker, model or tag; device types; makes

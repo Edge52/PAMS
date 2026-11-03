@@ -178,7 +178,7 @@ export async function saveCompliance(offerLineId: number, _prev: ActionState, fd
 
   const rows = jsonField(fd, "compliance");
   if (!Array.isArray(rows)) return fail("The compliance answers could not be read. Reload the page and try again.");
-  const clean: { specItemId: number; status: ComplianceStatus; offeredValue: string | null; remark: string | null }[] = [];
+  const clean: { specItemId: number; status: ComplianceStatus; offeredValue: string | null; remark: string | null; pageRef: string | null }[] = [];
   for (const raw of rows) {
     const r = (raw ?? {}) as Record<string, unknown>;
     const specItemId = Number(r.specItemId);
@@ -186,14 +186,15 @@ export async function saveCompliance(offerLineId: number, _prev: ActionState, fd
     const status = COMPLIANCE_STATUSES.includes(r.status as ComplianceStatus) ? (r.status as ComplianceStatus) : "NOT_STATED";
     const offeredValue = typeof r.offeredValue === "string" && r.offeredValue.trim() ? r.offeredValue.trim().slice(0, 500) : null;
     const remark = typeof r.remark === "string" && r.remark.trim() ? r.remark.trim().slice(0, 500) : null;
-    clean.push({ specItemId, status, offeredValue, remark });
+    const pageRef = typeof r.pageRef === "string" && r.pageRef.trim() ? r.pageRef.trim().slice(0, 64) : null;
+    clean.push({ specItemId, status, offeredValue, remark, pageRef });
   }
 
   await db.transaction(async (tx) => {
     if (line.line.specId !== spec.id) await tx.update(offerLines).set({ specId: spec.id }).where(eq(offerLines.id, offerLineId));
     for (const c of clean) {
       await tx.insert(offerCompliance).values({ offerLineId, ...c })
-        .onConflictDoUpdate({ target: [offerCompliance.offerLineId, offerCompliance.specItemId], set: { status: c.status, offeredValue: c.offeredValue, remark: c.remark } });
+        .onConflictDoUpdate({ target: [offerCompliance.offerLineId, offerCompliance.specItemId], set: { status: c.status, offeredValue: c.offeredValue, remark: c.remark, pageRef: c.pageRef } });
     }
   });
   const failedMandatory = clean.filter((c) => c.status === "NOT_COMPLIANT" && spec.items.find((i) => i.id === c.specItemId)?.mandatory).length;
@@ -282,6 +283,7 @@ export async function recommendAward(_prev: ActionState, fd: FormData): Promise<
     return fail(`An offer that is ${humanizeEnum(o.offer.status).toLowerCase()} can't be recommended for award. Review or shortlist it first.`);
   }
   if (await pendingRequest("AWARD", offerId)) return fail("An award recommendation for this offer is already waiting for approval.");
+  if (o.project.twoEnvelope && !o.project.financialOpenedAt) return fail("This is a two-envelope tender and the financial envelopes are still sealed. Finish the technical evaluation and open them first (project › Tender tab).");
   const failures = await mandatoryFailures(offerId);
   if (failures.length && !reason) {
     return fail(`This offer fails ${failures.length} mandatory specification item${failures.length === 1 ? "" : "s"}: ${failures.slice(0, 5).join("; ")}${failures.length > 5 ? "; …" : ""}. Enter a justification to recommend it anyway — it goes into the evaluation record.`);
