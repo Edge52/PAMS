@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { bonds, facilities, offers, projects, suppliers } from "@/db/schema";
+import { contactFor } from "@/components/procurement/supplier-contacts";
 import { PrintButton } from "@/components/reports/print";
 import { ReportPrintStyles } from "@/components/reports/print-styles";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
@@ -27,6 +28,7 @@ export default async function ExtensionLetter({ params, searchParams }: { params
   const ok = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
   const until = ok(sp.until) ?? addDaysISO(r.o.validUntil ?? todayISO(), 30);
   const reply = ok(sp.reply) ?? addDaysISO(todayISO(), 7);
+  const sales = await contactFor(r.s.id, "SALES");
   const [bond] = await db.select().from(bonds).where(and(eq(bonds.offerId, id), eq(bonds.kind, "BID"), eq(bonds.status, "HELD")));
   return (
     <>
@@ -40,7 +42,7 @@ export default async function ExtensionLetter({ params, searchParams }: { params
       </form>
       <article className="mx-auto max-w-2xl rounded border border-line bg-surface p-8 text-[15px] leading-relaxed print:border-0 print:p-0">
         <p className="text-right">{formatDate(todayISO())}</p>
-        <p className="mt-6">To: <b>{r.s.name}</b>{r.s.contactName ? <><br />Attn: {r.s.contactName}</> : null}{r.s.address ? <><br />{r.s.address}</> : null}</p>
+        <p className="mt-6">To: <b>{r.s.name}</b>{sales || r.s.contactName ? <><br />Attn: {sales?.name ?? r.s.contactName}{sales?.email ? ` (${sales.email})` : ""}</> : null}{r.s.address ? <><br />{r.s.address}</> : null}</p>
         <p className="mt-6 font-semibold">Subject: Extension of offer validity — {r.p.code}, {r.p.title}</p>
         <p className="mt-4">Dear Sirs,</p>
         <p className="mt-3">With reference to your offer no. {r.o.reference} dated {formatDate(r.o.offerDate)} submitted for the above tender{r.facility ? ` of ${r.facility}` : ""}, valid until {formatDate(r.o.validUntil)}, and as the evaluation is still in progress, we kindly ask you to extend the validity of your offer, on the same prices and conditions, until <b>{formatDate(until)}</b>.</p>

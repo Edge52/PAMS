@@ -13,6 +13,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { offerTotals, poTotals, sumInCurrency } from "@/lib/procurement/server";
 import { toggleSupplierActive } from "../actions";
 import { supplierScorecard } from "@/lib/procurement/money-server";
+import { SupplierContacts } from "@/components/procurement/supplier-contacts";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
@@ -133,6 +134,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
           </section>
         </div>
         <div className="space-y-5">
+          <SupplierContacts supplierId={id} canEdit={can(me.role, "suppliers.edit")} />
           <DocumentsPanel entityType="supplier" entityId={id} returnPath={`/procurement/suppliers/${id}`} title="Agency letters, registrations, certificates" />
           {invites.length > 0 && (
             <Panel title="RFQ invitations" padded={false}>

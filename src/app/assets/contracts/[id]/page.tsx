@@ -4,6 +4,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, facilities, rooms, serviceContractAssets, serviceContracts, suppliers, workOrders } from "@/db/schema";
 import { Badge, Button, Details, EmptyState, Field, LinkButton, PageHeader, Panel, StatusBadge, Textarea } from "@/components/ui";
+import { contactFor } from "@/components/procurement/supplier-contacts";
 import { DocumentsPanel } from "@/components/documents-panel";
 import { ActionForm } from "@/components/assets/action-form";
 import { DeviceTypeSelect, NativeSelect, Notice } from "@/components/assets/bits";
@@ -56,6 +57,7 @@ export default async function ContractPage({ params, searchParams }: {
     canEdit ? db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.facilityId, c.facilityId)).orderBy(asc(departments.name)) : Promise.resolve([]),
     edit ? db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).orderBy(asc(suppliers.name)) : Promise.resolve([]),
   ]);
+  const service = await contactFor(r.supplierId, "SERVICE");
   const perAsset = annualCostPerAsset(c.value != null ? num(c.value) : null, c.startDate, c.endDate, devices.length);
   const p = `/assets/contracts/${c.id}`;
 
@@ -94,6 +96,7 @@ export default async function ContractPage({ params, searchParams }: {
                 { label: "Spare parts", value: c.includesParts ? "Included" : "Not included" },
                 { label: "Supplier's reference", value: c.vendorReference },
                 { label: "Contact", value: [c.contactName, c.contactPhone].filter(Boolean).join(", ") || null },
+                { label: "Supplier's service contact", value: service ? [service.name, service.phone, service.email].filter(Boolean).join(", ") : null },
               ]} />
               {c.notes && <p className="mt-4 whitespace-pre-wrap text-sm">{c.notes}</p>}
             </Panel>

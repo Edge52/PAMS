@@ -15,7 +15,7 @@ import { setPoBudgetAction } from "@/app/procurement/invoices/actions";
 export async function PoMoney({ po, me }: { po: typeof purchaseOrders.$inferSelect; me: CurrentUser }) {
   const year = new Date().getFullYear();
   const [lines, invs] = await Promise.all([
-    po.facilityId ? db.select().from(budgetLines).where(and(eq(budgetLines.facilityId, po.facilityId), sql`${budgetLines.year} between ${year - 1} and ${year + 1}`)).orderBy(desc(budgetLines.year), budgetLines.name) : Promise.resolve([]),
+    po.facilityId ? db.select().from(budgetLines).where(and(eq(budgetLines.facilityId, po.facilityId), eq(budgetLines.kind, "CAPITAL"), sql`${budgetLines.year} between ${year - 1} and ${year + 1}`)).orderBy(desc(budgetLines.year), budgetLines.name) : Promise.resolve([]),
     db.select({ i: invoices, total: sql<string>`(select sum(${invoiceLines.quantity} * ${invoiceLines.unitPrice}) from ${invoiceLines} where ${invoiceLines.invoiceId} = ${invoices.id})` })
       .from(invoices).where(eq(invoices.poId, po.id)).orderBy(desc(invoices.invoiceDate)),
   ]);

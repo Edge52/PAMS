@@ -135,6 +135,15 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
       const n = await notifyUsers(await who(a.role, a.facilityId), a.n);
       if (n) { created += n; byKind[a.n.kind] = (byKind[a.n.kind] ?? 0) + n; }
     }
+    // The monthly executive pack (wave 12): from the 1st of each month, once per month and hospital, to directors
+    // and administrators (emailed too when email is set up).
+    const month = today.slice(0, 7);
+    for (const [id, name] of names) {
+      for (const role of ["DIRECTOR", "ADMIN"] as Role[]) {
+        const n = await notifyUsers(await who(role, id), { kind: "executive_pack", title: `${name}: executive summary for ${month}`, body: "Equipment, maintenance, risks, tenders, budgets and pathway readiness on one page, ready to print.", href: `/reports/executive?facilityId=${id}`, dedupeKey: `exec:${month}:${id}` });
+        if (n) { created += n; byKind.executive_pack = (byKind.executive_pack ?? 0) + n; }
+      }
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
     console.error("[alerts] run failed:", e);

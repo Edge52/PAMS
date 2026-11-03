@@ -68,6 +68,8 @@ const sections: { title: string; links: NavLink[] }[] = [
     links: [
       { href: "/admin/users", label: "Users", need: "users.manage" },
       { href: "/admin/settings", label: "Approval rules & settings", need: "settings.manage" },
+      { href: "/admin/audit", label: "Audit log", need: "users.manage" },
+      { href: "/admin/backups", label: "Backups", need: "users.manage" },
     ],
   },
 ];

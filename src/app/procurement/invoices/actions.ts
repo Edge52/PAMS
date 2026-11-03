@@ -33,7 +33,8 @@ export async function saveBudgetLineAction(_: FormState, fd: FormData): Promise<
   if (!Number.isInteger(year) || year < 2000 || year > 2100) return { error: "Enter the budget year." };
   if (name.length < 2) return { error: "Name the budget line, e.g. “Imaging equipment”." };
   if (!(amount >= 0 && amount < 1e13)) return { error: "Enter the amount." };
-  const v = { facilityId, year, name, amount: amount.toFixed(2), currency, departmentId: Number(fd.get("departmentId")) || null, projectId: Number(fd.get("projectId")) || null, notes: str(fd, "notes", 1000) || null };
+  const kind = fd.get("kind") === "MAINTENANCE" ? "MAINTENANCE" as const : "CAPITAL" as const;
+  const v = { facilityId, year, name, kind, amount: amount.toFixed(2), currency, departmentId: Number(fd.get("departmentId")) || null, projectId: Number(fd.get("projectId")) || null, notes: str(fd, "notes", 1000) || null };
   if (id) await db.update(budgetLines).set(v).where(eq(budgetLines.id, id));
   else await db.insert(budgetLines).values(v);
   await logActivity("facility", facilityId, "budget line", `${year} ${name}: ${currency} ${amount.toLocaleString("en")}`, me.name);
@@ -50,7 +51,7 @@ export async function setPoBudgetAction(_: FormState, fd: FormData): Promise<For
   await requireFacilityAccess(po.facilityId, me);
   if (!lineId) { await db.update(purchaseOrders).set({ budgetLineId: null }).where(eq(purchaseOrders.id, po.id)); revalidatePath(`/procurement/purchase-orders/${po.id}`); return { ok: "Taken off the budget." }; }
   const [line] = await db.select().from(budgetLines).where(eq(budgetLines.id, lineId));
-  if (!line || (po.facilityId != null && line.facilityId !== po.facilityId)) return { error: "Choose a budget line of this PO's hospital." };
+  if (!line || (po.facilityId != null && line.facilityId !== po.facilityId) || line.kind !== "CAPITAL") return { error: "Choose a capital budget line of this PO's hospital." };
   const [before] = await budgetRows([line]);
   const fx = await fxFactors([po.currency], line.currency);
   const value = (await poValues([po.id])).get(po.id) ?? 0;

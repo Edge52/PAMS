@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { and, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { approvalRequests, assets, boqs, deviceModels, facilities, preferredModels, purchaseOrders, serviceContracts, workOrders } from "@/db/schema";
+import { approvalRequests, assets, boqs, budgetLines, buildings, deviceModels, deviceTypes, facilities, floors, patientFlows, preferredModels, projects, purchaseOrders, rooms, serviceContracts, workOrders } from "@/db/schema";
+import { budgetRows } from "@/lib/procurement/money-server";
+import { loadFlow } from "@/lib/flows/server";
+import { readiness } from "@/lib/flows/readiness";
 import { Badge, EmptyState, PageHeader } from "@/components/ui";
 import { NativeSelect } from "@/components/assets/bits";
 import { PrintButton } from "@/components/reports/print";
@@ -46,6 +49,20 @@ export default async function ExecutiveSummaryPage({ searchParams }: { searchPar
     db.select({ name: facilities.name, beds: facilities.totalBeds }).from(facilities).where(eq(facilities.id, fac.id)),
   ]);
   const eq_ = equipmentFigures(live.rows);
+  // Wave 12: tenders, capital budget and pathway readiness.
+  const [tenders, capLines, flowIds, roomRows, kit] = await Promise.all([
+    db.select({ status: projects.status, n: sql<number>`count(*)::int` }).from(projects).where(and(eq(projects.facilityId, fac.id), inArray(projects.status, ["SPECIFICATION", "RFQ", "EVALUATION", "AWARDED", "DELIVERY"]))).groupBy(projects.status),
+    db.select().from(budgetLines).where(and(eq(budgetLines.facilityId, fac.id), eq(budgetLines.year, now.getFullYear()), eq(budgetLines.kind, "CAPITAL"))),
+    db.select({ id: patientFlows.id }).from(patientFlows).where(and(eq(patientFlows.facilityId, fac.id), eq(patientFlows.status, "PUBLISHED"))),
+    db.select({ id: rooms.id, departmentId: rooms.departmentId }).from(rooms).innerJoin(floors, eq(floors.id, rooms.floorId)).innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(eq(buildings.facilityId, fac.id)),
+    db.select({ id: assets.id, typeCode: deviceTypes.code, typeName: deviceTypes.name, roomId: assets.roomId, status: assets.status }).from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
+      .where(sql`${assets.facilityId} = ${fac.id} and ${assets.status} <> 'DISPOSED' and ${assets.roomId} is not null`),
+  ]);
+  const budgets = await budgetRows(capLines);
+  const budgetTotal = budgets.reduce((s, b) => s + Number(b.amount), 0), budgetUsed = budgets.reduce((s, b) => s + b.used, 0);
+  const flows = (await Promise.all(flowIds.map((f) => loadFlow(f.id)))).filter((f) => f != null);
+  const ready = flows.map((f) => ({ name: f.flow.name, r: readiness(f.steps, roomRows, kit) }));
+  const notReady = ready.filter((x) => x.r.total && x.r.ok < x.r.total);
   const k = workOrderKpis(jobRows, now);
   const fleet = fleetSummary(fleetRows, models, new Map(prefs.map((p) => [p.deviceTypeId, p.modelId])), today);
   const unsupported = fleet.reduce((t, f) => t + f.unsupported, 0);
@@ -118,12 +135,17 @@ export default async function ExecutiveSummaryPage({ searchParams }: { searchPar
         </section>
 
         <section>
-          <h2 className="mb-2 text-[15px] font-semibold">Contracts, purchasing and plans</h2>
+          <h2 className="mb-2 text-[15px] font-semibold">Contracts, purchasing, budgets and pathways</h2>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {tile("Service contracts ending", formatNumber(contractsEnding[0].n), "Within 60 days")}
             {tile("Warranties ending", formatNumber(warrantyEnding[0].n), "Within 90 days")}
             {tile("Purchase orders in delivery", formatNumber(pos.length), latePos ? `${latePos} past the expected date` : "None late")}
             {tile("Approvals waiting", formatNumber(approvals[0].n))}
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {tile("Tenders in progress", formatNumber(tenders.reduce((t, x) => t + x.n, 0)), tenders.map((x) => `${x.n} ${x.status.toLowerCase()}`).join(", ") || "None")}
+            {tile(`Capital budget ${now.getFullYear()}`, budgetTotal ? `${Math.round((budgetUsed / budgetTotal) * 100)} % used` : "Not set", budgetTotal ? `${formatMoney(budgetUsed, budgets[0].currency, { compact: true })} of ${formatMoney(budgetTotal, budgets[0].currency, { compact: true })}` : undefined)}
+            {tile("Pathways ready", flows.length ? `${flows.length - notReady.length} of ${flows.length}` : "—", notReady.length ? `Missing equipment: ${notReady.slice(0, 2).map((x) => x.name).join(", ")}${notReady.length > 2 ? "…" : ""}` : flows.length ? "All equipment in place" : "No published pathways")}
           </div>
           {plans.length > 0 && (
             <p className="mt-2 text-sm text-muted">Equipment plans: {plans.map((b) => `${b.name} v${b.version} (${b.status.replace(/_/g, " ").toLowerCase()})`).join("; ")}.</p>

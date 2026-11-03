@@ -64,13 +64,14 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
               <li key={r.id} className="px-4 py-3 text-sm">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span><Link href={q(`&line=${r.id}`)} className="font-semibold text-primary hover:underline">{r.name}</Link>
-                    <span className="text-muted"> {[name(r.departmentId, depts)?.name, name(r.projectId, projs)?.code].filter(Boolean).join(" · ")}</span></span>
+                    <span className="text-muted"> {[r.kind === "MAINTENANCE" ? "maintenance" : null, name(r.departmentId, depts)?.name, name(r.projectId, projs)?.code].filter(Boolean).join(" · ")}</span></span>
                   <span className="flex items-center gap-2"><Badge tone={TONE[r.level]}>{Number.isFinite(r.pct) ? `${Math.round(r.pct * 100)} %` : "no budget"}</Badge><b>{formatMoney(r.amount, r.currency)}</b></span>
                 </div>
                 <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-sunken" aria-hidden="true">
                   <span className="bg-primary" style={{ width: pct(r.spent) }} /><span className="bg-info" style={{ width: pct(r.committed) }} /><span className="bg-warn/50" style={{ width: pct(r.requested) }} />
                 </div>
-                <p className="mt-1 text-xs text-muted">Spent {formatMoney(r.spent, r.currency)} · committed {formatMoney(r.committed, r.currency)} · waiting for approval {formatMoney(r.requested, r.currency)} · {r.remaining >= 0 ? `${formatMoney(r.remaining, r.currency)} left` : <span className="text-danger">{formatMoney(-r.remaining, r.currency)} over</span>} · {r.pos} PO{r.pos === 1 ? "" : "s"}{r.missingRate ? " · some POs have no exchange rate" : ""}</p>
+                {r.kind === "MAINTENANCE" ? <p className="mt-1 text-xs text-muted">Spending against this line is on the <Link href={`/assets/maintenance/budget?facilityId=${facilityId}&year=${year}`} className="text-primary hover:underline">maintenance budget</Link> page.</p> :
+                <p className="mt-1 text-xs text-muted">Spent {formatMoney(r.spent, r.currency)} · committed {formatMoney(r.committed, r.currency)} · waiting for approval {formatMoney(r.requested, r.currency)} · {r.remaining >= 0 ? `${formatMoney(r.remaining, r.currency)} left` : <span className="text-danger">{formatMoney(-r.remaining, r.currency)} over</span>} · {r.pos} PO{r.pos === 1 ? "" : "s"}{r.missingRate ? " · some POs have no exchange rate" : ""}</p>}
                 {open === r.id && (pos.length ? <ul className="mt-2 space-y-0.5 text-xs">{pos.map((p) => <li key={p.id}><Link href={`/procurement/purchase-orders/${p.id}`} className="font-mono text-primary hover:underline">{p.number}</Link> {p.supplier} · {p.status.toLowerCase().replace(/_/g, " ")}</li>)}</ul> : <p className="mt-2 text-xs text-muted">No PO charged to it yet. Charge one from the PO&apos;s page.</p>)}
               </li>
             );
@@ -83,6 +84,7 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
             <input type="hidden" name="facilityId" value={facilityId} /><input type="hidden" name="year" value={year} />
             <Field label="Name"><Input name="name" required maxLength={200} placeholder="e.g. Imaging equipment" /></Field>
             <Field label="Amount"><Input name="amount" required inputMode="decimal" /></Field>
+            <Field label="Kind"><NativeSelect name="kind" value="CAPITAL" options={[{ value: "CAPITAL", label: "Capital (equipment purchases)" }, { value: "MAINTENANCE", label: "Maintenance (repairs, parts, contracts)" }]} /></Field>
             <Field label="Currency"><NativeSelect name="currency" value="EGP" options={CURRENCIES.map((c) => ({ value: c, label: c }))} /></Field>
             <Field label="Department (optional)"><NativeSelect name="departmentId" placeholder="Whole hospital" options={depts.map((d) => ({ value: d.id, label: d.name }))} /></Field>
             <Field label="Project (optional)"><NativeSelect name="projectId" placeholder="Any project" options={projs.map((p) => ({ value: p.id, label: `${p.code} — ${p.title}` }))} /></Field>

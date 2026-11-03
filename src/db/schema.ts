@@ -1261,6 +1261,11 @@ export const invoiceStatus = pgEnum("invoice_status", ["RECEIVED", "MATCHED", "E
 export const bondKind = pgEnum("bond_kind", ["BID", "PERFORMANCE", "ADVANCE_PAYMENT"]);
 export const bondStatus = pgEnum("bond_status", ["HELD", "RELEASED", "CALLED"]);
 export const acceptanceStatus = pgEnum("acceptance_status", ["PENDING", "ACCEPTED", "REJECTED"]);
+export const contactRole = pgEnum("contact_role", ["SALES", "SERVICE", "FINANCE", "MANAGEMENT", "OTHER"]);
+export const budgetKind = pgEnum("budget_kind", ["CAPITAL", "MAINTENANCE"]);
+export const requestStatus = pgEnum("request_status", ["SUBMITTED", "APPROVED", "REJECTED", "PLANNED"]);
+export const roundKind = pgEnum("round_kind", ["ROUND", "STOCKTAKE"]);
+export const roundResult = pgEnum("round_result", ["OK", "FAULT", "MOVED", "MISSING", "FOUND_ELSEWHERE"]);
 export const committeeKind = pgEnum("committee_kind", ["OPENING", "ADJUDICATION", "COMBINED"]);
 export const committeeCapacity = pgEnum("committee_capacity", [
   "CHAIR", "TECHNICAL", "FINANCIAL", "LEGAL", "MOF_REP", "STATE_COUNCIL_REP", "HOUSING_REP", "SECRETARY", "MEMBER",
@@ -1296,6 +1301,8 @@ export const budgetLines = pgTable("budget_lines", {
   facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
   year: integer("year").notNull(),
   name: text("name").notNull(),
+  /** Capital (equipment purchases, POs commit) or maintenance (repairs, parts, contracts) — wave 12. */
+  kind: budgetKind("kind").notNull().default("CAPITAL"),
   departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   amount: money("amount").notNull(),
@@ -1401,6 +1408,69 @@ export const bonds = pgTable("bonds", {
   notes: text("notes"),
   createdAt: createdAt(),
 }, (t) => [index("bonds_project_idx").on(t.projectId)]);
+
+/* ───────────────────────── Operations (wave 12) ───────────────────────── */
+
+/** People at a supplier, by role: sales for RFQs and POs, service for faults and contracts, finance for invoices. */
+export const supplierContacts = pgTable("supplier_contacts", {
+  id: serial("id").primaryKey(),
+  supplierId: integer("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  role: contactRole("role").notNull().default("SALES"),
+  jobTitle: text("job_title"),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 64 }),
+  notes: text("notes"),
+}, (t) => [index("supplier_contacts_supplier_idx").on(t.supplierId)]);
+
+/** A department's request for new or replacement equipment; approved requests feed the capital plan and a BOQ. */
+export const equipmentRequests = pgTable("equipment_requests", {
+  id: serial("id").primaryKey(),
+  number: varchar("number", { length: 24 }).notNull().unique(),          // REQ-2026-0001
+  facilityId: integer("facility_id").notNull().references(() => facilities.id),
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  deviceTypeId: integer("device_type_id").notNull().references(() => deviceTypes.id),
+  quantity: integer("quantity").notNull().default(1),
+  /** The device it replaces, for a replacement. */
+  replacesAssetId: integer("replaces_asset_id").references(() => assets.id, { onDelete: "set null" }),
+  reason: text("reason").notNull(),
+  priority: workOrderPriority("priority").notNull().default("NORMAL"),
+  neededBy: date("needed_by"),
+  status: requestStatus("status").notNull().default("SUBMITTED"),
+  requestedById: integer("requested_by_id").references(() => users.id, { onDelete: "set null" }),
+  requestedByName: text("requested_by_name"),
+  decidedByName: text("decided_by_name"),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  decisionNote: text("decision_note"),
+  /** Year it is planned for, and the BOQ it went into. */
+  planYear: integer("plan_year"),
+  boqId: integer("boq_id").references(() => boqs.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+}, (t) => [index("equipment_requests_facility_idx").on(t.facilityId)]);
+
+/** A walking round or stock-take of a ward (wave 12): devices confirmed, found faulty, moved or missing. */
+export const rounds = pgTable("rounds", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id),
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  kind: roundKind("kind").notNull().default("ROUND"),
+  startedByName: text("started_by_name"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  notes: text("notes"),
+}, (t) => [index("rounds_facility_idx").on(t.facilityId)]);
+
+export const roundItems = pgTable("round_items", {
+  id: serial("id").primaryKey(),
+  roundId: integer("round_id").notNull().references(() => rounds.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  result: roundResult("result").notNull(),
+  roomId: integer("room_id").references(() => rooms.id, { onDelete: "set null" }),
+  note: text("note"),
+  workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "set null" }),
+  /** When it was checked on the phone (may be before it reached the server, when offline). */
+  checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
+}, (t) => [uniqueIndex("round_items_round_asset_uq").on(t.roundId, t.assetId)]);
 
 /** In-app notifications. dedupeKey stops the alert generator repeating itself. */
 export const notifications = pgTable("notifications", {
