@@ -4,8 +4,8 @@ import "server-only";
  */
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { budgetLines, invoiceLines, invoices, poLines, purchaseOrders } from "@/db/schema";
-import { budgetUse, type MatchLine } from "./money";
+import { acceptances, assets, budgetLines, deliveries, invoiceLines, invoices, poLines, purchaseOrders, workOrders } from "@/db/schema";
+import { budgetUse, scorecard, type MatchLine } from "./money";
 import { fxFactors } from "./server";
 
 /** POs that commit money: approved onwards, not cancelled. */
@@ -70,4 +70,34 @@ export async function matchLinesFor(poId: number, entered: Map<number, { quantit
     poLineId: l.id, description: l.description, ordered: l.quantity, received: l.receivedQty, poUnitPrice: Number(l.unitPrice),
     invoicedBefore: prev.get(l.id) ?? 0, quantity: entered.get(l.id)?.quantity ?? 0, unitPrice: entered.get(l.id)?.unitPrice ?? Number(l.unitPrice),
   }));
+}
+
+/** What has been called off so far: PO value (not cancelled) and quantities per item. */
+export async function calledOff(frameworkId: number) {
+  const pos = await db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(and(eq(purchaseOrders.frameworkId, frameworkId), ne(purchaseOrders.status, "CANCELLED")));
+  const ids = pos.map((p) => p.id);
+  const value = [...(await poValues(ids)).values()].reduce((s, v) => s + v, 0);
+  const qty = ids.length ? await db.select({ desc: poLines.description, dt: poLines.deviceTypeId, q: sql<number>`sum(${poLines.quantity})::int` }).from(poLines).where(inArray(poLines.poId, ids)).groupBy(poLines.description, poLines.deviceTypeId) : [];
+  return { value, qty };
+}
+
+
+/** A supplier's scorecard from what the system records (wave 10): delivery, acceptance, warranty response, invoices. */
+export async function supplierScorecard(supplierId: number) {
+  const today = new Date().toISOString().slice(0, 10);
+  const pos = await db.select({ id: purchaseOrders.id, expected: purchaseOrders.expectedDelivery, status: purchaseOrders.status, last: sql<string | null>`(select max(${deliveries.deliveryDate}) from ${deliveries} where ${deliveries.poId} = ${purchaseOrders.id})` })
+    .from(purchaseOrders).where(and(eq(purchaseOrders.supplierId, supplierId), sql`${purchaseOrders.expectedDelivery} is not null`, inArray(purchaseOrders.status, ["ISSUED", "ACKNOWLEDGED", "PARTIALLY_DELIVERED", "DELIVERED", "CLOSED"])));
+  const days = (a: string, b: string) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
+  const dels = pos.flatMap((p) => p.status === "DELIVERED" || p.status === "CLOSED" ? (p.last ? [{ daysLate: days(p.last, p.expected!) }] : [])
+    : p.expected! < today ? [{ daysLate: days(today, p.expected!) }] : []);
+  const acc = await db.select({ status: acceptances.status, issues: acceptances.issues }).from(acceptances).innerJoin(assets, eq(assets.id, acceptances.assetId)).where(eq(assets.supplierId, supplierId));
+  const war = await db.select({ h: sql<number>`extract(epoch from (${workOrders.startedAt} - ${workOrders.reportedAt})) / 3600` }).from(workOrders).innerJoin(assets, eq(assets.id, workOrders.assetId))
+    .where(and(eq(assets.supplierId, supplierId), eq(workOrders.coverage, "WARRANTY"), sql`${workOrders.startedAt} is not null`));
+  const inv = await db.select({ status: invoices.status, note: invoices.decisionNote }).from(invoices).where(eq(invoices.supplierId, supplierId));
+  return scorecard({
+    deliveries: dels,
+    accepted: acc.filter((a) => a.status === "ACCEPTED" && !a.issues).length, acceptanceIssues: acc.filter((a) => a.status === "REJECTED" || (a.status === "ACCEPTED" && a.issues)).length,
+    warrantyResponseHours: war.map((w) => Number(w.h)),
+    invoices: inv.length, invoiceExceptions: inv.filter((i) => i.status === "EXCEPTION" || i.status === "REJECTED" || ((i.status === "APPROVED" || i.status === "PAID") && i.note)).length,
+  });
 }
