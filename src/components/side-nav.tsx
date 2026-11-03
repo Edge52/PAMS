@@ -40,6 +40,9 @@ const sections: { title: string; links: NavLink[] }[] = [
       { href: "/procurement/suppliers", label: "Suppliers", need: "procurement.view" },
       { href: "/procurement/offers", label: "Offers", need: "procurement.view" },
       { href: "/procurement/purchase-orders", label: "Purchase orders", need: "procurement.view" },
+      { href: "/procurement/frameworks", label: "Framework agreements", need: "procurement.view" },
+      { href: "/procurement/invoices", label: "Invoices", need: "procurement.view" },
+      { href: "/procurement/budgets", label: "Budgets", need: "procurement.view" },
     ],
   },
   {
