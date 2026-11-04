@@ -79,6 +79,16 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
 - **Fleet & standardisation**: see how many makes each type has; set the **preferred model** with a reason.
 - Tags on a device (*Edit details* › Tags), e.g. `loan, teaching, donated`; click a tag to list every device with it.
 
+**Rounds and stock-take** — **Rounds and stock-take** (on a phone)
+- **Start** a round (or a stock-take of a ward), then scan each label or tap it in the list: **OK**, **Fault** (a job
+  is raised) or **Moved** (choose the room). No signal? Carry on: results are sent when it returns. **Finish** lists
+  what a stock-take didn't find.
+
+**Accept delivered equipment**
+- On a delivered device, **Delivery and acceptance**: tick each check, **Sign for biomedical engineering**, then the
+  department head signs (or you record who signed for the department). The device goes into service and its warranty
+  starts. Set each type's acceptance checks on its catalogue page.
+
 **Register equipment**
 - **Asset register** › **Register asset** (one), **Bulk place** (e.g. a monitor at every ICU bed) or **Import Excel**
   (download the template first). Makes and models are offered as you type. To print QR labels, tick devices in the
@@ -125,7 +135,11 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
    cost of ownership** over 5 or 10 years, next to what the same models have cost you to maintain.
 4. Set up the committees (Law 182); **Recommend award**; the members sign; the director approves.
 5. **Purchase orders** from the award → approval → **Issue** after the acceptance notice.
-6. **Receive goods** on the PO: each unit becomes a tagged asset.
+6. **Receive goods** on the PO: each unit becomes a tagged asset. Charge the PO to a **budget line** on its page, and
+   **Record invoice** when the supplier bills: it is matched against what was ordered and received.
+7. On the project's **Tender** tab: choose one or two envelopes, record the envelopes opened, record bid and
+   performance bonds, and print the minutes, the technical evaluation sheet and validity extension letters.
+8. **Framework agreements**: record the agreed items and prices once; **Draft call-off PO** whenever you need more.
 - Service contracts can also be managed from **Service contracts**.
 
 ---
@@ -133,6 +147,9 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 ## Director and Finance
 
 - **Approvals**: everything waiting for you (POs, BOQs, awards, disposals). Approve, or reject with a comment.
+- **Budgets** (Finance): add the year's budget lines; you're notified when a PO takes one past 80 % or 100 %.
+- **Invoices** (Finance): *To decide* lists matched invoices and those with differences; approve (giving a reason when
+  it differs), reject, then **Mark paid**. **Export for finance (CSV)** for the accounting system.
 - **Reports › Executive summary** for each hospital.
 
 ---
@@ -141,6 +158,9 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 
 - Read everything in your hospitals; report faults; follow your department's equipment in the register, floor map
   and 3D view.
+- **My department**: pick your department to see its equipment, open jobs, maintenance coming up and devices past
+  their service life. **Send request** asks for new or replacement equipment; you're told when the director decides.
+- On delivered equipment, **Sign for the department** once biomedical engineering has signed the acceptance checks.
 
 ---
 

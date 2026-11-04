@@ -79,6 +79,9 @@ export function FloorMap(props: {
   canMove?: boolean;
   /** Role may register assets ("Add asset here"). */
   canAdd?: boolean;
+  /** Other floors of the hospital and how to list their rooms, for moving a device to another floor (wave 12). */
+  otherFloors?: { id: number; name: string }[];
+  roomsOnFloor?: (floorId: number) => Promise<{ id: number; code: string; name: string }[]>;
 }) {
   const { floor, rooms, departments } = props;
   const canMove = props.canMove ?? false;
@@ -625,6 +628,15 @@ export function FloorMap(props: {
               dept={(() => { const d = roomById.get(assetById.get(selection.id)!.roomId)?.departmentId; return d != null ? deptById.get(d) : undefined; })()}
               rooms={rooms} onClose={() => select(null)} onRoom={(id) => select({ kind: "room", id })}
               onMove={canMove ? requestMoveFromPanel : undefined}
+              otherFloors={canMove ? props.otherFloors : undefined} roomsOnFloor={props.roomsOnFloor}
+              onMoveAway={async (assetId, toRoomId, label) => {
+                setBusy(true);
+                const res = await props.moveAction({ assetId, toRoomId, posX: null, posY: null, reason: "Moved to another floor from the floor map" });
+                setBusy(false);
+                if (!res.ok) { setMessage({ tone: "danger", text: res.error }); return; }
+                setAssets((list) => list.filter((x) => x.id !== assetId)); select(null);
+                setMessage({ tone: "ok", text: `${res.summary} (${label})` });
+              }}
             />
           ) : selection?.kind === "room" && roomById.get(selection.id) ? (
             <RoomPanel
@@ -817,11 +829,16 @@ function RoomPanel({ room, dept, assets, matchIds, onAsset, onClose, onZoom, can
   );
 }
 
-function AssetCard({ asset, room, dept, rooms, onClose, onRoom, onMove }: {
+function AssetCard({ asset, room, dept, rooms, onClose, onRoom, onMove, otherFloors, roomsOnFloor, onMoveAway }: {
   asset: MapAsset; room?: MapRoom; dept?: MapDept; rooms: MapRoom[];
   onClose: () => void; onRoom: (id: number) => void; onMove?: (assetId: number, toRoomId: number) => void;
+  otherFloors?: { id: number; name: string }[]; roomsOnFloor?: (floorId: number) => Promise<{ id: number; code: string; name: string }[]>;
+  onMoveAway?: (assetId: number, toRoomId: number, label: string) => void;
 }) {
   const [to, setTo] = useState("");
+  const [floorTo, setFloorTo] = useState("");
+  const [farRooms, setFarRooms] = useState<{ id: number; code: string; name: string }[] | null>(null);
+  const [farTo, setFarTo] = useState("");
   const warrantyPast = asset.warrantyEnd && asset.warrantyEnd < todayISO();
   return (
     <div>
@@ -864,9 +881,27 @@ function AssetCard({ asset, room, dept, rooms, onClose, onRoom, onMove }: {
               {rooms.filter((r) => r.id !== asset.roomId).map((r) => <option key={r.id} value={r.id}>{r.code} — {r.name}</option>)}
             </select>
           </label>
-          <p className="mt-1 text-xs text-muted">Or drag the pin on the plan. For another floor, use Move on the asset page.</p>
+          <p className="mt-1 text-xs text-muted">Or drag the pin on the plan.</p>
           <button type="submit" disabled={!to} className="mt-2 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 py-1 font-semibold hover:bg-sunken disabled:opacity-50">Review move</button>
         </form>}
+        {otherFloors && otherFloors.length > 0 && roomsOnFloor && onMoveAway && (
+          <form className="rounded-[var(--radius-control)] border border-line bg-canvas p-3"
+            onSubmit={(e) => { e.preventDefault(); const r = farRooms?.find((x) => String(x.id) === farTo); if (r) onMoveAway(asset.id, r.id, `${otherFloors.find((f) => String(f.id) === floorTo)?.name}, ${r.name}`); }}>
+            <span className="mb-1 block font-semibold">Move to another floor</span>
+            <select value={floorTo} aria-label="Floor" onChange={async (e) => { setFloorTo(e.target.value); setFarTo(""); setFarRooms(null); if (e.target.value) setFarRooms(await roomsOnFloor(Number(e.target.value))); }}
+              className="mb-2 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 py-1.5">
+              <option value="">Choose a floor…</option>
+              {otherFloors.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            {farRooms && (
+              <select value={farTo} aria-label="Room on that floor" onChange={(e) => setFarTo(e.target.value)} className="w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 py-1.5">
+                <option value="">Choose a room…</option>
+                {farRooms.map((r) => <option key={r.id} value={r.id}>{r.code} — {r.name}</option>)}
+              </select>
+            )}
+            <button type="submit" disabled={!farTo} className="mt-2 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 py-1 font-semibold hover:bg-sunken disabled:opacity-50">Move there</button>
+          </form>
+        )}
       </div>
     </div>
   );

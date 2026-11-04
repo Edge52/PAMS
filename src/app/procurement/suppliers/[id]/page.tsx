@@ -12,6 +12,8 @@ import { Stars } from "@/components/procurement/stars";
 import { formatDate, formatMoney } from "@/lib/format";
 import { offerTotals, poTotals, sumInCurrency } from "@/lib/procurement/server";
 import { toggleSupplierActive } from "../actions";
+import { supplierScorecard } from "@/lib/procurement/money-server";
+import { SupplierContacts } from "@/components/procurement/supplier-contacts";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
@@ -47,6 +49,8 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
   const ordered = await sumInCurrency(livePos.map((p) => ({ amount: pTotals.get(p.id)?.value ?? 0, currency: p.currency })), "EGP");
   const orderedUsd = await sumInCurrency(livePos.map((p) => ({ amount: pTotals.get(p.id)?.value ?? 0, currency: p.currency })), "USD");
   const awarded = offerRows.filter((o) => o.status === "AWARDED").length;
+  const sc = await supplierScorecard(id);
+  const pctOr = (v: number | null) => (v == null ? "—" : `${Math.round(v)} %`);
   const winRate = offerRows.length ? Math.round((awarded / offerRows.length) * 100) : null;
 
   return (
@@ -68,6 +72,19 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
         <Stat label="Offers submitted" value={offerRows.length} hint={winRate != null ? `${awarded} awarded (${winRate}%)` : undefined} />
         <Stat label="RFQ invitations" value={invites.length} hint={invites.length ? `${invites.filter((i) => i.responded).length} responded` : undefined} />
         <Stat label="Assets supplied" value={assetCount} />
+      </div>
+      <div className="mb-5 rounded-[var(--radius-panel)] border border-line bg-surface p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-[15px] font-semibold">Scorecard</h2>
+          <span className="text-sm">{sc.grade ? <><Badge tone={sc.grade === "A" ? "ok" : sc.grade === "B" ? "info" : sc.grade === "C" ? "warn" : "danger"}>{sc.grade}</Badge> <b>{sc.score}</b> / 100</> : <span className="text-muted">Not enough records yet</span>}</span>
+        </div>
+        <dl className="mt-3 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
+          <div><dt className="text-xs text-muted">Delivered on time</dt><dd>{pctOr(sc.onTimePct)}{sc.avgDaysLate ? <span className="block text-xs text-muted">{sc.avgDaysLate.toFixed(1)} days late on average</span> : null}</dd></div>
+          <div><dt className="text-xs text-muted">Accepted without issues</dt><dd>{pctOr(sc.acceptancePct)}</dd></div>
+          <div><dt className="text-xs text-muted">Warranty response (median)</dt><dd>{sc.warrantyMedianH != null ? `${Math.round(sc.warrantyMedianH)} h` : "—"}</dd></div>
+          <div><dt className="text-xs text-muted">Invoices matching the PO</dt><dd>{pctOr(sc.invoiceMatchPct)}</dd></div>
+        </dl>
+        <p className="mt-2 text-xs text-muted">From its purchase orders, device acceptances, warranty jobs and invoices across all hospitals. On-time delivery counts double.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
@@ -117,6 +134,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
           </section>
         </div>
         <div className="space-y-5">
+          <SupplierContacts supplierId={id} canEdit={can(me.role, "suppliers.edit")} />
           <DocumentsPanel entityType="supplier" entityId={id} returnPath={`/procurement/suppliers/${id}`} title="Agency letters, registrations, certificates" />
           {invites.length > 0 && (
             <Panel title="RFQ invitations" padded={false}>

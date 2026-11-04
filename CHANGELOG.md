@@ -1,5 +1,66 @@
 # Changelog
 
+## Unreleased — wave 12 (branch `wave-12`, built on `wave-10`)
+
+Migration `0030`. Update with `git pull` and `npm run demo`; your data is kept.
+
+- **My department** (Assets): a department's equipment, out of use, open jobs, maintenance in the next 30 days,
+  devices past service life, and **equipment requests** (new or replacement, priority, reason). The director
+  approves them for a year (they then show in the capital plan) or declines with a reason; approved requests become
+  a BOQ.
+- **Rounds and stock-take** on a phone: scan the QR label (camera where the browser reads QR codes), a handheld
+  scanner or type the tag; mark OK, fault (raises a job) or moved (moves it). Results wait on the phone without
+  signal and are sent when it returns. A stock-take lists what wasn't found.
+- **Audit log** (Administration): search who did what by person, record, text and dates; CSV export.
+- **Backups** (Administration): backup files and their age, *Back up now* (the built-in database while running, and
+  the uploaded files), a restore check that each archive opens, and downloads.
+- **Supplier contacts** by role (sales, service, finance…); the sales contact is used on validity letters and the
+  service contact is shown on contracts.
+- **Maintenance budget** (Maintenance › Maintenance budget): upkeep per department (completed maintenance and
+  repairs plus each contract's share) against maintenance budget lines, with a full-year forecast. Budget lines now
+  have a kind, capital or maintenance.
+- **Executive summary** adds tenders in progress, capital budget use and pathway readiness, and is announced to
+  directors and administrators each month (by email too when email is set up).
+- **Room outlines**: draw rooms corner by corner in the layout editor, drag corners, add or remove them.
+- **Floor map**: move a device to a room on another floor from its panel.
+- **Room data sheet** (printable, from the 3D room details): area from the drawings, survey, services, finish,
+  installed equipment and the department's plan against installed.
+- **BOQ scope from the drawings**: beds take the larger of the declared beds and those drawn in the rooms; *Update
+  beds and rooms from the drawings* on the scope tab.
+- **Clean and dirty routes**: two new starters (CSSD to theatres, ward waste to the waste store); the 3D Pathways
+  panel and the pathway analysis show corridors both use and lifts both use at the same hours.
+- **Smoother 3D**: walking networks are built in a background worker.
+
+## Unreleased — wave 10 (branch `wave-10`)
+
+Migration `0029`. Update with `git pull` and `npm run demo`; your data is kept. The demo adds a budget line per
+hospital (labelled demo) only when none exist.
+
+- **Budgets**: budget lines per hospital and year, optionally per department or project. POs are charged to a line;
+  each line shows spent (approved invoices), committed (approved POs not yet invoiced) and waiting for approval.
+  Finance is notified when a PO takes a line past 80 % or 100 %.
+- **Supplier invoices and three-way match**: record an invoice from the PO; it is checked against the quantities
+  ordered and received and the PO price (1 % tolerance). Approve, approve with a reason, reject, mark paid. CSV
+  export for finance.
+- **Framework agreements**: agreed items and prices with a supplier up to a ceiling; a call-off drafts a PO at those
+  prices within the dates, the ceiling and each item's limit.
+- **Supplier scorecards** on each supplier: on-time delivery, acceptance without issues, warranty response, invoices
+  matching the PO, graded A–D.
+- **Delivery, installation and acceptance**: a checklist per device type (default list until you set your own);
+  biomedical engineering fills it and signs, the department signs; acceptance puts the device in service and starts
+  its warranty for the months on the PO.
+- **Tender tab** on each project: one or two envelopes (prices stay sealed in the comparison and on offers until the
+  financial envelopes are opened, and an award can't be recommended before), bid and performance bonds against the
+  required 1.5 % and 5 % with expiry, printable committee minutes (opening, technical, financial, award) and a
+  validity extension letter per offer.
+- **Technical evaluation sheet**: every specification clause against every offer with the offered value and the
+  datasheet page (new *Page* column when recording compliance), mandatory failures highlighted, for the committee to
+  sign.
+- New permissions: `budgets.edit`, `invoices.edit` (procurement, finance), `invoices.approve` (finance).
+
+Check the bond rates, the two-envelope steps and the minutes' wording against the Law 182/2018 executive
+regulations before relying on them.
+
 ## Unreleased — waves 8 and 9 (branch `wave-8`)
 
 Migrations `0024`–`0028`. Update with `git pull` and `npm run demo`; your data is kept. The demo adds clearly labelled

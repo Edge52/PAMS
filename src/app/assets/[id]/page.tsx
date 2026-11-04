@@ -16,6 +16,7 @@ import { BAND_LABEL } from "@/lib/assets/lifecycle-kpis";
 import { formatHours } from "@/lib/assets/work-orders";
 import { Badge, Button, Details, Field, FormGrid, Input, LinkButton, PageHeader, Panel, StatusBadge, Textarea } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents-panel";
+import { AcceptancePanel } from "@/components/assets/acceptance-panel";
 import { ActionForm } from "@/components/assets/action-form";
 import { Crumbs, enumOptions, Meter, NativeSelect, Notice, RoomSelect } from "@/components/assets/bits";
 import { MiniMap } from "@/components/assets/mini-map";
@@ -296,6 +297,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
             </ActionForm>}
           </Panel>
 
+          <AcceptancePanel assetId={x.id} status={x.status} me={me} />
           <DocumentsPanel entityType="asset" entityId={x.id} returnPath={path} title="Documents and photos" />
         </div>
 

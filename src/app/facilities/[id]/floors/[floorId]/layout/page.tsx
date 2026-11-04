@@ -27,7 +27,7 @@ export default async function LayoutPage({ params }: { params: Promise<{ id: str
   const [roomRows, depts] = await Promise.all([
     db.select({
       id: rooms.id, code: rooms.code, name: rooms.name, type: rooms.type, departmentId: rooms.departmentId, beds: rooms.beds,
-      x: rooms.x, y: rooms.y, w: rooms.w, h: rooms.h,
+      x: rooms.x, y: rooms.y, w: rooms.w, h: rooms.h, polygon: rooms.polygon,
       assetCount: sql<number>`(select count(*) from assets a where a.room_id = ${sql.raw('"rooms"."id"')})::int`,
     }).from(rooms).where(eq(rooms.floorId, fl.id)).orderBy(asc(rooms.code)),
     db.select({ id: departments.id, name: departments.name, code: departments.code }).from(departments).where(eq(departments.facilityId, fl.facilityId)).orderBy(asc(departments.name)),
@@ -49,7 +49,7 @@ export default async function LayoutPage({ params }: { params: Promise<{ id: str
       />
       <LayoutEditor
         floor={{ id: fl.id, name: fl.name, level: fl.level, planWidth: fl.planWidth, planHeight: fl.planHeight, planImageUrl: fl.planImageUrl }}
-        rooms={roomRows}
+        rooms={roomRows.map((r) => ({ ...r, polygon: r.polygon && r.polygon.length >= 3 ? r.polygon : null }))}
         departments={depts.map((d) => ({ ...d, tint: tints.get(d.id) ?? "var(--color-muted)" }))}
         roomTypes={[...ROOM_TYPES]}
         save={saveFloorLayout}

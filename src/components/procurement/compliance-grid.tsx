@@ -9,6 +9,8 @@ import { keepInputs } from "@/lib/submit-keep";
 export type ComplianceRow = {
   specItemId: number; section: string | null; parameter: string; requirement: string; unit: string | null; mandatory: boolean; weight: number;
   offeredValue: string; status: ComplianceStatus; remark: string;
+  /** Datasheet page or clause where the offer shows it (wave 10). */
+  pageRef: string;
 };
 
 const STATUS: { value: ComplianceStatus; label: string; on: string }[] = [
@@ -35,7 +37,7 @@ export function ComplianceGrid({ action, rows: initial, lineLabel }: {
 
   return (
     <form onSubmit={keepInputs(formAction, { busy: pending, before: () => setDirty(false) })}>
-      <input type="hidden" name="compliance" value={JSON.stringify(rows.map((r) => ({ specItemId: r.specItemId, status: r.status, offeredValue: r.offeredValue, remark: r.remark })))} />
+      <input type="hidden" name="compliance" value={JSON.stringify(rows.map((r) => ({ specItemId: r.specItemId, status: r.status, offeredValue: r.offeredValue, remark: r.remark, pageRef: r.pageRef })))} />
       <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span>Technical score <strong className="tabular-nums">{ev.score == null ? "—" : `${ev.score.toFixed(1)}%`}</strong></span>
         <span className="text-muted">{ev.counts.COMPLIES} comply · {ev.counts.PARTIAL} partial · {ev.counts.NOT_COMPLIANT} not compliant · {ev.counts.NOT_STATED} not stated</span>
@@ -51,6 +53,7 @@ export function ComplianceGrid({ action, rows: initial, lineLabel }: {
               <th className="px-2 py-1.5 font-semibold">Required</th>
               <th className="w-48 px-2 py-1.5 font-semibold">Offered</th>
               <th className="w-[17rem] px-2 py-1.5 font-semibold">Compliance</th>
+              <th className="w-24 px-2 py-1.5 font-semibold">Page</th>
               <th className="w-44 px-2 py-1.5 font-semibold">Remark</th>
             </tr>
           </thead>
@@ -75,7 +78,8 @@ export function ComplianceGrid({ action, rows: initial, lineLabel }: {
                     ))}
                   </div>
                 </td>
-                <td className="px-1 py-1"><input aria-label={`Remark for ${r.parameter}`} value={r.remark} onChange={(e) => set(r.specItemId, { remark: e.target.value })} className={cell} placeholder="Datasheet p. 4" /></td>
+                <td className="px-1 py-1"><input aria-label={`Datasheet page for ${r.parameter}`} value={r.pageRef} onChange={(e) => set(r.specItemId, { pageRef: e.target.value })} className={cell} placeholder="p. 4" maxLength={64} /></td>
+                <td className="px-1 py-1"><input aria-label={`Remark for ${r.parameter}`} value={r.remark} onChange={(e) => set(r.specItemId, { remark: e.target.value })} className={cell} /></td>
               </tr>
             ))}
           </tbody>

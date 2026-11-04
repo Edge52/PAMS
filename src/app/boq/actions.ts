@@ -473,6 +473,28 @@ export async function importFacilityDepartments(fd: FormData) {
   redirect(`${back}&notice=${enc(fresh.length ? `Imported ${fresh.length} ${fresh.length === 1 ? "department" : "departments"} from ${fac.name}. Regenerate to add their lines.` : `All of ${fac.name}'s departments are already in the scope.`)}`);
 }
 
+/** Update the beds and rooms of the scope's linked departments from the drawings (wave 12, BOQ scope from CAD). */
+export async function refreshScopeFromDrawings(fd: FormData) {
+  const me = await requirePermission("boq.edit");
+  const boqId = int(fd, "boqId") ?? 0;
+  const back = `/boq/${boqId}?tab=scope`;
+  const boq = await loadEditableBoq(boqId, back, me);
+  if (!boq.facilityId) fail(back, "Link the BOQ to a hospital first.");
+  await requireFacilityAccess(boq.facilityId, me);
+  const scope = new Map((await facilityDepartmentScope(db, boq.facilityId)).map((s) => [s.departmentId, s]));
+  const rows = await db.select().from(boqDepartments).where(eq(boqDepartments.boqId, boqId));
+  const changes: string[] = [];
+  for (const r of rows) {
+    const s = r.departmentId ? scope.get(r.departmentId) : undefined;
+    if (!s || (s.beds === r.beds && s.rooms === r.rooms)) continue;
+    await db.update(boqDepartments).set({ beds: s.beds, rooms: s.rooms }).where(eq(boqDepartments.id, r.id));
+    changes.push(`${r.label}: ${r.beds}→${s.beds} beds, ${r.rooms}→${s.rooms} rooms`);
+  }
+  await logActivity("boq", boqId, "scope_changed", changes.length ? `Scope updated from the drawings: ${changes.slice(0, 6).join("; ")}${changes.length > 6 ? "…" : ""}` : "Scope checked against the drawings: no change");
+  revalidatePath(`/boq/${boqId}`);
+  redirect(`${back}&notice=${enc(changes.length ? `${changes.length} department${changes.length === 1 ? "" : "s"} updated from the drawings. Regenerate to recalculate the lines.` : "The scope already matches the drawings.")}`);
+}
+
 /** Called from the /boq/new form: a facility's departments as scope rows (beds, clinical room counts). */
 export async function loadFacilityScope(facilityId: number) {
   const me = await requirePermission("boq.edit");

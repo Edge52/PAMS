@@ -66,7 +66,7 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
 
   return (
     <>
-      <PageHeader title="Maintenance" description="Planned preventive maintenance due from each device type's interval and the last completed PPM, plus warranties ending soon." />
+      <PageHeader title="Maintenance" description="Planned preventive maintenance due from each device type's interval and the last completed PPM, plus warranties ending soon." actions={<LinkButton href="/assets/maintenance/budget">Maintenance budget</LinkButton>} />
       <Notice sp={sp} />
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="PPM overdue" value={formatNumber(overdue.length)} href={base("due")} hint={overdue.length ? "Past their due date" : "Nothing overdue"} />

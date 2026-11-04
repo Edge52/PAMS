@@ -8,6 +8,8 @@ import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/a
 import { scopeWhere } from "@/lib/assets/access";
 import { hospitalAnalysis } from "@/lib/flows/analysis-server";
 import { readinessLine } from "@/lib/flows/readiness";
+import { hourRanges } from "@/lib/flows/analysis";
+import { cleanDirtyReport } from "@/lib/flows/route-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Pathway analysis" };
@@ -34,6 +36,7 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
   const { load, beds, scanners, skipped } = a.analysis;
   const flags = load.filter((r) => r.flag).length + beds.filter((r) => r.flag).length + scanners.filter((r) => r.flag).length;
   const blocked = a.readiness.filter((r) => r.blocked);
+  const cd = await cleanDirtyReport(fac.id).catch(() => null);
 
   return (
     <>
@@ -109,6 +112,17 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
                 </li>
               ))}
             </ul>
+          </Panel>
+
+          <Panel title="Clean and dirty routes" className="mt-5">
+            {!cd ? <p className="text-sm text-muted">Publish at least one clean supplies pathway and one dirty or waste pathway to check them against each other (starters: “Clean supplies — CSSD to theatres” and “Waste — wards to the waste store”).</p> : (
+              <div className="space-y-2 text-sm">
+                <p>Checked: {cd.flows.map((f, i) => <span key={f.id}>{i ? ", " : ""}<Link href={`/flows/${f.id}`} className="text-primary hover:underline">{f.name}</Link> <span className="text-muted">({f.kind === "SUPPLIES" ? "clean" : "dirty"})</span></span>)}.</p>
+                <p className={cd.shared.length ? "text-danger" : "text-ok"}>{cd.shared.length ? `About ${cd.shared.length * 2} m of corridor shared: ${cd.perFloor.map(([f, m]) => `${f} ${m} m`).join(", ")}.` : "No corridor is shared."}</p>
+                {cd.lifts.length ? <ul className="list-disc pl-5">{cd.lifts.map((l) => <li key={l.name} className={l.hours.length ? "text-danger" : "text-warn"}>{l.name}: used by {l.clean.join(", ")} and {l.dirty.join(", ")}{l.hours.length ? `; both at ${hourRanges(l.hours)}` : "; at different hours"}.</li>)}</ul> : <p className="text-ok">No lift is used by both.</p>}
+                <Link href={`/assets/3d?facilityId=${fac.id}&flow=${cd.flows.map((f) => f.id).join(",")}`} className="text-primary hover:underline">See them in 3D</Link>
+              </div>
+            )}
           </Panel>
 
           <p className="mt-4 text-xs text-muted">Lift load, corridor traffic and side-by-side comparisons need walking routes: open the pathways in the <Link href={`/assets/3d?facilityId=${fac.id}`} className="text-primary hover:underline">3D view</Link>.{skipped.length ? ` Not counted: ${skipped.join("; ")}.` : ""}</p>

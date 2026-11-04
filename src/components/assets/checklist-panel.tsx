@@ -11,12 +11,15 @@ const SOURCE = {
   default: { badge: "Default", text: "Built-in default. Replace it with the manufacturer's PPM procedure." },
 } as const;
 
-export function ChecklistPanel({ code, items, source, canEdit, own }: {
+export function ChecklistPanel({ code, items, source, canEdit, own, kind = "ppm" }: {
   code: string; items: ChecklistItem[]; source: keyof typeof SOURCE; canEdit: boolean; own: boolean;
+  /** "acceptance": the delivery, installation and acceptance checks (wave 10). */
+  kind?: "ppm" | "acceptance";
 }) {
+  const acc = kind === "acceptance";
   return (
-    <Panel title={<span id="checklist">PPM checklist</span>} actions={<Badge tone={source === "default" ? "warn" : "info"}>{SOURCE[source].badge}</Badge>}>
-      <p className="mb-3 text-xs text-muted">{SOURCE[source].text}</p>
+    <Panel title={<span id={acc ? "acceptance" : "checklist"}>{acc ? "Acceptance checklist" : "PPM checklist"}</span>} actions={<Badge tone={source === "default" ? "warn" : "info"}>{SOURCE[source].badge}</Badge>}>
+      <p className="mb-3 text-xs text-muted">{acc && source === "default" ? "Built-in default delivery, installation and acceptance checks. Add the manufacturer's acceptance tests." : SOURCE[source].text}{acc ? " Used when a delivered device is accepted; acceptance starts its warranty." : ""}</p>
       <ol className="mb-4 list-decimal space-y-1 pl-5 text-sm">
         {items.map((i, n) => (
           <li key={n}>{i.text}{isMeasurement(i) && <span className="text-muted"> — reading{rangeLabel(i) ? `, pass ${rangeLabel(i)}` : ""}</span>}</li>
@@ -26,7 +29,7 @@ export function ChecklistPanel({ code, items, source, canEdit, own }: {
         <details className="rounded-[var(--radius-control)] border border-line p-3">
           <summary className="cursor-pointer text-sm font-semibold text-primary">Edit the checklist</summary>
           <ActionForm action={saveChecklistAction} className="mt-3 space-y-3">
-            <input type="hidden" name="code" value={code} />
+            <input type="hidden" name="code" value={code} /><input type="hidden" name="kind" value={kind} />
             <Field label="One check per line" hint="For a reading, write: description | unit | minimum | maximum. Leave a limit empty if there is none, e.g. “Leakage current | µA | | 500”.">
               <Textarea name="checklist" rows={Math.min(18, items.length + 3)} defaultValue={formatChecklist(items)} className="font-mono text-[13px]" />
             </Field>

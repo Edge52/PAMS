@@ -20,7 +20,7 @@ export async function egpRates(): Promise<Map<string, number>> {
   for (const r of rows) if (!m.has(r.c)) m.set(r.c, num(r.r));
   return m;
 }
-const toEgp = (rates: Map<string, number>, amount: string | number | null, currency: string | null) => {
+export const toEgp = (rates: Map<string, number>, amount: string | number | null, currency: string | null) => {
   if (amount == null) return 0;
   const r = rates.get(currency ?? "EGP");
   return r == null ? 0 : num(amount) * r;

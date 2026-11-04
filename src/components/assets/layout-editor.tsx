@@ -13,7 +13,11 @@ import { usePanZoom } from "./use-pan-zoom";
 export type EditorRoom = {
   id: number | null; code: string; name: string; type: string; departmentId: number | null; beds: number;
   x: number; y: number; w: number; h: number; assetCount: number;
+  /** Outline for rooms that aren't rectangles (wave 12; CAD rooms have one). Null = the rectangle. */
+  polygon: [number, number][] | null;
 };
+type Pt = [number, number];
+const bbox = (p: Pt[]) => { const xs = p.map((q) => q[0]), ys = p.map((q) => q[1]); const x = Math.min(...xs), y = Math.min(...ys); return { x, y, w: Math.max(5, Math.max(...xs) - x), h: Math.max(5, Math.max(...ys) - y) }; };
 type Row = EditorRoom & { key: string };
 type SaveFn = (input: { floorId: number; rooms: Omit<EditorRoom, "assetCount">[] }) => Promise<{ ok: true; message: string; idMap: Record<string, number> } | { ok: false; error: string }>;
 
@@ -36,7 +40,9 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
   const [imgOpacity, setImgOpacity] = useState(0.8);
   const counter = useRef(0);
   const { svgRef: canvasRef, ...pz } = usePanZoom(plan, { maxZoom: 20 });
-  const op = useRef<{ key: string; handle: Handle; start: Rect; px: number; py: number; pointerId: number } | null>(null);
+  const op = useRef<{ key: string; handle: Handle; start: Rect; px: number; py: number; pointerId: number; poly?: Pt[] | null; vertex?: number } | null>(null);
+  const [drawing, setDrawing] = useState<Pt[] | null>(null);
+  const [vertex, setVertex] = useState<number | null>(null);
   const tint = useMemo(() => new Map(departments.map((d) => [d.id, d.tint])), [departments]);
   const selected = rows.find((r) => r.key === sel) ?? null;
 
@@ -46,6 +52,29 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
+
+  const setPoly = (key: string, poly: Pt[] | null) => update(key, poly ? { polygon: poly, ...bbox(poly) } : { polygon: null });
+  const finishDrawing = () => {
+    if (!drawing || drawing.length < 3) { setDrawing(null); return; }
+    counter.current += 1;
+    const key = `new-${counter.current}`, n = rows.length + counter.current, last = selected ?? rows[rows.length - 1];
+    const row: Row = { key, id: null, code: `${floor.level < 0 ? "B" : floor.level}-RM${String(n).padStart(2, "0")}`, name: `Room ${n}`, type: last?.type ?? "PATIENT_ROOM",
+      departmentId: last?.departmentId ?? null, beds: 0, assetCount: 0, polygon: drawing, ...bbox(drawing) };
+    setRows((list) => [...list, row]); setSel(key); setDrawing(null); setDirty(true);
+  };
+  const toOutline = () => { if (selected && !selected.polygon) setPoly(selected.key, [[selected.x, selected.y], [selected.x + selected.w, selected.y], [selected.x + selected.w, selected.y + selected.h], [selected.x, selected.y + selected.h]]); };
+  const addCorner = () => {
+    const p = selected?.polygon; if (!p) return;
+    let best = 0, len = -1;
+    p.forEach((a, i) => { const b = p[(i + 1) % p.length]; const l = Math.hypot(b[0] - a[0], b[1] - a[1]); if (l > len) { len = l; best = i; } });
+    const a = p[best], b = p[(best + 1) % p.length];
+    setPoly(selected!.key, [...p.slice(0, best + 1), [Math.round((a[0] + b[0]) / 2), Math.round((a[1] + b[1]) / 2)], ...p.slice(best + 1)]);
+    setVertex(best + 1);
+  };
+  const removeCorner = () => {
+    const p = selected?.polygon; if (!p || p.length <= 3 || vertex == null) return;
+    setPoly(selected!.key, p.filter((_, i) => i !== vertex)); setVertex(null);
+  };
 
   const update = (key: string, patch: Partial<Row>) => {
     setRows((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -59,7 +88,7 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
     const n = rows.length + counter.current;
     const key = `new-${counter.current}`;
     const row: Row = { key, id: null, code: `${floor.level < 0 ? "B" : floor.level}-RM${String(n).padStart(2, "0")}`, name: `Room ${n}`,
-      type: last?.type ?? "PATIENT_ROOM", departmentId: last?.departmentId ?? null, beds: 0, assetCount: 0, ...rect };
+      type: last?.type ?? "PATIENT_ROOM", departmentId: last?.departmentId ?? null, beds: 0, assetCount: 0, polygon: null, ...rect };
     setRows((list) => [...list, row]);
     setSel(key);
     setDirty(true);
@@ -70,7 +99,8 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
     const key = `new-${counter.current}`;
     const suffix = selected.code.match(/(\d+)$/);
     const nextCode = suffix ? selected.code.replace(/(\d+)$/, String(Number(suffix[1]) + 1).padStart(suffix[1].length, "0")) : `${selected.code}-2`;
-    const row: Row = { ...selected, key, id: null, assetCount: 0, code: nextCode, x: Math.min(plan.w - selected.w, selected.x + selected.w + 10) };
+    const dx = Math.min(plan.w - selected.w, selected.x + selected.w + 10) - selected.x;
+    const row: Row = { ...selected, key, id: null, assetCount: 0, code: nextCode, x: selected.x + dx, polygon: selected.polygon ? selected.polygon.map(([x, y]) => [x + dx, y] as Pt) : null };
     setRows((list) => [...list, row]);
     setSel(key);
     setDirty(true);
@@ -90,7 +120,7 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
   const onSave = async () => {
     setBusy(true);
     setMsg(null);
-    const payload = rows.map(({ id, code, name, type, departmentId, beds, x, y, w, h }) => ({ id, code, name, type, departmentId, beds, x, y, w, h }));
+    const payload = rows.map(({ id, code, name, type, departmentId, beds, x, y, w, h, polygon }) => ({ id, code, name, type, departmentId, beds, x, y, w, h, polygon }));
     const res = await save({ floorId: floor.id, rooms: payload });
     setBusy(false);
     if (!res.ok) { setMsg({ tone: "danger", text: res.error }); return; }
@@ -104,18 +134,24 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
   /* pointer handling: rooms + handles, background pans */
   const startOp = (e: RPointerEvent, key: string, handle: Handle) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (drawing) return; // drawing an outline: the click places a corner, even over another room
     e.stopPropagation();
     const r = rows.find((x) => x.key === key);
     if (!r) return;
     setSel(key);
     const p = pz.toPlan(e.clientX, e.clientY);
-    op.current = { key, handle, start: { x: r.x, y: r.y, w: r.w, h: r.h }, px: p.x, py: p.y, pointerId: e.pointerId };
+    op.current = { key, handle, start: { x: r.x, y: r.y, w: r.w, h: r.h }, px: p.x, py: p.y, pointerId: e.pointerId, poly: r.polygon };
     try { canvasRef.current?.setPointerCapture(e.pointerId); } catch { /* ignore */ }
   };
   const onMove = (e: RPointerEvent<SVGSVGElement>) => {
     const o = op.current;
     if (o && o.pointerId === e.pointerId) {
       const p = pz.toPlan(e.clientX, e.clientY);
+      if (o.poly) {
+        const dx = Math.round(p.x - o.px), dy = Math.round(p.y - o.py);
+        setPoly(o.key, o.vertex != null ? o.poly.map((q, i) => (i === o.vertex ? [Math.round(Math.max(0, Math.min(plan.w, p.x))), Math.round(Math.max(0, Math.min(plan.h, p.y)))] as Pt : q)) : o.poly.map(([x, y]) => [x + dx, y + dy] as Pt));
+        return;
+      }
       const next = dragRect(o.start, o.handle, p.x - o.px, p.y - o.py, plan);
       update(o.key, next);
       return;
@@ -124,7 +160,9 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
   };
   const onUp = (e: RPointerEvent<SVGSVGElement>) => {
     if (op.current && op.current.pointerId === e.pointerId) { op.current = null; return; }
-    if (pz.onPointerUp(e)) setSel(null);
+    const tap = pz.onPointerUp(e);
+    if (tap && drawing) { const p = pz.toPlan(e.clientX, e.clientY); setDrawing((d) => [...(d ?? []), [Math.round(Math.max(0, Math.min(plan.w, p.x))), Math.round(Math.max(0, Math.min(plan.h, p.y)))]]); return; }
+    if (tap) setSel(null);
   };
   const onKey = (e: KeyboardEvent<SVGSVGElement>) => {
     if (selected && e.target === e.currentTarget && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
@@ -138,7 +176,8 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
       return;
     }
     if (selected && (e.key === "Delete" || e.key === "Backspace") && e.target === e.currentTarget) { e.preventDefault(); remove(); return; }
-    if (e.key === "Escape") { setSel(null); return; }
+    if (e.key === "Escape") { if (drawing) setDrawing(null); else setSel(null); return; }
+    if (e.key === "Enter" && drawing) { finishDrawing(); return; }
     pz.onKeyDown(e);
   };
 
@@ -153,6 +192,15 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
         <button type="button" onClick={remove} disabled={!selected || selected.assetCount > 0}
           title={selected && selected.assetCount > 0 ? "Move its equipment out first" : undefined}
           className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold text-danger hover:bg-danger-soft disabled:opacity-50">Delete room</button>
+        <button type="button" onClick={() => (drawing ? finishDrawing() : (setDrawing([]), setSel(null)))}
+          className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">{drawing ? `Finish outline (${drawing.length} corners)` : "Draw a room outline"}</button>
+        {drawing && <button type="button" onClick={() => setDrawing(null)} className="rounded-[var(--radius-control)] px-3 py-1.5 text-sm font-semibold text-muted hover:bg-sunken">Cancel</button>}
+        {selected && !selected.polygon && <button type="button" onClick={toOutline} className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">Edit as outline</button>}
+        {selected?.polygon && <>
+          <button type="button" onClick={addCorner} className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">Add corner</button>
+          <button type="button" onClick={removeCorner} disabled={vertex == null || selected.polygon.length <= 3} className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken disabled:opacity-50">Remove corner</button>
+          <button type="button" onClick={() => setPoly(selected.key, null)} className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">Back to rectangle</button>
+        </>}
         <span className="mx-1 h-6 w-px bg-line" aria-hidden />
         {floor.planImageUrl && (
           <label className="flex items-center gap-2 text-sm text-muted">Plan image
@@ -194,11 +242,19 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
               const fs = Math.min(11 / k, r.h * 0.2, 14);
               return (
                 <g key={r.key}>
+                  {r.polygon ? (
+                    <polygon points={r.polygon.map((q) => q.join(",")).join(" ")}
+                      style={{ fill: r.type === "CORRIDOR" ? "var(--color-sunken)" : t ?? "var(--color-muted)", fillOpacity: r.type === "CORRIDOR" ? 0.7 : isSel ? 0.3 : 0.16,
+                        stroke: isSel ? "var(--color-primary)" : t ?? "var(--color-muted)", cursor: "move" }}
+                      strokeWidth={isSel ? 2.5 : 1.2} vectorEffect="non-scaling-stroke"
+                      onPointerDown={(e) => startOp(e, r.key, "move")} />
+                  ) : (
                   <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={1.5}
                     style={{ fill: r.type === "CORRIDOR" ? "var(--color-sunken)" : t ?? "var(--color-muted)", fillOpacity: r.type === "CORRIDOR" ? 0.7 : isSel ? 0.3 : 0.16,
                       stroke: isSel ? "var(--color-primary)" : t ?? "var(--color-muted)", cursor: "move" }}
                     strokeWidth={isSel ? 2.5 : 1.2} vectorEffect="non-scaling-stroke"
                     onPointerDown={(e) => startOp(e, r.key, "move")} />
+                  )}
                   {fs * k >= 6 && (
                     <text x={r.x + 2 / k + 1} y={r.y + fs + 1} fontSize={fs} fontWeight={600} style={{ fill: "var(--color-ink)", pointerEvents: "none" }}>
                       {fitLabel(r.code, r.w, fs)}
@@ -211,7 +267,18 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
                 </g>
               );
             })}
-            {selected && HANDLES.map((h) => {
+            {selected?.polygon && selected.polygon.map(([x, y], i) => (
+              <circle key={i} cx={x} cy={y} r={hs * (vertex === i ? 1.3 : 1)}
+                style={{ fill: vertex === i ? "var(--color-primary)" : "var(--color-surface)", stroke: "var(--color-primary)", cursor: "grab" }} strokeWidth={1.5} vectorEffect="non-scaling-stroke"
+                onPointerDown={(e) => { startOp(e, selected.key, "move"); if (op.current) op.current.vertex = i; setVertex(i); }} />
+            ))}
+            {drawing && drawing.length > 0 && (
+              <g style={{ pointerEvents: "none" }}>
+                <polyline points={drawing.map((q) => q.join(",")).join(" ")} fill="none" style={{ stroke: "var(--color-primary)" }} strokeWidth={2} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+                {drawing.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={hs * 0.8} style={{ fill: "var(--color-primary)" }} />)}
+              </g>
+            )}
+            {selected && !selected.polygon && HANDLES.map((h) => {
               const cx = selected.x + (h.includes("w") ? 0 : h.includes("e") ? selected.w : selected.w / 2);
               const cy = selected.y + (h.includes("n") ? 0 : h.includes("s") ? selected.h : selected.h / 2);
               return (
@@ -227,7 +294,7 @@ export function LayoutEditor({ floor, rooms: initial, departments, roomTypes, sa
             <button type="button" onClick={() => pz.fit()} className="border-t border-line px-1.5 py-1.5 text-xs font-semibold hover:bg-sunken">Fit</button>
           </div>
           <p className="pointer-events-none absolute bottom-2 left-2 rounded bg-surface/90 px-2 py-1 text-xs text-muted">
-            Drag a room to move it · drag the handles to resize · drag empty space to pan · {plan.w} × {plan.h} units
+            {drawing ? "Click each corner of the room, then Finish outline (or Enter) · Esc cancels" : "Drag a room to move it · drag the handles or corners to reshape · drag empty space to pan"} · {plan.w} × {plan.h} units
           </p>
         </div>
 

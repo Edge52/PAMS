@@ -9,7 +9,7 @@ import { peakShare, stepVolumes, type Link, type Step, type Transport } from "..
 import type { LiftTrip } from "../../../lib/flows/analysis";
 import type { Route } from "./nav/route";
 
-export type TwinFlow = { id: number; name: string; version: number; dailyVolume: number | null; steps: Step[]; links: Link[]; names?: Record<string, string>; arrivalProfile?: number[] | null; status?: "DRAFT" | "PUBLISHED" | "ARCHIVED" };
+export type TwinFlow = { id: number; name: string; version: number; dailyVolume: number | null; steps: Step[]; links: Link[]; names?: Record<string, string>; arrivalProfile?: number[] | null; status?: "DRAFT" | "PUBLISHED" | "ARCHIVED"; kind?: "PATIENT" | "STAFF" | "SUPPLIES" | "WASTE" };
 
 /** Pathway colours: bright on the dark look, dark enough on the light one; never the status red or green. */
 export const FLOW_COLORS = ["#ffd166", "#5ee6ff", "#ff7ab6", "#b49bff", "#ff9f43", "#7cf0c6"];

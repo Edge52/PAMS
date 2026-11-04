@@ -20,7 +20,7 @@ export type DB = NodePgDatabase<typeof schema>;
 export const DATABASE_URL = process.env.DATABASE_URL || "pglite:./.pglite";
 export const isPglite = DATABASE_URL.startsWith("pglite:");
 
-type Clients = { db: DB; close: () => Promise<void> };
+type Clients = { db: DB; close: () => Promise<void>; dump?: () => Promise<Blob> };
 const globalForDb = globalThis as unknown as { hpamsDb?: Clients };
 
 function connect(): Clients {
@@ -29,7 +29,7 @@ function connect(): Clients {
     const client = new PGlite(dir);
     // Same query API as node-postgres for everything this app uses (select/insert/update/delete, execute().rows, transactions).
     const db = drizzleLite(client, { schema, casing: "snake_case" }) as unknown as DB;
-    return { db, close: () => client.close() };
+    return { db, close: () => client.close(), dump: () => client.dumpDataDir("gzip") };
   }
   const pool = new Pool({ connectionString: DATABASE_URL });
   return { db: drizzlePg(pool, { schema, casing: "snake_case" }), close: () => pool.end() };
@@ -44,6 +44,11 @@ function connect(): Clients {
 // while the server was writing to it, which can corrupt it. Postgres pools connect lazily, so they were unaffected.
 function clients(): Clients {
   return (globalForDb.hpamsDb ??= connect());
+}
+
+/** A consistent copy of the embedded database's data folder (a .tar.gz), taken while it runs. Null for PostgreSQL. */
+export async function dumpEmbeddedDatabase(): Promise<Blob | null> {
+  return clients().dump ? clients().dump!() : null;
 }
 
 /** The Drizzle client. Connects on first query, not when imported. */

@@ -17,9 +17,10 @@ import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server
 import { bucketOf, colorFor, LAYER_INFO, LAYERS, legendFor, NEUTRAL, roomValues, type LayerId, type LiveMetrics, type Scope } from "./layers";
 import { RenderPanel, type RenderSettings } from "./render/render-panel";
 import { RouteService, routeSpots } from "./nav/service";
+import { workerBuilder } from "./nav/worker-builder";
 import { formatDuration, type Route } from "./nav/route";
 import { capPauses, FLOW_COLORS, heatLegsOf, journeyOf, liftTripsOf, pathwayCard, samplePath, stepRoom, trackOf, tubeRadius, visits, type TwinFlow } from "./pathways";
-import { corridorHeat, liftLoad } from "@/lib/flows/analysis";
+import { cleanDirtyConflicts, corridorHeat, hourRanges, liftLoad } from "@/lib/flows/analysis";
 import type { PathDraw } from "./scene";
 import { readiness, readinessLine } from "@/lib/flows/readiness";
 import type { TwinNote } from "@/lib/assets/twin-notes";
@@ -101,7 +102,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const routes = useMemo(() => new RouteService(data, async (id) => {
     const res = await fetch(`/assets/3d/geometry/${id}`);
     return res.ok ? ((await res.json()) as FloorGeometry) : null;
-  }), [data]);
+  }, workerBuilder()), [data]);
   const [navOn, setNavOn] = useState(false);
   const [navInfo, setNavInfo] = useState<string | null>(null);
   // Wave 7a: manual fixes to the walking network, rooms it can't reach, and access zones.
@@ -122,6 +123,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [playing, setPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(60);
   const [heatOn, setHeatOn] = useState(false);
+  // Wave 12 (A7): clean supplies against dirty and waste routes.
+  const [cdOn, setCdOn] = useState(false);
   // Wave 7e: notes, the note being written (and where), and drag to move.
   const [notes, setNotes] = useState<TwinNote[]>(initialNotes);
   const [composer, setComposer] = useState<{ floorId: number; x: number; y: number; roomId: number | null; assetId: number | null; where: string } | null>(null);
@@ -676,6 +679,19 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   ), [shownWithRoutes, floorById, data.lifts]);
   const heat = useMemo(() => (heatOn ? [...corridorHeat(shownWithRoutes.flatMap(({ f, rs }) => heatLegsOf(f, rs))).values()] : null), [heatOn, shownWithRoutes]);
   useEffect(() => { if (ready) sceneRef.current?.setHeat(heat); }, [heat, ready]);
+  const cdFlows = useMemo(() => flows.filter((f) => f.kind === "SUPPLIES" || f.kind === "WASTE"), [flows]);
+  const cd = useMemo(() => {
+    if (!cdOn) return null;
+    return cleanDirtyConflicts(shownWithRoutes.filter(({ f }) => f.kind === "SUPPLIES" || f.kind === "WASTE").map(({ f, rs }) => ({
+      name: f.name, kind: f.kind ?? "PATIENT", profile: f.arrivalProfile ?? null,
+      legs: rs.flatMap((r) => (r?.legs ?? []).filter((l) => l.kind === "walk").map((l) => ({ floorId: l.floorId, points: l.points as [number, number][] }))),
+      lifts: [...new Set(rs.flatMap((r) => (r?.legs ?? []).filter((l) => l.kind !== "walk" && l.via).map((l) => l.via!)))],
+    })));
+  }, [cdOn, shownWithRoutes]);
+  useEffect(() => {
+    const s = sceneRef.current; if (!s || !ready || history) return;
+    s.setEvents(cd ? cd.shared.map((c) => ({ floorId: c.floorId, x: c.x, z: c.z, color: "#ff3b4e", strength: 1 })) : []);
+  }, [cd, ready, history]);
   function toggleFlow(id: number) {
     const on = !flowSel.includes(id);
     setFlowSel((sel) => (on ? [...sel, id] : sel.filter((x) => x !== id)));
@@ -1574,6 +1590,21 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               <p className="mt-1 text-[11px] text-[#8fb6cc]">Per patient. To compare a draft with the published version, use “Show in 3D” on the draft.</p>
             </div>
           )}
+          {cdFlows.some((f) => f.kind === "SUPPLIES") && cdFlows.some((f) => f.kind === "WASTE") && (
+            <div className="border-t border-[#123a55] pt-2">
+              <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={cdOn} className="mt-0.5 accent-[#2fd3ff]"
+                onChange={(e) => { const on = e.target.checked; setCdOn(on); if (on) { setFlowSel((sel) => [...new Set([...sel, ...cdFlows.map((f) => f.id)])]); if (floorId != null) { setFloorId(null); sceneRef.current?.isolateFloor(null, false); } } }} />
+                <span>Clean and dirty routes<span className="block text-xs text-[#8fb6cc]">Shows the clean supply and waste pathways and marks in red where they share a corridor.</span></span>
+              </label>
+              {cd && (
+                <div className="mt-1 text-xs">
+                  <p className={cd.shared.length ? "text-[#ff8a96]" : "text-[#7dffc0]"}>{cd.shared.length ? `${cd.shared.length * 2} m of corridor shared` : "No corridor shared"}{flowBusy ? " (still routing…)" : ""}</p>
+                  {cd.lifts.map((l) => <p key={l.name} className={l.hours.length ? "text-[#ff8a96]" : "text-[#ffc46b]"}>{l.name}: used by both{l.hours.length ? `, at the same time ${hourRanges(l.hours)}` : ", at different hours"}</p>)}
+                  {!cd.lifts.length && <p className="text-[#7dffc0]">No lift used by both.</p>}
+                </div>
+              )}
+            </div>
+          )}
           {shownWithRoutes.length > 0 && (
             <div className="border-t border-[#123a55] pt-2">
               <p className="twin-h mb-1!">Load of these pathways</p>
@@ -1819,6 +1850,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           )}
           <div className="mt-2 flex flex-wrap gap-3">
             <Link href={`/assets?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Room in the asset register</Link>
+            <Link href={`/facilities/${data.facility.id}/rooms/${selRoom.id}/sheet`} className="text-sm text-[#5fd6ff] hover:underline">Room data sheet</Link>
             {data.can.addAsset && <Link href={`/assets/new?roomId=${selRoom.id}`} className="text-sm text-[#5fd6ff] hover:underline">Add a device here</Link>}
           </div>
         </div>

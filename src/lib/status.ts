@@ -28,6 +28,8 @@ const map: Record<string, Tone> = {
   PENDING: "warn", ACTIONED: "ok", NOT_AFFECTED: "neutral",
   // replacement bands
   REPLACE: "danger", PLAN: "warn", KEEP: "ok",
+  // invoices, bonds (wave 10)
+  MATCHED: "info", EXCEPTION: "danger", PAID: "ok", HELD: "info", RELEASED: "neutral", CALLED: "danger",
 };
 
 export function statusTone(value: string | null | undefined): Tone {

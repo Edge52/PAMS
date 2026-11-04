@@ -89,7 +89,7 @@ export type TwinData = {
 
 export type TwinFlowData = {
   id: number; name: string; version: number; dailyVolume: number | null;
-  arrivalProfile: number[] | null; status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  arrivalProfile: number[] | null; status: "DRAFT" | "PUBLISHED" | "ARCHIVED"; kind?: "PATIENT" | "STAFF" | "SUPPLIES" | "WASTE";
   steps: import("../../../lib/flows/model").Step[]; links: import("../../../lib/flows/model").Link[];
   /** Catalogue names of the equipment codes its steps need. */
   names: Record<string, string>;

@@ -78,3 +78,19 @@ describe("starters", () => {
     expect(r.steps.find((s) => s.key === "s3")).toMatchObject({ departmentId: 2, roomId: null });
   });
 });
+
+import { cleanDirtyConflicts, hourRanges } from "./analysis";
+describe("clean and dirty routes", () => {
+  it("finds shared corridor stretches and lifts used in the same hours", () => {
+    const hours = (a: number, b: number) => Array.from({ length: 24 }, (_, h) => (h >= a && h < b ? 1 : 0));
+    const r = cleanDirtyConflicts([
+      { name: "CSSD to theatres", kind: "SUPPLIES", profile: hours(7, 12), legs: [{ floorId: 1, points: [[0, 0], [20, 0]] }], lifts: ["Service lift"] },
+      { name: "Ward waste", kind: "WASTE", profile: hours(10, 16), legs: [{ floorId: 1, points: [[10, 0], [10, 10]] }], lifts: ["Service lift", "Bed lift"] },
+      { name: "Trauma", kind: "PATIENT", profile: null, legs: [{ floorId: 1, points: [[0, 0], [20, 0]] }], lifts: ["Bed lift"] },
+    ]);
+    expect(r.shared.length).toBeGreaterThan(0);
+    expect(r.shared.every((s) => s.floorId === 1 && s.clean[0] === "CSSD to theatres")).toBe(true);
+    expect(r.lifts).toEqual([{ name: "Service lift", clean: ["CSSD to theatres"], dirty: ["Ward waste"], hours: [10, 11] }]);
+    expect(hourRanges([7, 8, 9, 13])).toBe("07–10, 13–14");
+  });
+});

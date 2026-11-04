@@ -47,6 +47,9 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
   const fx = await fxFactors([offer.currency], project.currency);
   const pos = await db.select({ id: purchaseOrders.id, number: purchaseOrders.number, status: purchaseOrders.status }).from(purchaseOrders).where(eq(purchaseOrders.offerId, id));
 
+  // Two-envelope tender (wave 10): prices stay sealed until the financial envelopes are opened.
+  const sealed = project.twoEnvelope && !project.financialOpenedAt;
+  const seal = (n: React.ReactNode) => (sealed ? <span className="text-muted">Sealed</span> : n);
   const total = round2(lines.filter((l) => !l.line.isOptional).reduce((s, l) => s + lineTotal(l.line.quantity, l.line.unitPrice, l.line.discountPct), 0));
   const optionalTotal = round2(lines.filter((l) => l.line.isOptional).reduce((s, l) => s + lineTotal(l.line.quantity, l.line.unitPrice, l.line.discountPct), 0));
   const factor = fx[offer.currency];
@@ -116,9 +119,9 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
                       </Td>
                       <Td>{[l.line.manufacturer, l.line.model].filter(Boolean).join(" ") || "—"}{l.line.countryOfOrigin && <span className="block text-xs text-muted">Origin: {l.line.countryOfOrigin}</span>}</Td>
                       <Td align="right">{formatNumber(l.line.quantity)}</Td>
-                      <Td align="right" className="whitespace-nowrap">{formatMoney(l.line.unitPrice, offer.currency)}</Td>
+                      <Td align="right" className="whitespace-nowrap">{seal(formatMoney(l.line.unitPrice, offer.currency))}</Td>
                       <Td align="right">{l.line.discountPct ? `${l.line.discountPct}%` : "—"}</Td>
-                      <Td align="right" className="whitespace-nowrap font-semibold">{formatMoney(lineTotal(l.line.quantity, l.line.unitPrice, l.line.discountPct), offer.currency)}</Td>
+                      <Td align="right" className="whitespace-nowrap font-semibold">{seal(formatMoney(lineTotal(l.line.quantity, l.line.unitPrice, l.line.discountPct), offer.currency))}</Td>
                       <Td className="whitespace-nowrap">{!ev ? <span className="text-xs text-warn">No spec</span>
                         : !ev.responsive ? <Badge tone="danger">Non-responsive</Badge>
                           : <Badge tone={ev.score != null && ev.score >= 90 ? "ok" : ev.score != null && ev.score >= 60 ? "warn" : "neutral"}>{ev.score?.toFixed(0)}%</Badge>}</Td>
@@ -129,13 +132,13 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
               <tfoot>
                 <tr>
                   <Td colSpan={6} align="right" className="font-semibold">Offer total</Td>
-                  <Td align="right" className="whitespace-nowrap font-bold">{formatMoney(total, offer.currency)}</Td><Td />
+                  <Td align="right" className="whitespace-nowrap font-bold">{seal(formatMoney(total, offer.currency))}</Td><Td />
                 </tr>
                 {offer.currency !== project.currency && (
                   <tr><Td colSpan={6} align="right" className="text-muted">In project currency ({project.currency})</Td>
-                    <Td align="right" className="whitespace-nowrap text-muted">{factor == null ? <span className="text-warn">No {offer.currency} rate</span> : formatMoney(total * factor, project.currency)}</Td><Td /></tr>
+                    <Td align="right" className="whitespace-nowrap text-muted">{seal(factor == null ? <span className="text-warn">No {offer.currency} rate</span> : formatMoney(total * factor, project.currency))}</Td><Td /></tr>
                 )}
-                {optionalTotal > 0 && <tr><Td colSpan={6} align="right" className="text-muted">Optional items (not included)</Td><Td align="right" className="text-muted">{formatMoney(optionalTotal, offer.currency)}</Td><Td /></tr>}
+                {optionalTotal > 0 && <tr><Td colSpan={6} align="right" className="text-muted">Optional items (not included)</Td><Td align="right" className="text-muted">{seal(formatMoney(optionalTotal, offer.currency))}</Td><Td /></tr>}
               </tfoot>
             </Table>
           </Panel>
@@ -175,7 +178,7 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
                         const c = comp.find((x) => x.offerLineId === l.line.id && x.specItemId === it.id);
                         return {
                           specItemId: it.id, section: it.section, parameter: it.parameter, requirement: it.requirement, unit: it.unit,
-                          mandatory: it.mandatory, weight: it.weight, offeredValue: c?.offeredValue ?? "", status: (c?.status ?? "NOT_STATED") as ComplianceStatus, remark: c?.remark ?? "",
+                          mandatory: it.mandatory, weight: it.weight, offeredValue: c?.offeredValue ?? "", status: (c?.status ?? "NOT_STATED") as ComplianceStatus, remark: c?.remark ?? "", pageRef: c?.pageRef ?? "",
                         };
                       })}
                     />

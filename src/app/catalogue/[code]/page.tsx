@@ -8,6 +8,7 @@ import { Badge, Details, EmptyState, LinkButton, PageHeader, Panel, Stat, Status
 import { Ar, Crumbs, Notice } from "@/components/assets/bits";
 import { ChecklistPanel } from "@/components/assets/checklist-panel";
 import { defaultChecklist, effectiveChecklist } from "@/lib/assets/checklists";
+import { DEFAULT_ACCEPTANCE } from "@/lib/procurement/money";
 import { DEFAULT_PPM_INTERVAL_MONTHS } from "@/lib/assets/maintenance";
 import { formatMoney, formatNumber, todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
@@ -44,7 +45,11 @@ export default async function DeviceTypePage({ params, searchParams }: { params:
   const sp = await searchParams;
   const ck = effectiveChecklist(dt.ppmChecklist, chain.at(-1)?.ppmChecklist, chain.at(-2)?.ppmChecklist,
     () => defaultChecklist([dt.code, ...chain.map((c) => c.code).reverse()], { requiresCalibration: dt.requiresCalibration }));
-  const checklist = <ChecklistPanel code={dt.code} items={ck.items} source={ck.source} canEdit={can(me.role, "catalogue.edit")} own={!!dt.ppmChecklist?.length} />;
+  const acc = effectiveChecklist(dt.acceptanceChecklist, chain.at(-1)?.acceptanceChecklist, chain.at(-2)?.acceptanceChecklist, () => DEFAULT_ACCEPTANCE);
+  const checklist = <>
+    <ChecklistPanel code={dt.code} items={ck.items} source={ck.source} canEdit={can(me.role, "catalogue.edit")} own={!!dt.ppmChecklist?.length} />
+    <div className="mt-6"><ChecklistPanel kind="acceptance" code={dt.code} items={acc.items} source={acc.source} canEdit={can(me.role, "catalogue.edit")} own={!!dt.acceptanceChecklist?.length} /></div>
+  </>;
   const crumbs = [{ label: "Catalogue", href: "/catalogue" }, ...chain.map((c) => ({ label: c.name, href: `/catalogue/${c.code}` })), { label: dt.name }];
 
   if (dt.level < 3) {

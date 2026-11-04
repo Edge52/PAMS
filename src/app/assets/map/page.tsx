@@ -7,7 +7,7 @@ import { FloorMap, type MapDept } from "@/components/assets/floor-map";
 import { floorMapData, floorsWithCounts } from "@/lib/assets/queries";
 import { deptTintMap } from "@/lib/assets/visuals";
 import { cx } from "@/components/ui";
-import { moveAssetOnMap } from "./actions";
+import { moveAssetOnMap, roomsOnFloor } from "./actions";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { scopeWhere, type Scope } from "@/lib/assets/access";
@@ -146,6 +146,8 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
           focusRoomId={q.roomId}
           focusAssetId={q.assetId}
           moveAction={moveAssetOnMap}
+          otherFloors={switcher.filter((x) => x.id !== f.id).map((x) => ({ id: x.id, name: buildingsList.length > 1 ? `${x.buildingName}, ${x.name}` : x.name }))}
+          roomsOnFloor={roomsOnFloor}
           canMove={can(me.role, "assets.move")}
           canAdd={can(me.role, "assets.edit")}
         />

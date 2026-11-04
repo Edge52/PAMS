@@ -40,6 +40,9 @@ const sections: { title: string; links: NavLink[] }[] = [
       { href: "/procurement/suppliers", label: "Suppliers", need: "procurement.view" },
       { href: "/procurement/offers", label: "Offers", need: "procurement.view" },
       { href: "/procurement/purchase-orders", label: "Purchase orders", need: "procurement.view" },
+      { href: "/procurement/frameworks", label: "Framework agreements", need: "procurement.view" },
+      { href: "/procurement/invoices", label: "Invoices", need: "procurement.view" },
+      { href: "/procurement/budgets", label: "Budgets", need: "procurement.view" },
     ],
   },
   {
@@ -54,6 +57,9 @@ const sections: { title: string; links: NavLink[] }[] = [
       { href: "/assets/parts", label: "Spare parts", need: "assets.view" },
       { href: "/assets/recalls", label: "Recalls", need: "assets.view" },
       { href: "/assets/fleet", label: "Fleet & standardisation", need: "assets.view" },
+      { href: "/assets/department", label: "My department", need: "assets.view" },
+      { href: "/assets/requests", label: "Equipment requests", need: "assets.view" },
+      { href: "/assets/rounds", label: "Rounds and stock-take", need: "assets.view" },
       { href: "/assets/imaging", label: "Imaging use", need: "assets.view" },
       { href: "/assets/replacement", label: "Replacement plan", need: "assets.view" },
       { href: "/assets/capital-plan", label: "Capital plan", need: "assets.view" },
@@ -65,6 +71,8 @@ const sections: { title: string; links: NavLink[] }[] = [
     links: [
       { href: "/admin/users", label: "Users", need: "users.manage" },
       { href: "/admin/settings", label: "Approval rules & settings", need: "settings.manage" },
+      { href: "/admin/audit", label: "Audit log", need: "users.manage" },
+      { href: "/admin/backups", label: "Backups", need: "users.manage" },
     ],
   },
 ];

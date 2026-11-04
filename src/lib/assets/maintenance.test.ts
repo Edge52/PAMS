@@ -110,3 +110,16 @@ describe("event status, warranty and lifecycle", () => {
     expect(g.map((x) => [x.month, x.items.length])).toEqual([["2026-11", 2], ["2026-12", 1]]);
   });
 });
+
+import { parseScan, roundSummary } from "./rounds";
+describe("rounds", () => {
+  it("reads a QR URL or a typed tag", () => {
+    expect(parseScan("https://pams.example/assets/42?tag=LPH-MON-000123")).toEqual({ assetId: 42, tag: "LPH-MON-000123" });
+    expect(parseScan(" lph-mon-000123 ")).toEqual({ tag: "LPH-MON-000123" });
+    expect(parseScan("hello world")).toBeNull();
+  });
+  it("summarises a stock-take", () => {
+    const s = roundSummary([1, 2, 3], [{ assetId: 1, result: "OK" }, { assetId: 2, result: "FAULT" }, { assetId: 9, result: "FOUND_ELSEWHERE" }]);
+    expect(s).toMatchObject({ checked: 3, expected: 3, notSeen: [3], extra: [9], faults: 1 });
+  });
+});

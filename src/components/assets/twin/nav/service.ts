@@ -16,7 +16,9 @@ export class RouteService {
   /** Manual fixes per floor (plan units); changing them rebuilds that floor's network. */
   private fixes = new Map<number, TwinFix[]>();
 
-  constructor(private data: TwinData, private loadGeometry: (floorId: number) => Promise<FloorGeometry | null>) {
+  constructor(private data: TwinData, private loadGeometry: (floorId: number) => Promise<FloorGeometry | null>,
+    /** Builds a floor's network; the 3D view passes one that runs in a Web Worker (wave 12). */
+    private build: (floorId: number, segs: number[], rooms: NavRoom[], opts: { fixes?: RouteFix[] }) => Promise<Network> = async (...a) => buildNetwork(...a)) {
     for (const f of data.fixes ?? []) (this.fixes.get(f.floorId) ?? this.fixes.set(f.floorId, []).get(f.floorId)!).push(f);
     const s = (floorId: number) => 1 / (data.floors.find((f) => f.id === floorId)?.unitsPerMetre || 10);
     this.lifts = data.lifts.map((l) => ({
@@ -46,7 +48,7 @@ export class RouteService {
       const rooms = this.roomsOn(floorId);
       const walls = segs.length ? segs : rooms.flatMap((r) => r.poly.flatMap((p, i) => [...p, ...r.poly[(i + 1) % r.poly.length]]));
       const fixes: RouteFix[] = (this.fixes.get(floorId) ?? []).map((x) => ({ kind: x.kind, a: [x.x1 * s, x.y1 * s], b: [x.x2 * s, x.y2 * s] }));
-      const net = buildNetwork(floorId, walls, rooms, { fixes });
+      const net = await this.build(floorId, walls, rooms, { fixes });
       this.nets.set(floorId, net);
       return net;
     })();

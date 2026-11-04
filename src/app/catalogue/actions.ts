@@ -12,7 +12,7 @@ import { firstError, formObject, id as idField, isoDate, num as numField, reqId,
 import { cleanName, nameKey, registerCandidates } from "@/lib/assets/models";
 import { logActivity } from "@/lib/server-utils";
 
-const Schema = z.object({ code: z.string().min(1).max(48), checklist: text(20000), mode: z.enum(["save", "inherit"]) });
+const Schema = z.object({ code: z.string().min(1).max(48), checklist: text(20000), mode: z.enum(["save", "inherit"]), kind: z.enum(["ppm", "acceptance"]).default("ppm") });
 
 export async function saveChecklistAction(_: FormState, fd: FormData): Promise<FormState> {
   const me = await requirePermission("catalogue.edit");
@@ -27,11 +27,13 @@ export async function saveChecklistAction(_: FormState, fd: FormData): Promise<F
     if (!parsed.items.length) return { error: "Add at least one check, or choose to use the inherited checklist." };
     items = parsed.items;
   }
-  await db.update(deviceTypes).set({ ppmChecklist: items }).where(eq(deviceTypes.id, dt.id));
+  const acc = p.data.kind === "acceptance";
+  await db.update(deviceTypes).set(acc ? { acceptanceChecklist: items } : { ppmChecklist: items }).where(eq(deviceTypes.id, dt.id));
   // Device types have no facility; the catalogue is shared by every hospital.
-  await logActivity("device_type", dt.id, "checklist", items ? `PPM checklist saved (${items.length} checks)` : "PPM checklist reset to the inherited one", me.name);
+  const what = acc ? "Acceptance checklist" : "PPM checklist";
+  await logActivity("device_type", dt.id, "checklist", items ? `${what} saved (${items.length} checks)` : `${what} reset to the inherited one`, me.name);
   revalidatePath(`/catalogue/${dt.code}`);
-  redirect(`/catalogue/${dt.code}?notice=${encodeURIComponent(items ? "Checklist saved. New maintenance jobs use it." : "Checklist reset.")}#checklist`);
+  redirect(`/catalogue/${dt.code}?notice=${encodeURIComponent(items ? (acc ? "Acceptance checklist saved." : "Checklist saved. New maintenance jobs use it.") : "Checklist reset.")}#${acc ? "acceptance" : "checklist"}`);
 }
 
 /* ── Brand and model catalogue (wave 5) ── */
