@@ -24,6 +24,13 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
 - **Dashboard**: your approvals and alerts. **Notifications** (bell): everything sent to you.
 - **Reports › Executive summary**: one page per hospital; **Print or save as PDF**.
 
+**Ask the assistant** (when your administrator has switched it on)
+- **Assistant** in the menu: ask in plain words, e.g. *Which ICU devices are out of service?* or *How much of this
+  year's capital budget is left?* It looks the answer up in PAMS and only sees what you can see.
+- Ask it to draft: *a technical specification for a high-end patient monitor*, *a letter to the supplier of PO-… asking
+  for a delivery date*. Values it assumed are in [square brackets]; **Copy** the text into your document.
+- It can't change anything, and it can be wrong: check figures before you rely on them. **New chat** starts over.
+
 ---
 
 ## Biomedical engineer
@@ -161,6 +168,8 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - **My department**: pick your department to see its equipment, open jobs, maintenance coming up and devices past
   their service life. **Send request** asks for new or replacement equipment; you're told when the director decides.
 - On delivered equipment, **Sign for the department** once biomedical engineering has signed the acceptance checks.
+- When an administrator has named the departments you look after, you can edit **patient pathways** whose steps are
+  all in your departments, and set the **access zone** of your rooms in the 3D view.
 
 ---
 

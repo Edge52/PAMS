@@ -9,12 +9,13 @@ import type { Permission } from "@/lib/auth/permissions";
  * App navigation. OWNED BY THE LEAD — module agents: the links for your module already exist below.
  * Build pages at these routes; if you need a new top-level link, say so in your report.
  */
-type NavLink = { href: string; label: string; need?: Permission };
+type NavLink = { href: string; label: string; need?: Permission; flag?: "assistant" };
 const sections: { title: string; links: NavLink[] }[] = [
   { title: "Overview", links: [
     { href: "/", label: "Dashboard" },
     { href: "/approvals", label: "Approvals" },
     { href: "/reports", label: "Reports", need: "reports.view" },
+    { href: "/assistant", label: "Assistant", flag: "assistant" },
   ] },
   {
     title: "Hospital",
@@ -86,11 +87,11 @@ function isActive(pathname: string, href: string) {
   return best === href;
 }
 
-export function SideNav({ perms }: { perms: Permission[] }) {
+export function SideNav({ perms, assistant = false }: { perms: Permission[]; assistant?: boolean }) {
   const pathname = usePathname();
   const allowed = new Set(perms);
   const visible = sections
-    .map((s) => ({ ...s, links: s.links.filter((l) => !l.need || allowed.has(l.need)) }))
+    .map((s) => ({ ...s, links: s.links.filter((l) => (!l.need || allowed.has(l.need)) && (l.flag !== "assistant" || assistant)) }))
     .filter((s) => s.links.length > 0);
   const [open, setOpen] = useState(false);
 

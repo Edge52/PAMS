@@ -133,6 +133,19 @@ export default async function SettingsPage() {
                 <span><span className="font-semibold">Show demo accounts on the sign-in page</span><span className="block text-xs text-muted">For demonstrations only. Switch off for real use — and remove or change the demo accounts&apos; passwords.</span></span>
               </label>
             </fieldset>
+
+            <fieldset className="space-y-2">
+              <legend className="mb-2 text-sm font-bold">Assistant</legend>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" name="assistantEnabled" defaultChecked={s.assistantEnabled} className="mt-0.5 size-4 accent-[var(--color-primary)]" />
+                <span><span className="font-semibold">Switch on the assistant</span><span className="block text-xs text-muted">Answers questions from PAMS data, within each person&apos;s permissions and hospitals, and drafts specifications and letters. Questions and the records it looks up are sent to Anthropic. Needs ANTHROPIC_API_KEY on the server{process.env.ANTHROPIC_API_KEY ? "" : " (not set)"}.</span></span>
+              </label>
+              <FormGrid cols={3}>
+                <Field label="Model" hint="The Claude model to use.">
+                  <Input name="assistantModel" defaultValue={s.assistantModel} />
+                </Field>
+              </FormGrid>
+            </fieldset>
             <SubmitButton>Save settings</SubmitButton>
           </ActionForm>
         </Panel>

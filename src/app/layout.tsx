@@ -4,6 +4,7 @@ import { SideNav } from "@/components/side-nav";
 import { TopBar } from "@/components/shell/top-bar";
 import { getCurrentUser } from "@/lib/auth/session";
 import { permissionsOf } from "@/lib/auth/permissions";
+import { getSetting } from "@/lib/settings";
 
 export const metadata: Metadata = {
   title: { default: "Hospital PAMS", template: "%s · Hospital PAMS" },
@@ -12,6 +13,7 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
+  const assistant = user ? await getSetting("assistantEnabled") : false;
   return (
     <html lang="en">
       <head>
@@ -26,7 +28,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen">
         {user ? (
           <div className="flex min-h-screen">
-            <SideNav perms={permissionsOf(user.role)} />
+            <SideNav perms={permissionsOf(user.role)} assistant={assistant} />
             <main className="min-w-0 flex-1 px-5 py-3 md:px-8 lg:px-10">
               <TopBar user={user} />
               {children}

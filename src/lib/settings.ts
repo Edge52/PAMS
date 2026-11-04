@@ -22,6 +22,9 @@ export type Settings = {
   rfqClosingWarnDays: number;
   /** Send notification emails (needs SMTP_URL and MAIL_FROM in the environment). */
   emailEnabled: boolean;
+  /** In-app assistant (wave 13): off until an administrator switches it on; needs ANTHROPIC_API_KEY. */
+  assistantEnabled: boolean;
+  assistantModel: string;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -36,6 +39,8 @@ export const DEFAULT_SETTINGS: Settings = {
   warrantyWarnDays: 90,
   rfqClosingWarnDays: 3,
   emailEnabled: false,
+  assistantEnabled: false,
+  assistantModel: "claude-sonnet-5-5",
 };
 
 export async function getSettings(): Promise<Settings> {

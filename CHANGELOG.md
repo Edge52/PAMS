@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — wave 13 (branch `wave-13`)
+
+Migration `0031`. Update with `git pull` and `npm run demo`; your data is kept.
+
+- **Department heads edit their own pathways**: an administrator picks the departments each person looks after
+  (Administration › Users › *Departments they look after*). They can then edit patient pathways whose steps are all
+  in those departments, and set the access zones of their own rooms. Other pathways stay read-only for them.
+- **Sign in with Microsoft or Google** through Supabase Auth (optional). Supabase confirms who someone is; they get in
+  only if an active PAMS user has the same email, with that user's role and hospitals. Password sign-in stays.
+- **Supabase as the database** (optional): `DATABASE_SSL`, an optional CA file and pool size for a hosted Postgres.
+  See *On Supabase* in `docs/deploy.md`.
+- **Assistant** (off by default): an administrator switches it on in settings and sets `ANTHROPIC_API_KEY` on the
+  server. It answers questions about devices, work orders, projects, suppliers, POs and budgets by looking them up,
+  within the person's permissions and hospitals, can't change anything, and drafts specifications and letters.
+  Offer prices are never given to it. The audit log records each use and which look-ups ran, not the question.
+- Law 182 "check against the regulations" notes removed (the bond rates and two-envelope steps are confirmed).
+
 ## Unreleased — wave 12 (branch `wave-12`, built on `wave-10`)
 
 Migration `0030`. Update with `git pull` and `npm run demo`; your data is kept.

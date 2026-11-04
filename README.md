@@ -109,6 +109,14 @@ Under **Assets** (release 2.2 / wave 3):
   moves between floors on the map; clean and dirty route checks.
 - Administration: **audit log** with export and **backups** with restore checks.
 
+## Access and assistant (wave 13)
+
+- Department heads edit pathways and room zones for the departments they look after.
+- Optional **Supabase**: hosted database over SSL, and *Sign in with Microsoft / Google* matched to PAMS users by email
+  (`docs/deploy.md`).
+- Optional **assistant** (`/assistant`, off by default): answers from PAMS data within each person's permissions and
+  drafts specifications and letters; needs `ANTHROPIC_API_KEY`.
+
 ## Finding things and keeping the register tidy
 
 - **Search** (box at the top of every page): equipment by tag, serial number, maker, model or tag; device types; makes
