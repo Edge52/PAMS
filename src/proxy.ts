@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * Optimistic sign-in check: no session cookie → the sign-in page. The real check (is the session valid, may this
  * user do this?) happens in pages and server actions via lib/auth/session.
  */
-const PUBLIC = ["/login", "/setup"];
+const PUBLIC = ["/login", "/setup", "/auth/sso", "/auth/callback"];
 
 export function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
