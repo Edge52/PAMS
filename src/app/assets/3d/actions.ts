@@ -12,6 +12,7 @@ import type { TwinFix, TwinRoom } from "@/components/assets/twin/types";
 import { can } from "@/lib/auth/permissions";
 import { decodeView } from "@/components/assets/twin/view-state";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
+import { canEditRoomZone } from "@/lib/auth/departments";
 import { firstError, formObject, reqId, text } from "@/lib/assets/forms";
 import { moveAsset } from "@/lib/assets/mutations";
 import { notifyUsers } from "@/lib/notifications";
@@ -307,12 +308,14 @@ export async function deleteRouteFixAction(_: FixActionState, fd: FormData): Pro
 const ZONES = ["PUBLIC", "PATIENT", "STAFF", "STERILE", "ISOLATION"] as const;
 /** Set a room's access zone (empty = read from its name). Needs facilities.edit. */
 export async function setRoomZoneAction(_: FixActionState, fd: FormData): Promise<FixActionState> {
-  const me = await requirePermission("facilities.edit");
+  const me = await requirePermission("assets.view");
   const roomId = Number(fd.get("roomId")); const raw = String(fd.get("zone") ?? "");
   const zone = (ZONES as readonly string[]).includes(raw) ? (raw as (typeof ZONES)[number]) : null;
   if (raw && !zone) return { error: "Choose a zone from the list." };
-  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name }).from(rooms).where(eq(rooms.id, roomId)) : [];
+  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name, departmentId: rooms.departmentId }).from(rooms).where(eq(rooms.id, roomId)) : [];
   if (!r) return { error: "That room no longer exists." };
+  // Wave 13: department heads may set the zones of their own rooms.
+  if (!(await canEditRoomZone(me, r.departmentId))) return { error: "Only facilities staff, or the department's head, can change a room's zone." };
   const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
   await db.update(rooms).set({ zone }).where(eq(rooms.id, r.id));
   return { ok: zone ? `${r.name}: ${zone.toLowerCase()} zone.` : `${r.name}: zone read from its name again.`, roomId: r.id, zone };

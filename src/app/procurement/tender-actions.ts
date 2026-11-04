@@ -1,7 +1,7 @@
 "use server";
 /**
  * Tender law pieces (wave 10): two-envelope opening (Law 182/2018 art. 23) and bonds (bid bond art. 16, performance
- * bond art. 40). The rates are those the plan set out; confirm them against the executive regulations in force.
+ * bond art. 40). Rates and steps confirmed by the hospital (Nov 2026).
  */
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";

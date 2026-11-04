@@ -218,6 +218,13 @@
       "when": 1793712175633,
       "tag": "0030_wave12_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793760220294,
+      "tag": "0031_wave13_departments",
+      "breakpoints": true
     }
   ]
 }

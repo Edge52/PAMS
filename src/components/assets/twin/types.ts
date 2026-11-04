@@ -69,7 +69,9 @@ export type TwinAsset = {
 export type TwinData = {
   facility: { id: number; name: string; code: string; logo?: string | null; brandColor?: string | null };
   /** What the signed-in user may do from the model (the server actions check again). */
-  can: { report: boolean; move: boolean; maintain: boolean; addAsset: boolean; editFacility?: boolean };
+  can: { report: boolean; move: boolean; maintain: boolean; addAsset: boolean; editFacility?: boolean;
+    /** Departments whose room zones this user may set (a department head, wave 13). */
+    zoneDepartments?: number[] };
   facilities: { id: number; name: string }[];
   floors: TwinFloor[];
   rooms: TwinRoom[];

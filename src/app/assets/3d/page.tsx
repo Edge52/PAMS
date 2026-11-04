@@ -9,6 +9,7 @@ import { DEPARTMENT_PALETTE, rectPoly } from "@/components/assets/twin/geometry"
 import { TwinView } from "@/components/assets/twin/twin-view";
 import type { TwinData } from "@/components/assets/twin/types";
 import { can } from "@/lib/auth/permissions";
+import { myDepartments } from "@/lib/auth/departments";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/assets/access";
 import { twinLive } from "@/lib/assets/twin-live";
@@ -76,7 +77,8 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
   const [brand] = await db.select({ logo: facilities.logo, brandColor: facilities.brandColor }).from(facilities).where(eq(facilities.id, facility.id));
   const data: TwinData = {
     facility: { ...facility, logo: brand?.logo ?? null, brandColor: brand?.brandColor ?? null },
-    can: { report: can(me.role, "workorders.report"), move: can(me.role, "assets.move"), maintain: can(me.role, "maintenance.edit"), addAsset: can(me.role, "assets.edit"), editFacility: can(me.role, "facilities.edit") },
+    can: { report: can(me.role, "workorders.report"), move: can(me.role, "assets.move"), maintain: can(me.role, "maintenance.edit"), addAsset: can(me.role, "assets.edit"), editFacility: can(me.role, "facilities.edit"),
+      zoneDepartments: me.role === "DEPARTMENT_HEAD" ? [...(await myDepartments(me.id))] : undefined },
     facilities: facs.map((f) => ({ id: f.id, name: f.name })),
     floors: floorRows.map(({ f, buildingName, hasCad }) => ({
       id: f.id, name: floorRows.filter((x) => x.f.level === f.level).length > 1 ? `${buildingName}, ${f.name}` : f.name, level: f.level, buildingName,

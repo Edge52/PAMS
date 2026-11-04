@@ -10,7 +10,7 @@ import { FlowDiagram, fmtMin } from "@/components/flows/flow-diagram";
 import { FlowCanvas, ModeToggle } from "@/components/flows/flow-canvas";
 import { stepPositions } from "@/components/flows/layout";
 import { cookies } from "next/headers";
-import { can } from "@/lib/auth/permissions";
+import { canEditFlow } from "@/lib/auth/departments";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate } from "@/lib/format";
 import {
@@ -41,8 +41,9 @@ export default async function FlowPage({ params, searchParams }: {
   const versions = await db.select({ id: patientFlows.id, version: patientFlows.version, status: patientFlows.status, updatedAt: patientFlows.updatedAt })
     .from(patientFlows).where(and(eq(patientFlows.facilityId, flow.facilityId), eq(patientFlows.lineageId, flow.lineageId ?? flow.id))).orderBy(desc(patientFlows.version));
 
-  const editing = flow.status === "DRAFT" && can(me.role, "flows.edit");
-  const mayEdit = can(me.role, "flows.edit");
+  // Wave 13: department heads may edit pathways that sit wholly in their departments.
+  const mayEdit = await canEditFlow(me, steps.map((s) => ({ departmentId: s.departmentId, roomId: s.roomId })));
+  const editing = flow.status === "DRAFT" && mayEdit;
   // Structure first, then the checks that need the building (routes, lifts, rooms removed by a drawing update).
   const structural = checkFlow(steps, links);
   const building = structural.some((i) => i.level === "error") ? [] : await pathwayBuildingIssues(flow.facilityId, steps, links, flow.arrivalProfile).catch(() => []);

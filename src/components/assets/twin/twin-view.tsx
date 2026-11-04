@@ -1822,7 +1822,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             return (
               <div className="mt-3 border-t border-[#123a55] pt-2 text-[13px]">
                 <label className="flex items-center gap-2"><span className="font-semibold text-[#5fd6ff]">Access zone</span>
-                  {data.can.editFacility ? (
+                  {data.can.editFacility || (selRoom.departmentId != null && data.can.zoneDepartments?.includes(selRoom.departmentId)) ? (
                     <select value={z ?? ""} onChange={(e) => void setZone(selRoom.id, e.target.value)} className="twin-input w-auto! py-0.5">
                       <option value="">From the name</option>
                       {(["PUBLIC", "PATIENT", "STAFF", "STERILE", "ISOLATION"] as const).map((k) => <option key={k} value={k}>{k.charAt(0) + k.slice(1).toLowerCase()}</option>)}

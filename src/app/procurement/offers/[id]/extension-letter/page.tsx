@@ -50,7 +50,7 @@ export default async function ExtensionLetter({ params, searchParams }: { params
         <p className="mt-3">We would be grateful for your written confirmation by <b>{formatDate(reply)}</b>. If we do not receive it by then, your offer will be treated as withdrawn at the end of its current validity.</p>
         <p className="mt-6">Yours faithfully,</p>
         <div className="mt-14 w-64 border-t border-ink pt-1 text-sm">Procurement department<br />{r.facility ?? ""}</div>
-        <p className="no-print mt-8 text-xs text-muted">Draft prepared by {me.name}. Check it against Law 182/2018 art. 27 and the tender conditions before sending.</p>
+        <p className="no-print mt-8 text-xs text-muted">Draft prepared by {me.name}. Check the dates and the bond before sending.</p>
       </article>
     </>
   );
