@@ -21,6 +21,7 @@ const sections: { title: string; links: NavLink[] }[] = [
     title: "Hospital",
     links: [
       { href: "/facilities", label: "Facilities & floors", need: "assets.view" },
+      { href: "/facilities/room-standards", label: "Room standards", need: "assets.view" },
       { href: "/catalogue", label: "Device catalogue", need: "assets.view" },
     ],
   },

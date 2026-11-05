@@ -7,6 +7,8 @@ import { PrintButton } from "@/components/reports/print";
 import { ReportPrintStyles } from "@/components/reports/print-styles";
 import { roomLook } from "@/components/assets/twin/render/kits";
 import { loadKits } from "@/lib/assets/room-kits";
+import { checkRoom, specLines, standardFor } from "@/lib/assets/room-standards";
+import { loadStandards } from "@/lib/assets/room-standards-server";
 import { plansForFacility, planVsInstalled } from "@/lib/assets/plan-installed-server";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate } from "@/lib/format";
@@ -42,6 +44,10 @@ export default async function RoomSheet({ params }: { params: Promise<{ id: stri
   const plan = plans[0] ? await planVsInstalled(plans[0].id, facilityId) : null;
   const deptGap = plan?.departments.find((d) => d.departmentId === r.room.departmentId) ?? null;
   const s = r.room.services ?? null;
+  // The standard for this kind of room (wave 14) and how the room compares.
+  const std = standardFor(r.room.name, r.room.type, (await loadStandards()).rules);
+  const checks = std ? checkRoom(std.rule.spec, { areaM2: m2, beds: r.room.beds, ceilingM: r.room.ceilingM, doorWidthM: r.room.doorWidthM, floorLoadKgM2: r.room.floorLoadKgM2, services: s }) : [];
+  const stdLines = std ? specLines(std.rule.spec).filter((l) => !["Room", "Notes"].includes(l.group)) : [];
   const row = (l: string, v: React.ReactNode) => <tr className="border-b border-line/60"><th className="w-48 py-1 pr-3 text-left font-normal text-muted">{l}</th><td className="py-1">{v}</td></tr>;
 
   return (
@@ -73,6 +79,16 @@ export default async function RoomSheet({ params }: { params: Promise<{ id: stri
           {row("Chilled water · quench pipe", `${yesNo(s?.chilledWater)} · ${yesNo(s?.quenchPipe)}`)}
           {row("RF shielding · lead shielding", `${yesNo(s?.rfShield)} · ${yesNo(s?.leadLined)}`)}
         </tbody></table>
+        <h2 className="mb-1 font-semibold">Standard for this kind of room</h2>
+        {!std ? <p className="mb-4 text-muted">No room standard matches this room&apos;s name or type. <Link href="/facilities/room-standards" className="no-print text-primary hover:underline">Room standards</Link></p> : (<>
+          <p className="mb-1 text-xs text-muted">Follows <Link href={`/facilities/room-standards/${std.index}?facilityId=${facilityId}`} className="text-primary hover:underline">{std.rule.label}</Link>{std.rule.source ? ` (${std.rule.source})` : ""}. Draft planning figures: confirm with the engineers.</p>
+          {checks.length > 0 && (
+            <table className="mb-2 w-full text-xs"><thead><tr className="border-b border-ink text-left"><th className="py-1">Check</th><th>Standard</th><th>This room</th><th /></tr></thead>
+              <tbody>{checks.map((c) => <tr key={c.label} className="border-b border-line/60"><td className="py-1">{c.label}</td><td>{c.need}</td><td>{c.have}</td>
+                <td className={c.state === "short" ? "font-semibold text-danger" : c.state === "ok" ? "text-ok" : "text-muted"}>{c.state === "short" ? "Short" : c.state === "ok" ? "Meets it" : "Survey it"}</td></tr>)}</tbody></table>
+          )}
+          {stdLines.length > 0 && <table className="mb-4 w-full"><tbody>{stdLines.map((l) => <tr key={l.label} className="border-b border-line/60"><th className="w-48 py-1 pr-3 text-left font-normal text-muted">{l.label === "Outlets" ? "Medical gas outlets" : l.label}</th><td className="py-1">{l.value}</td></tr>)}</tbody></table>}
+        </>)}
         <h2 className="mb-1 font-semibold">Installed equipment ({installed.length})</h2>
         {installed.length === 0 ? <p className="mb-4 text-muted">None registered in this room.</p> : (
           <table className="mb-4 w-full text-xs"><thead><tr className="border-b border-ink text-left"><th className="py-1">Device</th><th>Tag</th><th>Model</th><th>Status</th></tr></thead>

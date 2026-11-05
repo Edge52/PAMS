@@ -8,6 +8,7 @@ import { BENCHMARKS, PER_LABEL } from "./benchmarks";
 import { ADVANCE_SHARE, LEAD_MONTHS } from "./phasing";
 import { ROOM_NEEDS } from "./room-requirements";
 import { TCO_RATES } from "./tco";
+import { BUILTIN_STANDARDS } from "../assets/room-standards";
 
 export type FigureStatus = "sourced" | "adjusted" | "judgement";
 export type ReferenceRow = {
@@ -121,6 +122,17 @@ export function referenceRows(): ReferenceRow[] {
     id: "lead:advance", area: "Lead time", item: "Share paid with the order (rest on delivery)", value: `${Math.round(ADVANCE_SHARE * 100)} %`, status: "judgement",
     basis: "Typical public-tender advance; set to the payment terms of your contracts.", sources: [], usedIn: "BOQ › Phasing & costs › Cash flow",
   });
+  // Room data sheets per room type (wave 14): the built-in standards' key figures.
+  for (const r of BUILTIN_STANDARDS) {
+    const sp = r.spec;
+    const parts = [sp.minAreaM2 != null && `≥ ${sp.minAreaM2} m²`, sp.airChanges != null && `${sp.airChanges} air changes${sp.pressure && sp.pressure !== "neutral" ? `, ${sp.pressure}` : ""}`,
+      sp.gases && Object.entries(sp.gases).map(([g, n]) => `${g} ${n}`).join(" ")].filter(Boolean);
+    if (!parts.length) continue;
+    rows.push({
+      id: `roomstd:${r.label}`, area: "Room standard", item: `${r.label} (${r.match ? `names ${r.match}` : `type ${r.roomType}`})`, value: parts.join("; "), status: "judgement",
+      basis: `Typical figures from ${r.source ?? "planning judgement"}, rounded for planning; confirm against the local code and the makers' guides.`, sources: [], usedIn: "Hospital › Room standards; room data sheets",
+    });
+  }
   return rows;
 }
 
