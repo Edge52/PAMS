@@ -12,6 +12,7 @@ import { ComparisonTab } from "./_tabs/comparison";
 import { PurchaseOrdersTab } from "./_tabs/purchase-orders";
 import { CommitteesTab } from "./_tabs/committees";
 import { TenderTab } from "./_tabs/tender";
+import { CommissioningTab } from "./_tabs/commissioning";
 import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 
@@ -26,6 +27,7 @@ const TABS = [
   { key: "committees", label: "Committees" },
   { key: "tender", label: "Tender" },
   { key: "pos", label: "Purchase orders" },
+  { key: "commissioning", label: "Commissioning" },
   { key: "documents", label: "Documents" },
 ] as const;
 
@@ -94,6 +96,7 @@ export default async function ProjectPage({ params, searchParams }: {
       {tab === "committees" && <CommitteesTab project={project} me={me} />}
       {tab === "tender" && <TenderTab project={project} me={me} />}
       {tab === "pos" && <PurchaseOrdersTab project={project} me={me} />}
+      {tab === "commissioning" && <CommissioningTab project={project} me={me} />}
       {tab === "documents" && (
         <DocumentsPanel entityType="project" entityId={id} returnPath={`/procurement/${id}?tab=documents`}
           title="Tender documents (booklet, clarifications, minutes)" />
