@@ -1478,6 +1478,74 @@ export const roundItems = pgTable("round_items", {
   checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
 }, (t) => [uniqueIndex("round_items_round_asset_uq").on(t.roundId, t.assetId)]);
 
+/* ───────────────────────── Wave 14 ───────────────────────── */
+
+/** Saved assistant chats (wave 14): private to the person who had them. */
+export const assistantChats = pgTable("assistant_chats", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  turns: jsonb("turns").$type<{ role: "user" | "assistant"; text: string }[]>().notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index("assistant_chats_user_idx").on(t.userId, t.updatedAt)]);
+
+/** Standard finishes and services for a kind of room (wave 14). Every value is optional; see src/lib/assets/room-standards.ts. */
+export type RoomStandardSpec = {
+  minAreaM2?: number; minCeilingM?: number; minDoorWidthM?: number; minFloorLoadKgM2?: number;
+  floorFinish?: string; wallFinish?: string; ceilingFinish?: string;
+  /** Medical gas outlets per bed space or room: O2, VAC, AIR, AIR7 (surgical air), N2O, AGSS. */
+  gases?: Record<string, number>;
+  sockets?: number; essentialSockets?: number; powerKva?: number; dataPoints?: number; lightingLux?: number;
+  airChanges?: number; pressure?: "positive" | "negative" | "neutral"; temperatureC?: string; humidityPct?: string;
+  nurseCall?: boolean; handWash?: boolean; rfShield?: boolean; leadLined?: boolean; chilledWater?: boolean; quenchPipe?: boolean;
+  notes?: string;
+};
+
+/** Room data sheets per room type (wave 14): editable copy of seed-data/room-standards.json. Empty = the built-in set. */
+export const roomStandards = pgTable("room_standards", {
+  id: serial("id").primaryKey(),
+  sort: integer("sort").notNull().default(0),
+  label: text("label").notNull(),
+  /** Pattern tested against the upper-cased room name; null for a room-type rule. */
+  match: text("match"),
+  roomType: roomType("room_type"),
+  spec: jsonb("spec").$type<RoomStandardSpec>().notNull(),
+  source: text("source"),
+  updatedByName: text("updated_by_name"),
+  updatedAt: updatedAt(),
+});
+
+/** Commissioning of a new building or wing (wave 14): rooms handed over, equipment installed and accepted, week by week. */
+export const commissioningPlans = pgTable("commissioning_plans", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  startsOn: date("starts_on").notNull(),
+  /** Planned weeks from a room's handover to its equipment installed, and from installed to accepted. */
+  installWeeks: integer("install_weeks").notNull().default(2),
+  acceptWeeks: integer("accept_weeks").notNull().default(1),
+  notes: text("notes"),
+  createdByName: text("created_by_name"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index("commissioning_plans_facility_idx").on(t.facilityId)]);
+
+export const commissioningRooms = pgTable("commissioning_rooms", {
+  planId: integer("plan_id").notNull().references(() => commissioningPlans.id, { onDelete: "cascade" }),
+  roomId: integer("room_id").notNull().references(() => rooms.id, { onDelete: "cascade" }),
+  /** Planned handover by the builder; the installed and accepted targets default to it plus the plan's weeks. */
+  handoverPlanned: date("handover_planned"),
+  installPlanned: date("install_planned"),
+  acceptPlanned: date("accept_planned"),
+  /** Actual handover by the builder. Installed and accepted come from the equipment in the room. */
+  handoverOn: date("handover_on"),
+  /** The room needs no equipment: it is complete once handed over. */
+  noEquipment: boolean("no_equipment").notNull().default(false),
+  note: text("note"),
+}, (t) => [primaryKey({ columns: [t.planId, t.roomId] }), index("commissioning_rooms_room_idx").on(t.roomId)]);
+
 /** In-app notifications. dedupeKey stops the alert generator repeating itself. */
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),

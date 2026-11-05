@@ -24,6 +24,15 @@ export const TOOLS: ToolDef[] = [
   { name: "purchase_orders", need: "procurement.view", description: "Purchase orders, newest first, optionally with one status or for one supplier name.",
     input_schema: { type: "object", properties: { status: str("PO status, e.g. ISSUED"), supplier: str("Words in the supplier name") } } },
   { name: "budget_status", need: "procurement.view", description: "Budget lines for a year with amount, committed, spent and remaining.", input_schema: { type: "object", properties: { year: int("Year; defaults to this year"), facility_id: int("Hospital id") } } },
+  // Wave 14
+  { name: "list_boqs", need: "boq.view", description: "Equipment plans (BOQs): name, hospital, status, version, beds and estimated total; optionally matching words or with one status.",
+    input_schema: { type: "object", properties: { query: str("Words in the BOQ name"), status: { type: "string", enum: ["DRAFT", "UNDER_REVIEW", "APPROVED", "SUPERSEDED"] } } } },
+  { name: "get_boq", need: "boq.view", description: "One BOQ by id: its departments (beds, rooms, phase, estimated value) and its largest lines (device, department, quantity, estimated unit price, how the quantity was worked out). Prices are planning estimates, not offers.",
+    input_schema: { type: "object", properties: { id: int("BOQ id (from list_boqs)"), department: str("Only lines of departments whose name contains these words") }, required: ["id"] } },
+  { name: "service_contracts", need: "assets.view", description: "Service contracts: supplier, type, dates, devices covered, response and repair times, uptime promised, value. Optionally ending within a number of days, or for one supplier or hospital.",
+    input_schema: { type: "object", properties: { ending_within_days: int("Only contracts ending within this many days (ended ones excluded)"), supplier: str("Words in the supplier name"), facility_id: int("Hospital id") } } },
+  { name: "recalls", need: "assets.view", description: "Recalls and safety notices: what, maker, device type, action, due date, and this user's devices affected (pending, done). Open ones by default.",
+    input_schema: { type: "object", properties: { status: { type: "string", enum: ["OPEN", "CLOSED", "ANY"] }, query: str("Words in the title, maker or reference") } } },
 ];
 
 export const toolsFor = (role: Role | string) => TOOLS.filter((t) => can(role, t.need));

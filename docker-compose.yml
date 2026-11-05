@@ -29,9 +29,10 @@ services:
       TRUST_PROXY: "1"            # Caddy sets X-Forwarded-For
       SETUP_CODE: ${SETUP_CODE:?set SETUP_CODE in .env (asked for when creating the first administrator)}
       UPLOAD_DIR: /data/uploads
+      BACKUP_DIR: /data/backups   # the same folder the nightly job writes to: Administration › Backups lists both
       SMTP_URL: ${SMTP_URL:-}
       MAIL_FROM: ${MAIL_FROM:-}
-    volumes: [uploads:/data/uploads]
+    volumes: [uploads:/data/uploads, ./backups:/data/backups]
 
   caddy:
     image: caddy:2
