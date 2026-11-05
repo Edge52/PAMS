@@ -26,7 +26,7 @@ export async function listBackups(): Promise<BackupFile[]> {
   const out: BackupFile[] = [];
   for (const name of names) {
     if (!SAFE_NAME.test(name) || name.startsWith(".")) continue;
-    const st = await fs.stat(path.join(BACKUP_DIR, name)).catch(() => null);
+    const st = await fs.stat(path.join(/* turbopackIgnore: true */ BACKUP_DIR, name)).catch(() => null);
     if (!st?.isFile()) continue;
     out.push({ name, bytes: st.size, at: st.mtime, kind: /^hpams(-db)?-/.test(name) ? "database" : /^uploads-/.test(name) ? "uploads" : "other" });
   }
@@ -61,7 +61,7 @@ async function dumpPostgres(file: string): Promise<void> {
 async function freeName(stem: string, ext: string): Promise<string> {
   for (let n = 1; ; n++) {
     const name = `${stem}${n > 1 ? `-${n}` : ""}${ext}`;
-    if (!(await fs.stat(path.join(BACKUP_DIR, name)).catch(() => null))) return name;
+    if (!(await fs.stat(path.join(/* turbopackIgnore: true */ BACKUP_DIR, name)).catch(() => null))) return name;
   }
 }
 
@@ -71,10 +71,10 @@ async function freeName(stem: string, ext: string): Promise<string> {
  */
 async function writeBackup(stem: string, ext: string, write: (file: string) => Promise<void>): Promise<string> {
   const name = await freeName(stem, ext);
-  const tmp = path.join(BACKUP_DIR, `.partial-${name}`);
+  const tmp = path.join(/* turbopackIgnore: true */ BACKUP_DIR, `.partial-${name}`);
   try {
     await write(tmp);
-    await fs.rename(tmp, path.join(BACKUP_DIR, name));
+    await fs.rename(tmp, path.join(/* turbopackIgnore: true */ BACKUP_DIR, name));
   } finally {
     await fs.rm(tmp, { force: true });
   }
@@ -108,7 +108,7 @@ export async function backupNow(): Promise<string[]> {
 /** Restore check: the archive opens and has content (tar header, zip directory, or a pg_dump header). */
 export async function checkBackup(name: string): Promise<{ ok: boolean; detail: string }> {
   if (!SAFE_NAME.test(name)) return { ok: false, detail: "Not a backup file name." };
-  const buf = await fs.readFile(path.join(BACKUP_DIR, name)).catch(() => null);
+  const buf = await fs.readFile(path.join(/* turbopackIgnore: true */ BACKUP_DIR, name)).catch(() => null);
   if (!buf) return { ok: false, detail: "The file can't be read." };
   try {
     if (name.endsWith(".tar.gz") || name.endsWith(".tgz")) {
@@ -139,7 +139,7 @@ export async function checkBackup(name: string): Promise<{ ok: boolean; detail: 
 /** Remove one backup file (an administrator tidying up old copies). */
 export async function removeBackup(name: string): Promise<boolean> {
   if (!SAFE_NAME.test(name)) return false;
-  return fs.rm(path.join(BACKUP_DIR, name)).then(() => true, () => false);
+  return fs.rm(path.join(/* turbopackIgnore: true */ BACKUP_DIR, name)).then(() => true, () => false);
 }
 
 /** How long ago, for the list: "today", "3 days ago". */

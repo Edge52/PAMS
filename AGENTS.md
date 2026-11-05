@@ -283,3 +283,25 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   wall placement), `labels.ts`, `walls.ts` (wall lines → solid wall mass). `furniture.ts` builds the models in code
   (no model files). `studio.ts` renders off screen with its own renderer, separate from the live view;
   `render-panel.tsx` is the dialog. Kit furniture is illustrative and must stay labelled as such.
+
+# Wave 14 additions
+- Migration `0032`: `assistant_chats`, `room_standards`, `commissioning_plans`, `commissioning_rooms`.
+- **Queue simulation** (`/flows/simulate`): engine pure and seeded in `src/lib/flows/simulate.ts` (`simulate`,
+  `simulateOnce`; tested against M/M/1). The model (what each step waits for) is built by `buildSimModel` in
+  `simulate-model.ts` with the same `placeOf` as the analysis, so the two agree; loading in `simulate-server.ts`.
+  The page runs it in `simulate.worker.ts`. Resource capacity 0 means "not limited".
+- **Commissioning** (`/assets/commissioning`): pure rules in `src/lib/assets/commissioning.ts` (planned dates from the
+  handover + plan weeks; actual installed only after a recorded handover, when every device in the room is installed;
+  accepted when every device has a signed acceptance). DB side `commissioning-server.ts`; charts are server SVG in
+  `src/components/assets/commissioning-charts.tsx`; the 3D panel is a hook in `twin/commissioning-panel.tsx` (its
+  tint wins over plan vs installed and problem layers). Edits need `facilities.edit`.
+- **Room standards** (`/facilities/room-standards`): built-in set `seed-data/room-standards.json`, editable copy in
+  `room_standards` on first change (as room kits). `standardFor` / `checkRoom` in `src/lib/assets/room-standards.ts`;
+  areas are per bed space when a room has beds. The built-in figures are registered as reference figures, and a test
+  keeps the imaging and theatre areas equal to `ROOM_NEEDS`.
+- **Backups**: `src/lib/backups.ts` writes to a hidden `.partial-` file and renames; on PostgreSQL it runs `pg_dump`
+  (`PG_DUMP_PATH`, connection through `pgDumpEnv` in `backup-env.ts`, never on the command line). `.gitignore` ignores
+  only the top-level `/backups/` folder — a bare `backups/` hid `src/app/admin/backups` in wave 12.
+- **Assistant**: tools `list_boqs`, `get_boq`, `service_contracts`, `recalls`; answers are parsed by `parseAnswer`
+  (`answer-format.ts`) for both the chat and the Word file (`src/lib/docx.ts`, a minimal .docx writer on `zip()`).
+  Chats are private to their owner (`chats-server.ts`).

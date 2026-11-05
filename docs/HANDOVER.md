@@ -1,8 +1,8 @@
 # Hospital PAMS — handover
 
 The starting point for anyone (or any new Claude session) picking up the project. It says what the app is, how it's
-built and run, how work is done here, what's finished and what's left. Last updated 5 Nov 2026, after wave 13 was
-merged into `main`.
+built and run, how work is done here, what's finished and what's left. Last updated 5 Nov 2026, after wave 14 was
+built on the branch `wave-14` (waiting for Hisham's OK to merge).
 
 Read next: `AGENTS.md` (coding conventions; they're strict), `docs/system-documentation.md` (modules in depth),
 `docs/user-guide.md` (by role), `docs/deploy.md` (servers, Supabase), `CHANGELOG.md` (what each wave added),
@@ -17,11 +17,12 @@ Hospital PAMS is a web app for a hospital group in Egypt, covering the life of m
 | Area | What it does | Where |
 | --- | --- | --- |
 | **Planning (BOQ)** | Equipment bills of quantities from beds, rooms and standards; quick start; room kits; pricing and checks; capital plan | `/boq`, `/assets/capital-plan` |
+| **Opening** | Commissioning of a new building or wing: rooms handed over, installed, accepted by week (Gantt, curve, 3D slider) | `/assets/commissioning` |
 | **Procurement** | Projects and tenders under Egyptian Law 182/2018: specs, RFQs, offers, compliance, committees, comparison with TCO, two-envelope opening, bonds, minutes, award, POs, receiving | `/procurement` |
 | **Money** | Budget lines (capital and maintenance), commitments, invoices with three-way match, framework agreements and call-offs, supplier scorecards | `/procurement/budgets`, `/invoices`, `/frameworks` |
 | **Assets** | Register, QR labels, acceptance checklists, work orders, PPM, contracts and penalties, spare parts, recalls, disposals, imaging use, fleet standardisation, rounds and stock-take, department view and equipment requests | `/assets` |
-| **Buildings** | Facilities, floors from CAD (DWG pipeline), layout editor with polygon rooms, 2D floor map, 3D digital twin (routes, problem layers, plan vs installed, site-fit checks, pathways) | `/facilities`, `/assets/3d`, `/assets/map` |
-| **Patient pathways** | Pathway steps on the 3D model, walking distances, clean/dirty conflicts, analysis | `/flows` |
+| **Buildings** | Facilities, floors from CAD (DWG pipeline), layout editor with polygon rooms, room standards per room type, 2D floor map, 3D digital twin (routes, problem layers, plan vs installed, site-fit checks, pathways, commissioning) | `/facilities`, `/facilities/room-standards`, `/assets/3d`, `/assets/map` |
+| **Patient pathways** | Pathway steps on the 3D model, walking distances, clean/dirty conflicts, analysis, queue simulation with what-ifs | `/flows`, `/flows/simulate` |
 | **Cross-cutting** | Approvals engine, notifications (in app and email), reports and executive summary, global search, audit log, backups, assistant | `/approvals`, `/reports`, `/admin`, `/assistant` |
 
 Roles: Administrator, Director, Procurement, Finance, Planner, Biomedical, Technician, Department head, Viewer. The
@@ -38,7 +39,7 @@ Demo figures (site planning values, imaging volumes, budgets) are labelled as de
 
 - **Stack**: Next.js 16 App Router (server components and server actions), React 19, TypeScript strict, Tailwind 4,
   Drizzle ORM, PostgreSQL 16 or embedded PGlite, three.js, ExcelJS, zod 4, Vitest, Playwright.
-- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0031`, about 107 pages, 500+ unit tests.
+- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0032`, about 115 pages, 530 unit tests.
 - **Database**: `npm run demo` and `npm run local` use embedded PGlite (`.pglite` for the demo, `.pglite-data` for
   your own data). A server uses PostgreSQL via `DATABASE_URL`; Supabase works too (`DATABASE_SSL`, see deploy guide).
 - **Layout** (more in `docs/system-documentation.md` › Codebase map):
@@ -81,10 +82,11 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 13.
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 13; branch `wave-14` has wave 14 (not merged yet).
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
-- Old branches that can be deleted on GitHub: `wave-7`, `wave-8`, `wave-10`, `wave-12`, `wave-13`, `fix/demo-restart`,
-  `plan/wave-8` and the two `claude/...` branches. They're all merged or superseded.
+- Old branches: all deleted on GitHub except `wave-13` (merged; delete it from GitHub's branch page — the session's
+  connection can't delete branches). The Mac still has two old local branches (`claude/vigilant-noether-2l33kc`,
+  `fix/demo-restart`); `git branch -D` them when convenient.
 
 ## 5. How we work
 
@@ -99,7 +101,7 @@ Administration › Settings).
 
 ## 6. What's done
 
-Waves 1–13 are merged. Highlights per wave (details in `CHANGELOG.md`):
+Waves 1–13 are merged; wave 14 is on its branch. Highlights per wave (details in `CHANGELOG.md`):
 
 | Wave | Contents |
 | --- | --- |
@@ -110,6 +112,7 @@ Waves 1–13 are merged. Highlights per wave (details in `CHANGELOG.md`):
 | 10 | Budgets, invoices and three-way match, frameworks, scorecards, acceptance, two-envelope tenders, bonds, minutes |
 | 12 | Department view and requests, rounds and stock-take, audit log, backups page, supplier contacts, maintenance budget, room outlines, room data sheets, routes in a worker, clean/dirty routes |
 | 13 | Department heads edit their own pathways and room zones; Supabase database and Microsoft/Google sign-in; the assistant; Law 182 notes removed (confirmed) |
+| 14 (branch) | Queue simulation (B3); commissioning timeline (C5); room standards per room type; backups page (missing since wave 12) with PostgreSQL dumps; assistant look-ups for BOQs, contracts, recalls, saved chats, Word downloads |
 
 Decisions Hisham has made: Law 182 rates and steps confirmed (bid bond 1.5 %, performance bond 5 %, two-envelope
 steps, minutes); no Arabic interface; department heads may edit pathways; the assistant is wanted (off by default);
@@ -136,12 +139,18 @@ no finance export or e-procurement portal yet.
 
 | Item | Notes | Size |
 | --- | --- | --- |
-| **B3 Queue simulation** | Discrete-event simulation of a pathway over a day or week: arrivals by profile, waits for rooms, beds, scanners, staff and lifts; waiting times, queues and utilisation by hour. Plan section B3. | L |
-| **C5 Commissioning timeline** | For a new building or wing: rooms delivered, installed and accepted by week, as a time slider in 3D and a Gantt in the project. | M |
-| Room data sheets per room type | Standard finishes and services per room type, on top of today's per-room sheet. | M |
 | Better furniture models for renders | Openly licensed models in place of the simple boxes. | S–M |
-| Backups on PostgreSQL | The backups page makes database dumps only for the built-in database; on a server the nightly `pg_dump` job does it. Could call `pg_dump` from the page. | S |
-| Assistant extras (optional) | More look-ups (BOQs, contracts, recalls), saved chats, answers as a downloadable document. | S–M |
+| Simulation extras | Saved scenarios; staff other than porters; opening hours and appointment books; moving a step to another floor as a what-if. | M |
+| Room standards checks in BOQ | Use the room standards (area, gases, power) in BOQ › Checks alongside the room needs. | S |
+
+### To check with Hisham (wave 14)
+
+- The room standards are **draft figures** (HBN, HTM 02-01 / 03-01, FGI, vendor guides), listed in
+  `docs/reference-figures-review.xlsx` with the other reference figures: the biomedical and engineering teams should
+  confirm them, especially gas outlet counts and air changes.
+- The simulation assumes 4 porters on duty and 3 minutes' walk between steps; both are set on the page.
+- The Docker image now installs the PostgreSQL 17 client from the PostgreSQL project's repository; this has not been
+  built here (no Docker in the session). Try `docker compose build` on the server before going live.
 
 ### Pilots, when partners are ready
 
@@ -165,4 +174,4 @@ no finance export or e-procurement portal yet.
 
 1. Clone or open the repo, `npm ci`, then `npm run demo` (first start builds; it takes a few minutes).
 2. Read `AGENTS.md` and this file.
-3. Branch from `main` (`git switch -c wave-14`), build, check, push the branch, and ask Hisham before merging.
+3. Branch from `main` (`git switch -c wave-15`), build, check, push the branch, and ask Hisham before merging.

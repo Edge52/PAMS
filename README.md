@@ -117,6 +117,15 @@ Under **Assets** (release 2.2 / wave 3):
 - Optional **assistant** (`/assistant`, off by default): answers from PAMS data within each person's permissions and
   drafts specifications and letters; needs `ANTHROPIC_API_KEY`.
 
+## Planning and opening (wave 14)
+
+- **Queue simulation** of the published pathways (`/flows/simulate`): waits and queues for rooms, scanners, beds,
+  porters and lifts hour by hour, over a day or a week, with what-if capacities.
+- **Commissioning** (`/assets/commissioning`): a new building or wing room by room from handover to acceptance, as a
+  curve, a Gantt (also on the project) and a week slider in 3D.
+- **Room standards** (`/facilities/room-standards`): the data sheet per room type, checked against each room.
+- Backups from the page on PostgreSQL too; the assistant keeps chats and downloads answers as Word files.
+
 ## Finding things and keeping the register tidy
 
 - **Search** (box at the top of every page): equipment by tag, serial number, maker, model or tag; device types; makes
