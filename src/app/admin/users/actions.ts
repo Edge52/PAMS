@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { userFacilities, users } from "@/db/schema";
+import { userDepartments, userFacilities, users } from "@/db/schema";
 import { ROLES } from "@/lib/auth/permissions";
 import { hashPassword, passwordProblem } from "@/lib/auth/password";
 import { destroyAllSessions, requirePermission } from "@/lib/auth/session";
@@ -103,4 +103,20 @@ export async function resetPassword(_prev: ActionState, fd: FormData): Promise<A
   await destroyAllSessions(id);
   await logActivity("user", id, "password_reset", "Password reset by an administrator");
   return { message: "Password reset. Give it to them in person; they're signed out everywhere and can change it under Your account." };
+}
+
+/** The departments a department head looks after (wave 13): they may edit pathways and room zones there. */
+export async function setUserDepartments(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  await requirePermission("users.manage");
+  const id = Number(fd.get("id"));
+  const ids = [...new Set(fd.getAll("departmentIds").map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  const [u] = await db.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, id));
+  if (!u) return { errors: ["That user no longer exists."] };
+  await db.transaction(async (tx) => {
+    await tx.delete(userDepartments).where(eq(userDepartments.userId, id));
+    if (ids.length) await tx.insert(userDepartments).values(ids.map((departmentId) => ({ userId: id, departmentId })));
+  });
+  await logActivity("user", id, "departments", `${u.name} looks after ${ids.length} department${ids.length === 1 ? "" : "s"}`);
+  revalidatePath(`/admin/users/${id}`);
+  return { message: "Departments saved." };
 }

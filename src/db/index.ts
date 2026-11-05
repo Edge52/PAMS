@@ -9,6 +9,7 @@
  * system on a laptop, not for a hospital deployment.
  */
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { drizzle as drizzleLite } from "drizzle-orm/pglite";
@@ -31,7 +32,7 @@ function connect(): Clients {
     const db = drizzleLite(client, { schema, casing: "snake_case" }) as unknown as DB;
     return { db, close: () => client.close(), dump: () => client.dumpDataDir("gzip") };
   }
-  const pool = new Pool({ connectionString: DATABASE_URL });
+  const pool = new Pool(pgConfig(DATABASE_URL));
   return { db: drizzlePg(pool, { schema, casing: "snake_case" }), close: () => pool.end() };
 }
 
@@ -44,6 +45,20 @@ function connect(): Clients {
 // while the server was writing to it, which can corrupt it. Postgres pools connect lazily, so they were unaffected.
 function clients(): Clients {
   return (globalForDb.hpamsDb ??= connect());
+}
+
+/**
+ * PostgreSQL connection settings. Hosted databases such as Supabase need TLS: DATABASE_SSL=require checks the
+ * server's certificate (give its CA in DATABASE_SSL_CA, a PEM file path), DATABASE_SSL=no-verify encrypts without
+ * checking it. Without DATABASE_SSL the connection string's own sslmode applies.
+ */
+export function pgConfig(url: string): import("pg").PoolConfig {
+  const mode = process.env.DATABASE_SSL;
+  if (!mode) return { connectionString: url };
+  // The URL's sslmode would override the ssl object, so it is taken out.
+  const u = new URL(url); u.searchParams.delete("sslmode");
+  const ca = process.env.DATABASE_SSL_CA ? readFileSync(process.env.DATABASE_SSL_CA, "utf8") : undefined;
+  return { connectionString: u.toString(), ssl: mode === "no-verify" ? { rejectUnauthorized: false } : { rejectUnauthorized: true, ...(ca ? { ca } : {}) }, max: Number(process.env.DATABASE_POOL_MAX) || 10 };
 }
 
 /** A consistent copy of the embedded database's data folder (a .tar.gz), taken while it runs. Null for PostgreSQL. */

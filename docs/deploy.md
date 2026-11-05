@@ -71,6 +71,39 @@ npm run db:seed -- --only=none && npm start`, behind a reverse proxy that provid
 `SETUP_CODE`, and `TRUST_PROXY=1` when the proxy sets X-Forwarded-For. Run it as a
 service (systemd, PM2 or NSSM on Windows) and schedule `npm run backup`.
 
+### On Supabase (database and Microsoft / Google sign-in)
+
+PAMS can use a Supabase project as its database, and Supabase Auth for "Sign in with Microsoft / Google". Supabase only
+confirms who someone is: they get in only if an **active PAMS user with the same email** exists, and they get that
+user's role, hospitals and departments. Password sign-in keeps working, so keep at least one administrator password.
+
+**Database.** In Supabase › Connect, copy the *Session pooler* connection string (port 5432; it works over IPv4 and
+keeps the long-lived connections PAMS uses). Then in `.env`:
+
+```
+DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+DATABASE_SSL=require          # encrypted; checks the certificate (use no-verify only to test)
+DATABASE_SSL_CA=/path/prod-ca-2021.crt   # optional: Supabase's CA from Database settings › SSL
+DATABASE_POOL_MAX=10
+```
+
+Run `npm run db:migrate` once, then `npm run db:seed -- --only=none` and open `/setup` to create the first
+administrator. Backups (`npm run backup`) need `pg_dump` 15+ on the server; Supabase also keeps its own daily backups.
+
+**Sign-in.** In Supabase › Authentication › Providers, turn on *Azure* (Microsoft Entra ID) and/or *Google* with the
+client ID and secret from your Entra app registration or Google Cloud project, using the callback URL Supabase shows.
+Under Authentication › URL configuration add `https://<your PAMS address>/auth/callback` to the redirect URLs. Then:
+
+```
+APP_URL=https://pams.example.org
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY=<anon / publishable key>
+SUPABASE_PROVIDERS=azure,google   # the buttons to show
+```
+
+Restart PAMS; the sign-in page shows the buttons. Add each person in Administration › Users with the email they use
+at Microsoft or Google (the password can be anything long; they won't need it).
+
 ## Security checklist before going live
 
 - HTTPS only (Caddy does this in the Docker setup). Set `APP_URL` to the https address.

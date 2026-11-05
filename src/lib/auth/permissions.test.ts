@@ -71,3 +71,13 @@ describe("passwords", () => {
     expect(passwordProblem("a good passphrase")).toBeNull();
   });
 });
+
+import { deptScopeAllows } from "./permissions";
+describe("department scope", () => {
+  it("allows a pathway only when every placed step is in the user's departments", () => {
+    expect(deptScopeAllows(new Set([1, 2]), [1, 2, null])).toBe(true);
+    expect(deptScopeAllows(new Set([1]), [1, 3])).toBe(false);
+    expect(deptScopeAllows(new Set([1]), [null])).toBe(false);
+    expect(deptScopeAllows(new Set(), [1])).toBe(false);
+  });
+});

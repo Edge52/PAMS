@@ -1183,6 +1183,12 @@ export const userFacilities = pgTable("user_facilities", {
   facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
 }, (t) => [primaryKey({ columns: [t.userId, t.facilityId] })]);
 
+/** Departments a department head looks after (wave 13): they may edit pathways and room zones there. */
+export const userDepartments = pgTable("user_departments", {
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  departmentId: integer("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+}, (t) => [primaryKey({ columns: [t.userId, t.departmentId] })]);
+
 /** Gap-free-enough document numbers per prefix and year (RFQ-2026-0007). Never reuses a number. */
 export const docSequences = pgTable("doc_sequences", {
   prefix: varchar("prefix", { length: 16 }).notNull(),

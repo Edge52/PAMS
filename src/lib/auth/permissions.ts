@@ -74,3 +74,10 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "workorders.report": "report faults", "workorders.assign": "assign and sign off work orders", "contracts.edit": "manage service contracts", "parts.edit": "manage spare parts stock", "recalls.edit": "record and track recalls", "assets.dispose": "propose and record device disposals",
   "users.manage": "manage users", "settings.manage": "change settings",
 };
+
+/** Department scope (wave 13): every placed step is in one of the user's departments, and at least one is placed. */
+export function deptScopeAllows(mine: Set<number>, depts: (number | null)[]): boolean {
+  const placed = depts.filter((d): d is number => d != null);
+  return mine.size > 0 && placed.length > 0 && placed.every((d) => mine.has(d));
+}
+

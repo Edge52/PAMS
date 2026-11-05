@@ -119,7 +119,7 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
             <div><Button variant="secondary">Record bond</Button></div>
           </ActionForm>
         )}
-        <p className="px-4 pb-3 text-xs text-muted">Required amounts use {BOND_RATE.BID * 100} % of the offer total for a bid bond and {BOND_RATE.PERFORMANCE * 100} % of the order value for a performance bond (Law 182/2018 art. 16 and 40). Check them against the tender documents.</p>
+        <p className="px-4 pb-3 text-xs text-muted">Required amounts use {BOND_RATE.BID * 100} % of the offer total for a bid bond and {BOND_RATE.PERFORMANCE * 100} % of the order value for a performance bond (Law 182/2018 art. 16 and 40).</p>
       </Panel>
     </div>
   );

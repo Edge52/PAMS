@@ -12,6 +12,8 @@ import { db } from "@/db";
 import { buildings, departments, flowLinks, flowSteps, floors, patientFlows, rooms } from "@/db/schema";
 import { logActivity } from "@/lib/server-utils";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
+import { canEditFlow, myDepartments } from "@/lib/auth/departments";
+import { can } from "@/lib/auth/permissions";
 import { firstError, formObject, id, int, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
 import { checkFlow, FLOW_KINDS, nextKey, STEP_KINDS, TRANSPORTS, URGENCIES } from "@/lib/flows/model";
 import { resolveStarter, STARTERS } from "@/lib/flows/starters";
@@ -23,10 +25,14 @@ const page = (fid: number, notice?: string, error?: string) =>
 
 /** flows.edit, access to the pathway's hospital, and (unless `published` is allowed) a draft. */
 async function editable(flowId: number, opts: { published?: boolean } = {}) {
-  const me = await requirePermission("flows.edit");
+  // Wave 13: department heads may edit pathways that sit wholly in their departments.
+  const me = await requirePermission("assets.view");
   const [f] = await db.select().from(patientFlows).where(eq(patientFlows.id, flowId));
   if (!f) redirect("/flows?error=" + encodeURIComponent("That pathway no longer exists."));
   await requireFacilityAccess(f.facilityId, me);
+  if (!(await canEditFlow(me, await db.select({ departmentId: flowSteps.departmentId, roomId: flowSteps.roomId }).from(flowSteps).where(eq(flowSteps.flowId, f.id))))) {
+    redirect(page(f.id, undefined, "You can edit pathways whose steps are all in your departments. Ask biomedical engineering or a planner for this one."));
+  }
   if (!opts.published && f.status !== "DRAFT") redirect(page(f.id, undefined, "This version is published and frozen. Use “Edit as a new version”."));
   return { me, flow: f };
 }
@@ -124,6 +130,7 @@ export async function saveStep(_: FormState, fd: FormData): Promise<FormState> {
     const [dep] = await db.select({ fac: departments.facilityId }).from(departments).where(eq(departments.id, departmentId));
     if (!dep || dep.fac !== flow.facilityId) return { error: "That department isn't in this hospital." };
   }
+  if (!can(me.role, "flows.edit") && (departmentId == null || !(await myDepartments(me.id)).has(departmentId))) return { error: "Choose a room or department of yours." };
   const equipment = (d.equipment ?? "").split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
   const values = { label: d.label, kind: d.kind ?? "STEP", departmentId, roomId: d.roomId ?? null, ...roomRef, minutes: d.minutes ?? null, accompanying: d.accompanying ?? null, equipment, notes: d.notes ?? null };
   if (d.key) {

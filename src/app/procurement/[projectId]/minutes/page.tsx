@@ -94,7 +94,7 @@ export default async function MinutesPage({ params, searchParams }: { params: Pr
 
         <p className="mt-4">Remarks: …………………………………………………………………………………………………………………………</p>
         <Signatures committee={base.committeeFor(kind === "opening" ? "opening" : "evaluation")} />
-        <p className="mt-6 text-[10px] text-muted">Drafted from the tender records in Hospital PAMS on {formatDate(new Date())} by {me.name}. Check the wording against the Law 182/2018 executive regulations before signing.</p>
+        <p className="mt-6 text-[10px] text-muted">Drafted from the tender records in Hospital PAMS on {formatDate(new Date())} by {me.name}. Complete the remarks before signing.</p>
       </article>
     </>
   );
