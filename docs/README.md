@@ -2,6 +2,7 @@
 
 | Document | For | What's in it |
 |---|---|---|
+| [Handover](HANDOVER.md) | Whoever picks up the project next | What the app is, how it is built and run, how we work, what is done and what is left |
 | [System documentation](system-documentation.md) | Management, project team, developers | What the system does (release 3.0), modules, roles, architecture, running, codebase, limitations, backlog and open decisions |
 | [User guide](user-guide.md) | Everyone who uses it | Everyday jobs by role: report a fault, run work orders, plan a BOQ, buy, approve, use the 3D view |
 | [Deployment and going live](deploy.md) | IT, whoever installs it | Laptop and server installation, backups, restore, security checklist, going live at a hospital, hospital email |

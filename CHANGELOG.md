@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — wave 13 (branch `wave-13`)
+## Wave 13 — merged 5 Nov 2026
 
 Migration `0031`. Update with `git pull` and `npm run demo`; your data is kept.
 
@@ -17,7 +17,7 @@ Migration `0031`. Update with `git pull` and `npm run demo`; your data is kept.
   Offer prices are never given to it. The audit log records each use and which look-ups ran, not the question.
 - Law 182 "check against the regulations" notes removed (the bond rates and two-envelope steps are confirmed).
 
-## Unreleased — wave 12 (branch `wave-12`, built on `wave-10`)
+## Wave 12 — merged 3 Nov 2026
 
 Migration `0030`. Update with `git pull` and `npm run demo`; your data is kept.
 
@@ -48,7 +48,7 @@ Migration `0030`. Update with `git pull` and `npm run demo`; your data is kept.
   panel and the pathway analysis show corridors both use and lifts both use at the same hours.
 - **Smoother 3D**: walking networks are built in a background worker.
 
-## Unreleased — wave 10 (branch `wave-10`)
+## Wave 10 — merged 3 Nov 2026
 
 Migration `0029`. Update with `git pull` and `npm run demo`; your data is kept. The demo adds a budget line per
 hospital (labelled demo) only when none exist.
@@ -78,7 +78,7 @@ hospital (labelled demo) only when none exist.
 Check the bond rates, the two-envelope steps and the minutes' wording against the Law 182/2018 executive
 regulations before relying on them.
 
-## Unreleased — waves 8 and 9 (branch `wave-8`)
+## Waves 8 and 9 — merged 3 Nov 2026
 
 Migrations `0024`–`0028`. Update with `git pull` and `npm run demo`; your data is kept. The demo adds clearly labelled
 demo figures (imaging use, budgets, contract terms, offer running costs, typical site values) only where none exist.
@@ -108,7 +108,7 @@ demo figures (imaging use, budgets, contract terms, offer running costs, typical
 
 Not done here: go-live hardening (C4) needs the production server and its settings.
 
-## Unreleased — wave 7 (in progress, branch `wave-7`)
+## Wave 7 — merged
 
 Migrations `0016`–`0023`. Update with `git pull` and `npm run demo`; your data is kept.
 

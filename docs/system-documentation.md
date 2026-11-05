@@ -265,6 +265,8 @@ of the 10 demo accounts at phone width finds no errors or horizontal scrolling; 
 
 ## Known limitations
 
+> Out of date since release 3.0: the current state and to-do list are in `docs/HANDOVER.md`.
+
 | Area | Limitation |
 | --- | --- |
 | Data | La Plaza's equipment and fit-out plan are demo data; the real register is to be entered after launch. Planning figures marked *judgement* in the reference sheet await your team's confirmation. |
@@ -279,6 +281,8 @@ of the 10 demo accounts at phone width finds no errors or horizontal scrolling; 
 | Not yet tried for real | A full Docker build on a server, email through the hospital's mail server. |
 
 ## Backlog
+
+> Out of date: see `docs/HANDOVER.md` › What's left.
 
 | Package | Contents | Size |
 | --- | --- | --- |
