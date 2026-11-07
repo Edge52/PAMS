@@ -1,5 +1,27 @@
 # Changelog
 
+## Wave 15 — on branch `wave-15`, not merged yet
+
+Migration `0033`. Update with `git pull` and `npm run demo`; your data is kept.
+
+- **Room standards in BOQ checks** (BOQ › Checks › *Room standards*): every room of the BOQ's linked departments
+  against the standard for its kind of room — area per bed space, ceiling, door, floor load, power, medical gas
+  outlets, shielding and services — summed up per department, with what is most often short, the rooms below their
+  standard and the rooms still to survey, each linked to its data sheet.
+- **Gas outlets in the room survey**: 3D view › room › *Will it fit?* › **Edit survey** now records the medical gas
+  outlets per gas (blank = not surveyed, 0 = none). Room data sheets and the checks compare them with the standard,
+  per bed space when the room has beds.
+- **Queue simulation extras** (all optional; with none set, results are as before):
+  - *Staff on duty*: groups such as radiographers or nurses who work chosen rooms and scanners; a step there needs
+    one of them as well as the room, so too few staff make a queue even with rooms free.
+  - *Opening hours* for a room, scanner or staff group, with other hours for the what-if (e.g. MRI until 22:00).
+  - *Appointment books*: a pathway's patients booked evenly through a session, with a no-show share.
+  - *What-if: move a step to another floor*: see what it does to the lifts and the time in the pathway.
+  - *Saved scenarios*: save every setting and the what-if under a name, private or shared, and load it later.
+- **More detailed furniture and equipment in renders**: beds with rails and castors, swivel chairs, cupboard fronts
+  and handles, theatre tables and lights, anaesthesia machines, incubators, CT and X-ray rooms, monitors and drip
+  stands, and more. Still built in code (no model files, nothing to license); footprints unchanged.
+
 ## Wave 14 — merged 7 Nov 2026
 
 Migration `0032`. Update with `git pull` and `npm run demo`; your data is kept.

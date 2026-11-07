@@ -34,6 +34,15 @@ describe("room standards", () => {
     expect(m.find((r) => r.label === "Quench pipe")?.state).toBe("unknown");
     expect(checkState(checkRoom({ floorFinish: "Vinyl" }, survey))).toBe("none");
   });
+  it("checks medical gas outlets, per bed space when the room has beds", () => {
+    const icu = standardFor("ICU", "ICU_BAY")!.rule.spec; // 4 O2, 4 VAC, 2 AIR a bed space
+    const rows = checkRoom(icu, { ...survey, areaM2: 160, beds: 4, services: { gases: { O2: 16, VAC: 12 } } });
+    expect(rows.find((r) => r.label === "Oxygen outlets")).toMatchObject({ need: "≥ 16 (4 a bed)", have: "16", state: "ok" });
+    expect(rows.find((r) => r.label === "Vacuum outlets")?.state).toBe("short");
+    expect(rows.find((r) => r.label === "Medical air outlets")?.state).toBe("unknown");
+    const theatre = checkRoom(standardFor("Theatre 1", null)!.rule.spec, { ...survey, services: { gases: { O2: 0 } } });
+    expect(theatre.find((r) => r.label === "Oxygen outlets")).toMatchObject({ need: "≥ 2", have: "0", state: "short" });
+  });
   it("lists the sheet's lines", () => {
     const lines = specLines(standardFor("Theatre", null)!.rule.spec);
     expect(lines.find((l) => l.group === "Medical gases")?.value).toContain("Oxygen 2");

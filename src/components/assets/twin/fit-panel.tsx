@@ -7,11 +7,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { setRoomSiteAction, type RoomSite } from "@/app/assets/3d/actions";
+import { GASES } from "@/lib/assets/room-standards";
 import { checkFit, polygonArea, type FitResult, type Placement, type SiteRoom } from "@/lib/assets/site-fit";
 import type { TwinFloor, TwinRoom, TwinSiteModel } from "./types";
 
 export type Outline = { floorId: number; pts: [number, number][]; color: string; fill?: number; dashed?: boolean };
 const SVC = [["chilledWater", "Chilled water"], ["quenchPipe", "Quench pipe"], ["rfShield", "RF shielding"], ["leadLined", "Lead shielding"]] as const;
+/** Short names for the survey's gas outlet fields (wave 15). */
+const GAS_SHORT: Record<string, string> = { O2: "O₂", VAC: "Vacuum", AIR: "Air", AIR7: "Surgical air", N2O: "N₂O", AGSS: "AGSS" };
 const ICON = { ok: "✓", fail: "✕", unknown: "?" } as const;
 const TONE = { ok: "text-[#7dffc0]", fail: "text-[#ff8a96]", unknown: "text-[#ffc46b]" } as const;
 
@@ -83,6 +86,7 @@ export function FitPanel({ room, floor, floorRooms, models, canEdit, facilityId,
           site.ceilingM && `ceiling ${site.ceilingM} m`, site.doorWidthM && `door ${site.doorWidthM}${site.doorHeightM ? ` × ${site.doorHeightM}` : ""} m`,
           site.floorLoadKgM2 && `floor ${site.floorLoadKgM2} kg/m²`, sv?.powerKva != null && `${sv.powerKva} kVA`,
           ...SVC.filter(([s]) => sv?.[s]).map(([, l]) => l.toLowerCase()),
+          sv?.gases && `gas outlets ${GASES.filter((g) => sv.gases?.[g] != null).map((g) => `${GAS_SHORT[g]} ${sv.gases![g]}`).join(", ")}`,
         ].filter(Boolean).join(" · ") : "Not surveyed yet: ceiling, door, floor load and services show as unknown."}
         {canEdit && <> <button type="button" onClick={() => setEditing((e) => !e)} className="text-[#5fd6ff] hover:underline">{editing ? "Close" : "Edit survey"}</button></>}
       </p>
@@ -96,6 +100,12 @@ export function FitPanel({ room, floor, floorRooms, models, canEdit, facilityId,
               <select name={n} defaultValue={tri(sv?.[n])} className="twin-input py-0.5"><option value="">Not known</option><option value="yes">Present</option><option value="no">Not present</option></select>
             </label>
           ))}
+          <p className="col-span-2 mt-1 text-[#8fb6cc]">Medical gas outlets in the room (blank = not surveyed)</p>
+          <div className="col-span-2 grid grid-cols-3 gap-1.5">
+            {GASES.map((g) => (
+              <label key={g} className="text-[#8fb6cc]">{GAS_SHORT[g]}<input name={`gas_${g}`} defaultValue={sv?.gases?.[g] ?? ""} inputMode="numeric" className="twin-input py-0.5" /></label>
+            ))}
+          </div>
           <button disabled={busy} className="twin-act col-span-2">{busy ? "Saving…" : "Save survey"}</button>
         </form>
       )}

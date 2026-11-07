@@ -2,16 +2,19 @@ import "server-only";
 /** Cost of ownership, room requirements against the CAD rooms, and phasing cash flow for one BOQ. */
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { deviceTypes, floors, rooms } from "@/db/schema";
+import { buildings, deviceTypes, floors, rooms } from "@/db/schema";
 import { num, todayISO } from "@/lib/format";
 import { coreKind, polygonArea, rectPoly, type Pt } from "@/components/assets/twin/geometry";
 import { cashFlow, cleanPhaseMonths } from "./phasing";
 import type { BoqWorkspace } from "./queries";
+import { checkRoom, standardFor } from "@/lib/assets/room-standards";
+import { loadStandards, roomAreaM2 } from "@/lib/assets/room-standards-server";
 import { checkRooms, needFor, type ReqRoom } from "./room-requirements";
+import { summariseStandards, type StdRoom } from "./room-standards-check";
 import { tcoSummary } from "./tco";
 
 export async function roomsCheck(ws: BoqWorkspace) {
-  const deptLabel = new Map(ws.depts.map((d) => [d.id, d.realName ? `${d.label} (${d.realName})` : d.label]));
+  const deptLabel = new Map(ws.depts.map((d) => [d.id, d.realName && d.realName !== d.label ? `${d.label} (${d.realName})` : d.label]));
   const lines = ws.lines.filter((l) => l.quantity > 0 && needFor(l.deviceCode));
   if (!lines.length) return [];
   // Real rooms of the linked departments, areas in m² from the CAD outline (or the drawn rectangle).
@@ -30,6 +33,27 @@ export async function roomsCheck(ws: BoqWorkspace) {
     return { boqDepartmentId: l.boqDepartmentId, department: l.boqDepartmentId != null ? deptLabel.get(l.boqDepartmentId) ?? "Department" : "Hospital-wide", linked: d?.departmentId != null, deviceCode: l.deviceCode, deviceName: l.deviceName, quantity: l.quantity };
   }), reqRooms);
 }
+
+/** Room standards (wave 15): every real room of the linked departments against the standard for its kind of room. */
+export async function roomStandardsCheck(ws: BoqWorkspace) {
+  const linked = ws.depts.filter((d) => d.departmentId != null);
+  if (!linked.length) return { departments: [], unlinked: ws.depts.length };
+  const boqDeptOf = new Map<number, number>();
+  for (const d of linked) if (!boqDeptOf.has(d.departmentId!)) boqDeptOf.set(d.departmentId!, d.id);
+  const rows = await db.select({ room: rooms, floor: floors.name, upm: floors.unitsPerMetre, facilityId: buildings.facilityId })
+    .from(rooms).innerJoin(floors, eq(floors.id, rooms.floorId)).innerJoin(buildings, eq(buildings.id, floors.buildingId))
+    .where(inArray(rooms.departmentId, [...boqDeptOf.keys()]));
+  const { rules } = await loadStandards();
+  const std: StdRoom[] = rows.filter(({ room: r }) => r.type !== "CORRIDOR" && !coreKind(r.name)).map(({ room: r, floor, upm, facilityId }) => {
+    const m = standardFor(r.name, r.type, rules);
+    const rowsOut = m ? checkRoom(m.rule.spec, { areaM2: roomAreaM2(r, upm), beds: r.beds, ceilingM: r.ceilingM, doorWidthM: r.doorWidthM, floorLoadKgM2: r.floorLoadKgM2, services: r.services }) : [];
+    return { id: r.id, code: r.code, name: r.name, floor, facilityId, boqDepartmentId: boqDeptOf.get(r.departmentId!)!, standard: m?.rule.label ?? null, rows: rowsOut };
+  });
+  // One summary per real department (the first BOQ department linked to it).
+  const firsts = linked.filter((d) => boqDeptOf.get(d.departmentId!) === d.id).map((d) => ({ id: d.id, label: d.realName && d.realName !== d.label ? `${d.label} (${d.realName})` : d.label }));
+  return { departments: summariseStandards(firsts, std), unlinked: ws.depts.length - linked.length };
+}
+export type RoomStandardsCheck = Awaited<ReturnType<typeof roomStandardsCheck>>;
 
 export async function boqPlanning(ws: BoqWorkspace) {
   const ids = [...new Set(ws.lines.map((l) => l.deviceTypeId))];

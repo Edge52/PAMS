@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, buildings, documents, floors, rooms, routeFixes, twinNotes, twinTours, twinViews, users, type TourStop } from "@/db/schema";
+import { assets, buildings, documents, floors, rooms, routeFixes, twinNotes, twinTours, twinViews, users, type RoomServices, type TourStop } from "@/db/schema";
 import type { TwinFix, TwinRoom } from "@/components/assets/twin/types";
 import { can } from "@/lib/auth/permissions";
 import { decodeView } from "@/components/assets/twin/view-state";
@@ -15,6 +15,7 @@ import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { canEditRoomZone } from "@/lib/auth/departments";
 import { firstError, formObject, reqId, text } from "@/lib/assets/forms";
 import { moveAsset } from "@/lib/assets/mutations";
+import { GAS_LABELS, GASES } from "@/lib/assets/room-standards";
 import { notifyUsers } from "@/lib/notifications";
 import { fileKind, storeFile } from "@/lib/storage";
 import { noteOf, type TwinNote } from "@/lib/assets/twin-notes";
@@ -372,7 +373,7 @@ const siteNum = (fd: FormData, k: string, min: number, max: number): number | nu
   const v = String(fd.get(k) ?? "").trim(); if (!v) return null;
   const n = Number(v); return Number.isFinite(n) && n >= min && n <= max ? n : "bad";
 };
-export type RoomSite = { ceilingM: number | null; doorWidthM: number | null; doorHeightM: number | null; floorLoadKgM2: number | null; services: { chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number } | null };
+export type RoomSite = { ceilingM: number | null; doorWidthM: number | null; doorHeightM: number | null; floorLoadKgM2: number | null; services: RoomServices | null };
 /** Record a room's surveyed site data: ceiling, door, floor load, services. Blank = not surveyed. Needs facilities.edit. */
 export async function setRoomSiteAction(_: unknown, fd: FormData): Promise<{ ok?: string; error?: string; roomId?: number; site?: RoomSite } | null> {
   const me = await requirePermission("facilities.edit");
@@ -386,6 +387,14 @@ export async function setRoomSiteAction(_: unknown, fd: FormData): Promise<{ ok?
   const services: NonNullable<RoomSite["services"]> = {};
   for (const k of ["chilledWater", "quenchPipe", "rfShield", "leadLined"] as const) { const v = tri(k); if (v !== undefined) services[k] = v; }
   if (vals.powerKva != null) services.powerKva = vals.powerKva as number;
+  // Medical gas outlets per gas (wave 15): blank = not surveyed, 0 = none in the room.
+  const gases: Record<string, number> = {};
+  for (const g of GASES) {
+    const v = String(fd.get(`gas_${g}`) ?? "").trim(); if (!v) continue;
+    const n = Number(v); if (!Number.isInteger(n) || n < 0 || n > 60) return { error: `${GAS_LABELS[g]} outlets: a whole number from 0 to 60, or leave it empty.` };
+    gases[g] = n;
+  }
+  if (Object.keys(gases).length) services.gases = gases;
   const site: RoomSite = { ceilingM: vals.ceilingM as number | null, doorWidthM: vals.doorWidthM as number | null, doorHeightM: vals.doorHeightM as number | null, floorLoadKgM2: vals.floorLoadKgM2 as number | null, services: Object.keys(services).length ? services : null };
   await db.update(rooms).set(site).where(eq(rooms.id, r.id));
   return { ok: `${r.name}: site data saved.`, roomId: r.id, site };

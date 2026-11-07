@@ -230,11 +230,15 @@ export const rooms = pgTable("rooms", {
   doorWidthM: real("door_width_m"),
   doorHeightM: real("door_height_m"),
   floorLoadKgM2: real("floor_load_kg_m2"),
-  services: jsonb("services").$type<{ chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number }>(),
+  services: jsonb("services").$type<RoomServices>(),
 }, (t) => [
   uniqueIndex("rooms_floor_code_uq").on(t.floorId, t.code),
   index("rooms_department_idx").on(t.departmentId),
 ]);
+
+/** Services surveyed in a room (wave 9; medical gas outlets wave 15). A missing key = not surveyed. Gas outlets are
+ *  counted for the whole room, by gas code (O2, VAC, AIR, AIR7, N2O, AGSS; see src/lib/assets/room-standards.ts). */
+export type RoomServices = { chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number; gases?: Record<string, number> };
 
 /* ───────────────────────── Device taxonomy ───────────────────────── */
 
@@ -1545,6 +1549,19 @@ export const commissioningRooms = pgTable("commissioning_rooms", {
   noEquipment: boolean("no_equipment").notNull().default(false),
   note: text("note"),
 }, (t) => [primaryKey({ columns: [t.planId, t.roomId] }), index("commissioning_rooms_room_idx").on(t.roomId)]);
+
+/** Saved queue simulation scenarios (wave 15): the settings and what-if of /flows/simulate, private unless shared.
+ *  The shape is SimScenario in src/lib/flows/scenarios.ts (read defensively: old or hand-edited settings are cleaned). */
+export const simScenarios = pgTable("sim_scenarios", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  settings: jsonb("settings").$type<Record<string, unknown>>().notNull(),
+  shared: boolean("shared").notNull().default(false),
+  createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name"),
+  createdAt: createdAt(),
+}, (t) => [index("sim_scenarios_facility_idx").on(t.facilityId)]);
 
 /** In-app notifications. dedupeKey stops the alert generator repeating itself. */
 export const notifications = pgTable("notifications", {

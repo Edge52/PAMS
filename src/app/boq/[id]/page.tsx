@@ -14,7 +14,7 @@ import { AssumptionsTab } from "@/components/boq/tabs/assumptions";
 import { ChecksTab } from "@/components/boq/tabs/checks";
 import { boqChecks } from "@/lib/boq/checks-server";
 import { PhasingTab } from "@/components/boq/tabs/phasing";
-import { boqPlanning, roomsCheck } from "@/lib/boq/planning-server";
+import { boqPlanning, roomsCheck, roomStandardsCheck } from "@/lib/boq/planning-server";
 import { formatDate, formatMoney, formatNumber, num } from "@/lib/format";
 import { convert, getActivity } from "@/lib/server-utils";
 import { departmentTypeList, getBoqWorkspace, installedCounts, level3DeviceOptions, rulesForSet, type BoqWorkspace } from "@/lib/boq/queries";
@@ -187,7 +187,7 @@ export default async function BoqPage({ params, searchParams }: {
       {tab === "device" && <ByDeviceTab ws={ws} />}
       {tab === "scope" && <ScopeData ws={ws} locked={locked} me={me} />}
       {tab === "gap" && <GapTab ws={ws} installed={await installedCounts(ws.depts.map((d) => d.departmentId).filter((x): x is number => !!x))} />}
-      {tab === "checks" && <ChecksTab ws={ws} checks={checks} locked={locked} rooms={await roomsCheck(ws)} />}
+      {tab === "checks" && <ChecksTab ws={ws} checks={checks} locked={locked} rooms={await roomsCheck(ws)} standards={await roomStandardsCheck(ws)} />}
       {tab === "phasing" && <PhasingTab ws={ws} planning={await boqPlanning(ws)} locked={locked} />}
       {tab === "assumptions" && <AssumptionsTab ws={ws} rules={await rulesForSet(boq.standardSetId)} />}
       {tab === "history" && <History boqId={boq.id} />}

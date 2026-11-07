@@ -7,13 +7,21 @@
  * Simplifications (shown on the page): a step holds one unit of its resource for its minutes (times vary around
  * them); walking between steps takes a fixed time; a porter goes with every non-walking patient transfer and walks
  * back; a lift car is held for one round trip per change of floor; urgent arrivals are served before routine ones.
+ *
+ * Wave 15 extras, all optional: staff groups held with a step's room or scanner (see withStaff in simulate-model.ts),
+ * opening hours per resource (patients who come when it is closed wait for it to open), appointment books per
+ * pathway (patients come at booked times, some don't come) and moving a step to another floor (changes its lift trips).
  */
 
 /* ── Model ── */
 
-export type ResourceKind = "room" | "bed" | "scanner" | "porter" | "lift";
+export type ResourceKind = "room" | "bed" | "scanner" | "porter" | "lift" | "staff";
 export type SimResource = { key: string; label: string; kind: ResourceKind; capacity: number };
-export type SimStep = { key: string; label: string; kind: "START" | "STEP" | "END"; minutes: number; resource: string | null; level: number | null };
+export type SimStep = {
+  key: string; label: string; kind: "START" | "STEP" | "END"; minutes: number; resource: string | null; level: number | null;
+  /** A staff group held for the step's minutes as well as its resource (wave 15). */
+  staff?: string | null;
+};
 export type SimLink = { from: string; to: string; share: number; transport: string; urgent: boolean };
 export type SimFlow = { id: number; name: string; kind: string; perDay: number; profile: number[]; steps: SimStep[]; links: SimLink[] };
 export type SimModel = {
@@ -34,7 +42,36 @@ export type SimOptions = {
   volumeFactor: number;
   /** Capacity overrides for what-if runs, by resource key. */
   capacity?: Record<string, number>;
+  /** Opening hours by resource key (wave 15). Patients who need it while it is closed wait for it to open; jobs under way finish. */
+  hours?: Record<string, OpeningHours>;
+  /** Appointment books by pathway id (wave 15): patients come at booked times instead of at random. */
+  books?: Record<number, AppointmentBook>;
+  /** Steps moved to another floor, as "flowId:stepKey" → floor level (wave 15). Only the lift trips change. */
+  levels?: Record<string, number>;
 };
+/** Open from `open` to `close` o'clock (0–24, open before close) every day, or on weekdays only. */
+export type OpeningHours = { open: number; close: number; weekends: boolean };
+/** The day's patients booked evenly from `from` to `to` o'clock; `noShow` is the share who don't come (0–1). */
+export type AppointmentBook = { from: number; to: number; noShow: number };
+
+/** Days are counted from the warm-up day (0, a Sunday); measured day 1 is a Monday. */
+export const dayOfWeek = (day: number) => (day - 1 + 7) % 7;
+const isWeekend = (day: number) => dayOfWeek(day) >= 5;
+/** Clean opening hours: whole or half hours, 0 ≤ open < close ≤ 24; null when it is open all day every day. */
+export function cleanHours(h: Partial<OpeningHours> | null | undefined): OpeningHours | null {
+  if (!h) return null;
+  const r = (x: unknown, d: number) => { const n = Number(x); return Number.isFinite(n) ? Math.min(24, Math.max(0, Math.round(n * 2) / 2)) : d; };
+  const open = r(h.open, 0), close = r(h.close, 24), weekends = h.weekends !== false;
+  if (close <= open) return null;
+  return open === 0 && close === 24 && weekends ? null : { open, close, weekends };
+}
+/** Booked arrival times (minutes from the start of the day) for n patients from `from` to `to` o'clock: one at the start of each equal slot. */
+export function bookedTimes(n: number, book: AppointmentBook): number[] {
+  const from = Math.max(0, Math.min(24, book.from)), to = Math.max(from, Math.min(24, book.to));
+  if (n <= 0 || to <= from) return [];
+  const slot = ((to - from) * 60) / n;
+  return Array.from({ length: n }, (_, i) => from * 60 + i * slot);
+}
 export const DEFAULT_OPTIONS: SimOptions = { days: 1, runs: 20, seed: 1, variability: 0.5, weekendShare: 0.6, walkMinutes: 3, volumeFactor: 1 };
 
 /** Lift car time for one trip, minutes: doors and loading at both ends plus travel each way (as in the lift load check). */
@@ -84,6 +121,8 @@ const less = (x: Ev, y: Ev) => x.t < y.t || (x.t === y.t && x.seq < y.seq);
 type Waiter = { urgent: boolean; since: number; seq: number; go: () => void };
 type Pool = {
   res: SimResource; cap: number; busy: number; queue: Waiter[];
+  /** Opening hours (null = always open), whether it is open now, and open minutes in each measured hour. */
+  sched: OpeningHours | null; open: boolean; openMin: number[];
   /** Busy unit-minutes and queue-length-minutes in each hour of the measured period, from the last change. */
   busyMin: number[]; queueMin: number[]; last: number;
   waits: number[]; maxQueue: number;
@@ -104,7 +143,13 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
   const pools = new Map<string, Pool>();
   for (const res of model.resources) {
     const cap = Math.max(0, Math.round(opt.capacity?.[res.key] ?? res.capacity));
-    pools.set(res.key, { res, cap, busy: 0, queue: [], busyMin: Array(HOURS).fill(0), queueMin: Array(HOURS).fill(0), last: 0, waits: [], maxQueue: 0 });
+    const sched = cleanHours(opt.hours?.[res.key]);
+    const openMin: number[] = Array(HOURS).fill(60);
+    if (sched) for (let h = 0; h < HOURS; h++) {
+      const day = 1 + Math.floor(h / 24), hod = h % 24;
+      openMin[h] = !sched.weekends && isWeekend(day) ? 0 : Math.max(0, Math.min(hod + 1, sched.close) - Math.max(hod, sched.open)) * 60;
+    }
+    pools.set(res.key, { res, cap, busy: 0, queue: [], sched, open: !sched, openMin, busyMin: Array(HOURS).fill(0), queueMin: Array(HOURS).fill(0), last: 0, waits: [], maxQueue: 0 });
   }
   /** Add the time since the pool last changed to its hourly busy and queue totals (measured period only). */
   const account = (p: Pool) => {
@@ -117,31 +162,41 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
     p.last = now;
   };
   /** Wait for one unit (no pool, or a pool with no capacity set, means no waiting), then go. */
-  const acquire = (key: string | null, urgent: boolean, go: () => void) => {
+  const acquire = (key: string | null | undefined, urgent: boolean, go: () => void) => {
     const p = key ? pools.get(key) : undefined;
     if (!p || p.cap <= 0) { go(); return; }
     account(p);
-    if (p.busy < p.cap) { p.busy++; if (now >= WARM && now < END) p.waits.push(0); go(); return; }
+    if (p.open && p.busy < p.cap) { p.busy++; if (now >= WARM && now < END) p.waits.push(0); go(); return; }
     p.queue.push({ urgent, since: now, seq: seq++, go }); p.maxQueue = Math.max(p.maxQueue, p.queue.length);
   };
-  const release = (key: string | null) => {
+  /** Hand the unit to the next in the queue: urgent first, then first come first served. */
+  const next = (p: Pool) => {
+    let best = 0; for (let i = 1; i < p.queue.length; i++) { const a = p.queue[i], b = p.queue[best]; if ((a.urgent && !b.urgent) || (a.urgent === b.urgent && a.seq < b.seq)) best = i; }
+    const w = p.queue.splice(best, 1)[0];
+    if (now >= WARM && now < END) p.waits.push(now - w.since);
+    w.go();
+  };
+  const release = (key: string | null | undefined) => {
     const p = key ? pools.get(key) : undefined;
     if (!p || p.cap <= 0) return;
     account(p);
-    if (p.queue.length) {
-      // Urgent first, then first come first served.
-      let best = 0; for (let i = 1; i < p.queue.length; i++) { const a = p.queue[i], b = p.queue[best]; if ((a.urgent && !b.urgent) || (a.urgent === b.urgent && a.seq < b.seq)) best = i; }
-      const w = p.queue.splice(best, 1)[0];
-      if (now >= WARM && now < END) p.waits.push(now - w.since);
-      w.go();
-    } else p.busy--;
+    if (p.open && p.queue.length) next(p); else p.busy--;
   };
+  // Opening and closing (wave 15): at opening the queue is served up to capacity; at closing no new job starts.
+  for (const p of pools.values()) {
+    const sc = p.sched; if (!sc || p.cap <= 0) continue;
+    for (let d = 0; d <= opt.days; d++) {
+      if (!sc.weekends && isWeekend(d)) continue;
+      at(d * 1440 + sc.open * 60, () => { account(p); p.open = true; while (p.busy < p.cap && p.queue.length) { p.busy++; next(p); } });
+      at(d * 1440 + sc.close * 60, () => { account(p); p.open = false; });
+    }
+  }
 
   const flowStats = new Map<number, { arrived: number; finished: number; times: number[]; waits: number[] }>();
   for (const f of model.flows) {
     const st = { arrived: 0, finished: 0, times: [] as number[], waits: [] as number[] };
     flowStats.set(f.id, st);
-    const steps = new Map(f.steps.map((s) => [s.key, s]));
+    const steps = new Map(f.steps.map((s) => { const lv = opt.levels?.[`${f.id}:${s.key}`]; return [s.key, lv != null && Number.isFinite(lv) ? { ...s, level: lv } : s]; }));
     const outs = new Map<string, SimLink[]>();
     for (const l of f.links) if (steps.has(l.from) && steps.has(l.to) && l.from !== l.to) (outs.get(l.from) ?? outs.set(l.from, []).get(l.from)!).push(l);
     const starts = f.steps.filter((s) => s.kind === "START");
@@ -161,10 +216,11 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
       };
       if (s.kind !== "STEP" || s.minutes <= 0) { leave(); return; }
       const asked = now;
-      acquire(s.resource, urgent, () => {
+      // The room or scanner first, then the staff to work it (wave 15); both are held for the step's minutes.
+      acquire(s.resource, urgent, () => acquire(s.staff, urgent, () => {
         pt.waited += now - asked;
-        at(now + gammaTime(r, s.minutes, opt.variability), () => { release(s.resource); leave(); });
-      });
+        at(now + gammaTime(r, s.minutes, opt.variability), () => { release(s.staff); release(s.resource); leave(); });
+      }));
     };
 
     const transfer = (pt: { waited: number }, from: SimStep, to: SimStep, link: SimLink, arrive: () => void) => {
@@ -192,20 +248,28 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
 
     // Arrivals: a Poisson number each hour, spread evenly at random within it.
     const totalDays = 1 + opt.days;
+    const book = opt.books?.[f.id];
+    const arrive = (t: number) => {
+      const start = starts[Math.floor(r() * starts.length)];
+      at(t, () => {
+        const pt = { start: now, waited: 0, hops: 0, measured: now >= WARM && now < END };
+        if (pt.measured) st.arrived++;
+        visit(pt, start, false);
+      });
+    };
     for (let d = 0; d < totalDays; d++) {
-      const dow = (d - 1 + 7) % 7; // measured day 1 is a Monday
-      const dayFactor = opt.days === 7 && d > 0 && dow >= 5 ? opt.weekendShare : 1;
+      const dayFactor = opt.days === 7 && d > 0 && isWeekend(d) ? opt.weekendShare : 1;
+      if (book) {
+        // Booked: the day's patients at their slot times, a few minutes early or late; no-shows don't come.
+        for (const t of bookedTimes(Math.round(f.perDay * opt.volumeFactor * dayFactor), book)) {
+          if (r() < Math.min(1, Math.max(0, book.noShow))) continue;
+          arrive(Math.max(d * 1440, d * 1440 + t + (r() - 0.5) * 10));
+        }
+        continue;
+      }
       for (let h = 0; h < 24; h++) {
         const n = poisson(r, f.perDay * opt.volumeFactor * dayFactor * (f.profile[h] ?? 1 / 24));
-        for (let i = 0; i < n; i++) {
-          const t = d * 1440 + h * 60 + r() * 60;
-          const start = starts[Math.floor(r() * starts.length)];
-          at(t, () => {
-            const pt = { start: now, waited: 0, hops: 0, measured: now >= WARM && now < END };
-            if (pt.measured) st.arrived++;
-            visit(pt, start, false);
-          });
-        }
+        for (let i = 0; i < n; i++) arrive(d * 1440 + h * 60 + r() * 60);
       }
     }
   }
@@ -219,8 +283,10 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
   const out: RunResult = { resources: {}, flows: {} };
   for (const [key, p] of pools) {
     account(p);
-    const hourly = p.busyMin.map((m) => (p.cap ? m / (p.cap * 60) : 0)), queueHourly = p.queueMin.map((m) => m / 60);
-    out.resources[key] = { utilisation: mean(hourly), hourly, queueHourly, meanWait: mean(p.waits), p90Wait: q(p.waits, 0.9), maxWait: p.waits.length ? Math.max(...p.waits) : 0, served: p.waits.length, maxQueue: p.maxQueue };
+    // Busy share of the open time: closed hours count as 0 and don't lower the average.
+    const hourly = p.busyMin.map((m, h) => (p.cap && p.openMin[h] ? Math.min(1, m / (p.cap * p.openMin[h])) : 0)), queueHourly = p.queueMin.map((m) => m / 60);
+    const openTotal = p.openMin.reduce((a, b) => a + b, 0), busyTotal = p.busyMin.reduce((a, b) => a + b, 0);
+    out.resources[key] = { utilisation: p.cap && openTotal ? Math.min(1, busyTotal / (p.cap * openTotal)) : 0, hourly, queueHourly, meanWait: mean(p.waits), p90Wait: q(p.waits, 0.9), maxWait: p.waits.length ? Math.max(...p.waits) : 0, served: p.waits.length, maxQueue: p.maxQueue };
   }
   for (const [id, s] of flowStats) out.flows[id] = { arrived: s.arrived, finished: s.finished, meanTime: mean(s.times), p90Time: q(s.times, 0.9), meanWait: mean(s.waits) };
   return out;

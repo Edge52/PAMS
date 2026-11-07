@@ -4,14 +4,16 @@ import { fitToBudgetAction } from "@/app/boq/actions";
 import { PER_LABEL } from "@/lib/boq/benchmarks";
 import { describeChange } from "@/lib/boq/fit-budget";
 import type { BoqChecks } from "@/lib/boq/checks-server";
+import type { RoomStandardsCheck } from "@/lib/boq/planning-server";
 import type { ReqResult } from "@/lib/boq/room-requirements";
+import { standardsTotals } from "@/lib/boq/room-standards-check";
 import type { BoqWorkspace } from "@/lib/boq/queries";
 import { formatMoney, formatNumber } from "@/lib/format";
 
 const SEVERITY = { high: { tone: "danger", label: "High" }, medium: { tone: "warn", label: "Medium" }, low: { tone: "info", label: "Low" } } as const;
 
 /** Checks: risk flags, fit to budget, and benchmarks against reference ranges. */
-export function ChecksTab({ ws, checks, locked, rooms }: { ws: BoqWorkspace; checks: BoqChecks; locked: boolean; rooms: ReqResult[] }) {
+export function ChecksTab({ ws, checks, locked, rooms, standards }: { ws: BoqWorkspace; checks: BoqChecks; locked: boolean; rooms: ReqResult[]; standards: RoomStandardsCheck }) {
   const { boq } = ws;
   const money = (n: number) => formatMoney(n, boq.currency, { compact: Math.abs(n) >= 1e6 });
   const { fit, risks, benchmarks } = checks;
@@ -121,6 +123,8 @@ export function ChecksTab({ ws, checks, locked, rooms }: { ws: BoqWorkspace; che
         )}
       </Panel>
 
+      <RoomStandardsPanel boqId={boq.id} standards={standards} />
+
       <Panel title="Benchmarks" actions={<span className="text-xs text-muted">{benchmarks.length ? `${off.length} of ${benchmarks.length} outside the range` : ""}</span>}>
         {benchmarks.length === 0 ? <p className="text-sm text-muted">No benchmark applies to these departments yet (ICU, CCU, NICU, emergency, theatres, wards, delivery, dialysis and radiology are covered).</p> : (
           <>
@@ -144,5 +148,81 @@ export function ChecksTab({ ws, checks, locked, rooms }: { ws: BoqWorkspace; che
         )}
       </Panel>
     </div>
+  );
+}
+
+const SHOW = 60;
+const list = (xs: string[], n = 4) => (xs.length > n ? `${xs.slice(0, n).join(", ")} and ${xs.length - n} more` : xs.join(", "));
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+/** Room standards (wave 15): the linked departments' rooms against the standard for their kind of room. */
+function RoomStandardsPanel({ boqId, standards }: { boqId: number; standards: RoomStandardsCheck }) {
+  const { departments, unlinked } = standards;
+  const t = standardsTotals(departments);
+  return (
+    <Panel title="Room standards" actions={<span className="text-xs text-muted">{t.withStandard ? `${t.short} of ${t.withStandard} rooms below the standard` : ""}</span>}>
+      {departments.length === 0 ? (
+        <p className="text-sm text-muted">No BOQ department is linked to a real department yet. <Link href={`/boq/${boqId}?tab=scope`} className="font-semibold text-primary hover:underline">Link them on the Departments tab</Link> to check their rooms against the room standards.</p>
+      ) : (
+        <>
+          <p className="mb-3 text-xs text-muted">
+            Each room of the linked departments against the <Link href="/facilities/room-standards" className="text-primary hover:underline">standard for its kind of room</Link>: area (per bed space), ceiling, door, floor load, power, medical gas outlets and shielding.
+            Areas come from the drawings; the rest from the room survey (3D view › room › Will it fit › Edit survey). Draft figures: confirm with the engineers.
+            {unlinked > 0 && ` ${unlinked} BOQ department${unlinked === 1 ? " is" : "s are"} not linked and not checked.`}
+          </p>
+          <ul className="mb-3 grid gap-2 text-sm sm:grid-cols-4">
+            <li className="rounded-[var(--radius-panel)] border border-line px-3 py-2"><strong>{formatNumber(t.rooms)}</strong> rooms</li>
+            <li className="rounded-[var(--radius-panel)] border border-line px-3 py-2"><strong className="text-ok">{formatNumber(t.ok)}</strong> meet the standard</li>
+            <li className="rounded-[var(--radius-panel)] border border-line px-3 py-2"><strong className={t.short ? "text-danger" : ""}>{formatNumber(t.short)}</strong> below it</li>
+            <li className="rounded-[var(--radius-panel)] border border-line px-3 py-2"><strong className={t.unknown ? "text-warn" : ""}>{formatNumber(t.unknown)}</strong> to survey</li>
+          </ul>
+          <Table>
+            <THead><tr><Th>Department</Th><Th align="right">Rooms</Th><Th align="right">With a standard</Th><Th align="right">Meet it</Th><Th align="right">Below</Th><Th align="right">To survey</Th><Th>Most often short</Th></tr></THead>
+            <tbody>
+              {departments.map((d) => (
+                <tr key={d.boqDepartmentId}>
+                  <Td>{d.department}</Td>
+                  <Td align="right">{d.rooms || <span className="text-muted">none drawn</span>}</Td>
+                  <Td align="right">{d.withStandard}</Td>
+                  <Td align="right">{d.ok}</Td>
+                  <Td align="right" className={d.short ? "font-semibold text-danger" : ""}>{d.short}</Td>
+                  <Td align="right" className={d.unknown ? "text-warn" : ""}>{d.unknown}</Td>
+                  <Td className="text-sm text-muted">{d.shortItems.length ? list(d.shortItems.map((x) => `${lower(x.label)} (${x.rooms})`), 3) : "—"}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          {departments.some((d) => d.shortRooms.length) && (
+            <details className="mt-3" open={t.short <= 8}>
+              <summary className="cursor-pointer text-sm font-semibold text-primary">Rooms below their standard ({t.short})</summary>
+              {t.short > SHOW && <p className="mt-1 text-xs text-muted">The first {SHOW} are listed; each room&apos;s data sheet has the full check.</p>}
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {departments.flatMap((d) => d.shortRooms).slice(0, SHOW).map((r) => (
+                  <li key={r.id} className="flex flex-wrap gap-x-2">
+                    <Link href={`/facilities/${r.facilityId}/rooms/${r.id}/sheet`} className="font-semibold text-primary hover:underline">{r.name} {r.code}</Link>
+                    <span className="text-muted">{r.floor} · {r.standard}</span>
+                    <span><span className="text-danger">Short: {list(r.short.map(lower))}</span>{r.unknown.length ? <span className="text-muted"> · to survey: {list(r.unknown.map(lower), 3)}</span> : null}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {departments.some((d) => d.toSurvey.length) && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-sm font-semibold text-primary">Rooms to survey ({t.unknown})</summary>
+              <p className="mt-1 text-xs text-muted">Nothing measured is short, but these items are not surveyed yet.{t.unknown > SHOW ? ` The first ${SHOW} are listed.` : ""}</p>
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {departments.flatMap((d) => d.toSurvey).slice(0, SHOW).map((r) => (
+                  <li key={r.id} className="flex flex-wrap gap-x-2">
+                    <Link href={`/facilities/${r.facilityId}/rooms/${r.id}/sheet`} className="font-semibold text-primary hover:underline">{r.name} {r.code}</Link>
+                    <span className="text-muted">{r.floor} · {list(r.unknown.map(lower), 5)}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+    </Panel>
   );
 }
