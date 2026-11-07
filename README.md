@@ -192,6 +192,7 @@ for any facility; floors imported from CAD show the real walls, doors, glazing a
   doors, clear zones and MRI fields; ceilings and crowded rooms for every device.
 - **Clinical flow on the model**: the queue simulation drawn on rooms, scanners and lifts; bed and stretcher
   clearance (pinch points, corners) on bed routes, in 3D and in the pathway checks.
+- **Photoreal presentation**: textured finishes and light fittings in renders; tours saved as flythrough videos.
 - **Glass façade**: from afar, each floor is wrapped in glass traced from its rooms, with a line at every storey, so the
   stack reads as one building. Switch it off under **View**.
 - **Heat map or blocks**: problem layers spread a soft colour from the affected rooms (stronger = worse), or show the

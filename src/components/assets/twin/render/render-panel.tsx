@@ -13,7 +13,7 @@ import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server
 export type RenderSettings = {
   floorId?: number; departmentId?: number | null; view?: RenderOptions["view"]; cutHeight?: number; look?: RenderOptions["look"];
   kits?: boolean; labels?: boolean; titleBlock?: boolean; transparent?: boolean; size?: "1080p" | "4K" | "8K";
-  labelMode?: "rooms" | "departments" | "both" | "none"; people?: boolean; format?: "png" | "jpeg"; eyeRoomId?: number | null;
+  labelMode?: "rooms" | "departments" | "both" | "none"; people?: boolean; textures?: boolean; lights?: boolean; format?: "png" | "jpeg"; eyeRoomId?: number | null;
   equipment?: "installed" | "planned" | "both"; boqId?: number | null;
 };
 
@@ -48,6 +48,8 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
   const [kits, setKits] = useState(i0.kits ?? true);
   const [labelMode, setLabelMode] = useState<"rooms" | "departments" | "both" | "none">(i0.labelMode ?? (i0.labels === false ? "none" : "rooms"));
   const [people, setPeople] = useState(i0.people ?? false);
+  const [textures, setTextures] = useState(i0.textures ?? true);
+  const [lights, setLights] = useState(i0.lights ?? true);
   const [format, setFormat] = useState<"png" | "jpeg">(i0.format ?? "png");
   const [eyeRoomId, setEyeRoomId] = useState<number | null>(i0.eyeRoomId ?? null);
   const [docMsg, setDocMsg] = useState<string | null>(null);
@@ -62,7 +64,7 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
   const [saveName, setSaveName] = useState<string | null>(null);
   const [saveShared, setSaveShared] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const settings = (): RenderSettings => ({ floorId, departmentId: deptValid, view: view === "camera" ? "dollhouse" : view, cutHeight, look, kits, labelMode, people, format, eyeRoomId, titleBlock, transparent, size, equipment, boqId });
+  const settings = (): RenderSettings => ({ floorId, departmentId: deptValid, view: view === "camera" ? "dollhouse" : view, cutHeight, look, kits, labelMode, people, textures, lights, format, eyeRoomId, titleBlock, transparent, size, equipment, boqId });
   // The chosen BOQ's plan, loaded when planned equipment is asked for.
   useEffect(() => {
     if (equipment === "installed" || boqId == null || plan?.boq.id === boqId) return;
@@ -105,7 +107,7 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
     return studio.current;
   }
   const opts = (w: number, h: number, floor = floorId, dept = deptValid): RenderOptions => ({
-    floorId: floor, departmentId: dept, view, cutHeight, kits, labels: labelMode !== "none", labelMode, people, eyeRoomId, camera: liveCamera ?? null,
+    floorId: floor, departmentId: dept, view, cutHeight, kits, labels: labelMode !== "none", labelMode, people, textures, lights, eyeRoomId, camera: liveCamera ?? null,
     look, width: w, height: h, titleBlock, transparent: transparent && format === "png", facilityName: data.facility.name,
     equipment: equipment !== "installed" && planned ? equipment : "installed", planned, planName: plan ? `${plan.boq.name} v${plan.boq.version}` : undefined,
     logo: data.facility.logo ?? null, brandColor: data.facility.brandColor ?? null,
@@ -244,6 +246,8 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
             <div className="space-y-2">
               {check("Furniture", kits, setKits, "Room kits by room type (illustrative); registered equipment is always shown")}
               {check("People for scale", people, setPeople, "A few standing figures in waiting areas, lobbies and corridors")}
+              {check("Textured finishes", textures, setTextures, "Sheet vinyl, tiles, wood, terrazzo and concrete drawn with their pattern")}
+              {check("Light fittings", lights, setLights, "Ceiling lights shown as soft pools of light on the floor")}
               {check("Title block", titleBlock, setTitleBlock, "Floor, hospital, date, scale bar, what's shown")}
               {check("Transparent background", transparent, setTransparent)}
             </div>

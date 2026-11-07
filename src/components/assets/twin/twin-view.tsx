@@ -1017,15 +1017,43 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     if (res?.deletedId) setTours((l) => l.filter((x) => x.id !== t.id));
     setToast(res ? { ok: res.ok, error: res.error } : null);
   }
-  function playTour(t: Tour) {
+  function playTour(t: Tour, fullscreen = true) {
     setTourPlay({ tour: t, i: 0, paused: false });
-    try { void root.current?.requestFullscreen?.(); } catch { /* not allowed: plays in the page */ }
+    if (fullscreen) try { void root.current?.requestFullscreen?.(); } catch { /* not allowed: plays in the page */ }
+  }
+  // Flythrough video (wave 17, phase 9): play the tour in the page and record the 3D view with its captions.
+  const recorder = useRef<{ rec: MediaRecorder; chunks: Blob[]; name: string; type: string } | null>(null);
+  const [recording, setRecording] = useState(false);
+  function recordTour(t: Tour) {
+    const s = sceneRef.current;
+    if (!s || typeof MediaRecorder === "undefined") { setToast({ error: "This browser can't record video. Try Chrome, Edge or Firefox." }); return; }
+    const type = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
+    const stream = s.startRecording(`${data.facility.name} · ${t.name}`);
+    const rec = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: 8_000_000 });
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    rec.onstop = () => {
+      s.stopRecording(); stream.getTracks().forEach((x) => x.stop());
+      const blob = new Blob(chunks, { type: rec.mimeType || "video/webm" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+      a.download = `${t.name.replace(/[^\w\- ]+/g, "_")}.${(rec.mimeType || "").includes("mp4") ? "mp4" : "webm"}`;
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+      setRecording(false); recorder.current = null;
+      setToast({ ok: "Video saved to your downloads." });
+    };
+    recorder.current = { rec, chunks, name: t.name, type };
+    rec.start(1000); setRecording(true);
+    playTour(t, false);
   }
   function stopTour() {
     setTourPlay(null);
+    if (recorder.current?.rec.state === "recording") recorder.current.rec.stop();
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
   }
   const tourStop = tourPlay ? tourPlay.tour.stops[tourPlay.i] : null;
+  // The recording ends with the tour; each stop's caption goes on the video.
+  useEffect(() => { if (!tourPlay && recorder.current?.rec.state === "recording") setTimeout(() => recorder.current?.rec.stop(), 1500); }, [tourPlay]);
+  useEffect(() => { if (tourStop) sceneRef.current?.setRecordingCaption([tourStop.caption]); }, [tourStop]);
   useEffect(() => {
     if (!tourStop) return;
     const v = decodeView(tourStop.state); if (v) applyView(v, true);
@@ -1495,6 +1523,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                   <div className="flex items-center gap-2">
                     <span className="min-w-0 flex-1 truncate text-white">{t.name}</span>
                     <button type="button" onClick={() => playTour(t)} className="twin-act">Play</button>
+                    <button type="button" onClick={() => recordTour(t)} disabled={recording || !!tourPlay} className="twin-act" title="Plays the tour and saves it as a video (MP4 where the browser can, else WebM)">{recording ? "Recording…" : "Video"}</button>
                   </div>
                   <p className="text-[11px] text-[#8fb6cc]">{t.stops.length} stop{t.stops.length === 1 ? "" : "s"} · {Math.round(t.stops.reduce((a, x) => a + x.seconds, 0) / 6) / 10} min{t.shared ? " · shared" : ""}{!t.mine && t.by ? ` · by ${t.by}` : ""}</p>
                   <div className="mt-0.5 flex gap-3 text-[11px]">

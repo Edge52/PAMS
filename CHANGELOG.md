@@ -28,6 +28,10 @@ Migration `0037`. Update with `git pull` and `npm run demo`; your data is kept.
   **Bed and stretcher clearance** marks, on the shown pathways' bed and trolley legs, points under 1.2 m clear,
   corridors under 1.8 m (a bed can't pass someone) and corners a 2.3 m bed can't turn; the pathway checks warn about
   them too. Widths are estimated from the walls.
+- **Photoreal presentation** (roadmap phase 9): presentation renders draw **textured finishes** (welded sheet vinyl,
+  theatre flooring, tiles with grout, wood planks, terrazzo, concrete) and **light fittings** as soft pools of light
+  on the floor, both on by default. Tours save as a **flythrough video** (3D view › Tours › *Video*): the tour plays
+  in the page and downloads as MP4 (or WebM where the browser can't make MP4), with each stop's caption.
 
 ## Wave 16 — merged 7 Nov 2026
 

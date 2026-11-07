@@ -24,6 +24,21 @@ import { deviceModel } from "./device-models";
 import { modelGeometry } from "./furniture";
 import { layoutLabels, type LabelIn } from "./labels";
 import { wallMass } from "./walls";
+import { FINISH_ROUGHNESS, FINISH_TILE, finishTexture, fittingSpots } from "./finishes";
+import type { Finish } from "./kits";
+
+let poolTex: THREE.DataTexture | null = null;
+/** A soft radial pool of light (white in the middle, clear at the edge). */
+function poolTexture(): THREE.DataTexture {
+  if (poolTex) return poolTex;
+  const n = 64, px = new Uint8Array(n * n * 4);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const d = Math.hypot(x - n / 2 + 0.5, y - n / 2 + 0.5) / (n / 2), a = Math.max(0, 1 - d) ** 2;
+    const i = (y * n + x) * 4; px[i] = px[i + 1] = px[i + 2] = 255; px[i + 3] = Math.round(a * 255);
+  }
+  poolTex = new THREE.DataTexture(px, n, n, THREE.RGBAFormat); poolTex.needsUpdate = true;
+  return poolTex;
+}
 
 export type RenderView = "dollhouse" | "iso" | "plan" | "eye" | "camera";
 export type RenderLook = "daylight" | "warm";
@@ -55,6 +70,9 @@ export type RenderOptions = {
   labelMode?: "rooms" | "departments" | "both" | "none";
   /** A few standing figures in waiting areas, lobbies and corridors, for scale. */
   people?: boolean;
+  /** Textured floor finishes (wave 17; default on) and light fittings shown as pools of light (default on). */
+  textures?: boolean;
+  lights?: boolean;
   /** Hospital logo (an image URL or data URL) and accent colour for the title block. */
   logo?: string | null;
   brandColor?: string | null;
@@ -147,7 +165,7 @@ export class RenderStudio {
   /** Build (or reuse) the furnished floor. */
   private async build(f: TwinFloor, o: RenderOptions): Promise<Built> {
     const eq = o.equipment ?? "installed";
-    const key = `${f.id}|${o.cutHeight}|${o.kits}|${o.people ? 1 : 0}|${eq}|${eq === "installed" ? "" : JSON.stringify(o.planned ?? [])}`;
+    const key = `${f.id}|${o.cutHeight}|${o.kits}|${o.people ? 1 : 0}|${o.textures === false ? 0 : 1}${o.lights === false ? 0 : 1}|${eq}|${eq === "installed" ? "" : JSON.stringify(o.planned ?? [])}`;
     if (this.built?.key === key) return this.built.b;
     if (this.built) { this.scene.remove(this.built.b.group); disposeGroup(this.built.b.group); this.built = null; }
     const geo = await this.loadGeometry(f.id);
@@ -164,8 +182,33 @@ export class RenderStudio {
     const q = (a: number[], p: number) => { const sorted = [...a].sort((m, n) => m - n); return sorted[Math.floor((sorted.length - 1) * p)]; };
     const bounds = { x0: q(xs, 0.002) - 1, x1: q(xs, 0.998) + 1, z0: q(zs, 0.002) - 1, z1: q(zs, 0.998) + 1 };
 
-    // Floors.
-    {
+    // Floors: textured finishes (wave 17), one mesh per finish with UVs in metres, or flat colours.
+    if (o.textures !== false) {
+      const byFinish = new Map<Finish, { pos: number[]; uv: number[]; col: number[] }>();
+      for (const { room, poly } of rooms) {
+        const fin = roomLook(room.name, room.type, this.kits).finish;
+        const b = byFinish.get(fin) ?? byFinish.set(fin, { pos: [], uv: [], col: [] }).get(fin)!;
+        const k = 0.96 + ((room.id * 37) % 7) / 100, tile = FINISH_TILE[fin];
+        const g = new THREE.ShapeGeometry(new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, z))));
+        const p = g.getAttribute("position"); const idx = g.getIndex()!;
+        for (let i = 0; i < idx.count; i++) { const v = idx.getX(i), x = p.getX(v), z = p.getY(v); b.pos.push(x, 0, z); b.uv.push(x / tile, z / tile); b.col.push(k, k, k); }
+        g.dispose();
+      }
+      for (const [fin, b] of byFinish) {
+        const fg = new THREE.BufferGeometry();
+        fg.setAttribute("position", new THREE.Float32BufferAttribute(b.pos, 3));
+        fg.setAttribute("uv", new THREE.Float32BufferAttribute(b.uv, 2));
+        fg.setAttribute("color", new THREE.Float32BufferAttribute(b.col, 3));
+        const nrm = new Float32Array(b.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
+        fg.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
+        const m = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({ map: finishTexture(fin), vertexColors: true, roughness: FINISH_ROUGHNESS[fin], metalness: 0, side: THREE.DoubleSide }));
+        m.receiveShadow = true; group.add(m);
+      }
+      const baseGeo = new THREE.PlaneGeometry(bounds.x1 - bounds.x0 - 1.6, bounds.z1 - bounds.z0 - 1.6); baseGeo.rotateX(-Math.PI / 2);
+      const base = new THREE.Mesh(baseGeo, new THREE.MeshStandardMaterial({ color: "#e3e0d9", roughness: 0.95 }));
+      base.position.set((bounds.x0 + bounds.x1) / 2, -0.03, (bounds.z0 + bounds.z1) / 2); base.receiveShadow = true;
+      group.add(base);
+    } else {
       const pos: number[] = [], col: number[] = [];
       const c = new THREE.Color();
       for (const { room, poly } of rooms) {
@@ -190,6 +233,23 @@ export class RenderStudio {
       const base = new THREE.Mesh(baseGeo, new THREE.MeshStandardMaterial({ color: "#e3e0d9", roughness: 0.95 }));
       base.position.set((bounds.x0 + bounds.x1) / 2, -0.03, (bounds.z0 + bounds.z1) / 2); base.receiveShadow = true;
       group.add(base, floorMesh);
+    }
+
+    // Light fittings (wave 17): the ceiling is cut away, so each fitting shows as a soft pool of light on the floor.
+    if (o.lights !== false) {
+      const spots: Pt[] = [];
+      for (const { room, poly } of rooms) {
+        if (/STAIR|LIFT|SHAFT|DUCT|RISER|ELEC|PLANT/i.test(room.name)) continue;
+        for (const p of fittingSpots(poly)) { spots.push(p); if (spots.length >= 4000) break; }
+        if (spots.length >= 4000) break;
+      }
+      if (spots.length) {
+        const pg = new THREE.PlaneGeometry(2.2, 2.2); pg.rotateX(-Math.PI / 2);
+        const pool = new THREE.InstancedMesh(pg, new THREE.MeshBasicMaterial({ map: poolTexture(), color: "#fff1da", transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false }), spots.length);
+        const m4 = new THREE.Matrix4();
+        spots.forEach(([x, z], i) => pool.setMatrixAt(i, m4.makeTranslation(x, 0.008, z)));
+        pool.renderOrder = 2; group.add(pool);
+      }
     }
 
     // Wall mass with grey tops.

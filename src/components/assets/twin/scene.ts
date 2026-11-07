@@ -2157,7 +2157,39 @@ export class TwinScene {
       this.selectionRing.scale.set(k, 1, k);
     }
     this.composer.render();
+    if (this.rec) this.drawRecordingFrame();
   };
+
+  /* ── Flythrough video (wave 17, phase 9): each frame copied to a canvas with a caption band, recorded by the page ── */
+  private rec: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; caption: string[]; title: string } | null = null;
+
+  /** Start copying frames (at most 1920 px wide) to a canvas and return its video stream. */
+  startRecording(title: string, fps = 30): MediaStream {
+    const src = this.renderer.domElement;
+    const k = Math.min(1, 1920 / src.width);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round((src.width * k) / 2) * 2; canvas.height = Math.round((src.height * k) / 2) * 2;
+    this.rec = { canvas, ctx: canvas.getContext("2d")!, caption: [], title };
+    this.drawRecordingFrame();
+    return canvas.captureStream(fps);
+  }
+  setRecordingCaption(lines: string[]) { if (this.rec) this.rec.caption = lines; }
+  stopRecording() { this.rec = null; }
+  isRecording() { return this.rec != null; }
+
+  private drawRecordingFrame() {
+    const r = this.rec!; const { canvas: c, ctx } = r;
+    ctx.drawImage(this.renderer.domElement, 0, 0, c.width, c.height);
+    const u = c.height / 720, band = Math.round(56 * u);
+    const g = ctx.createLinearGradient(0, c.height - band * 1.6, 0, c.height);
+    g.addColorStop(0, "rgba(3,10,20,0)"); g.addColorStop(1, "rgba(3,10,20,0.85)");
+    ctx.fillStyle = g; ctx.fillRect(0, c.height - band * 1.6, c.width, band * 1.6);
+    ctx.textBaseline = "middle"; ctx.fillStyle = "#ffffff";
+    ctx.font = `600 ${Math.round(20 * u)}px system-ui, sans-serif`;
+    if (r.caption[0]) ctx.fillText(r.caption[0], Math.round(24 * u), c.height - band * 0.62);
+    ctx.font = `${Math.round(13 * u)}px system-ui, sans-serif`; ctx.fillStyle = "#9fd8ff";
+    ctx.fillText(r.title, Math.round(24 * u), c.height - band * 1.15);
+  }
 
   /**
    * Once, a few seconds after the devices are in: if frames are slow (a tablet or an older laptop), drop the glow and

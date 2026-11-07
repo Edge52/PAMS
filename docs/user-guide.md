@@ -273,6 +273,13 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - Show a pathway and tick **Bed and stretcher clearance**: red rings where a bed or trolley route is under 1.2 m
   clear or turns a corner a bed can't, amber where a corridor is under 1.8 m. The pathway's checks list them too.
 
+## Presentation renders and videos
+
+- **Presentation render**: *Textured finishes* and *Light fittings* (soft pools of light where the ceiling lights are)
+  are on by default; switch them off for a plain drawing look.
+- **Tours › Video** plays a tour and saves it as a video file with the captions, ready for a board meeting. Keep the
+  tab in front while it records.
+
 ## 3D view in two minutes
 
 - **Imaging** and **ICU** (top bar): every imaging or ICU room tinted and framed, the rest dimmed, with a summary of
