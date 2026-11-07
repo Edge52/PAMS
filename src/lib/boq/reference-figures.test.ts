@@ -14,6 +14,13 @@ describe("reference figures register", () => {
     expect(v("room:SUR-OR-TABLE").value).toBe("37 m²");
     expect(v("lead:IMG-CT")).toMatchObject({ value: "6 months", status: "adjusted" });
   });
+  it("keeps room standards' areas the same as the room needs used in BOQ checks", async () => {
+    const { ROOM_NEEDS } = await import("./room-requirements");
+    const { standardFor } = await import("../assets/room-standards");
+    for (const [name, prefix] of [["MRI", "IMG-MRI"], ["CT", "IMG-CT"], ["Theatre", "SUR-OR-TABLE"], ["X-ray", "IMG-XR-DR"], ["Mammography", "IMG-MAM"], ["Cath lab", "IMG-ANG"]] as const)
+      expect(standardFor(name, null)?.rule.spec.minAreaM2, name).toBe(ROOM_NEEDS.find((n) => n.prefix === prefix)!.minArea);
+    expect(rows.some((r) => r.id === "roomstd:Operating theatre")).toBe(true);
+  });
   it("gives every sourced or adjusted figure at least one source", () => {
     for (const r of rows.filter((x) => x.status !== "judgement")) expect(r.sources.length, r.id).toBeGreaterThan(0);
   });

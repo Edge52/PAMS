@@ -45,4 +45,4 @@ next-env.d.ts
 storage/
 .pglite/
 .pglite-data/
-backups/
+/backups/

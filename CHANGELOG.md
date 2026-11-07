@@ -1,5 +1,29 @@
 # Changelog
 
+## Wave 14 — branch `wave-14` (not merged yet)
+
+Migration `0032`. Update with `git pull` and `npm run demo`; your data is kept.
+
+- **Queue simulation** (Planning › Patient pathways › Queue simulation, plan item B3): every published pathway,
+  patient by patient, over a day or a week. Patients arrive by each pathway's hourly profile and wait for rooms,
+  scanners, beds, porters and lift cars; results from many runs show how busy each one is, the average wait, the wait
+  one patient in ten exceeds, the longest queue and the busiest hour, with a chart by hour, plus time in each pathway.
+  **What-if**: change any number (one more CT, a second bed lift, more porters, more patients) and compare side by
+  side. Runs in the browser in about a second.
+- **Commissioning timeline** (Assets › Commissioning, plan item C5): for a new building or wing, rooms handed over,
+  installed and accepted week by week, planned against actual. A progress curve, a Gantt by floor and department
+  (with devices still on order when a project is linked), a Commissioning tab on the project, and a week slider in
+  the 3D view that colours rooms by stage, with rooms behind the plan in red.
+- **Room standards** (Hospital › Room standards): a room data sheet per room type — area, ceiling, door, floor load,
+  finishes, medical gas outlets, power, data, lighting, ventilation and special services. Each room's own sheet now
+  compares its survey with its standard. Draft figures from HBN, HTM 02-01 / 03-01 and FGI, editable.
+- **Backups page** (Administration › Backups): it was listed in wave 12 but never reached the code (a `.gitignore`
+  rule hid the folder). Now there, and **Back up now** also works on PostgreSQL and Supabase (`pg_dump`). A failed
+  backup never replaces an earlier one. The Docker image includes the PostgreSQL client; see `docs/deploy.md`.
+- **Assistant**: looks up BOQs, service contracts and recalls too; chats are kept for each person (the last 50) and
+  can be reopened or deleted; any answer, or a whole chat, downloads as a Word file.
+- Demo: La Plaza's fourth floor as an opening in progress (made-up dates).
+
 ## Wave 13 — merged 5 Nov 2026
 
 Migration `0031`. Update with `git pull` and `npm run demo`; your data is kept.

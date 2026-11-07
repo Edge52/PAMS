@@ -1,4 +1,4 @@
-# Hospital PAMS — User guide (release 3.0)
+# Hospital PAMS — User guide (release 3.0, updated for wave 14)
 
 How to do the everyday jobs, by role. Every screen is reached from the menu on the left (the **Menu** button on a
 phone). The search box at the top of every page finds equipment, rooms, departments, suppliers, documents and more.
@@ -30,6 +30,8 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
 - Ask it to draft: *a technical specification for a high-end patient monitor*, *a letter to the supplier of PO-… asking
   for a delivery date*. Values it assumed are in [square brackets]; **Copy** the text into your document.
 - It can't change anything, and it can be wrong: check figures before you rely on them. **New chat** starts over.
+- Your chats are kept for you only (the last 50) under **Your chats**; open one to carry on, or × to delete it.
+  **Download as Word** under an answer (or **Download chat**) gives a .docx to edit and send.
 
 ---
 
@@ -96,6 +98,23 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
   department head signs (or you record who signed for the department). The device goes into service and its warranty
   starts. Set each type's acceptance checks on its catalogue page.
 
+**Open a new building or wing** — **Commissioning**
+1. **New commissioning plan**: name it, tick the floors (and, if you like, only some departments), the first handover
+   date and the weeks from handover to installed and from installed to accepted. Link the project to see devices still
+   on order. Corridors, lifts and stairs are left out; offices, stores and plant rooms start as needing no equipment.
+2. **Set a date for a group of rooms**: planned handovers floor by floor or department by department. As the builder
+   hands rooms over, record the actual handover (a whole group at once, or room by room in the table).
+3. Installed and accepted come from the register: a room counts as installed when every device in it is installed, and
+   accepted when every device's acceptance is signed. Rooms behind the plan are shown in red.
+4. **Week by week in 3D** plays it on the building; the project's *Commissioning* tab shows the same Gantt.
+
+**Room standards** — **Room standards**
+- One data sheet per kind of room: area, ceiling, door, floor load, finishes, gas outlets, power, ventilation. Name
+  rules come first (MRI, theatre, isolation…), then room types. **Edit** to change a figure; your first change makes an
+  editable copy of the built-in set (draft figures to be confirmed by the engineers).
+- Open a standard for its printable sheet and the rooms that follow it, with what each falls short of. Each room's own
+  data sheet shows its standard and the comparison.
+
 **Register equipment**
 - **Asset register** › **Register asset** (one), **Bulk place** (e.g. a monitor at every ICU bed) or **Import Excel**
   (download the template first). Makes and models are offered as you type. To print QR labels, tick devices in the
@@ -130,6 +149,15 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
 - **Submit for approval** when ready; **Export to Excel** any time.
 
 The reference figures behind the checks are listed in `docs/reference-figures-review.xlsx`.
+
+**Simulate the queues** — **Patient pathways › Queue simulation**
+1. Publish the pathways with their patients a day and arrival profile; the simulation takes every published one.
+2. Choose a day or a week and **Run the simulation**. Red rows are busy above 85 % on average, or one patient in ten
+   waits over 30 minutes. Click a resource for its chart by hour.
+3. **What-if**: type a new number for any room, scanner, bed group, lift or porters (or patients %), and run again: the
+   results show side by side. Ranges are the middle 90 % of the runs.
+4. The load figures on **Analysis** stay as the quick check; the simulation adds waits and knock-on effects (more
+   theatre capacity fills the ward, for example).
 
 ---
 
@@ -170,6 +198,15 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - On delivered equipment, **Sign for the department** once biomedical engineering has signed the acceptance checks.
 - When an administrator has named the departments you look after, you can edit **patient pathways** whose steps are
   all in your departments, and set the **access zone** of your rooms in the 3D view.
+
+---
+
+## Administrator
+
+- **Backups**: the backup files with their age (a warning when the last database backup is over two days old).
+  **Back up now** copies the database (on PostgreSQL with `pg_dump`) and the uploaded files; **Check it opens** tests a
+  file; download them to keep a copy off the server. Restoring is in `docs/deploy.md`.
+- **Audit log**, **Users** and **Approval rules & settings** (where the assistant is switched on).
 
 ---
 

@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, desc, eq, ilike, inArray, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, budgetLines, departments, deviceTypes, facilities, offers, projects, purchaseOrders, rooms, suppliers, workOrders } from "@/db/schema";
+import { assets, boqDepartments, boqLines, boqs, budgetLines, departments, deviceTypes, facilities, offers, projects, purchaseOrders, recallAssets, recalls, rooms, serviceContractAssets, serviceContracts, suppliers, workOrders } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, type CurrentUser } from "@/lib/auth/session";
 import { budgetRows, poValues } from "@/lib/procurement/money-server";
@@ -111,6 +111,66 @@ export async function runTool(me: CurrentUser, name: string, input: Input): Prom
       const lines = await db.select().from(budgetLines).where(and(eq(budgetLines.year, year), inScope(budgetLines.facilityId), fac != null ? eq(budgetLines.facilityId, fac) : undefined)).limit(60);
       const codes = new Map((await db.select({ id: facilities.id, code: facilities.code }).from(facilities)).map((f) => [f.id, f.code]));
       return (await budgetRows(lines)).map((r) => ({ hospital: codes.get(r.facilityId), name: r.name, kind: r.kind, year: r.year, currency: r.currency, amount: Number(r.amount), committed: r.committed, spent: r.spent, remaining: r.remaining, usedPct: Math.round(r.pct * 100), level: r.level }));
+    }
+
+    case "list_boqs": {
+      const conds = words(s(input.query)).map((w) => ilike(boqs.name, like(w)));
+      const total = sql<string>`coalesce((select sum(${boqLines.quantity} * coalesce(${boqLines.unitPriceEstimate}, 0)) from ${boqLines} where ${boqLines.boqId} = ${boqs.id}), 0)`;
+      const rows = await db.select({ id: boqs.id, name: boqs.name, hospital: facilities.code, status: boqs.status, version: boqs.version, beds: boqs.totalHospitalBeds, currency: boqs.currency, total, updated: boqs.updatedAt })
+        .from(boqs).leftJoin(facilities, eq(facilities.id, boqs.facilityId))
+        .where(and(inScope(boqs.facilityId, true), s(input.status) ? sql`${boqs.status}::text = ${s(input.status)}` : undefined, ...conds)).orderBy(desc(boqs.updatedAt)).limit(40);
+      return rows.map((r) => ({ ...r, total: Math.round(Number(r.total)), link: `/boq/${r.id}` }));
+    }
+
+    case "get_boq": {
+      const id = n(input.id); if (id == null) return { error: "Give the BOQ id (list_boqs shows it)." };
+      const [b] = await db.select().from(boqs).where(and(eq(boqs.id, id), inScope(boqs.facilityId, true))).limit(1);
+      if (!b) return { error: `No BOQ ${id} that this user can see.` };
+      const depts = await db.select({ id: boqDepartments.id, name: boqDepartments.label, beds: boqDepartments.beds, rooms: boqDepartments.rooms, phase: boqDepartments.phase })
+        .from(boqDepartments).where(eq(boqDepartments.boqId, id)).orderBy(asc(boqDepartments.id));
+      const dw = words(s(input.department));
+      const lines = await db.select({ dept: boqDepartments.label, deptId: boqLines.boqDepartmentId, device: deviceTypes.name, code: deviceTypes.code, tier: boqLines.tier, qty: boqLines.quantity, unit: boqLines.unitPriceEstimate, how: boqLines.calcExplanation })
+        .from(boqLines).innerJoin(deviceTypes, eq(deviceTypes.id, boqLines.deviceTypeId)).leftJoin(boqDepartments, eq(boqDepartments.id, boqLines.boqDepartmentId))
+        .where(and(eq(boqLines.boqId, id), sql`${boqLines.quantity} > 0`, ...dw.map((w) => ilike(boqDepartments.label, like(w)))));
+      const value = (l: (typeof lines)[number]) => l.qty * Number(l.unit ?? 0);
+      const byDept = new Map<number | null, number>();
+      for (const l of lines) byDept.set(l.deptId, (byDept.get(l.deptId) ?? 0) + value(l));
+      return {
+        name: b.name, status: b.status, version: b.version, beds: b.totalHospitalBeds, currency: b.currency, contingencyPct: b.contingencyPct, priceTier: b.priceTier,
+        targetBudget: b.targetBudget, openingDate: b.openingDate, link: `/boq/${b.id}`,
+        total: Math.round(lines.reduce((t, l) => t + value(l), 0)), lineCount: lines.length,
+        departments: depts.filter((d) => !dw.length || dw.every((w) => d.name.toLowerCase().includes(w.toLowerCase()))).map(({ id: did, ...d }) => ({ ...d, value: Math.round(byDept.get(did) ?? 0) })),
+        largestLines: lines.sort((x, y) => value(y) - value(x)).slice(0, 40).map((l) => ({ department: l.dept, device: l.device, code: l.code, tier: l.tier, quantity: l.qty, unitEstimate: l.unit == null ? null : Number(l.unit), how: l.how })),
+      };
+    }
+
+    case "service_contracts": {
+      const within = n(input.ending_within_days), sup = s(input.supplier);
+      const today = new Date().toISOString().slice(0, 10);
+      const devices = sql<number>`(select count(*)::int from ${serviceContractAssets} where ${serviceContractAssets.contractId} = ${serviceContracts.id})`;
+      const rows = await db.select({ id: serviceContracts.id, number: serviceContracts.number, title: serviceContracts.title, type: serviceContracts.type, supplier: suppliers.name, hospital: facilities.code,
+        start: serviceContracts.startDate, end: serviceContracts.endDate, devices, responseHours: serviceContracts.responseHours, repairHours: serviceContracts.repairHours, uptimePct: serviceContracts.uptimePct,
+        ppmVisitsPerYear: serviceContracts.ppmVisitsPerYear, includesParts: serviceContracts.includesParts, value: serviceContracts.value, currency: serviceContracts.currency })
+        .from(serviceContracts).innerJoin(suppliers, eq(suppliers.id, serviceContracts.supplierId)).innerJoin(facilities, eq(facilities.id, serviceContracts.facilityId))
+        .where(and(inScope(serviceContracts.facilityId), fac != null ? eq(serviceContracts.facilityId, fac) : undefined, sup ? ilike(suppliers.name, like(sup)) : undefined,
+          within != null ? sql`${serviceContracts.endDate} >= ${today} and ${serviceContracts.endDate} <= (${today}::date + ${within}::int)` : undefined))
+        .orderBy(asc(serviceContracts.endDate)).limit(50);
+      return rows.map(({ id, ...r }) => ({ ...r, running: r.start <= today && r.end >= today, link: `/assets/contracts/${id}` }));
+    }
+
+    case "recalls": {
+      const st = s(input.status)?.toUpperCase() ?? "OPEN";
+      const conds = words(s(input.query)).map((w) => or(ilike(recalls.title, like(w)), ilike(recalls.manufacturer, like(w)), ilike(recalls.reference, like(w)), ilike(recalls.number, like(w))));
+      const rows = await db.select({ id: recalls.id, number: recalls.number, reference: recalls.reference, source: recalls.source, title: recalls.title, maker: recalls.manufacturer, type: deviceTypes.name, model: recalls.modelPattern,
+        action: recalls.action, urgent: recalls.urgent, issued: recalls.issuedDate, due: recalls.dueDate, status: recalls.status })
+        .from(recalls).leftJoin(deviceTypes, eq(deviceTypes.id, recalls.deviceTypeId))
+        .where(and(st === "ANY" ? undefined : sql`${recalls.status}::text = ${st}`, ...conds)).orderBy(desc(recalls.id)).limit(30);
+      if (!rows.length) return [];
+      const counts = await db.select({ recallId: recallAssets.recallId, status: recallAssets.status, n: sql<number>`count(*)::int` })
+        .from(recallAssets).innerJoin(assets, eq(assets.id, recallAssets.assetId))
+        .where(and(inArray(recallAssets.recallId, rows.map((r) => r.id)), inScope(assets.facilityId))).groupBy(recallAssets.recallId, recallAssets.status);
+      const c = (id: number, status: string) => Number(counts.find((x) => x.recallId === id && x.status === status)?.n ?? 0);
+      return rows.map(({ id, ...r }) => ({ ...r, devicesPending: c(id, "PENDING"), devicesActioned: c(id, "ACTIONED"), devicesNotAffected: c(id, "NOT_AFFECTED"), link: `/assets/recalls/${id}` }));
     }
   }
   return { error: "Not available." };

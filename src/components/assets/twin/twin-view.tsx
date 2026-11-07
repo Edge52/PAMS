@@ -28,6 +28,7 @@ import { NoteComposer, NoteList } from "./notes";
 import { JobRibbon } from "./job-ribbon";
 import { FitPanel, type Outline } from "./fit-panel";
 import { EVENT_COLORS, EVENT_LABELS, eventsAt, perDay, shortcutFor, SHORTCUTS, type TimeEvent } from "./timeline";
+import { useCommissioning } from "./commissioning-panel";
 
 const LIVE_EVERY_MS = 60_000;
 
@@ -56,7 +57,9 @@ function decodeLive(p: LivePayload): Map<number, LiveMetrics> {
  * HUD layout follows the view's own width (see hud-state): side columns of collapsible panels (folded by default
  * below 1100 px), or on phones one bottom sheet with tabs.
  */
-export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [], notes: initialNotes = [], people = [], me = { id: 0, canEditAssets: false }, tours: initialTours = [], spotlight }: {
+export function TwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [], notes: initialNotes = [], people = [], me = { id: 0, canEditAssets: false }, tours: initialTours = [], spotlight, commissioning }: {
+  /** Commissioning plans of this hospital for the week slider (wave 14), and one to open on arrival. */
+  commissioning?: { plans: { id: number; name: string }[]; initial: number | null };
   /** Devices to pick out on arrival (wave 9: a recall's pending devices), with a line saying why. */
   spotlight?: { label: string; ids: number[] } | null;
   /** Guided tours of this hospital the user can see (wave 7f). */
@@ -308,6 +311,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     }
     return m;
   }, [data.rooms]);
+  const comm = useCommissioning(commissioning?.plans ?? [], commissioning?.initial ?? null);
   const planTint = useMemo(() => {
     if (!plan) return null;
     const band = new Map(plan.departments.map((d) => [d.departmentId, planBand(d.share)]));
@@ -324,10 +328,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   }, [plan, deptRooms, ready]);
   useEffect(() => {
     if (!ready) return;
+    // Commissioning week (wave 14) first, then plan vs installed, then the problem layer.
+    if (comm.tint) { sceneRef.current?.setRoomTint(comm.tint, NEUTRAL); return; }
     if (planTint) { sceneRef.current?.setRoomTint(planTint, NEUTRAL); return; }
     sceneRef.current?.setRoomTint(layer === "department" || !legend ? null
       : new Map([...layerValues].map(([id, v]) => [id, { color: colorFor(v, legend) ?? NEUTRAL, level: bucketOf(v, legend.breaks) }])), NEUTRAL);
-  }, [layer, layerValues, legend, ready, planTint]);
+  }, [layer, layerValues, legend, ready, planTint, comm.tint]);
   // The worst places, for the legend panel (rooms, or departments when grouped).
   const worst = useMemo(() => {
     if (layer === "department") return [];
@@ -1916,6 +1922,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             {plans.length > 0 && (
               <HudPanel title="Plan vs installed" summary={plan ? `${Math.round((planSummary!.installed / Math.max(1, planSummary!.planned)) * 100)} %` : "Off"} open={panels.isOpen("plan")} onToggle={() => panels.toggle("plan")} bodyClassName="max-h-[50vh] overflow-y-auto">
                 {planPanel}
+              </HudPanel>
+            )}
+            {(commissioning?.plans.length ?? 0) > 0 && (
+              <HudPanel title="Commissioning" summary={comm.summary} open={panels.isOpen("commissioning") || comm.on} onToggle={() => panels.toggle("commissioning")} bodyClassName="max-h-[50vh] overflow-y-auto">
+                {comm.panel}
               </HudPanel>
             )}
             <HudPanel title="View" summary={`${style === "dark" ? "Digital twin" : "Architectural"} · ${explode.toFixed(1)}×`} open={panels.isOpen("view")} onToggle={() => panels.toggle("view")}>

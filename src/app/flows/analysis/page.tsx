@@ -44,7 +44,9 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
       <PageHeader
         title="Pathway analysis"
         description={`${fac.name} · every published pathway together. Estimates: hover or focus a figure to see how it's worked out.`}
-        actions={a.flows.length ? <a href={`/flows/analysis/export?facilityId=${fac.id}`} download className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Download Excel</a> : undefined}
+        actions={a.flows.length ? <div className="flex flex-wrap gap-2">
+          <Link href={`/flows/simulate?facilityId=${fac.id}`} className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-primary bg-primary px-3 text-sm font-semibold text-white hover:bg-primary-strong">Simulate queues</Link>
+          <a href={`/flows/analysis/export?facilityId=${fac.id}`} download className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-canvas">Download Excel</a></div> : undefined}
       />
       {facs.length > 1 && (
         <form className="mb-4 flex items-end gap-2 print:hidden" action="/flows/analysis">
@@ -73,7 +75,7 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
                 ))}</tbody>
               </Table>
             )}
-            <p className="mt-2 text-xs text-muted">Flag above 85 %. A patient is counted at every step in the hour they arrive, so later steps&apos; peaks are approximate.</p>
+            <p className="mt-2 text-xs text-muted">Flag above 85 %. A patient is counted at every step in the hour they arrive, so later steps&apos; peaks are approximate. For waits and queues hour by hour, with what-ifs, <Link href={`/flows/simulate?facilityId=${fac.id}`} className="text-primary hover:underline">simulate the queues</Link>.</p>
           </Panel>
 
           <div className="mt-5 grid gap-5 lg:grid-cols-2">

@@ -7,6 +7,7 @@ import { equipmentNames, loadFlow } from "@/lib/flows/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { DEPARTMENT_PALETTE, rectPoly } from "@/components/assets/twin/geometry";
 import { TwinView } from "@/components/assets/twin/twin-view";
+import { listPlans } from "@/lib/assets/commissioning-server";
 import type { TwinData } from "@/components/assets/twin/types";
 import { can } from "@/lib/auth/permissions";
 import { myDepartments } from "@/lib/auth/departments";
@@ -22,7 +23,7 @@ export const metadata = { title: "3D view" };
 /** Floor-to-floor height when a floor has no stored elevation (La Plaza: 5 m). */
 const FLOOR_TO_FLOOR_M = 5;
 
-export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string; flow?: string; recall?: string }> }) {
+export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string; flow?: string; recall?: string; commissioning?: string }> }) {
   const me = await requirePermission("assets.view");
   const scope = await facilityScope(me);
   const sp = await searchParams;
@@ -128,7 +129,8 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName, render: v.render ?? null }))}
     canManageViews={can(me.role, "users.manage")}
     plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []}
-    spotlight={await recallSpotlight(Number(sp.recall), facility.id)} />;
+    spotlight={await recallSpotlight(Number(sp.recall), facility.id)}
+    commissioning={{ plans: (await listPlans([facility.id])).map((p) => ({ id: p.id, name: p.name })), initial: Number(sp.commissioning) || null }} />;
 }
 
 /** A recall's pending devices in this hospital (…&recall=<id>), to pick out in the model. */

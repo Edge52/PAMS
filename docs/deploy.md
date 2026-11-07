@@ -51,6 +51,14 @@ What runs: the app, PostgreSQL 16, Caddy (gets and renews the HTTPS certificate)
 database dump and an archive of uploaded files to `./backups` every 24 hours, keeping 14 days. Copy `./backups` off the
 server regularly (another machine, or object storage) — a backup on the same disk doesn't survive losing that disk.
 
+**Administration › Backups** lists the same folder (the app sees it as `/data/backups`): the age of the last database
+backup, a restore check that each file opens, downloads, and **Back up now**, which runs `pg_dump` (the image includes
+the PostgreSQL 17 client, which can dump PostgreSQL 15–17 servers, Supabase too). The app runs as user 1000, so let it
+write there once: `mkdir -p backups && sudo chown 1000:1000 backups`. Without Docker, install the PostgreSQL client tools
+(`pg_dump` at least as new as the server) or point `PG_DUMP_PATH` at one; the connection comes from `DATABASE_URL` and
+`DATABASE_SSL`, and the password is never put on the command line. Files made from the page are named like the
+nightly ones (`hpams-YYYYMMDD-HHMM.dump`, UTC time) with the uploads as a `.zip`.
+
 Updating: `git pull` (or copy the new folder) and `docker compose up -d --build`. Database changes are applied on start.
 
 ### Restore
@@ -59,6 +67,8 @@ Updating: `git pull` (or copy the new folder) and `docker compose up -d --build`
 docker compose stop app
 docker compose exec -T db pg_restore -U hpams -d hpams --clean --if-exists < backups/hpams-YYYYMMDD-HHMM.dump
 docker compose run --rm -v "$PWD/backups:/b" --entrypoint sh app -c "cd /data/uploads && tar -xzf /b/uploads-YYYYMMDD-HHMM.tar.gz"
+# or, for an uploads .zip made with Back up now:
+# docker compose run --rm -v "$PWD/backups:/b" --entrypoint sh app -c "cd /data/uploads && unzip -o /b/uploads-YYYYMMDD-HHMM.zip"
 docker compose start app
 ```
 

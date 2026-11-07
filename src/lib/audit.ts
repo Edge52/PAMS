@@ -40,7 +40,7 @@ export function recordHref(type: string, id: number): string | null {
     asset: `/assets/${id}`, po: `/procurement/purchase-orders/${id}`, project: `/procurement/${id}`, offer: `/procurement/offers/${id}`, boq: `/boq/${id}`,
     work_order: `/assets/work-orders/${id}`, contract: `/assets/contracts/${id}`, recall: `/assets/recalls/${id}`, disposal: `/assets/disposals/${id}`,
     supplier: `/procurement/suppliers/${id}`, framework: `/procurement/frameworks/${id}`, facility: `/facilities/${id}`, flow: `/flows/${id}`,
-    rfq: `/procurement/rfqs/${id}`, device_model: `/catalogue/models/${id}`, request: `/assets/requests/${id}`,
+    rfq: `/procurement/rfqs/${id}`, device_model: `/catalogue/models/${id}`, request: `/assets/requests/${id}`, commissioning: `/assets/commissioning/${id}`,
   };
   return m[type] ?? null;
 }

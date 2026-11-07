@@ -37,8 +37,8 @@ const pct = (x: number) => `${Math.round(x * 100)} %`;
 const r1 = (x: number) => Math.round(x * 10) / 10;
 
 /** The place a step uses: its room, or its department. */
-type Place = { key: string; label: string; roomIds: number[]; departmentId: number | null };
-function placeOf(s: Step, rooms: ARoom[], depts: ADept[]): Place | null {
+export type Place = { key: string; label: string; roomIds: number[]; departmentId: number | null };
+export function placeOf(s: Step, rooms: ARoom[], depts: ADept[]): Place | null {
   if (s.roomId != null) {
     const r = rooms.find((x) => x.id === s.roomId); if (!r) return null;
     return { key: `r${r.id}`, label: r.name, roomIds: [r.id], departmentId: r.departmentId };
