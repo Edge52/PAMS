@@ -1,7 +1,7 @@
 # Hospital PAMS — handover
 
 The starting point for anyone (or any new Claude session) picking up the project. It says what the app is, how it's
-built and run, how work is done here, what's finished and what's left. Last updated 7 Nov 2026: `main` has waves 1–18
+built and run, how work is done here, what's finished and what's left. Last updated 7 Nov 2026: `main` has waves 1–19
 (wave 16 = 3D roadmap phases 0–4, wave 17 = phases 5–9; 10 MEP and 11 Campus/BIM on hold).
 
 Read next: `AGENTS.md` (coding conventions; they're strict), `docs/system-documentation.md` (modules in depth),
@@ -82,11 +82,11 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 18. Next work goes on `wave-19`.
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 19. Next work goes on `wave-20`.
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
-- Old branches: `wave-13` to `wave-18` are merged and can be deleted from GitHub's branch page (the session's
+- Old branches: `wave-13` to `wave-19` are merged and can be deleted from GitHub's branch page (the session's
   connection can't delete branches). The Mac still has two old local branches (`claude/vigilant-noether-2l33kc`,
   `fix/demo-restart`); `git branch -D` them when convenient.
 
@@ -103,7 +103,7 @@ Administration › Settings).
 
 ## 6. What's done
 
-Waves 1–18 are merged. Highlights per wave (details in `CHANGELOG.md`):
+Waves 1–19 are merged. Highlights per wave (details in `CHANGELOG.md`):
 
 | Wave | Contents |
 | --- | --- |
@@ -118,7 +118,7 @@ Waves 1–18 are merged. Highlights per wave (details in `CHANGELOG.md`):
 | 16 | 3D roadmap phase 0: Imaging and ICU presets; device status by day with History replay; detailed equipment and illustrative furniture in the live view. Phase 1: drawing quality page, room sources and confidence, verified on site, 3D confidence tint. Phase 2: DXF input, layer and symbol rules per building, symbols into rooms, dimension check. Phase 3: solid walls with door and window openings, floor-to-floor wall heights, surveyed ceilings. Phase 4: clinical room templates (equipment, clearances, width; CSSD, triage, dental, labs), checks in 3D and BOQ |
 | 17 | Phase 5: equipment 3D library (clear zones, connection points, own .glb files, MRI/open MRI/C-arm shapes, first set of imaging models). Phase 6: space planning (area schedule, net-to-gross, circulation, density, bed places, snapshots). Phase 7: clash and clearance check. Phase 8: queue simulation on the model, bed and stretcher clearance on routes. Phase 9: textured finishes and light fittings in renders, tours as flythrough videos |
 | 18 | Solid floors option in the 3D view (floors not see-through) |
-| 19 (branch) | Interface: role-ordered foldable menu with pins, maintenance triage (no PPM on record apart), dashboard hospital choice, BOQ folded departments, filters on change with chips, phone columns, 3D View panel groups and checks on demand, hospital Checks and planning tab, PO totals in EGP |
+| 19 | Interface: role-ordered foldable menu with pins, maintenance triage (no PPM on record apart), dashboard hospital choice, BOQ folded departments, filters on change with chips, phone columns, 3D View panel groups and checks on demand, hospital Checks and planning tab, PO totals in EGP |
 | 15 | Room standards in BOQ › Checks; gas outlets in the room survey; simulation staff, opening hours, appointment books, floor moves and saved scenarios; more detailed render furniture |
 
 Decisions Hisham has made: Law 182 rates and steps confirmed (bid bond 1.5 %, performance bond 5 %, two-envelope

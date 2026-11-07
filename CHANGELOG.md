@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 19 — on branch `wave-19`, not merged yet
+## Wave 19 — merged 7 Nov 2026
 
 From the interface review (Claude doc "PAMS interface review — what to improve").
 
