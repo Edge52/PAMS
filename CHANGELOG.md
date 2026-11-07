@@ -1,5 +1,10 @@
 # Changelog
 
+## Wave 18 — on branch `wave-18`, not merged yet
+
+- **Solid floors** (3D view › View › *Solid floors (not see-through)*): every floor is drawn as a built slab with
+  solid room floors, so the floors below no longer show through. Works in both looks; off by default.
+
 ## Wave 17 — merged 7 Nov 2026
 
 Migration `0037`. Update with `git pull` and `npm run demo`; your data is kept.

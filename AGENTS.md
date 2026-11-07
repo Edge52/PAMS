@@ -384,6 +384,8 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   (generalises the clash rings). Bed clearance: `twin/nav/clearance.ts` (`clearWidth` on the network grid, +3.5 cells
   calibrated on straight walls; `legClearance`; `longestThroughCorner`), used by `buildingChecks` for bed legs and by
   the Pathways panel.
+- **Solid floors** (wave 18): scene `setSolidFloors` — opaque slab plane and room mesh with depth write, the
+  thick `slabBox` shown in both looks (dark concrete in the dark one); `styleFloor`/`applyFloorVisibility` read it.
 - **Photoreal**: `render/finishes.ts` (`finishPixels` seeded procedural tiles → `finishTexture` DataTexture, UVs in
   metres ÷ `FINISH_TILE`; `fittingSpots` grid of ceiling lights). Studio options `textures`, `lights` (in the build
   cache key). Video: scene `startRecording(title)` copies each rendered frame plus a caption band to a canvas

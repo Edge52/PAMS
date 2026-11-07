@@ -161,6 +161,8 @@ export class TwinScene {
   private floorDoorSegs = new Map<number, number[]>();
   /** Solid walls with openings on the floor shown on its own (wave 16, phase 3); built per floor on first use. */
   private solidOn = true;
+  /** Solid floors (wave 18): opaque slabs and room floors, so floors below don't show through. */
+  private solidFloorsOn = false;
   private floorGeo = new Map<number, FloorGeometry>();
   private shells = new Map<number, THREE.Group>();
   private wallH = new Map<number, number>();
@@ -984,7 +986,8 @@ export class TwinScene {
       const iso = this.isolated === id;
       if (v.roomsMesh) {
         const m = v.roomsMesh.material as THREE.MeshBasicMaterial;
-        m.opacity = this.tinted ? (iso ? 0.7 : 0.55) : iso ? P.roomOpacity.iso : P.roomOpacity.whole;
+        m.opacity = this.solidFloorsOn ? 1 : this.tinted ? (iso ? 0.7 : 0.55) : iso ? P.roomOpacity.iso : P.roomOpacity.whole;
+        m.depthWrite = this.solidFloorsOn;
       }
     }
     this.applyWallHeights();
@@ -1076,10 +1079,13 @@ export class TwinScene {
   private styleFloor(v: FloorView) {
     const P = PALETTE[this.style], light = this.style === "light";
     const slab = v.slab.material as THREE.MeshBasicMaterial;
-    slab.color.set(P.slab); slab.opacity = P.slabOpacity; slab.depthWrite = light;
+    const solid = this.solidFloorsOn;
+    slab.color.set(P.slab); slab.opacity = solid ? 1 : P.slabOpacity; slab.depthWrite = light || solid;
     const edge = v.slabEdge.material as THREE.LineBasicMaterial;
     edge.color.set(P.slabEdge); edge.opacity = P.slabEdgeOpacity;
-    v.slabBox.visible = light;
+    // A slab with thickness: always in the light style; in the dark one when floors are solid (a dark concrete plate).
+    v.slabBox.visible = light || solid;
+    (v.slabBox.material as THREE.MeshLambertMaterial).color.set(light ? "#d3dbe2" : "#0e2436");
     if (v.wallMesh) {
       (v.wallMesh.material as THREE.Material).dispose();
       v.wallMesh.material = light
@@ -1121,6 +1127,13 @@ export class TwinScene {
     this.positionDevices();
     this.drawSelection();
     this.buildLabels();
+  }
+
+  /** Solid floors (wave 18): every floor drawn as a built slab with opaque room floors, not see-through. */
+  setSolidFloors(on: boolean) {
+    this.solidFloorsOn = on;
+    for (const v of this.floors.values()) this.styleFloor(v);
+    this.applyFloorVisibility();
   }
 
   /** Solid walls with door and window openings on the floor shown on its own (wave 16, phase 3). */

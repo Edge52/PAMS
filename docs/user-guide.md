@@ -287,6 +287,7 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - **Floors**: pick one, or *Whole building*. **View**: *Digital twin* or *Architectural* look; *Isometric*, *Plan*, *Eye
   level*; floor spacing; basements; glass façade; *Section cut*; lifts and stairs.
   *Detailed equipment close up* and *Furniture on a floor shown on its own* (illustrative room kits) are on by default.
+  *Solid floors (not see-through)*: every floor drawn as a built slab, hiding the floors below.
   *Solid walls (one floor)*: a floor shown on its own has solid walls with door and window openings, as tall as the
   floor-to-floor height; surveyed ceilings show as orange outlines.
 - **Problem layer**: faults, overdue maintenance, past service life, downtime, value, recalls — *Heat map* or *Blocks*,
