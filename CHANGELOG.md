@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 14 — branch `wave-14` (not merged yet)
+## Wave 14 — merged 7 Nov 2026
 
 Migration `0032`. Update with `git pull` and `npm run demo`; your data is kept.
 
