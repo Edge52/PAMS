@@ -94,6 +94,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const setStyle = writeStyle;
   const [basements, setBasements] = useState(false);
   const [facade, setFacade] = useState(true);
+  const [solid, setSolid] = useState(true);
   const [heatMode, setHeatMode] = useState<"smooth" | "blocks">("smooth");
   const [sectionAxis, setSectionAxis] = useState<"" | "x" | "z">("");
   const [sectionAt, setSectionAt] = useState(0.5);
@@ -425,6 +426,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => { if (ready) sceneRef.current?.setStyle(style); }, [style, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setShowBasements(basements); }, [basements, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setFacade(facade); }, [facade, ready]);
+  useEffect(() => { if (ready) sceneRef.current?.setSolidWalls(solid); }, [solid, ready]);
   // Drawing confidence and presets are about exact rooms: drawn as blocks, never as a spreading glow.
   useEffect(() => { if (ready) sceneRef.current?.setHeatMode(confidenceTint || preset ? "blocks" : heatMode); }, [heatMode, ready, confidenceTint, preset]);
   useEffect(() => { if (ready) sceneRef.current?.setSection(sectionAxis || null, sectionAt); }, [sectionAxis, sectionAt, ready]);
@@ -1183,6 +1185,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       {style === "dark" && <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={bloom} onChange={(e) => setBloom(e.target.checked)} className="accent-[#2fd3ff]" /> Glow</label>}
       {hasBasements && <label className="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" checked={basements} onChange={(e) => setBasements(e.target.checked)} className="accent-[#2fd3ff]" /> Basements in the whole building</label>}
       <label className="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" checked={facade} onChange={(e) => setFacade(e.target.checked)} className="accent-[#2fd3ff]" /> Glass façade (from afar)</label>
+      <label className="mt-1 flex items-center gap-2 text-sm" title="On the floor shown on its own: walls stand floor to slab, with door and window openings; surveyed ceilings show as orange outlines"><input type="checkbox" checked={solid} onChange={(e) => setSolid(e.target.checked)} className="accent-[#2fd3ff]" /> Solid walls (one floor)</label>
       <div className="mt-3 border-t border-[#123a55] pt-2">
         <label className="flex items-center justify-between gap-2 text-[13px]" htmlFor="twin-section">Section cut
           <select id="twin-section" value={sectionAxis} onChange={(e) => setSectionAxis(e.target.value as "" | "x" | "z")} className="twin-input w-auto py-0.5 text-xs">

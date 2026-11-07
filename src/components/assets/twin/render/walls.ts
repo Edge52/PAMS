@@ -45,6 +45,19 @@ function slide(src: Uint8Array, w: number, h: number, r: number, horizontal: boo
   return out;
 }
 
+/** Grow set cells by r (square window). */
+export function dilate(g: Grid, r: number): Grid {
+  let d = slide(g.data, g.w, g.h, r, true, true);
+  d = slide(d, g.w, g.h, r, false, true);
+  return { ...g, data: d };
+}
+/** Cells set in `a` and (with `not`, not) in `b`; grids must share their frame. */
+export function combine(a: Grid, b: Grid, not = false): Grid {
+  const d = new Uint8Array(a.data.length);
+  for (let i = 0; i < d.length; i++) d[i] = a.data[i] && (not ? !b.data[i] : b.data[i]) ? 1 : 0;
+  return { ...a, data: d };
+}
+
 /** Close gaps up to about 2r cells wide: dilate by r then erode by r (square window). */
 export function close(g: Grid, r: number): Grid {
   let d = slide(g.data, g.w, g.h, r, true, true);

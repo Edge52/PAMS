@@ -13,6 +13,7 @@ import { deviceModel, symbolModel } from "./render/device-models";
 import { modelGeometry } from "./render/furniture";
 import { BUILTIN_KITS, placeKit, roomLook, type KitRule, type Model, type Placement } from "./render/kits";
 import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, pointInPolygon, outlineFromRooms, polygonArea, presetCamera, spreadInRoom, wallsFromRooms, type CoreKind, type DeviceKind, type Pt } from "./geometry";
+import { DOOR_HEAD, SILL, shellOf, toMetres, wallHeights, type Shell } from "./solid-walls";
 import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinLift, type TwinRoom } from "./types";
 import type { Core } from "./nearest";
 import type { Network } from "./nav/network";
@@ -101,6 +102,8 @@ type FloorView = {
   wallLines: THREE.LineSegments | null;
   /** Thousands of CAD wall segments: dark tinted glass instead of additive glass in the dark style. */
   dense: boolean;
+  /** Wall height in metres: floor to the slab above (wave 16, phase 3). */
+  wallH: number;
   extras: THREE.Object3D[];
   doors: THREE.LineSegments | null;
   glass: THREE.LineSegments | null;
@@ -148,6 +151,11 @@ export class TwinScene {
   private furnitureRules: KitRule[] = BUILTIN_KITS;
   private furniture = new Map<number, THREE.Group>();
   private floorDoorSegs = new Map<number, number[]>();
+  /** Solid walls with openings on the floor shown on its own (wave 16, phase 3); built per floor on first use. */
+  private solidOn = true;
+  private floorGeo = new Map<number, FloorGeometry>();
+  private shells = new Map<number, THREE.Group>();
+  private wallH = new Map<number, number>();
   private statusRings: THREE.InstancedMesh | null = null;         // near: a ring on the floor in the status colour
   private ringSize: number[] = [];
   private kindIndex = new Map<number, { kind: string; i: number }>();
@@ -296,6 +304,7 @@ export class TwinScene {
    */
   async build(loadGeometry: (floorId: number) => Promise<FloorGeometry | null>, firstFloorId: number | null = null): Promise<{ rest: Promise<void> }> {
     const order = floorLoadOrder(this.data.floors, firstFloorId);
+    this.wallH = wallHeights(this.data.floors);
     let loaded = 0;
     this.events.onProgress?.(0, order.length);
     const one = async (f: TwinFloor) => {
@@ -334,6 +343,7 @@ export class TwinScene {
 
   private buildFloor(f: TwinFloor, geo: FloorGeometry | null) {
     this.floorDoorSegs.set(f.id, geo?.doors ?? []);
+    if (geo?.walls?.length) this.floorGeo.set(f.id, geo);
     const s = this.u(f);
     const group = new THREE.Group();
     group.name = `floor-${f.id}`;
@@ -455,7 +465,7 @@ export class TwinScene {
     this.scene.add(group);
     const center = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
     const view: FloorView = {
-      floor: f, group, roomsMesh, roomIndexByFace, roomRanges, roomBase, heat: null, cores, facade, wallMesh, wallLines, dense: wallSegs.length / 4 > 1500,
+      floor: f, group, roomsMesh, roomIndexByFace, roomRanges, roomBase, heat: null, cores, facade, wallMesh, wallLines, dense: wallSegs.length / 4 > 1500, wallH: this.wallH.get(f.id) ?? WALL_HEIGHT,
       extras, doors, glass, columns, slab, slabEdge: edge, slabBox, bounds: { x0, x1, z0, z1 }, center, size: Math.max(x1 - x0, z1 - z0, 20),
     };
     this.floors.set(f.id, view);
@@ -570,8 +580,8 @@ export class TwinScene {
       if (v.cores) {
         // Whole building: cores rise to the floor above so they read as shafts; one floor on its own: room height.
         const above = byElev.find((f) => f.elevation > v.floor.elevation);
-        const gap = this.isolated == null && above ? (above.elevation - v.floor.elevation) * this.explode : WALL_HEIGHT;
-        v.cores.scale.y = Math.max(WALL_HEIGHT, gap - 0.05);
+        const gap = this.isolated == null && above ? (above.elevation - v.floor.elevation) * this.explode : v.wallH;
+        v.cores.scale.y = Math.max(v.wallH, gap - 0.05);
       }
       if (v.facade) {
         const above = byElev.find((f) => f.elevation > v.floor.elevation);
@@ -881,10 +891,19 @@ export class TwinScene {
   private applyWallHeights() {
     const full = this.isolated != null || this.near;
     const k = full ? 1 : CUTAWAY;
-    for (const v of this.floors.values()) {
-      for (const o of [v.wallMesh, v.wallLines, v.glass, v.columns]) if (o) o.scale.y = k;
+    if (this.solidOn && this.isolated != null && !this.shells.has(this.isolated)) this.buildShell(this.isolated);
+    for (const [id, v] of this.floors) {
+      // The floor shown on its own gets solid walls (when it has drawn walls); the light linework stays elsewhere.
+      const solid = this.solidOn && this.isolated === id && this.shells.has(id);
+      const sh = this.shells.get(id);
+      if (sh) sh.visible = solid;
+      const h = k * v.wallH / WALL_HEIGHT;
+      for (const o of [v.wallMesh, v.wallLines, v.glass, v.columns]) if (o) o.scale.y = h;
+      if (v.wallMesh) v.wallMesh.visible = !solid;
+      if (v.wallLines) v.wallLines.visible = !solid;
+      if (v.glass) v.glass.visible = !solid;
       if (v.doors) v.doors.visible = full;
-      if (v.columns) v.columns.visible = full;
+      if (v.columns) v.columns.visible = full && !solid;
       // The façade wraps the building from afar; it would only get in the way on one floor or close up.
       if (v.facade) v.facade.visible = this.facadeOn && !full;
     }
@@ -932,12 +951,83 @@ export class TwinScene {
     this.renderer.toneMappingExposure = P.exposure;
     this.addGround();
     for (const v of this.floors.values()) { this.styleFloor(v); this.tintFloor(v); }
+    this.dropShells();
     this.bloom.enabled = this.bloomWanted && style === "dark";
     if (this.beamLines) this.beamLines.visible = !this.near && style === "dark";
     this.applyFloorVisibility();
     this.positionDevices();
     this.drawSelection();
     this.buildLabels();
+  }
+
+  /** Solid walls with door and window openings on the floor shown on its own (wave 16, phase 3). */
+  setSolidWalls(on: boolean) { this.solidOn = on; this.applyWallHeights(); }
+
+  private dropShells() {
+    for (const g of this.shells.values()) {
+      g.parent?.remove(g);
+      g.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); (m.material as THREE.Material | undefined)?.dispose?.(); });
+    }
+    this.shells.clear();
+  }
+
+  /**
+   * The solid shell of one floor: wall boxes standing floor to slab, lintels over doors, windows (sill, glass, head),
+   * and the surveyed ceilings of its rooms as outlines at their height. Built once per floor (and look) from the drawing.
+   */
+  private buildShell(floorId: number) {
+    const v = this.floors.get(floorId), geo = this.floorGeo.get(floorId);
+    if (!v || !geo) return;
+    const s = this.u(v.floor), b = v.bounds;
+    const cells = ((b.x1 - b.x0) * (b.z1 - b.z0)) / 0.01;
+    let sh: Shell;
+    try {
+      sh = shellOf(toMetres(geo.walls, s, b), toMetres(geo.columns, s, b), toMetres(geo.doors, s, b), toMetres(geo.glass, s, b), b, cells > 3e6 ? 0.15 : 0.1);
+    } catch { return; }
+    if (!sh.walls.length) return;
+    const H = v.wallH, light = this.style === "light";
+    const g = new THREE.Group(); g.name = `shell-${floorId}`;
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+    const boxes = (rs: { x0: number; x1: number; z0: number; z1: number }[], y0: number, y1: number, out: THREE.Matrix4[]) => {
+      for (const r of rs) out.push(m4.clone().compose(p.set((r.x0 + r.x1) / 2, (y0 + y1) / 2, (r.z0 + r.z1) / 2), q, sc.set(r.x1 - r.x0, y1 - y0, r.z1 - r.z0)));
+    };
+    const solid: THREE.Matrix4[] = [], panes: THREE.Matrix4[] = [];
+    boxes(sh.walls, 0, H, solid);
+    boxes(sh.lintels, DOOR_HEAD, H, solid);
+    boxes(sh.windows, 0, SILL, solid);
+    boxes(sh.windows, DOOR_HEAD, H, solid);
+    boxes(sh.windows, SILL, DOOR_HEAD, panes);
+    const inst = (list: THREE.Matrix4[], mat: THREE.Material, order: number) => {
+      if (!list.length) return;
+      const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, list.length);
+      list.forEach((m, i) => im.setMatrixAt(i, m));
+      im.instanceMatrix.needsUpdate = true; im.renderOrder = order; im.frustumCulled = false;
+      g.add(im);
+    };
+    inst(solid, new THREE.MeshLambertMaterial({ color: light ? "#f4f6f8" : "#24506b", emissive: light ? "#000000" : "#0a2a3d" }), 2);
+    inst(panes, new THREE.MeshBasicMaterial({ color: light ? "#7cc4e6" : "#7fe6ff", transparent: true, opacity: light ? 0.35 : 0.25, depthWrite: false }), 4);
+    // Wall tops as outlines, so the plan still reads from above.
+    const top: number[] = [], y = H + 0.01;
+    for (const r of sh.walls) top.push(r.x0, y, r.z0, r.x1, y, r.z0, r.x1, y, r.z0, r.x1, y, r.z1, r.x1, y, r.z1, r.x0, y, r.z1, r.x0, y, r.z1, r.x0, y, r.z0);
+    const tg = new THREE.BufferGeometry(); tg.setAttribute("position", new THREE.Float32BufferAttribute(top, 3));
+    g.add(new THREE.LineSegments(tg, new THREE.LineBasicMaterial({ color: light ? "#8796a3" : "#4fd8ff", transparent: true, opacity: light ? 0.6 : 0.45, depthWrite: false })));
+    // Surveyed ceilings (room data sheet › site data) as orange outlines at their height.
+    const ceil: number[] = [];
+    for (const r of this.data.rooms) {
+      const c = r.floorId === floorId ? r.site?.ceilingM : null;
+      if (!c || c <= 0 || c >= H || r.poly.length < 3) continue;
+      for (let i = 0; i < r.poly.length; i++) {
+        const [ax, az] = r.poly[i], [bx, bz] = r.poly[(i + 1) % r.poly.length];
+        ceil.push(ax * s, c, az * s, bx * s, c, bz * s);
+      }
+    }
+    if (ceil.length) {
+      const cg = new THREE.BufferGeometry(); cg.setAttribute("position", new THREE.Float32BufferAttribute(ceil, 3));
+      g.add(new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: "#f0a020", transparent: true, opacity: 0.85, depthWrite: false })));
+    }
+    g.visible = false;
+    v.group.add(g);
+    this.shells.set(floorId, g);
   }
 
   /** Show or hide the glass façade around the building (whole-building view from afar). */

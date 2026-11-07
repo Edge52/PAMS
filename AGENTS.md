@@ -347,4 +347,9 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   (`CadDrawingInfo`), table `drawing_symbols` (written by `writeFloorSymbols` in `src/lib/assets/cad-symbols.ts`, each
   in its room by `roomAt`). `drawingGasesFor` feeds `checkRoom`'s `drawingGases`; `symbolModel` draws symbols in the 3D
   furniture layer. Tests: `tools/cad/cad.test.mjs` with the generated sample (`tools/cad/sample/make-sample.mjs`).
+- **Solid walls** (3D phase 3): `twin/solid-walls.ts` (pure, tested) — `shellOf` turns wall/column lines into wall
+  boxes (raster + close, as `render/walls.ts`), door openings (what a wider closing fills next to a door line → lintel)
+  and windows (glazing minus wall); `wallHeights` = floor-to-floor less a 0.35 m slab (top floor as the one below).
+  `scene.ts` keeps each floor's geometry, builds the shell on first isolation (`buildShell`, instanced boxes, rebuilt
+  on look change), hides the translucent walls on that floor, and scales those walls to `FloorView.wallH`.
 

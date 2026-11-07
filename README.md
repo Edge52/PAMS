@@ -181,6 +181,8 @@ for any facility; floors imported from CAD show the real walls, doors, glazing a
 - **Camera presets** (under **View**): *Isometric*, *Plan* (straight down) and *Eye level* (standing in the selected room,
   or the floor's largest room, looking along it).
 - **Section cut**: slice the building east–west or north–south and slide the cut to look inside.
+- **Solid walls**: a floor shown on its own has solid walls from floor to slab, with door openings (lintel above 2.1 m)
+  and windows (sill, glass, head) read from the drawing; surveyed ceilings show as orange outlines. Under **View**.
 - **Glass façade**: from afar, each floor is wrapped in glass traced from its rooms, with a line at every storey, so the
   stack reads as one building. Switch it off under **View**.
 - **Heat map or blocks**: problem layers spread a soft colour from the affected rooms (stronger = worse), or show the

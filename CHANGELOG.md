@@ -29,6 +29,11 @@ Migrations `0034`–`0036`. Update with `git pull` and `npm run demo`; your data
   the survey has no figure; drawn beds, equipment and fittings appear in the 3D view where the drawing shows them.
   Room data sheets list what the drawing shows in the room. A two-floor DXF sample runs the whole pipeline without
   real drawings (`tools/cad/README.md`).
+- **Solid walls** (3D view, roadmap phase 3): on a floor shown on its own, drawn walls stand as solid walls from the
+  floor to the slab above, with openings where the drawing has doors (a lintel above 2.1 m) and windows where it has
+  glazing (sill to 0.9 m, glass, head from 2.1 m). Wall heights come from the floor-to-floor heights, not a fixed
+  3.3 m. Surveyed room ceilings (room survey) show as orange outlines at their height. View › **Solid walls (one
+  floor)** switches back to the light linework.
 
 ## Wave 15 — merged 7 Nov 2026
 
