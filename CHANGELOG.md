@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 17 — on branch `wave-17`, not merged yet
+## Wave 17 — merged 7 Nov 2026
 
 Migration `0037`. Update with `git pull` and `npm run demo`; your data is kept.
 
