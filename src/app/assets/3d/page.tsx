@@ -18,6 +18,7 @@ import { plansForFacility } from "@/lib/assets/plan-installed-server";
 import { sizesFor } from "@/lib/assets/dimensions-server";
 import { checkedRooms, loadStandards } from "@/lib/assets/room-standards-server";
 import { libraryFor } from "@/lib/assets/equipment-library-server";
+import { facilityClashes } from "@/lib/assets/clash-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "3D view" };
@@ -25,7 +26,7 @@ export const metadata = { title: "3D view" };
 /** Floor-to-floor height when a floor has no stored elevation (La Plaza: 5 m). */
 const FLOOR_TO_FLOOR_M = 5;
 
-export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string; flow?: string; recall?: string; commissioning?: string }> }) {
+export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string; flow?: string; recall?: string; commissioning?: string; assets?: string }> }) {
   const me = await requirePermission("assets.view");
   const scope = await facilityScope(me);
   const sp = await searchParams;
@@ -123,6 +124,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     symbols: floorIds.length ? (await db.select({ floorId: drawingSymbols.floorId, roomId: drawingSymbols.roomId, kind: drawingSymbols.kind, code: drawingSymbols.code, label: drawingSymbols.label, x: drawingSymbols.x, y: drawingSymbols.y, rot: drawingSymbols.rot })
       .from(drawingSymbols).where(sql`${inArray(drawingSymbols.floorId, floorIds)} and ${drawingSymbols.kind} <> 'outlet'`)) : [],
     library: lib.library,
+    clashes: (await facilityClashes(facility.id)).floors.flatMap((f) => f.issues),
     lifts: (await db.select().from(liftCores).where(eq(liftCores.facilityId, facility.id)).orderBy(asc(liftCores.name)))
       .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, cars: l.cars, waitSeconds: l.waitSeconds, waitByHour: l.waitByHour ?? null, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
   };
@@ -147,7 +149,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName, render: v.render ?? null }))}
     canManageViews={can(me.role, "users.manage")}
     plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []}
-    spotlight={await recallSpotlight(Number(sp.recall), facility.id)}
+    spotlight={typeof sp.assets === "string" && /^\d+(,\d+)*$/.test(sp.assets) ? { label: "Clash check", ids: sp.assets.split(",").map(Number).slice(0, 200) } : await recallSpotlight(Number(sp.recall), facility.id)}
     commissioning={{ plans: (await listPlans([facility.id])).map((p) => ({ id: p.id, name: p.name })), initial: Number(sp.commissioning) || null }} />;
 }
 

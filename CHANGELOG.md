@@ -16,6 +16,12 @@ Migration `0037`. Update with `git pull` and `npm run demo`; your data is kept.
   largest uses, beds, devices, equipment density (devices per 100 m²) and bed places against the room templates'
   area per bed, with the rooms that hold more beds than their area allows. **Snapshots** save the schedule to compare
   before and after a change (or two snapshots). 3D view › Problem layer › **Equipment density**.
+- **Clash and clearance check** (Facilities › hospital › Clash check, roadmap phase 7): devices placed on the plans
+  that stick out of their room, overlap another device, have a clear zone running into a wall or blocked by another
+  device, stand in a door, or are not MR-conditional inside an MRI's fringe field; for every device, one taller than
+  the surveyed ceiling, rooms too small for their devices and clear zones, and non-MR-conditional devices in an MRI
+  room. 3D view › View › **Clash check** rings them (red high, amber medium) and lists them; *Show in 3D* links
+  spotlight the devices.
 
 ## Wave 16 — merged 7 Nov 2026
 

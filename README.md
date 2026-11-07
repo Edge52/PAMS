@@ -188,6 +188,8 @@ for any facility; floors imported from CAD show the real walls, doors, glazing a
   .glb files, shown in 3D under View › Clearance zones and connections.
 - **Space planning** (`/facilities/[id]/space`): area schedule, net-to-gross, circulation, equipment density, bed
   places, snapshots to compare before and after.
+- **Clash check** (`/facilities/[id]/clashes`, 3D View › Clash check): placed devices against rooms, each other,
+  doors, clear zones and MRI fields; ceilings and crowded rooms for every device.
 - **Glass façade**: from afar, each floor is wrapped in glass traced from its rooms, with a line at every storey, so the
   stack reads as one building. Switch it off under **View**.
 - **Heat map or blocks**: problem layers spread a soft colour from the affected rooms (stronger = worse), or show the

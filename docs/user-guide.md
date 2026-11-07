@@ -256,6 +256,15 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - **Save a snapshot** before a change; afterwards **Compare with now** (or pick another snapshot as *after*).
 - In 3D, Problem layer › **Equipment density** colours rooms (or departments) by devices per 10 m².
 
+## Clash check
+
+- **Facilities › hospital › Clash check** lists, floor by floor, devices out of their room or on top of each other,
+  clear zones blocked by a wall or a device, devices in a door's swing, devices taller than the ceiling, rooms too
+  full for their clear space, and devices not marked MR-conditional in an MRI's field or room.
+- Devices you place on the plan (drag in 3D) get every check; devices only assigned to a room get the ones that need
+  no position. Rooms with a guessed outline are skipped for area checks.
+- In 3D, **View › Clash check** rings the devices and lists them; click one to fly to it.
+
 ## 3D view in two minutes
 
 - **Imaging** and **ICU** (top bar): every imaging or ICU room tinted and framed, the rest dimmed, with a summary of

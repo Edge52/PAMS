@@ -373,4 +373,9 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   (`grossArea` raster 0.5 m with wall gaps closed, `spaceSchedule`, `toSnapshot`, `compareSchedules`), server
   `facilitySpace` (rooms in metres, devices per room, template `minAreaM2`, cores by `coreKind`). Page
   `/facilities/[id]/space` + actions (`facilities.edit`). Layer `density` in `twin/layers.ts` (needs room `areaM2`).
+- **Clash check**: pure `src/lib/assets/clash.ts` (`checkClashes(rooms, devices, doors)`: position-free checks for
+  all devices, positional ones for `placed`; footprint frame as `drawZones`, `longX` from `MODEL_SIZE` of
+  `deviceModel`; `mrSafe` by code). Server `facilityClashes` (door points as the scene finds them; guessed or < 2 m²
+  outlines skip area checks) → page `/facilities/[id]/clashes` and `TwinData.clashes`; scene `setClashes` rings.
+  `/assets/3d?assets=1,2,3` spotlights devices.
 

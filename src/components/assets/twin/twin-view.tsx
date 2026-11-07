@@ -9,6 +9,7 @@ import { decodeView, describeView, encodeView, type ViewState } from "./view-sta
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { DropResult, PickResult, TwinScene, TwinStyle } from "./scene";
+import { CLASH_LABELS } from "@/lib/assets/clash";
 import { CONN_COLORS, CONN_KINDS, CONN_LABELS, ZONE_COLORS, ZONE_KINDS, ZONE_LABELS } from "@/lib/assets/equipment-library";
 import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinAsset, type TwinData, type TwinFix, type TwinRoom } from "./types";
 import { CORE_LABELS, coreKind, deviceKind, interiorPoint, polygonArea, type Pt } from "./geometry";
@@ -177,6 +178,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [templateTint, setTemplateTint] = useState(false);
   // Clearance zones and connection points of the equipment on one floor (wave 17, equipment library).
   const [libOverlay, setLibOverlay] = useState(false);
+  // Clash and clearance check (wave 17): rings on the devices with an issue, and the list.
+  const [clashOn, setClashOn] = useState(false);
   const kitRules = useRef<KitRule[] | null>(null);
   const [scope, setScope] = useState<Scope>("room");
   const [assetList, setAssetList] = useState(data.assets);
@@ -449,6 +452,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => { if (ready) sceneRef.current?.setFacade(facade); }, [facade, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setSolidWalls(solid); }, [solid, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setLibraryOverlay(libOverlay); }, [libOverlay, ready]);
+  useEffect(() => { if (ready) sceneRef.current?.setClashes(clashOn ? (data.clashes ?? []) : null); }, [clashOn, ready, data.clashes]);
   // Drawing confidence and presets are about exact rooms: drawn as blocks, never as a spreading glow.
   useEffect(() => { if (ready) sceneRef.current?.setHeatMode(confidenceTint || templateTint || preset ? "blocks" : heatMode); }, [heatMode, ready, confidenceTint, templateTint, preset]);
   useEffect(() => { if (ready) sceneRef.current?.setSection(sectionAxis || null, sectionAt); }, [sectionAxis, sectionAt, ready]);
@@ -1200,6 +1204,25 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             {libOverlay && <span className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">{ZONE_KINDS.map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: ZONE_COLORS[k] }} />{ZONE_LABELS[k]}</span>)}
               {CONN_KINDS.map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-full" style={{ background: CONN_COLORS[k] }} />{CONN_LABELS[k]}</span>)}</span>}
             <span className="block text-[11px] text-[#8fb6cc]">On a floor shown on its own, or the selected device&apos;s floor, from the <Link href="/catalogue/library" className="text-[#5fd6ff] hover:underline">equipment library</Link>.</span></span></label>
+        <label className="flex items-start gap-1.5"><input type="checkbox" checked={clashOn} onChange={(e) => setClashOn(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
+          <span>Clash check{data.clashes ? <span className="text-[#8fb6cc]"> · {data.clashes.length} issue{data.clashes.length === 1 ? "" : "s"}</span> : null}
+            <span className="block text-[11px] text-[#8fb6cc]">Out of their room, on top of each other, clear zones blocked, in a door, in an MRI field, too tall, rooms too full. <Link href={`/facilities/${data.facility.id}/clashes`} className="text-[#5fd6ff] hover:underline">Full list</Link></span></span></label>
+        {clashOn && (data.clashes?.length ?? 0) > 0 && (() => {
+          const list = (data.clashes ?? []).filter((c) => floorId == null || c.floorId === floorId);
+          return (
+            <ul className="max-h-48 space-y-0.5 overflow-y-auto pl-5 text-[12px]">
+              {list.length === 0 ? <li className="text-[#8fb6cc]">None on this floor.</li> : list.slice(0, 40).map((c, i) => {
+                const a = assetById.get(c.deviceId);
+                return (
+                  <li key={i}><button type="button" onClick={() => focus({ kind: "asset", id: c.deviceId })} className="text-left hover:underline">
+                    <span aria-hidden className="mr-1 inline-block size-2 rounded-full" style={{ background: c.severity === "high" ? "#ff3b5c" : "#ffb020" }} />
+                    <span className="text-white">{a ? `${a.deviceType} ${a.tag}` : `Device ${c.deviceId}`}</span> <span className="text-[#8fb6cc]">{CLASH_LABELS[c.kind].toLowerCase()}: {c.text}</span></button></li>
+                );
+              })}
+              {list.length > 40 && <li className="text-[#8fb6cc]">and {list.length - 40} more</li>}
+            </ul>
+          );
+        })()}
       </div>
       <div className="mb-3 flex items-center gap-2 text-xs">
         <button type="button" onClick={walking ? stopWalk : () => void startWalk()} aria-pressed={walking} className="twin-act" title="First person on the floor shown, kept to the walkable space (W)">{walking ? "Stop walking" : "Walk this floor"}</button>

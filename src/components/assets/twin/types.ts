@@ -102,6 +102,8 @@ export type TwinData = {
   symbols?: TwinSymbol[];
   /** Equipment library entries by key (wave 17): TwinAsset.lib points here. */
   library?: Record<string, TwinLibrary>;
+  /** Clash and clearance issues of the devices placed on the plans (wave 17). */
+  clashes?: (import("@/lib/assets/clash").ClashIssue & { floorId: number })[];
 };
 export type TwinSymbol = { floorId: number; roomId: number | null; kind: string; code: string | null; label: string; x: number; y: number; rot: number };
 

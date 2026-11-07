@@ -167,6 +167,9 @@ export class TwinScene {
   /** Clearance zones and connection points of the devices on the floor shown on its own (wave 17). */
   private zonesOn = false;
   private zoneGroup: THREE.Group | null = null;
+  /** Clash and clearance issues to mark (wave 17): rings on the floors shown, red for high, amber for medium. */
+  private clashes: { floorId: number; x: number; z: number; severity: "high" | "medium" }[] | null = null;
+  private clashGroup: THREE.Group | null = null;
   private statusRings: THREE.InstancedMesh | null = null;         // near: a ring on the floor in the status colour
   private ringSize: number[] = [];
   private kindIndex = new Map<number, { kind: string; i: number }>();
@@ -781,6 +784,29 @@ export class TwinScene {
     if (any && this.deviceMesh) { this.buildShapes(); this.applyNear(); this.positionDevices(); }
   }
 
+  /** Mark clash and clearance issues (wave 17), or clear them with null. */
+  setClashes(list: { floorId: number; x: number; z: number; severity: "high" | "medium" }[] | null) { this.clashes = list; this.drawClashes(); }
+
+  private drawClashes() {
+    if (this.clashGroup) {
+      this.scene.remove(this.clashGroup);
+      this.clashGroup.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); (m.material as THREE.Material | undefined)?.dispose?.(); });
+      this.clashGroup = null;
+    }
+    const list = (this.clashes ?? []).filter((c) => this.floorShown(c.floorId));
+    if (!list.length) return;
+    const g = new THREE.Group(); g.name = "clashes";
+    for (const sev of ["high", "medium"] as const) {
+      const mine = list.filter((c) => c.severity === sev); if (!mine.length) continue;
+      const ring = new THREE.TorusGeometry(0.55, 0.07, 8, 32); ring.rotateX(Math.PI / 2);
+      const im = new THREE.InstancedMesh(ring, new THREE.MeshBasicMaterial({ color: sev === "high" ? "#ff3b5c" : "#ffb020", transparent: true, opacity: 0.95, depthTest: false }), mine.length);
+      const m4 = new THREE.Matrix4();
+      mine.forEach((c, i) => im.setMatrixAt(i, m4.makeTranslation(c.x, this.floorY(this.floorById.get(c.floorId)!) + 0.08, c.z)));
+      im.renderOrder = 9; g.add(im);
+    }
+    this.clashGroup = g; this.scene.add(g);
+  }
+
   /** Clearance zones and connection points (wave 17) on the floor shown on its own. */
   setLibraryOverlay(on: boolean) { this.zonesOn = on; this.drawZones(); }
 
@@ -941,6 +967,7 @@ export class TwinScene {
     }
     this.applyWallHeights();
     if (this.zonesOn) this.drawZones();
+    if (this.clashes) this.drawClashes();
     if (this.noteSpots.length) this.drawNotes(); // only on floors shown
     this.applyFurniture();
   }
