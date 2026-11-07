@@ -17,6 +17,7 @@ import { twinLive } from "@/lib/assets/twin-live";
 import { plansForFacility } from "@/lib/assets/plan-installed-server";
 import { sizesFor } from "@/lib/assets/dimensions-server";
 import { checkedRooms, loadStandards } from "@/lib/assets/room-standards-server";
+import { libraryFor } from "@/lib/assets/equipment-library-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "3D view" };
@@ -59,9 +60,12 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     .leftJoin(group, eq(group.id, deviceTypes.parentId)).leftJoin(cat, eq(cat.id, group.parentId))
     .where(sql`${assets.facilityId} = ${facility.id} and ${assets.status} <> 'DISPOSED'`);
   const sizes = await sizesFor({ facilityId: facility.id });
+  // Equipment library (wave 17): clearance zones, connection points and the model's own 3D file.
+  const lib = await libraryFor(assetRows);
   const sized = assetRows.map((a) => {
     const z = sizes.get(a.id);
-    return { ...a, dims: z?.dims ?? { l: 0.6, w: 0.5, h: 1 }, rot: z?.rot ?? null };
+    const key = lib.keyOf.get(a.id);
+    return { ...a, dims: z?.dims ?? { l: 0.6, w: 0.5, h: 1 }, rot: z?.rot ?? null, ...(key ? { lib: key } : {}) };
   });
 
   // Published pathways, plus any version asked for by link (…&flow=12,14: a draft to compare with the published one).
@@ -118,6 +122,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     // Things drawn in the plans (not gas outlets): placed where the drawing shows them, before illustrative room kits.
     symbols: floorIds.length ? (await db.select({ floorId: drawingSymbols.floorId, roomId: drawingSymbols.roomId, kind: drawingSymbols.kind, code: drawingSymbols.code, label: drawingSymbols.label, x: drawingSymbols.x, y: drawingSymbols.y, rot: drawingSymbols.rot })
       .from(drawingSymbols).where(sql`${inArray(drawingSymbols.floorId, floorIds)} and ${drawingSymbols.kind} <> 'outlet'`)) : [],
+    library: lib.library,
     lifts: (await db.select().from(liftCores).where(eq(liftCores.facilityId, facility.id)).orderBy(asc(liftCores.name)))
       .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, cars: l.cars, waitSeconds: l.waitSeconds, waitByHour: l.waitByHour ?? null, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
   };

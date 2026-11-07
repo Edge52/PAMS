@@ -14,7 +14,9 @@ describe("device models (wave 16)", () => {
   it("falls back to the device's kind, from the code alone for planned lines", () => {
     expect(deviceModel("RTH-LIN-X", "RTH-LIN", "RTH")).toBe("ct");
     expect(deviceModel("XYZ-ABC-1", "XYZ-ABC", "XYZ")).toBe("cabinet");
-    expect(deviceModel("IMG-MRI-15T")).toBe("ct");
+    expect(deviceModel("IMG-MRI-15T")).toBe("mri");
+    expect(deviceModel("IMG-MRI-OPEN")).toBe("mri-open");
+    expect(deviceModel("IMG-XR-CARM", "IMG-XR", "IMG")).toBe("carm");
     expect(deviceModel("RTH-LIN-6MV")).toBe("ct");
   });
   it("draws symbols read from a drawing", () => {

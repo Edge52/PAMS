@@ -360,3 +360,13 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   `equipmentText`. BOQ: `templateNeeds` + `compareTemplateEquipment` (`roomStandardsCheck().equipment`).
   3D: `TwinRoom.template` from `checkedRooms`, tint `TEMPLATE_COLORS` (forces blocks), room card block.
 
+## Wave 17 (3D roadmap phases 5–9, branch `wave-17`)
+- **Equipment library** (migration `0037`, table `equipment_models`: a catalogue model's `glbUrl`, own `zones`,
+  `connections`; null = typical). Pure: `src/lib/assets/equipment-library.ts` (typical entries by code prefix from
+  `seed-data/equipment-library.json`, `libraryEntry`, `zoneRect`, `fringePoly`, `connPoint`, editor text formats).
+  `ensureLibraryModels` (run in `seedReference`) adds the first set to the catalogue with typical site data.
+  Server `libraryFor(devices)` → `TwinData.library` + `TwinAsset.lib`. Scene: `drawZones` (device frame u along the
+  model's long axis, v across, same turn as the device), `loadModels` (GLTFLoader → `render/glb.ts` `glbToGeometry`,
+  instanced under key `g:<url>`). GLB files: `.glb` allowed in storage, folder `equipment_model/<modelId>`, served to
+  `assets.view` when a library row has that URL. Page `/catalogue/library` (+ actions, `catalogue.edit`).
+

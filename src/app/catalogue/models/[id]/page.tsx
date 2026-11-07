@@ -90,7 +90,7 @@ export default async function ModelPage({ params, searchParams }: { params: Prom
           m.notes ? <Panel title="Notes"><p className="whitespace-pre-line text-sm">{m.notes}</p></Panel> : <div />
         )}
       </div>
-      <Panel title="Site planning" className="mt-5" actions={site ? <>{typical ? <Badge tone="warn">Typical values</Badge> : site.verified ? <Badge tone="ok">Checked against the guide</Badge> : <Badge>Not checked</Badge>}{" "}<Link href="/assets/3d" className="text-sm text-primary hover:underline">Check a room in 3D</Link></> : null}>
+      <Panel title="Site planning" className="mt-5" actions={site ? <>{typical ? <Badge tone="warn">Typical values</Badge> : site.verified ? <Badge tone="ok">Checked against the guide</Badge> : <Badge>Not checked</Badge>}{" "}<Link href="/assets/3d" className="text-sm text-primary hover:underline">Check a room in 3D</Link>{" "}<Link href={`/catalogue/library?edit=${m.id}#edit`} className="text-sm text-primary hover:underline">3D library</Link></> : <Link href={`/catalogue/library?edit=${m.id}#edit`} className="text-sm text-primary hover:underline">3D library</Link>}>
         {site ? (
           <div className="mb-4 text-sm">
             <ul className="grid gap-x-6 gap-y-0.5 sm:grid-cols-2">{siteSummary(site).map((l) => <li key={l}>{l}</li>)}</ul>

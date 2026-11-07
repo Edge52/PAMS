@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { buildings, documents, floors } from "@/db/schema";
+import { buildings, documents, equipmentModels, floors } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, getCurrentUser, type CurrentUser } from "@/lib/auth/session";
 import { canViewDocumentsOf } from "@/lib/documents-access";
@@ -21,6 +21,12 @@ async function mayRead(me: CurrentUser, segments: string[], url: string): Promis
     if (!f) return false;
     const scope = await facilityScope(me);
     return scope === null || scope.includes(f.facilityId);
+  }
+  // Equipment 3D models (wave 17): catalogue data, readable by anyone who may see the assets.
+  if (segments[0] === "equipment_model") {
+    if (!can(me.role, "assets.view")) return false;
+    const [m] = await db.select({ id: equipmentModels.modelId }).from(equipmentModels).where(eq(equipmentModels.glbUrl, url)).limit(1);
+    return !!m;
   }
   const [entityType, idText] = segments;
   const entityId = Number(idText);

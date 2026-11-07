@@ -70,7 +70,12 @@ export type TwinAsset = {
   /** Real size in metres (length = long side) and turn on the plan in degrees clockwise (wave 7). */
   dims: { l: number; w: number; h: number };
   rot: number | null;
+  /** Key into TwinData.library (wave 17): its catalogue model's or type's clearance zones, connections and 3D file. */
+  lib?: string;
 };
+
+/** An equipment library entry (wave 17, src/lib/assets/equipment-library.ts) with its catalogue model's GLB file. */
+export type TwinLibrary = import("@/lib/assets/equipment-library").TwinLibrary;
 
 export type TwinData = {
   facility: { id: number; name: string; code: string; logo?: string | null; brandColor?: string | null };
@@ -95,6 +100,8 @@ export type TwinData = {
   flows?: TwinFlowData[];
   /** Equipment, furniture and fittings read from the drawings (wave 16, phase 2), plan units, turn in radians. */
   symbols?: TwinSymbol[];
+  /** Equipment library entries by key (wave 17): TwinAsset.lib points here. */
+  library?: Record<string, TwinLibrary>;
 };
 export type TwinSymbol = { floorId: number; roomId: number | null; kind: string; code: string | null; label: string; x: number; y: number; rot: number };
 

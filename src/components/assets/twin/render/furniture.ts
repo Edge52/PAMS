@@ -205,6 +205,25 @@ const BUILDERS: Record<Model, () => Part[]> = {
       box(0.5, 0.62, 1.6, 0, 0.31, 0.75, C.cream, 0.08), box(0.48, 0.08, 2.5, 0, 0.66, 0.35, "#5a6b7a", 0.03), box(0.44, 0.05, 2.1, 0, 0.72, 0.5, "#7d93a6", 0.02),
       box(0.3, 0.08, 0.2, 0, 0.74, 1.45, "#5a6b7a", 0.03)];
   },
+  // Closed-bore MRI (wave 17): magnet housing with a flared bore along z, patient table out of the front.
+  mri: () => {
+    const shell = new THREE.CylinderGeometry(1.05, 1.05, 1.7, 44); shell.rotateX(Math.PI / 2); shell.translate(0, 1.12, -1.1);
+    const flare = new THREE.TorusGeometry(0.42, 0.1, 12, 40); flare.translate(0, 1.12, -0.24);
+    return [box(2.1, 1.0, 1.7, 0, 0.5, -1.1, C.white, 0.2), paint(shell, C.white), paint(flare, "#dfe6ea"),
+      paint(new THREE.CylinderGeometry(0.36, 0.36, 1.74, 36).rotateX(Math.PI / 2).translate(0, 1.12, -1.1), "#3f4a55"),
+      box(1.9, 0.08, 0.04, 0, 1.95, -0.25, C.blue, 0.02), box(0.5, 0.3, 0.04, 0.72, 1.62, -0.24, C.screen, 0.02),
+      box(0.56, 0.7, 1.7, 0, 0.35, 0.95, C.white, 0.08), box(0.54, 0.08, 2.6, 0, 0.74, 0.5, "#6b8296", 0.03), box(0.46, 0.06, 2.2, 0, 0.8, 0.6, "#9fb2c2", 0.02)];
+  },
+  // Open (C-shaped) low-field MRI (wave 17): lower and upper pole plates on a back pillar, table between them.
+  "mri-open": () => [box(2.1, 0.75, 1.9, 0, 0.375, -0.75, C.white, 0.12), box(2.1, 0.55, 1.9, 0, 2.05, -0.75, C.white, 0.12),
+    box(0.9, 1.4, 0.55, 0, 1.2, -1.45, C.white, 0.08), cyl(0.75, 0.04, 0, 0.77, -0.65, "#c9d3da", 40), cyl(0.75, 0.04, 0, 1.77, -0.65, "#c9d3da", 40),
+    box(1.6, 0.06, 0.03, 0, 2.2, 0.21, C.blue, 0.02), box(0.56, 0.6, 1.4, 0, 0.3, 0.75, C.white, 0.08), box(0.54, 0.08, 2.4, 0, 0.84, 0.2, "#6b8296", 0.03)],
+  // Mobile C-arm (wave 17): base cart with castors, column, the C with tube and flat detector, handle.
+  carm: () => [box(0.8, 0.9, 1.0, 0, 0.5, 0.45, C.white, 0.08), ...[-0.32, 0.32].flatMap((x) => [...castor(x, 0.05, 0.05), ...castor(x, 0.85, 0.05)]),
+    box(0.3, 0.5, 0.3, 0, 1.15, 0.1, C.white, 0.05), box(0.22, 0.2, 0.7, 0, 1.3, -0.25, C.white, 0.04),
+    paint(new THREE.TorusGeometry(0.62, 0.06, 10, 36, Math.PI).rotateY(Math.PI / 2).rotateX(Math.PI / 2).translate(0, 1.0, -0.62), C.white),
+    box(0.3, 0.26, 0.3, 0, 0.42, -0.62, "#d8dee2", 0.05), box(0.42, 0.12, 0.42, 0, 1.6, -0.62, "#d8dee2", 0.04), box(0.36, 0.01, 0.36, 0, 1.53, -0.62, C.screen),
+    rod(0.02, 0.6, 0, 1.0, 0.98, C.steel)],
   // X-ray room: table on a pedestal, ceiling tube column and collimator, wall bucky stand.
   xray: () => [box(0.5, 0.62, 1.2, 0, 0.31, 0.1, C.cream, 0.05), box(0.8, 0.07, 2.1, 0, 0.66, 0, "#5a6b7a", 0.02), box(0.75, 0.03, 2.0, 0, 0.71, 0, C.cream, 0.01),
     cyl(0.07, 1.25, 0.15, 1.85, -0.25, C.steel, 12), box(0.3, 0.28, 0.4, 0.15, 1.15, -0.25, C.white, 0.04), box(0.22, 0.14, 0.22, 0.15, 0.95, -0.25, "#59606a", 0.02),

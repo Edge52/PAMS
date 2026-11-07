@@ -9,6 +9,7 @@ import { decodeView, describeView, encodeView, type ViewState } from "./view-sta
 import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { DropResult, PickResult, TwinScene, TwinStyle } from "./scene";
+import { CONN_COLORS, CONN_KINDS, CONN_LABELS, ZONE_COLORS, ZONE_KINDS, ZONE_LABELS } from "@/lib/assets/equipment-library";
 import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinAsset, type TwinData, type TwinFix, type TwinRoom } from "./types";
 import { CORE_LABELS, coreKind, deviceKind, interiorPoint, polygonArea, type Pt } from "./geometry";
 import { AVAILABLE, rankNearest, type Ranked } from "./nearest";
@@ -174,6 +175,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [confidenceTint, setConfidenceTint] = useState(false);
   // Rooms coloured by their room template check (wave 16, phase 4).
   const [templateTint, setTemplateTint] = useState(false);
+  // Clearance zones and connection points of the equipment on one floor (wave 17, equipment library).
+  const [libOverlay, setLibOverlay] = useState(false);
   const kitRules = useRef<KitRule[] | null>(null);
   const [scope, setScope] = useState<Scope>("room");
   const [assetList, setAssetList] = useState(data.assets);
@@ -440,6 +443,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => { if (ready) sceneRef.current?.setShowBasements(basements); }, [basements, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setFacade(facade); }, [facade, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setSolidWalls(solid); }, [solid, ready]);
+  useEffect(() => { if (ready) sceneRef.current?.setLibraryOverlay(libOverlay); }, [libOverlay, ready]);
   // Drawing confidence and presets are about exact rooms: drawn as blocks, never as a spreading glow.
   useEffect(() => { if (ready) sceneRef.current?.setHeatMode(confidenceTint || templateTint || preset ? "blocks" : heatMode); }, [heatMode, ready, confidenceTint, templateTint, preset]);
   useEffect(() => { if (ready) sceneRef.current?.setSection(sectionAxis || null, sectionAt); }, [sectionAxis, sectionAt, ready]);
@@ -1186,6 +1190,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           <span>Room templates
             {templateTint && <span className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">{(["short", "missing", "unknown", "ok"] as const).map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: TEMPLATE_COLORS[k] }} />{TEMPLATE_WORDS[k]}</span>)}</span>}
             <span className="block text-[11px] text-[#8fb6cc]">Each room against the <Link href="/facilities/room-standards" className="text-[#5fd6ff] hover:underline">template</Link> for its kind: size, services and equipment.</span></span></label>
+        <label className="flex items-start gap-1.5"><input type="checkbox" checked={libOverlay} onChange={(e) => setLibOverlay(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
+          <span>Clearance zones and connections
+            {libOverlay && <span className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">{ZONE_KINDS.map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: ZONE_COLORS[k] }} />{ZONE_LABELS[k]}</span>)}
+              {CONN_KINDS.map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-full" style={{ background: CONN_COLORS[k] }} />{CONN_LABELS[k]}</span>)}</span>}
+            <span className="block text-[11px] text-[#8fb6cc]">On a floor shown on its own, or the selected device&apos;s floor, from the <Link href="/catalogue/library" className="text-[#5fd6ff] hover:underline">equipment library</Link>.</span></span></label>
       </div>
       <div className="mb-3 flex items-center gap-2 text-xs">
         <button type="button" onClick={walking ? stopWalk : () => void startWalk()} aria-pressed={walking} className="twin-act" title="First person on the floor shown, kept to the walkable space (W)">{walking ? "Stop walking" : "Walk this floor"}</button>
@@ -1857,6 +1866,17 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             <dt className="text-[#8fb6cc]">Serial</dt><dd className="break-all font-mono">{selAsset.serial ?? "—"}</dd>
             <dt className="text-[#8fb6cc]">Criticality</dt><dd>{selAsset.criticality?.replace("_", " ").toLowerCase() ?? "—"}</dd>
           </dl>
+          {(() => {
+            const e = selAsset.lib ? data.library?.[selAsset.lib] : undefined; if (!e) return null;
+            return (
+              <div className="mt-1 border-t border-[#123a55] pt-1.5 text-[12px]">
+                <p className="font-semibold text-[#5fd6ff]">Equipment library{e.glb ? " · own 3D model" : ""}{e.custom ? "" : " · typical figures"}</p>
+                {e.zones.length > 0 && <p className="text-[#cfe6f3]">Clear: {e.zones.map((z) => `${z.name.toLowerCase()} ${z.depth} m${z.side === "all" ? " all round" : ` at the ${z.side}`}`).join(", ")}</p>}
+                {e.fringe && <p className="text-[#ffb3b3]">Fringe field (0.5 mT): {e.fringe.along} × {e.fringe.across} m from the centre</p>}
+                {e.connections.length > 0 && <p className="text-[#8fb6cc]">Connects: {e.connections.map((c) => c.label.toLowerCase()).join(", ")}</p>}
+              </div>
+            );
+          })()}
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Link href={`/assets/${selAsset.id}`} className="rounded-md bg-[#2fd3ff] px-3 py-1.5 text-sm font-semibold text-[#03121f] hover:bg-white">Open asset record</Link>
             {data.can.report && <Link href={`/assets/work-orders/new?assetId=${selAsset.id}`} className="twin-act text-[#ffb08a]">Report a fault</Link>}

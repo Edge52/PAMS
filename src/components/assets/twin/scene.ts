@@ -9,6 +9,9 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { glbToGeometry } from "./render/glb";
+import { CONN_COLORS, connPoint, fringePoly, ZONE_COLORS, zoneRect } from "@/lib/assets/equipment-library";
 import { deviceModel, symbolModel } from "./render/device-models";
 import { modelGeometry } from "./render/furniture";
 import { BUILTIN_KITS, placeKit, roomLook, type KitRule, type Model, type Placement } from "./render/kits";
@@ -67,9 +70,14 @@ function kindGeometry(k: DeviceKind): { geo: THREE.BufferGeometry; y: number; ri
 /** Ring size under a kind's simple shape. */
 function kindGeometryRing(k: DeviceKind): number { return k === "bed" ? 1.15 : k === "imaging" ? 1.6 : k === "ventilator" ? 0.6 : k === "pump" ? 0.45 : 0.55; }
 /** A near shape's geometry by key: "m:<model>" = a detailed render model (a copy; the cache stays shared), else a kind. */
+/** Catalogue models' own 3D files (wave 17), merged into one coloured geometry each, by URL. */
+const glbGeo = new Map<string, THREE.BufferGeometry>();
+
 function shapeGeometry(key: string): THREE.BufferGeometry {
+  if (key.startsWith("g:")) return glbGeo.get(key.slice(2))!.clone();
   return key.startsWith("m:") ? modelGeometry(key.slice(2) as Model).clone() : kindGeometry(key as DeviceKind).geo;
 }
+
 
 export type TwinStyle = "dark" | "light";
 /** Two looks: the glowing "digital twin" and a light, solid "architectural" one for reports and presentations. */
@@ -156,6 +164,9 @@ export class TwinScene {
   private floorGeo = new Map<number, FloorGeometry>();
   private shells = new Map<number, THREE.Group>();
   private wallH = new Map<number, number>();
+  /** Clearance zones and connection points of the devices on the floor shown on its own (wave 17). */
+  private zonesOn = false;
+  private zoneGroup: THREE.Group | null = null;
   private statusRings: THREE.InstancedMesh | null = null;         // near: a ring on the floor in the status colour
   private ringSize: number[] = [];
   private kindIndex = new Map<number, { kind: string; i: number }>();
@@ -319,6 +330,7 @@ export class TwinScene {
     if (this.disposed) return { rest: Promise.resolve() };
     this.layoutFloors();
     this.buildDevices();
+    void this.loadModels();
     this.buildLabels();
     this.frameAll(false);
     this.userMoved = false;
@@ -557,6 +569,9 @@ export class TwinScene {
   }
   /** The near shape of a device: its detailed model (wave 16) or its kind's simple shape. */
   private shapeKey(a: TwinAsset): string {
+    // The catalogue model's own 3D file (wave 17), once loaded.
+    const glb = this.detailed && a.lib ? this.data.library?.[a.lib]?.glb : null;
+    if (glb && glbGeo.has(glb)) return `g:${glb}`;
     return this.detailed ? `m:${deviceModel(a.typeCode, a.groupCode, a.categoryCode)}` : deviceKind(a.groupCode, a.categoryCode);
   }
 
@@ -746,6 +761,104 @@ export class TwinScene {
     for (const km of this.kindMeshes.values()) { km.mesh.instanceMatrix.needsUpdate = true; if (km.mesh.instanceColor) km.mesh.instanceColor.needsUpdate = true; }
     beamPos.needsUpdate = true; beamCol.needsUpdate = true;
     this.updateSelectionRing();
+    if (this.zonesOn) this.drawZones();
+  }
+
+  /** Load the catalogue models' own 3D files (GLB) the devices use; devices switch to them as they arrive. */
+  private async loadModels() {
+    const urls = [...new Set(Object.values(this.data.library ?? {}).map((l) => l.glb).filter((u): u is string => !!u && !glbGeo.has(u)))];
+    if (!urls.length) return;
+    const loader = new GLTFLoader();
+    let any = false;
+    for (const url of urls) {
+      try {
+        const gltf = await loader.loadAsync(url);
+        const g = glbToGeometry(gltf.scene);
+        if (g) { glbGeo.set(url, g); any = true; }
+      } catch (e) { console.warn("3D model file could not be read", url, e); }
+      if (this.disposed) return;
+    }
+    if (any && this.deviceMesh) { this.buildShapes(); this.applyNear(); this.positionDevices(); }
+  }
+
+  /** Clearance zones and connection points (wave 17) on the floor shown on its own. */
+  setLibraryOverlay(on: boolean) { this.zonesOn = on; this.drawZones(); }
+
+  private drawZones() {
+    if (this.zoneGroup) {
+      this.scene.remove(this.zoneGroup);
+      this.zoneGroup.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); (m.material as THREE.Material | undefined)?.dispose?.(); });
+      this.zoneGroup = null;
+    }
+    const lib = this.data.library;
+    // The floor shown on its own, else the selected device's floor.
+    const sel = this.selected?.kind === "asset" ? this.devicePos.get(this.selected.id)?.floorId : undefined;
+    const floorId = this.isolated ?? sel;
+    if (!this.zonesOn || floorId == null || !lib) return;
+    const floor = this.floorById.get(floorId); if (!floor) return;
+    const y0 = this.floorY(floor);
+    const fills: THREE.BufferGeometry[] = [], lines: number[] = [], lineCol: number[] = [], pins: { p: THREE.Vector3; c: THREE.Color }[] = [];
+    const tmp = new THREE.Color();
+    for (const id of this.deviceIds) {
+      const a = this.assetsById.get(id)!, d = this.devicePos.get(id);
+      const e = a.lib ? lib[a.lib] : undefined;
+      if (!e || !d || d.floorId !== floorId || !this.visibleAssets.has(id)) continue;
+      const ki = this.kindIndex.get(id);
+      const n = ki ? this.nominalOf(ki.kind) : new THREE.Vector3(1, 1, 2);
+      const longX = n.x >= n.z;
+      const ang = a.rot != null ? -a.rot * Math.PI / 180 : (id % 4) * Math.PI / 2;
+      const cs = Math.cos(ang), sn = Math.sin(ang);
+      // Device frame (u along its length, v across) → world x, z.
+      const W = (u: number, v: number): [number, number] => { const [lx, lz] = longX ? [u, v] : [v, u]; return [d.x + lx * cs + lz * sn, d.z - lx * sn + lz * cs]; };
+      const { l, w } = a.dims;
+      const fill = (pts: [number, number][], color: string, y: number, hole?: [number, number][]) => {
+        const shape = new THREE.Shape(pts.map(([u, v]) => { const [x, z] = W(u, v); return new THREE.Vector2(x, z); }));
+        if (hole) shape.holes.push(new THREE.Path(hole.map(([u, v]) => { const [x, z] = W(u, v); return new THREE.Vector2(x, z); })));
+        const g = new THREE.ShapeGeometry(shape); g.rotateX(Math.PI / 2);
+        const pos = g.getAttribute("position");
+        for (let i = 0; i < pos.count; i++) pos.setY(i, y);
+        const ng = g.toNonIndexed(); g.dispose();
+        tmp.set(color); const col = new Float32Array(ng.getAttribute("position").count * 3);
+        for (let i = 0; i < col.length; i += 3) { col[i] = tmp.r; col[i + 1] = tmp.g; col[i + 2] = tmp.b; }
+        ng.setAttribute("color", new THREE.BufferAttribute(col, 3)); ng.deleteAttribute("normal"); ng.deleteAttribute("uv");
+        fills.push(ng);
+        for (let i = 0; i < pts.length; i++) {
+          const [ax, az] = W(...pts[i]), [bx, bz] = W(...pts[(i + 1) % pts.length]);
+          lines.push(ax, y + 0.005, az, bx, y + 0.005, bz); lineCol.push(tmp.r, tmp.g, tmp.b, tmp.r, tmp.g, tmp.b);
+        }
+      };
+      const rect = (r: { u0: number; u1: number; v0: number; v1: number }): [number, number][] => [[r.u0, r.v0], [r.u1, r.v0], [r.u1, r.v1], [r.u0, r.v1]];
+      const foot = rect({ u0: -l / 2, u1: l / 2, v0: -w / 2, v1: w / 2 });
+      if (e.fringe) fill(fringePoly(e.fringe), ZONE_COLORS.safety, y0 + 0.02);
+      e.zones.forEach((z, k) => fill(rect(zoneRect(z, l, w)), ZONE_COLORS[z.kind], y0 + 0.03 + k * 0.002, z.side === "all" ? foot : undefined));
+      for (const c of e.connections) {
+        const [u, v] = connPoint(c, l, w); const [x, z] = W(u, v);
+        pins.push({ p: new THREE.Vector3(x, y0 + Math.max(0.15, c.height), z), c: new THREE.Color(CONN_COLORS[c.kind]) });
+        tmp.set(CONN_COLORS[c.kind]);
+        lines.push(x, y0 + 0.03, z, x, y0 + Math.max(0.15, c.height), z); lineCol.push(tmp.r, tmp.g, tmp.b, tmp.r, tmp.g, tmp.b);
+      }
+    }
+    if (!fills.length && !pins.length) return;
+    const g = new THREE.Group(); g.name = "library-overlay";
+    if (fills.length) {
+      const merged = mergeGeometries(fills, false); for (const f of fills) f.dispose();
+      if (merged) {
+        const m = new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: this.style === "light" ? 0.38 : 0.3, side: THREE.DoubleSide, depthWrite: false }));
+        m.renderOrder = 4; g.add(m);
+      }
+    }
+    if (lines.length) {
+      const lg = new THREE.BufferGeometry(); lg.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3)); lg.setAttribute("color", new THREE.Float32BufferAttribute(lineCol, 3));
+      const ls = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false })); ls.renderOrder = 4; g.add(ls);
+    }
+    if (pins.length) {
+      const im = new THREE.InstancedMesh(new THREE.SphereGeometry(0.07, 12, 8), new THREE.MeshBasicMaterial({ color: "#ffffff" }), pins.length);
+      const m4 = new THREE.Matrix4();
+      pins.forEach((pin, i) => { im.setMatrixAt(i, m4.makeTranslation(pin.p.x, pin.p.y, pin.p.z)); im.setColorAt(i, pin.c); });
+      im.renderOrder = 6; g.add(im);
+    }
+    this.zoneGroup = g;
+    this.scene.add(g);
   }
 
   /** Per frame: only the pulsing (faulty) devices change size. */
@@ -827,6 +940,7 @@ export class TwinScene {
       }
     }
     this.applyWallHeights();
+    if (this.zonesOn) this.drawZones();
     if (this.noteSpots.length) this.drawNotes(); // only on floors shown
     this.applyFurniture();
   }
@@ -1888,6 +2002,7 @@ export class TwinScene {
 
   /** A glowing outline around the selected room (or the selected device's room): a line and a low translucent fence. */
   private drawSelection() {
+    if (this.zonesOn && this.isolated == null) this.drawZones();
     if (this.selOutline) {
       this.scene.remove(this.selOutline);
       this.selOutline.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose(); (m.material as THREE.Material | undefined)?.dispose(); });
@@ -1910,7 +2025,7 @@ export class TwinScene {
       fence.push(a.x, a.y, a.z, b.x, b.y, b.z, b.x, b.y + h, b.z, a.x, a.y, a.z, b.x, b.y + h, b.z, a.x, a.y + h, a.z);
     }
     const fg = new THREE.BufferGeometry(); fg.setAttribute("position", new THREE.Float32BufferAttribute(fence, 3));
-    const wall = new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: this.style === "light" ? 0.28 : 0.22, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }));
+    const wall = new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: this.style === "light" ? 0.38 : 0.3, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }));
     wall.renderOrder = 8;
     group.add(line, wall);
     group.visible = this.floorShown(f.id);

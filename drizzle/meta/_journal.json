@@ -260,6 +260,13 @@
       "when": 1794069800570,
       "tag": "0036_wave16_drawing_symbols",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794075075821,
+      "tag": "0037_equipment_models",
+      "breakpoints": true
     }
   ]
 }

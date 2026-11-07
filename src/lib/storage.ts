@@ -35,9 +35,10 @@ export const ALLOWED_FILES: Record<string, FileKind> = {
   ".dxf": { mime: "application/dxf", inline: false },
   ".msg": { mime: "application/vnd.ms-outlook", inline: false },
   ".eml": { mime: "message/rfc822", inline: false },
+  ".glb": { mime: "model/gltf-binary", inline: false }, // equipment 3D models (wave 17)
 };
 
-export const ALLOWED_EXTENSIONS_LABEL = "PDF, images (PNG, JPEG, WebP, GIF), Word, Excel, PowerPoint, CSV, text, ZIP, DWG/DXF or email files";
+export const ALLOWED_EXTENSIONS_LABEL = "PDF, images (PNG, JPEG, WebP, GIF), Word, Excel, PowerPoint, CSV, text, ZIP, DWG/DXF, email or GLB files";
 
 export function fileKind(name: string): FileKind | null {
   return ALLOWED_FILES[path.extname(name).toLowerCase()] ?? null;

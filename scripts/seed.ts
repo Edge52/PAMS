@@ -123,6 +123,10 @@ export async function seedReference(d: DB) {
   const { backfillCadSources } = await import("../src/lib/assets/cad-sources");
   const n = await backfillCadSources(d, path.join(root, "seed-data", "cad"));
   if (n) console.log(`drawing sources: ${n} rooms recorded`);
+  // Equipment 3D library (wave 17): the first set of imaging models in the catalogue, with typical site data.
+  const { ensureLibraryModels } = await import("../src/lib/assets/equipment-library-seed");
+  const lib = await ensureLibraryModels(d);
+  if (lib.models || lib.site) console.log(`equipment library: ${lib.models} models, ${lib.site} with typical site data`);
 }
 
 async function resetAll(d: DB) {

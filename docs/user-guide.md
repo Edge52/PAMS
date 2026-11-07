@@ -238,6 +238,16 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 
 ---
 
+## Equipment 3D library
+
+- **Catalogue › 3D library** lists the models drawn in 3D: their clear zones, connection points, site data and 3D
+  file. **Edit** a model to change its zones (`name, kind, side, depth`) and connections (`kind, name, along, across,
+  height`), or upload its own **.glb** file (from the maker's BIM object, SketchUp or Blender). Each model's page
+  links here too.
+- The figures are typical until you enter the maker's site planning guide; the list says which are typical.
+- In 3D, **View › Clearance zones and connections** shows them on the floor shown on its own (or the selected
+  device's floor).
+
 ## 3D view in two minutes
 
 - **Imaging** and **ICU** (top bar): every imaging or ICU room tinted and framed, the rest dimmed, with a summary of

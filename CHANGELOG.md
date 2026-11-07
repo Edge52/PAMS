@@ -1,5 +1,17 @@
 # Changelog
 
+## Wave 17 — on branch `wave-17`, not merged yet
+
+Migration `0037`. Update with `git pull` and `npm run demo`; your data is kept.
+
+- **Equipment 3D library** (Catalogue › 3D library, roadmap phase 5): catalogue models drawn in 3D with the clear
+  space each needs (patient transfer, staff, service, the MRI fringe field) and where its services connect (power,
+  data, chilled water, quench, medical gases, drain). Typical figures by type, editable per model; a model's own 3D
+  file (.glb, up to 25 MB) replaces the built-in shape in the 3D view. New built-in shapes: closed MRI, open MRI and
+  C-arm. The first set — MRI, CT, X-ray and C-arm models from Siemens Healthineers, GE HealthCare, Philips and
+  Wandong (i_Open 0.4T) — is added to the catalogue with typical site data, marked as typical. 3D view › View ›
+  **Clearance zones and connections** draws them on a floor; a selected device lists them.
+
 ## Wave 16 — merged 7 Nov 2026
 
 Migrations `0034`–`0036`. Update with `git pull` and `npm run demo`; your data is kept.

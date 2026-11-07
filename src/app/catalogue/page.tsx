@@ -48,6 +48,7 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
         description={<>{formatNumber(levelCount(3))} device types in {levelCount(1)} categories and {levelCount(2)} groups. {formatNumber(typesInUse)} types are in use in the register.</>}
         actions={<>
           <LinkButton href="/catalogue/models">Makes and models</LinkButton>
+          <LinkButton href="/catalogue/library">3D library</LinkButton>
           {can(me.role, "assets.edit") && <LinkButton href="/assets/new">Register an asset</LinkButton>}
         </>} />
       <form role="search" className="mb-4 flex flex-wrap items-center gap-2" action="/catalogue">

@@ -1562,6 +1562,20 @@ export const roomStandards = pgTable("room_standards", {
   updatedAt: updatedAt(),
 });
 
+/**
+ * Equipment 3D library (wave 17): a catalogue model's own 3D file (GLB), clearance zones and connection points.
+ * Null zones/connections = the library's typical ones for its type (seed-data/equipment-library.json).
+ */
+export const equipmentModels = pgTable("equipment_models", {
+  modelId: integer("model_id").primaryKey().references(() => deviceModels.id, { onDelete: "cascade" }),
+  glbUrl: text("glb_url"),
+  glbName: text("glb_name"),
+  zones: jsonb("zones").$type<{ name: string; kind: "patient" | "staff" | "service" | "safety"; side: "all" | "front" | "back" | "head" | "foot"; depth: number }[]>(),
+  connections: jsonb("connections").$type<{ kind: "power" | "data" | "water" | "gas" | "quench" | "drain" | "air"; label: string; along: number; across: number; height: number }[]>(),
+  updatedByName: text("updated_by_name"),
+  updatedAt: updatedAt(),
+});
+
 /** Commissioning of a new building or wing (wave 14): rooms handed over, equipment installed and accepted, week by week. */
 export const commissioningPlans = pgTable("commissioning_plans", {
   id: serial("id").primaryKey(),

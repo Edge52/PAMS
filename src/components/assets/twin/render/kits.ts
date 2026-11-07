@@ -19,7 +19,7 @@ export const FINISH_COLORS: Record<Finish, string> = {
 /** A piece of furniture or equipment the renderer knows how to draw (see furniture.ts). */
 export type Model =
   | "bed" | "bedside" | "chair" | "armchair" | "sofa" | "desk" | "workstation" | "counter" | "shelving" | "cabinet" | "wc" | "basin"
-  | "shower" | "or-table" | "or-light" | "anaesthesia" | "trolley" | "incubator" | "cot" | "couch" | "dental-chair" | "ct" | "xray"
+  | "shower" | "or-table" | "or-light" | "anaesthesia" | "trolley" | "incubator" | "cot" | "couch" | "dental-chair" | "ct" | "xray" | "mri" | "mri-open" | "carm"
   | "waiting-row" | "meeting-table" | "dining-set" | "lab-bench" | "fridge" | "monitor" | "ventilator" | "iv-pole" | "plant" | "washer" | "person";
 
 /** Footprint (width along the wall × depth into the room, metres) and how the item is placed. */
@@ -31,7 +31,8 @@ export const MODEL_SIZE: Record<Model, { w: number; d: number; place: "wall" | "
   shower: { w: 0.9, d: 0.9, place: "wall" }, "or-table": { w: 0.6, d: 2.1, place: "centre" }, "or-light": { w: 1.4, d: 1.4, place: "free" },
   anaesthesia: { w: 0.75, d: 0.65, place: "free" }, trolley: { w: 0.9, d: 0.55, place: "wall" }, incubator: { w: 0.65, d: 1.05, place: "wall" },
   cot: { w: 0.55, d: 0.9, place: "wall" }, couch: { w: 0.7, d: 1.9, place: "wall" }, "dental-chair": { w: 0.8, d: 1.9, place: "centre" },
-  ct: { w: 2.2, d: 4.6, place: "centre" }, xray: { w: 1.0, d: 2.2, place: "centre" }, "waiting-row": { w: 2.0, d: 0.65, place: "wall" },
+  ct: { w: 2.2, d: 4.6, place: "centre" }, mri: { w: 2.2, d: 4.4, place: "centre" }, "mri-open": { w: 2.2, d: 3.6, place: "centre" },
+  carm: { w: 0.9, d: 2.0, place: "free" }, xray: { w: 1.0, d: 2.2, place: "centre" }, "waiting-row": { w: 2.0, d: 0.65, place: "wall" },
   "meeting-table": { w: 1.2, d: 2.4, place: "centre" }, "dining-set": { w: 1.6, d: 1.6, place: "centre" }, "lab-bench": { w: 2.4, d: 0.75, place: "wall" },
   fridge: { w: 0.7, d: 0.7, place: "wall" }, monitor: { w: 0.5, d: 0.4, place: "free" }, ventilator: { w: 0.55, d: 0.55, place: "free" },
   "iv-pole": { w: 0.45, d: 0.45, place: "free" }, plant: { w: 0.6, d: 0.6, place: "wall" }, washer: { w: 0.8, d: 0.8, place: "wall" },
