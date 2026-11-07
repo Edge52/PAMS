@@ -7,7 +7,7 @@ import { PrintButton } from "@/components/reports/print";
 import { ReportPrintStyles } from "@/components/reports/print-styles";
 import { roomLook } from "@/components/assets/twin/render/kits";
 import { loadKits } from "@/lib/assets/room-kits";
-import { checkRoom, specLines, standardFor } from "@/lib/assets/room-standards";
+import { checkRoom, GAS_LABELS, GASES, specLines, standardFor } from "@/lib/assets/room-standards";
 import { loadStandards } from "@/lib/assets/room-standards-server";
 import { plansForFacility, planVsInstalled } from "@/lib/assets/plan-installed-server";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
@@ -78,6 +78,7 @@ export default async function RoomSheet({ params }: { params: Promise<{ id: stri
           {row("Power", s?.powerKva != null ? `${s.powerKva} kVA` : "not surveyed")}
           {row("Chilled water · quench pipe", `${yesNo(s?.chilledWater)} · ${yesNo(s?.quenchPipe)}`)}
           {row("RF shielding · lead shielding", `${yesNo(s?.rfShield)} · ${yesNo(s?.leadLined)}`)}
+          {row("Medical gas outlets", s?.gases && Object.keys(s.gases).length ? GASES.filter((g) => s.gases?.[g] != null).map((g) => `${GAS_LABELS[g]} ${s.gases![g]}`).join(", ") : "not surveyed")}
         </tbody></table>
         <h2 className="mb-1 font-semibold">Standard for this kind of room</h2>
         {!std ? <p className="mb-4 text-muted">No room standard matches this room&apos;s name or type. <Link href="/facilities/room-standards" className="no-print text-primary hover:underline">Room standards</Link></p> : (<>

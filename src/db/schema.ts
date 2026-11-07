@@ -230,11 +230,15 @@ export const rooms = pgTable("rooms", {
   doorWidthM: real("door_width_m"),
   doorHeightM: real("door_height_m"),
   floorLoadKgM2: real("floor_load_kg_m2"),
-  services: jsonb("services").$type<{ chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number }>(),
+  services: jsonb("services").$type<RoomServices>(),
 }, (t) => [
   uniqueIndex("rooms_floor_code_uq").on(t.floorId, t.code),
   index("rooms_department_idx").on(t.departmentId),
 ]);
+
+/** Services surveyed in a room (wave 9; medical gas outlets wave 15). A missing key = not surveyed. Gas outlets are
+ *  counted for the whole room, by gas code (O2, VAC, AIR, AIR7, N2O, AGSS; see src/lib/assets/room-standards.ts). */
+export type RoomServices = { chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number; gases?: Record<string, number> };
 
 /* ───────────────────────── Device taxonomy ───────────────────────── */
 

@@ -3,7 +3,7 @@
  * room follows, and how a room's survey compares with it. Pure. The built-in set is seed-data/room-standards.json;
  * editing (Hospital › Room standards) makes a copy in the room_standards table, as room kits do.
  */
-import type { RoomStandardSpec } from "@/db/schema";
+import type { RoomServices, RoomStandardSpec } from "@/db/schema";
 import json from "../../../seed-data/room-standards.json";
 
 export type { RoomStandardSpec };
@@ -73,7 +73,7 @@ export type RoomSurvey = {
   /** Area from the drawings, m², and beds in the room (areas are per bed space when there is more than one). */
   areaM2: number; beds: number;
   ceilingM: number | null; doorWidthM: number | null; floorLoadKgM2: number | null;
-  services: { chilledWater?: boolean; quenchPipe?: boolean; rfShield?: boolean; leadLined?: boolean; powerKva?: number } | null;
+  services: RoomServices | null;
 };
 export type CheckRow = { label: string; need: string; have: string; state: "ok" | "short" | "unknown" };
 
@@ -93,6 +93,12 @@ export function checkRoom(s: RoomStandardSpec, r: RoomSurvey): CheckRow[] {
     if (!need) return;
     out.push({ label, need: "Yes", have: have == null ? "not surveyed" : have ? "Yes" : "No", state: have == null ? "unknown" : have ? "ok" : "short" });
   };
+  // Medical gas outlets (wave 15): the standard counts per bed space when the room has beds, as areas do.
+  for (const g of GASES) {
+    const per = s.gases?.[g] ?? 0; if (per <= 0) continue;
+    const need = per * Math.max(1, r.beds), have = r.services?.gases?.[g];
+    out.push({ label: `${GAS_LABELS[g]} outlets`, need: perBed ? `≥ ${need} (${per} a bed)` : `≥ ${need}`, have: have == null ? "not surveyed" : String(have), state: have == null ? "unknown" : have >= need ? "ok" : "short" });
+  }
   flag("RF shielding", s.rfShield, r.services?.rfShield);
   flag("Lead lining", s.leadLined, r.services?.leadLined);
   flag("Chilled water", s.chilledWater, r.services?.chilledWater);
