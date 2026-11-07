@@ -267,6 +267,13 @@
       "when": 1794075075821,
       "tag": "0037_equipment_models",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794077033727,
+      "tag": "0038_space_snapshots",
+      "breakpoints": true
     }
   ]
 }

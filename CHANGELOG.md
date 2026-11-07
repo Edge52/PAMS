@@ -11,6 +11,11 @@ Migration `0037`. Update with `git pull` and `npm run demo`; your data is kept.
   C-arm. The first set — MRI, CT, X-ray and C-arm models from Siemens Healthineers, GE HealthCare, Philips and
   Wandong (i_Open 0.4T) — is added to the catalogue with typical site data, marked as typical. 3D view › View ›
   **Clearance zones and connections** draws them on a floor; a selected device lists them.
+- **Space planning** (Facilities › hospital › Space planning, roadmap phase 6): gross internal area traced from the
+  rooms, net, circulation and cores per floor, with net-to-gross and circulation share; per department the net area,
+  largest uses, beds, devices, equipment density (devices per 100 m²) and bed places against the room templates'
+  area per bed, with the rooms that hold more beds than their area allows. **Snapshots** save the schedule to compare
+  before and after a change (or two snapshots). 3D view › Problem layer › **Equipment density**.
 
 ## Wave 16 — merged 7 Nov 2026
 

@@ -19,7 +19,7 @@ export type LiveMetrics = {
   recall: boolean;
 };
 
-export const LAYERS = ["department", "faults", "ppm", "life", "downtime", "value", "recalls"] as const;
+export const LAYERS = ["department", "faults", "ppm", "life", "downtime", "value", "recalls", "density"] as const;
 export type LayerId = (typeof LAYERS)[number];
 
 export const LAYER_INFO: Record<LayerId, { label: string; unit: (n: number) => string; help: string }> = {
@@ -30,6 +30,7 @@ export const LAYER_INFO: Record<LayerId, { label: string; unit: (n: number) => s
   downtime: { label: "Downtime (12 months)", unit: (n) => fmtHours(n), help: "Hours devices were out of use in the last 12 months." },
   value: { label: "Equipment value", unit: (n) => fmtEgp(n), help: "Purchase value of the equipment in each room (EGP)." },
   recalls: { label: "Open recalls", unit: (n) => `${n} device${n === 1 ? "" : "s"}`, help: "Devices on an open recall or safety notice." },
+  density: { label: "Equipment density", unit: (n) => `${n.toFixed(1)} per 10 m²`, help: "Devices per 10 m² of floor area (wave 17, space planning)." },
 };
 
 function fmtHours(h: number) { return h >= 48 ? `${Math.round(h / 24)} days` : `${Math.round(h)} h`; }
@@ -48,6 +49,7 @@ export function deviceValue(layer: LayerId, m: LiveMetrics): number {
     case "downtime": return m.downtimeHours;
     case "value": return m.valueEgp;
     case "recalls": return m.recall ? 1 : 0;
+    case "density": return 1;
     default: return 0;
   }
 }
@@ -60,9 +62,10 @@ export type Scope = "room" | "department";
  */
 export function roomValues(
   layer: LayerId, scope: Scope,
-  rooms: { id: number; departmentId: number | null }[],
+  rooms: { id: number; departmentId: number | null; areaM2?: number }[],
   devices: { roomId: number | null; metrics: LiveMetrics | undefined }[],
 ): Map<number, number> {
+  if (layer === "density") return densityValues(scope, rooms, devices);
   const byRoom = new Map<number, number>();
   if (layer === "department") return byRoom;
   for (const d of devices) {
@@ -77,6 +80,24 @@ export function roomValues(
   for (const r of rooms) {
     const v = r.departmentId != null ? byDept.get(r.departmentId) ?? 0 : byRoom.get(r.id) ?? 0;
     if (v) out.set(r.id, v);
+  }
+  return out;
+}
+
+/** Devices per 10 m² of a room (or of its department's rooms); rooms without an area are left out. */
+function densityValues(scope: Scope, rooms: { id: number; departmentId: number | null; areaM2?: number }[], devices: { roomId: number | null; metrics: LiveMetrics | undefined }[]) {
+  const n = new Map<number, number>();
+  for (const d of devices) if (d.roomId != null && d.metrics?.status !== "DISPOSED") n.set(d.roomId, (n.get(d.roomId) ?? 0) + 1);
+  const out = new Map<number, number>();
+  if (scope === "room") {
+    for (const r of rooms) { const c = n.get(r.id) ?? 0; if (c && r.areaM2 && r.areaM2 > 0.5) out.set(r.id, (c / r.areaM2) * 10); }
+    return out;
+  }
+  const dep = new Map<number, { c: number; a: number }>();
+  for (const r of rooms) if (r.departmentId != null && r.areaM2) { const x = dep.get(r.departmentId) ?? { c: 0, a: 0 }; x.c += n.get(r.id) ?? 0; x.a += r.areaM2; dep.set(r.departmentId, x); }
+  for (const r of rooms) {
+    if (r.departmentId != null) { const x = dep.get(r.departmentId); if (x && x.c && x.a > 0.5) out.set(r.id, (x.c / x.a) * 10); }
+    else { const c = n.get(r.id) ?? 0; if (c && r.areaM2 && r.areaM2 > 0.5) out.set(r.id, (c / r.areaM2) * 10); }
   }
   return out;
 }

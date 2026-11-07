@@ -248,6 +248,14 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - In 3D, **View › Clearance zones and connections** shows them on the floor shown on its own (or the selected
   device's floor).
 
+## Space planning
+
+- **Facilities › hospital › Space planning**: areas per floor (gross, net, circulation, cores, net-to-gross) and per
+  department (net area, largest uses, beds, devices per 100 m², bed places against the room templates).
+- Rooms with more beds than their area allows are listed with links to their data sheets.
+- **Save a snapshot** before a change; afterwards **Compare with now** (or pick another snapshot as *after*).
+- In 3D, Problem layer › **Equipment density** colours rooms (or departments) by devices per 10 m².
+
 ## 3D view in two minutes
 
 - **Imaging** and **ICU** (top bar): every imaging or ICU room tinted and framed, the rest dimmed, with a summary of

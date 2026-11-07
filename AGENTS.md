@@ -369,4 +369,8 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   model's long axis, v across, same turn as the device), `loadModels` (GLTFLoader → `render/glb.ts` `glbToGeometry`,
   instanced under key `g:<url>`). GLB files: `.glb` allowed in storage, folder `equipment_model/<modelId>`, served to
   `assets.view` when a library row has that URL. Page `/catalogue/library` (+ actions, `catalogue.edit`).
+- **Space planning** (migration `0038`, table `space_snapshots`): pure `src/lib/assets/space-planning.ts`
+  (`grossArea` raster 0.5 m with wall gaps closed, `spaceSchedule`, `toSnapshot`, `compareSchedules`), server
+  `facilitySpace` (rooms in metres, devices per room, template `minAreaM2`, cores by `coreKind`). Page
+  `/facilities/[id]/space` + actions (`facilities.edit`). Layer `density` in `twin/layers.ts` (needs room `areaM2`).
 

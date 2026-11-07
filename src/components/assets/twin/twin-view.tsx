@@ -311,7 +311,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   }, [live, ready, replayed]);
 
   // Problem layer → room colours.
-  const layerValues = useMemo(() => roomValues(layer, scope, data.rooms, placed.map((a) => ({ roomId: a.roomId, metrics: live.get(a.id) }))), [layer, scope, data.rooms, placed, live]);
+  // Room areas in m² (equipment density layer, wave 17).
+  const roomAreas = useMemo(() => {
+    const upm = new Map(data.floors.map((f) => [f.id, f.unitsPerMetre || 10]));
+    return data.rooms.map((r) => ({ id: r.id, departmentId: r.departmentId, areaM2: r.type === "CORRIDOR" ? 0 : polygonArea(r.poly) / (upm.get(r.floorId) ?? 10) ** 2 }));
+  }, [data.rooms, data.floors]);
+  const layerValues = useMemo(() => roomValues(layer, scope, roomAreas, placed.map((a) => ({ roomId: a.roomId, metrics: live.get(a.id) }))), [layer, scope, roomAreas, placed, live]);
   const legend = useMemo(() => legendFor(layer, scope === "department" ? [...new Map(data.rooms.filter((r) => layerValues.has(r.id)).map((r) => [r.departmentId ?? -r.id, layerValues.get(r.id)!])).values()] : [...layerValues.values()]), [layer, scope, layerValues, data.rooms]);
   // Plan vs installed: load the chosen BOQ's comparison.
   useEffect(() => {

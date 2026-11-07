@@ -59,6 +59,7 @@ export default async function FacilityPage({ params, searchParams }: { params: P
           <LinkButton href={`/assets/map?facilityId=${fac.id}`} variant="primary">Open floor map</LinkButton>
           <LinkButton href={`/assets?facilityId=${fac.id}`}>Asset register</LinkButton>
           <LinkButton href={`/facilities/${fac.id}/drawing-quality`} variant="ghost">Drawing quality</LinkButton>
+          <LinkButton href={`/facilities/${fac.id}/space`} variant="ghost">Space planning</LinkButton>
           {canEdit && <LinkButton href={`/facilities/${fac.id}/drawings`} variant="ghost">Update drawings</LinkButton>}
         </>}
       />

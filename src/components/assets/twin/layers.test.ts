@@ -49,3 +49,15 @@ describe("problem layers", () => {
     expect(roomValues("department", "room", rooms, [{ roomId: 1, metrics: m({ openJobs: 1 }) }]).size).toBe(0);
   });
 });
+
+describe("equipment density layer (wave 17)", () => {
+  it("counts devices per 10 m² of a room, or of its department", async () => {
+    const { roomValues } = await import("./layers");
+    const m = { status: "IN_SERVICE", openJobs: 0, overduePpm: false, beyondLife: false, downtimeHours: 0, valueEgp: 0, recall: false };
+    const rooms = [{ id: 1, departmentId: 1, areaM2: 20 }, { id: 2, departmentId: 1, areaM2: 30 }, { id: 3, departmentId: null, areaM2: 0 }];
+    const devs = [{ roomId: 1, metrics: m }, { roomId: 1, metrics: m }, { roomId: 2, metrics: m }, { roomId: 3, metrics: m }];
+    const byRoom = roomValues("density", "room", rooms, devs);
+    expect(byRoom.get(1)).toBeCloseTo(1); expect(byRoom.get(2)).toBeCloseTo(1 / 3); expect(byRoom.has(3)).toBe(false);
+    expect(roomValues("density", "department", rooms, devs).get(2)).toBeCloseTo(0.6);
+  });
+});

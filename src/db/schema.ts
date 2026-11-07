@@ -1576,6 +1576,17 @@ export const equipmentModels = pgTable("equipment_models", {
   updatedAt: updatedAt(),
 });
 
+/** Space planning snapshots (wave 17): a hospital's area schedule saved under a name, to compare before and after. */
+export const spaceSnapshots = pgTable("space_snapshots", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  /** SnapshotData in src/lib/assets/space-planning.ts. */
+  data: jsonb("data").$type<Record<string, unknown>>().notNull(),
+  createdByName: text("created_by_name"),
+  createdAt: createdAt(),
+}, (t) => [index("space_snapshots_facility_idx").on(t.facilityId)]);
+
 /** Commissioning of a new building or wing (wave 14): rooms handed over, equipment installed and accepted, week by week. */
 export const commissioningPlans = pgTable("commissioning_plans", {
   id: serial("id").primaryKey(),
