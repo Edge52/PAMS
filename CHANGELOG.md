@@ -2,7 +2,7 @@
 
 ## Wave 16 — on branch `wave-16`, not merged yet
 
-Migration `0034`. Update with `git pull` and `npm run demo`; your data is kept.
+Migrations `0034`–`0035`. Update with `git pull` and `npm run demo`; your data is kept.
 
 - **Imaging and ICU presets** (3D view, top bar): one click tints every imaging (or ICU) room across the hospital,
   dims the rest, lights up their equipment and frames the camera on them; a floor shown on its own when they are all
@@ -13,6 +13,15 @@ Migration `0034`. Update with `git pull` and `npm run demo`; your data is kept.
 - **Detailed models in the live 3D view**: close up, devices are drawn with the detailed render models (beds, CT,
   X-ray, ventilators, incubators, theatre tables…), chosen by catalogue code; **Furniture** (illustrative room kits)
   appears on a floor shown on its own. Both can be switched off under View. Renders now pick models the same way.
+- **Drawing quality** (Facilities › hospital › Drawing quality, roadmap phase 1): every floor's drawing checked — wall,
+  door, glazing and column layers found; how each room outline was made (closed by walls, split from an open area, no
+  outline found, drawn in the app); overlapping rooms; rooms under 1 m²; a scale that differs from the other floors;
+  how well floors line up; floors older than the rest; rooms no door leads to. A score out of 100 per floor, the
+  issues with their rooms, the source file, import date and a revision you can set.
+- **Where each room came from**: room data sheets show the drawing, revision, how the outline was made and its
+  confidence: *from the drawing*, *assumed* or *verified on site* (**Mark as verified on site**; a re-imported outline
+  that changes loses the mark). Imports now record this; existing hospitals are filled in from their building files on
+  the next start. 3D view › View › **Drawing confidence** colours assumed, guessed and verified rooms.
 
 ## Wave 15 — merged 7 Nov 2026
 

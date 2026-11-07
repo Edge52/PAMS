@@ -177,6 +177,10 @@ export const floorCad = pgTable("floor_cad", {
   glass: jsonb("glass").$type<number[]>(),
   columns: jsonb("columns").$type<number[]>(),
   importedAt: createdAt(),
+  /** How well this floor lined up with the reference floor on import (wave 16): lift labels used, residual error (mm). */
+  alignment: jsonb("alignment").$type<{ lifts: number; residualMm: number }>(),
+  /** Drawing revision as the hospital names it (e.g. "Rev C, 2026-05"), set on the Drawing quality page. */
+  revision: text("revision"),
 });
 
 /** Department types are the BOQ planning vocabulary (ICU, OR, ER, RAD...). */
@@ -231,6 +235,13 @@ export const rooms = pgTable("rooms", {
   doorHeightM: real("door_height_m"),
   floorLoadKgM2: real("floor_load_kg_m2"),
   services: jsonb("services").$type<RoomServices>(),
+  /** Where the outline came from (wave 16): "walls" = closed by walls in the drawing, "split" = an open area shared
+   *  with other labels and split between them, "fallback" = no outline found, a box around the label, "drawn" = drawn
+   *  in the app. Null = not recorded (rooms imported before wave 16 and not matched to a building file). */
+  outlineSource: varchar("outline_source", { length: 16 }),
+  /** Someone checked the room on site (outline, size, survey): it counts as verified, not assumed. */
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  verifiedByName: text("verified_by_name"),
 }, (t) => [
   uniqueIndex("rooms_floor_code_uq").on(t.floorId, t.code),
   index("rooms_department_idx").on(t.departmentId),

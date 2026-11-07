@@ -169,6 +169,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   // Detailed equipment models close up and illustrative furniture on one floor (wave 16).
   const [detailedModels, setDetailedModels] = useState(true);
   const [furniture, setFurniture] = useState(true);
+  // Rooms coloured by drawing confidence (wave 16, drawing quality).
+  const [confidenceTint, setConfidenceTint] = useState(false);
   const kitRules = useRef<KitRule[] | null>(null);
   const [scope, setScope] = useState<Scope>("room");
   const [assetList, setAssetList] = useState(data.assets);
@@ -346,6 +348,17 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       summary: presetSummary(p, roomIds, data.rooms, placed, (a) => live.get(a.id)?.status ?? a.status) };
   }, [preset, data.rooms, data.departments, placed, live]);
   const presetTint = useMemo(() => presetInfo ? new Map(presetInfo.roomIds.map((id) => [id, { color: presetInfo.p.color, level: 1 }])) : null, [presetInfo]);
+  const qualityTint = useMemo(() => {
+    if (!confidenceTint) return null;
+    // Rooms from the drawing stay neutral, so only the ones to look at (and those checked on site) stand out.
+    const out = new Map<number, { color: string; level: number }>();
+    for (const r of data.rooms) {
+      if (r.type === "CORRIDOR") continue;
+      const k = r.verified ? "verified" : r.outlineSource === "walls" ? null : r.outlineSource === "fallback" ? "fallback" : "assumed";
+      if (k) out.set(r.id, { color: CONFIDENCE_COLORS[k], level: k === "fallback" ? 3 : k === "assumed" ? 2 : 1 });
+    }
+    return out;
+  }, [confidenceTint, data.rooms]);
   useEffect(() => {
     if (!ready) return;
     sceneRef.current?.setGhosts(plan ? spreadGhosts(plan.departments.map((d) => ({ departmentId: d.departmentId, missing: d.missing })), deptRooms) : null);
@@ -354,11 +367,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     if (!ready) return;
     // A view preset (wave 16) first, then the commissioning week (wave 14), plan vs installed, the problem layer.
     if (presetTint) { sceneRef.current?.setRoomTint(presetTint, NEUTRAL); return; }
+    if (qualityTint) { sceneRef.current?.setRoomTint(qualityTint, NEUTRAL); return; }
     if (comm.tint) { sceneRef.current?.setRoomTint(comm.tint, NEUTRAL); return; }
     if (planTint) { sceneRef.current?.setRoomTint(planTint, NEUTRAL); return; }
     sceneRef.current?.setRoomTint(layer === "department" || !legend ? null
       : new Map([...layerValues].map(([id, v]) => [id, { color: colorFor(v, legend) ?? NEUTRAL, level: bucketOf(v, legend.breaks) }])), NEUTRAL);
-  }, [layer, layerValues, legend, ready, planTint, comm.tint, presetTint]);
+  }, [layer, layerValues, legend, ready, planTint, comm.tint, presetTint, qualityTint]);
   // The worst places, for the legend panel (rooms, or departments when grouped).
   const worst = useMemo(() => {
     if (layer === "department") return [];
@@ -411,7 +425,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => { if (ready) sceneRef.current?.setStyle(style); }, [style, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setShowBasements(basements); }, [basements, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setFacade(facade); }, [facade, ready]);
-  useEffect(() => { if (ready) sceneRef.current?.setHeatMode(heatMode); }, [heatMode, ready]);
+  // Drawing confidence and presets are about exact rooms: drawn as blocks, never as a spreading glow.
+  useEffect(() => { if (ready) sceneRef.current?.setHeatMode(confidenceTint || preset ? "blocks" : heatMode); }, [heatMode, ready, confidenceTint, preset]);
   useEffect(() => { if (ready) sceneRef.current?.setSection(sectionAxis || null, sectionAt); }, [sectionAxis, sectionAt, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setCores(cores); }, [cores, ready]);
   // Fill the window below the app's top bar exactly (its height varies), so nothing hides under the bottom edge.
@@ -1148,6 +1163,10 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         <label className="flex items-center gap-1.5"><input type="checkbox" checked={detailedModels} onChange={(e) => setDetailedModels(e.target.checked)} className="accent-[#2fd3ff]" />Detailed equipment close up</label>
         <label className="flex items-start gap-1.5"><input type="checkbox" checked={furniture} onChange={(e) => setFurniture(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
           <span>Furniture on a floor shown on its own<span className="block text-[11px] text-[#8fb6cc]">Illustrative: room kits by room type, not the register.</span></span></label>
+        <label className="flex items-start gap-1.5"><input type="checkbox" checked={confidenceTint} onChange={(e) => setConfidenceTint(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
+          <span>Drawing confidence
+            {confidenceTint && <span className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">{(["assumed", "fallback", "verified"] as const).map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: CONFIDENCE_COLORS[k] }} />{CONFIDENCE_WORDS[k]}</span>)}</span>}
+            <span className="block text-[11px] text-[#8fb6cc]"><a href={`/facilities/${data.facility.id}/drawing-quality`} className="text-[#5fd6ff] hover:underline">Drawing quality</a> lists the issues floor by floor.</span></span></label>
       </div>
       <div className="mb-3 flex items-center gap-2 text-xs">
         <button type="button" onClick={walking ? stopWalk : () => void startWalk()} aria-pressed={walking} className="twin-act" title="First person on the floor shown, kept to the walkable space (W)">{walking ? "Stop walking" : "Walk this floor"}</button>
@@ -2218,6 +2237,10 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     </div>
   );
 }
+
+/** Drawing confidence colours (wave 16): from the drawing, assumed (split or drawn), guessed (no outline found), verified. */
+const CONFIDENCE_COLORS = { assumed: "#ffb534", fallback: "#ff4f62", verified: "#3cf5a6" } as const;
+const CONFIDENCE_WORDS = { assumed: "Assumed", fallback: "No outline found", verified: "Verified (the rest: from the drawing)" } as const;
 
 /** On-screen stick for walk mode on tablets: push up to walk, sideways to turn. */
 function WalkStick({ onMove }: { onMove: (forward: number, turn: number) => void }) {

@@ -332,4 +332,12 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   catalogue code (longest prefix), else by kind; used by the scene and the render studio. `TwinScene.setDetailed`
   rebuilds the near shapes (keys `"m:<model>"`); `setFurniture(on, rules)` places room kits on the floor shown on its
   own, built once per floor (`buildFurniture`), around registered devices.
+- **Drawing quality** (phase 1, migration `0035`): `rooms.outline_source` ("walls" | "split" | "fallback" | "drawn",
+  null = not recorded), `rooms.verified_at/verified_by_name`, `floor_cad.alignment` and `revision`. Importers write
+  them (`scripts/seed/cad.ts`, `cad-merge-data.ts`; a reshaped room loses its verified mark); `backfillCadSources`
+  (`src/lib/assets/cad-sources.ts`) fills older data from `seed-data/cad/*.json` on every start (no-op when done).
+  Checks and scores are pure in `src/lib/assets/drawing-quality.ts`; loading in `drawing-quality-server.ts` (segment
+  counts by `jsonb_array_length`, unreachable rooms from `networkCoverage`). Page `/facilities/[id]/drawing-quality`,
+  actions `setRevisionAction`, `verifyRoomAction` (`facilities.edit`). The 3D "Drawing confidence" tint and presets
+  force the blocks heat mode.
 

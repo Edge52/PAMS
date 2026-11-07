@@ -94,7 +94,7 @@ export default async function seed(db: DB) {
           await db.insert(rooms).values({
             floorId: floor.id, departmentId: dept.id,
             code: `${level < 0 ? "B" : level}-${ds.code}-${rs.prefix}${n}`,
-            name: rs.count > 1 ? `${rs.name} ${i}` : rs.name, type: rs.type, beds: rs.beds ?? 0, x, y, w, h,
+            name: rs.count > 1 ? `${rs.name} ${i}` : rs.name, type: rs.type, beds: rs.beds ?? 0, x, y, w, h, outlineSource: "drawn",
           });
           x += w + gap; rowH = Math.max(rowH, h);
         }
@@ -102,7 +102,7 @@ export default async function seed(db: DB) {
       x += 20; // breathing room between departments
     }
     // Corridor across the middle of each floor.
-    await db.insert(rooms).values({ floorId: floor.id, code: `${level < 0 ? "B" : level}-COR`, name: "Main corridor", type: "CORRIDOR", x: 20, y: 270, w: 960, h: 50 });
+    await db.insert(rooms).values({ floorId: floor.id, code: `${level < 0 ? "B" : level}-COR`, name: "Main corridor", type: "CORRIDOR", x: 20, y: 270, w: 960, h: 50, outlineSource: "drawn" });
   }
   console.log(`  facility DGH: ${Object.keys(layout).length} floors, ${totalBeds} beds`);
 }

@@ -54,8 +54,8 @@ export async function applyMerge(db: DB, facilityId: number, b: CadBuilding, act
       deptId.set(deptKey(dc)!, d.id);
     }
     const deptFor = (r: CadRoom) => { const d = deptOf(r); return d ? deptId.get(deptKey(d)!) ?? null : null; };
-    const newRoom = (floorId: number, r: CadRoom) => ({ floorId, code: r.code, name: titleCase(r.name), departmentId: deptFor(r), ...classifyRoom(r.name, r.dept), ...rect(r), polygon: r.poly });
-    const cadRow = (floorId: number, f: CadBuilding["floors"][number]) => ({ floorId, sourceFile: f.sourceFile, walls: f.walls, doors: f.doors, glass: f.glass, columns: f.columns });
+    const newRoom = (floorId: number, r: CadRoom) => ({ floorId, code: r.code, name: titleCase(r.name), departmentId: deptFor(r), ...classifyRoom(r.name, r.dept), ...rect(r), polygon: r.poly, outlineSource: r.shape });
+    const cadRow = (floorId: number, f: CadBuilding["floors"][number]) => ({ floorId, sourceFile: f.sourceFile, walls: f.walls, doors: f.doors, glass: f.glass, columns: f.columns, alignment: f.alignment ?? null });
 
     // Floors in both: new linework, name, height and scale.
     for (const { floorId, cad } of plan.floorsUpdated) {
@@ -82,8 +82,14 @@ export async function applyMerge(db: DB, facilityId: number, b: CadBuilding, act
       const floorId = floorOfLevel.get(c.floorLevel)!;
       const r = cadByKey.get(`${floorId}|${c.code.toUpperCase()}`); if (!r) continue;
       if (c.kind === "renamed") await tx.update(rooms).set({ name: c.name, ...classifyRoom(r.name, r.dept) }).where(eq(rooms.id, c.roomId));
-      if (c.kind === "reshaped") await tx.update(rooms).set({ polygon: r.poly, ...rect(r) }).where(eq(rooms.id, c.roomId));
+      // A new outline is no longer the one someone checked on site.
+      if (c.kind === "reshaped") await tx.update(rooms).set({ polygon: r.poly, ...rect(r), outlineSource: r.shape, verifiedAt: null, verifiedByName: null }).where(eq(rooms.id, c.roomId));
       if (c.kind === "department") await tx.update(rooms).set({ departmentId: deptFor(r) }).where(eq(rooms.id, c.roomId));
+    }
+    // Where each matched room's outline came from (wave 16), from the new drawing.
+    for (const [key, r] of cadByKey) {
+      const [fid, code] = key.split("|");
+      await tx.update(rooms).set({ outlineSource: r.shape }).where(and(eq(rooms.floorId, Number(fid)), sql`upper(${rooms.code}) = ${code}`, sql`${rooms.outlineSource} is distinct from ${r.shape}`));
     }
     const n = plan.counts;
     await tx.insert(activityLog).values({

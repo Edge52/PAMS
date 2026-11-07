@@ -139,6 +139,8 @@ Under **Assets** (release 2.2 / wave 3):
 
 - **3D view**: Imaging and ICU presets; detailed equipment and illustrative furniture in the live view; History replays
   each device's status on a past day (stored daily from the hourly job, the past year rebuilt from downtime).
+- **Drawing quality** (`/facilities/[id]/drawing-quality`): a score per floor, issues by room, and each room's
+  source and confidence (from the drawing, assumed, verified on site); shown in 3D under View › Drawing confidence.
 
 ## Finding things and keeping the register tidy
 

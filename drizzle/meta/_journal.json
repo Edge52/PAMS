@@ -246,6 +246,13 @@
       "when": 1794065980847,
       "tag": "0034_wave16_status_days",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794067475234,
+      "tag": "0035_wave16_drawing_quality",
+      "breakpoints": true
     }
   ]
 }

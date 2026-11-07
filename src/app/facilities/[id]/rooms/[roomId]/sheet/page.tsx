@@ -2,8 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceTypes, facilities, floors, rooms } from "@/db/schema";
+import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, rooms } from "@/db/schema";
 import { PrintButton } from "@/components/reports/print";
+import { Notice } from "@/components/assets/bits";
+import { can } from "@/lib/auth/permissions";
+import { CONFIDENCE_LABELS, OUTLINE_LABELS, roomConfidence } from "@/lib/assets/drawing-quality";
+import { verifyRoomAction } from "../../../drawing-quality/actions";
 import { ReportPrintStyles } from "@/components/reports/print-styles";
 import { roomLook } from "@/components/assets/twin/render/kits";
 import { loadKits } from "@/lib/assets/room-kits";
@@ -24,9 +28,10 @@ const yesNo = (v: boolean | undefined) => (v == null ? "not surveyed" : v ? "yes
  * Room data sheet (wave 12): the room from the drawings (area, type, beds, zone), its survey and services, its finish,
  * what is installed in it, and its department's planned equipment against what is installed.
  */
-export default async function RoomSheet({ params }: { params: Promise<{ id: string; roomId: string }> }) {
+export default async function RoomSheet({ params, searchParams }: { params: Promise<{ id: string; roomId: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const me = await requirePermission("assets.view");
   const p = await params;
+  const sp = await searchParams;
   const facilityId = Number(p.id), roomId = Number(p.roomId);
   if (!Number.isInteger(facilityId) || !Number.isInteger(roomId)) notFound();
   await requireFacilityAccess(facilityId, me);
@@ -48,6 +53,9 @@ export default async function RoomSheet({ params }: { params: Promise<{ id: stri
   const std = standardFor(r.room.name, r.room.type, (await loadStandards()).rules);
   const checks = std ? checkRoom(std.rule.spec, { areaM2: m2, beds: r.room.beds, ceilingM: r.room.ceilingM, doorWidthM: r.room.doorWidthM, floorLoadKgM2: r.room.floorLoadKgM2, services: s }) : [];
   const stdLines = std ? specLines(std.rule.spec).filter((l) => !["Room", "Notes"].includes(l.group)) : [];
+  // Where the room came from (wave 16): drawing, revision, how its outline was made, and whether someone checked it.
+  const [cadRow] = await db.select({ sourceFile: floorCad.sourceFile, revision: floorCad.revision, importedAt: floorCad.importedAt }).from(floorCad).where(eq(floorCad.floorId, r.floor.id));
+  const conf = roomConfidence({ outlineSource: r.room.outlineSource, verified: r.room.verifiedAt != null });
   const row = (l: string, v: React.ReactNode) => <tr className="border-b border-line/60"><th className="w-48 py-1 pr-3 text-left font-normal text-muted">{l}</th><td className="py-1">{v}</td></tr>;
 
   return (
@@ -57,6 +65,7 @@ export default async function RoomSheet({ params }: { params: Promise<{ id: stri
         <Link href={`/assets/3d?facilityId=${facilityId}&roomId=${roomId}`} className="text-sm text-primary hover:underline">← Room in 3D</Link>
         <Link href={`/assets/map?roomId=${roomId}`} className="text-sm text-primary hover:underline">Floor map</Link><PrintButton />
       </div>
+      <Notice sp={sp} />
       <article className="mx-auto max-w-3xl rounded border border-line bg-surface p-6 text-sm print:border-0 print:p-0">
         <header className="mb-4 border-b-2 border-ink pb-2">
           <h1 className="text-lg font-bold">Room data sheet: {r.room.name} <span className="font-mono text-base font-normal">({r.room.code})</span></h1>
@@ -70,6 +79,21 @@ export default async function RoomSheet({ params }: { params: Promise<{ id: stri
           {row("Access zone", r.room.zone ? humanize(r.room.zone) : "from its name")}
           {row("Floor finish", humanize(look.finish))}
         </tbody></table>
+        <h2 className="mb-1 font-semibold">Source</h2>
+        <table className="mb-2 w-full"><tbody>
+          {row("Drawing", cadRow ? `${cadRow.sourceFile ?? "file not recorded"}${cadRow.revision ? ` · ${cadRow.revision}` : ""} · imported ${formatDate(cadRow.importedAt)}` : "none: drawn in the app")}
+          {row("Outline", OUTLINE_LABELS[r.room.outlineSource ?? "unknown"] ?? r.room.outlineSource)}
+          {row("Confidence", <span className={conf === "assumed" ? "font-semibold text-warn" : conf === "verified" ? "font-semibold text-ok" : undefined}>{CONFIDENCE_LABELS[conf]}{r.room.verifiedAt ? ` by ${r.room.verifiedByName ?? "someone"} on ${formatDate(r.room.verifiedAt)}` : ""}</span>)}
+        </tbody></table>
+        {can(me.role, "facilities.edit") && (
+          <form action={verifyRoomAction} className="no-print mb-4 flex flex-wrap items-center gap-2 text-xs">
+            <input type="hidden" name="roomId" value={r.room.id} />
+            <input type="hidden" name="verified" value={r.room.verifiedAt ? "0" : "1"} />
+            <input type="hidden" name="back" value={`/facilities/${facilityId}/rooms/${roomId}/sheet`} />
+            <button className="rounded border border-line px-2 py-1 font-semibold text-primary hover:bg-sunken">{r.room.verifiedAt ? "Clear the verified mark" : "Mark as verified on site"}</button>
+            <span className="text-muted">{r.room.verifiedAt ? "The outline and size will count as assumed again." : "After checking the outline and size on the floor."}</span>
+          </form>
+        )}
         <h2 className="mb-1 font-semibold">Survey and services</h2>
         <table className="mb-4 w-full"><tbody>
           {row("Clear ceiling", r.room.ceilingM ? `${r.room.ceilingM} m` : "not surveyed")}

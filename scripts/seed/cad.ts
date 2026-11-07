@@ -182,7 +182,7 @@ export async function importBuilding(db: DB, b: CadBuilding, opts: { equipment?:
       buildingId: bld.id, level: f.level, name: f.name, planWidth: b.planWidth, planHeight: b.planHeight,
       elevation: f.elevation, unitsPerMetre: b.unitsPerMetre,
     }).returning();
-    await db.insert(floorCad).values({ floorId: fl.id, sourceFile: f.sourceFile, walls: f.walls, doors: f.doors, glass: f.glass, columns: f.columns });
+    await db.insert(floorCad).values({ floorId: fl.id, sourceFile: f.sourceFile, walls: f.walls, doors: f.doors, glass: f.glass, columns: f.columns, alignment: f.alignment ?? null });
     const values = f.rooms.map((r) => {
       const { type, beds } = classifyRoom(r.name, r.dept);
       const xs = r.poly.map((p) => p[0]), ys = r.poly.map((p) => p[1]);
@@ -190,7 +190,7 @@ export async function importBuilding(db: DB, b: CadBuilding, opts: { equipment?:
       return {
         floorId: fl.id, departmentId: r.dept && r.dept !== "ST" ? deptId.get(r.dept) ?? null : null, code: r.code, name: titleCase(r.name), type, beds,
         x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, w: Math.max(5, Math.round((Math.max(...xs) - x) * 10) / 10), h: Math.max(5, Math.round((Math.max(...ys) - y) * 10) / 10),
-        polygon: r.poly,
+        polygon: r.poly, outlineSource: r.shape,
       };
     });
     for (let i = 0; i < values.length; i += 200) {

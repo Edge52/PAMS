@@ -76,6 +76,13 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
   `tag, month, exams, hours`. Set each type's planning capacity once. Scanners over capacity get a ready sentence for
   tender justifications.
 
+**Check the drawings** — **Facilities › hospital › Drawing quality**
+1. Each floor gets a score out of 100. Open a floor for its issues: rooms with no outline found, rooms split from an
+   open area, overlaps, missing layers, scale, alignment, old floors, rooms no door leads to.
+2. Fix what you can: re-import the drawing (Update drawings), or fix doors in the 3D view (Routes).
+3. After checking a room on the floor, open its data sheet and **Mark as verified on site**.
+4. Type each floor's drawing revision so everyone knows which drawing the model is built from.
+
 **Will it fit?** — catalogue and 3D view
 - On a make and model's page, **Site planning**: enter the figures from the manufacturer's site planning guide, or
   **Start from typical values** (marked *typical* until you replace them).

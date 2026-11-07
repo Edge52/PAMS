@@ -119,6 +119,10 @@ export async function seedReference(d: DB) {
     await d.insert(exchangeRates).values({ currency, rateToEgp: rate, effectiveDate: "2026-10-01" }).onConflictDoNothing();
   }
   console.log(`reference: ${deps.length} department types, ${tax.length} device types, ${std.standardSets.length} standard sets, ${std.rules.length - skipped} rules`);
+  // Drawing sources for hospitals loaded before wave 16 (a no-op once every room has one).
+  const { backfillCadSources } = await import("../src/lib/assets/cad-sources");
+  const n = await backfillCadSources(d, path.join(root, "seed-data", "cad"));
+  if (n) console.log(`drawing sources: ${n} rooms recorded`);
 }
 
 async function resetAll(d: DB) {

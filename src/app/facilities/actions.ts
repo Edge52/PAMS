@@ -248,7 +248,7 @@ export async function saveRoom(_: FormState, fd: FormData): Promise<FormState> {
       await db.update(rooms).set(v).where(eq(rooms.id, roomId));
       // Equipment follows its room's department.
       if (v.departmentId) await db.update(assets).set({ departmentId: v.departmentId }).where(eq(assets.roomId, roomId));
-    } else await db.insert(rooms).values(v);
+    } else await db.insert(rooms).values({ ...v, outlineSource: "drawn" });
   } catch (e) { return { error: dbError(e).replace("code is", "room code is") }; }
   revalidatePath(`/facilities/${facilityId}`);
   revalidatePath("/assets/map");
@@ -330,7 +330,7 @@ export async function saveFloorLayout(input: unknown): Promise<LayoutResult> {
           await tx.update(rooms).set(v).where(and(eq(rooms.id, r.id), eq(rooms.floorId, floorId)));
           if (r.departmentId) await tx.update(assets).set({ departmentId: r.departmentId }).where(eq(assets.roomId, r.id));
         } else {
-          const [row] = await tx.insert(rooms).values({ floorId, ...v }).returning({ id: rooms.id });
+          const [row] = await tx.insert(rooms).values({ floorId, ...v, outlineSource: "drawn" }).returning({ id: rooms.id });
           idMap[`new-${i}`] = row.id;
         }
       }

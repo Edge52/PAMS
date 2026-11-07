@@ -30,6 +30,9 @@ export type TwinRoom = {
   site?: { ceilingM: number | null; doorWidthM: number | null; doorHeightM: number | null; floorLoadKgM2: number | null; services: RoomServices | null };
   /** Outline in plan units (polygon, or the rectangle turned into 4 points). */
   poly: [number, number][];
+  /** Where the outline came from and whether someone checked it on site (wave 16, drawing quality). */
+  outlineSource?: string | null;
+  verified?: boolean;
 };
 
 export type TwinSiteModel = { id: number; name: string; typeName: string; typical: boolean; verified: boolean; req: import("@/lib/assets/site-fit").SiteReq };
