@@ -1,8 +1,8 @@
 # Hospital PAMS — handover
 
 The starting point for anyone (or any new Claude session) picking up the project. It says what the app is, how it's
-built and run, how work is done here, what's finished and what's left. Last updated 7 Nov 2026, with wave 16 on branch
-`wave-16` (not merged yet; `main` has waves 1–15).
+built and run, how work is done here, what's finished and what's left. Last updated 7 Nov 2026: `main` has waves 1–16
+(wave 16 = 3D roadmap phases 0–4).
 
 Read next: `AGENTS.md` (coding conventions; they're strict), `docs/system-documentation.md` (modules in depth),
 `docs/user-guide.md` (by role), `docs/deploy.md` (servers, Supabase), `CHANGELOG.md` (what each wave added),
@@ -82,12 +82,11 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 15; branch `wave-16` has wave 16, waiting for
-  Hisham's OK to merge.
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 16. Next work goes on `wave-17`.
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
-- Old branches: `wave-13`, `wave-14` and `wave-15` are merged and can be deleted from GitHub's branch page (the session's
+- Old branches: `wave-13` to `wave-16` are merged and can be deleted from GitHub's branch page (the session's
   connection can't delete branches). The Mac still has two old local branches (`claude/vigilant-noether-2l33kc`,
   `fix/demo-restart`); `git branch -D` them when convenient.
 
@@ -104,7 +103,7 @@ Administration › Settings).
 
 ## 6. What's done
 
-Waves 1–14 are merged. Highlights per wave (details in `CHANGELOG.md`):
+Waves 1–16 are merged. Highlights per wave (details in `CHANGELOG.md`):
 
 | Wave | Contents |
 | --- | --- |
@@ -116,7 +115,7 @@ Waves 1–14 are merged. Highlights per wave (details in `CHANGELOG.md`):
 | 12 | Department view and requests, rounds and stock-take, audit log, backups page, supplier contacts, maintenance budget, room outlines, room data sheets, routes in a worker, clean/dirty routes |
 | 13 | Department heads edit their own pathways and room zones; Supabase database and Microsoft/Google sign-in; the assistant; Law 182 notes removed (confirmed) |
 | 14 | Queue simulation (B3); commissioning timeline (C5); room standards per room type; backups page (missing since wave 12) with PostgreSQL dumps; assistant look-ups for BOQs, contracts, recalls, saved chats, Word downloads |
-| 16 (branch) | 3D roadmap phase 0: Imaging and ICU presets; device status by day with History replay; detailed equipment and illustrative furniture in the live view. Phase 1: drawing quality page, room sources and confidence, verified on site, 3D confidence tint. Phase 2: DXF input, layer and symbol rules per building, symbols into rooms, dimension check. Phase 3: solid walls with door and window openings, floor-to-floor wall heights, surveyed ceilings. Phase 4: clinical room templates (equipment, clearances, width; CSSD, triage, dental, labs), checks in 3D and BOQ |
+| 16 | 3D roadmap phase 0: Imaging and ICU presets; device status by day with History replay; detailed equipment and illustrative furniture in the live view. Phase 1: drawing quality page, room sources and confidence, verified on site, 3D confidence tint. Phase 2: DXF input, layer and symbol rules per building, symbols into rooms, dimension check. Phase 3: solid walls with door and window openings, floor-to-floor wall heights, surveyed ceilings. Phase 4: clinical room templates (equipment, clearances, width; CSSD, triage, dental, labs), checks in 3D and BOQ |
 | 15 | Room standards in BOQ › Checks; gas outlets in the room survey; simulation staff, opening hours, appointment books, floor moves and saved scenarios; more detailed render furniture |
 
 Decisions Hisham has made: Law 182 rates and steps confirmed (bid bond 1.5 %, performance bond 5 %, two-envelope

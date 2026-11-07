@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 16 — on branch `wave-16`, not merged yet
+## Wave 16 — merged 7 Nov 2026
 
 Migrations `0034`–`0036`. Update with `git pull` and `npm run demo`; your data is kept.
 
