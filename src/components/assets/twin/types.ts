@@ -102,6 +102,8 @@ export type TwinData = {
   symbols?: TwinSymbol[];
   /** Equipment library entries by key (wave 17): TwinAsset.lib points here. */
   library?: Record<string, TwinLibrary>;
+  /** The hospital's queue simulation model (published pathways with rooms, beds, scanners, lifts), wave 17. */
+  sim?: import("@/lib/flows/simulate").SimModel | null;
   /** Clash and clearance issues of the devices placed on the plans (wave 17). */
   clashes?: (import("@/lib/assets/clash").ClashIssue & { floorId: number })[];
 };

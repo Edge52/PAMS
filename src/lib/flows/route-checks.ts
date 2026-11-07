@@ -10,6 +10,7 @@ import type { Issue, Link, Step } from "./model";
 import type { Journey } from "../assets/lifts";
 import type { Network } from "../../components/assets/twin/nav/network";
 import type { Place, Route } from "../../components/assets/twin/nav/route";
+import { CLEAR, legClearance } from "../../components/assets/twin/nav/clearance";
 
 export type CheckRoom = { id: number; floorId: number; name: string; departmentId: number | null; type: string; zone?: string | null; poly: [number, number][] };
 export type CheckStep = Step & { roomCode?: string | null; roomLabel?: string | null };
@@ -78,6 +79,20 @@ export async function buildingChecks(steps: CheckStep[], links: Link[], rooms: C
       continue;
     }
     if (rt.estimated) out.push({ level: "warning", stepKey: l.fromKey, floorId: rt.legs.find((x) => x.estimated)?.floorId, message: `${what}: part of the route isn't on the walking network and is estimated.` });
+    // Beds and trolleys (wave 17): pinch points and corners a bed can't turn, on the legs walked on the network.
+    if (j === "bed") {
+      const pinch: string[] = [], corners: string[] = [];
+      let fl: number | undefined;
+      for (const leg of rt.legs) {
+        if (leg.kind !== "walk" || leg.estimated) continue;
+        const net = await src.network(leg.floorId); if (!net) continue;
+        const c = legClearance(net, leg.points as [number, number][]);
+        for (const p of c.pinches) { pinch.push(`${p.width.toFixed(1)} m${p.need === "passing" ? ` for ${Math.round(p.length)} m` : ""}`); fl ??= leg.floorId; }
+        for (const t of c.turns) if (!t.fits) { corners.push(`${t.a.toFixed(1)} × ${t.b.toFixed(1)} m`); fl ??= leg.floorId; }
+      }
+      if (pinch.length) out.push({ level: "warning", stepKey: l.fromKey, floorId: fl, message: `${what}: the bed route narrows to ${pinch.slice(0, 3).join(", ")} (a bed needs ${CLEAR.bed} m, ${CLEAR.passing} m to pass someone).` });
+      if (corners.length) out.push({ level: "warning", stepKey: l.fromKey, floorId: fl, message: `${what}: a bed can't turn ${corners.length === 1 ? "a corner" : `${corners.length} corners`} (corridors ${corners.slice(0, 2).join("; ")}).` });
+    }
     // Staff-only rooms crossed by a patient on foot or in a wheelchair (other than the leg's own rooms).
     if (j !== "bed") {
       const crossed = new Set<string>();

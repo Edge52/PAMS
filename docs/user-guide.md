@@ -265,6 +265,14 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
   no position. Rooms with a guessed outline are skipped for area checks.
 - In 3D, **View › Clash check** rings the devices and lists them; click one to fly to it.
 
+## Clinical flow on the model
+
+- 3D view › **Pathways** › **Simulate a week**: rooms, scanner rooms and lifts turn green, yellow or red by how busy
+  they are in the queue simulation of the published pathways; click a line in the list to fly there. *On the model*
+  switches the colours off. The full simulator (what-ifs, staff, opening hours) is under Patient pathways.
+- Show a pathway and tick **Bed and stretcher clearance**: red rings where a bed or trolley route is under 1.2 m
+  clear or turns a corner a bed can't, amber where a corridor is under 1.8 m. The pathway's checks list them too.
+
 ## 3D view in two minutes
 
 - **Imaging** and **ICU** (top bar): every imaging or ICU room tinted and framed, the rest dimmed, with a summary of

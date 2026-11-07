@@ -21,6 +21,10 @@ import { RenderPanel, type RenderSettings } from "./render/render-panel";
 import { RouteService, routeSpots } from "./nav/service";
 import { workerBuilder } from "./nav/worker-builder";
 import { formatDuration, type Route } from "./nav/route";
+import { BED, CLEAR, legClearance } from "./nav/clearance";
+import { loadColor, simPlace } from "./sim-on-model";
+import { fmtMinutes, simulate, type SimSummary } from "@/lib/flows/simulate";
+import type { SimReply, SimRequest } from "@/lib/flows/simulate.worker";
 import { capPauses, FLOW_COLORS, heatLegsOf, journeyOf, liftTripsOf, pathwayCard, samplePath, stepRoom, trackOf, tubeRadius, visits, type TwinFlow } from "./pathways";
 import { cleanDirtyConflicts, corridorHeat, hourRanges, liftLoad } from "@/lib/flows/analysis";
 import type { PathDraw } from "./scene";
@@ -133,6 +137,15 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [playing, setPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(60);
   const [heatOn, setHeatOn] = useState(false);
+  // Bed and stretcher clearance on the shown pathways' bed and trolley legs (wave 17, phase 8).
+  const [bedOn, setBedOn] = useState(false);
+  // Queue simulation on the model (wave 17, phase 8): a week of the published pathways, drawn on rooms, scanners, lifts.
+  const [simRes, setSimRes] = useState<SimSummary | null>(null);
+  const [simBusy, setSimBusy] = useState<{ done: number; of: number } | null>(null);
+  const [simErr, setSimErr] = useState<string | null>(null);
+  const [simOnModel, setSimOnModel] = useState(true);
+  const simWorker = useRef<Worker | null>(null);
+  const [bedIssues, setBedIssues] = useState<{ floorId: number; x: number; z: number; severity: "high" | "medium"; text: string; leg: string }[] | null>(null);
   // Wave 12 (A7): clean supplies against dirty and waste routes.
   const [cdOn, setCdOn] = useState(false);
   // Wave 7e: notes, the note being written (and where), and drag to move.
@@ -361,6 +374,42 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     return { p, roomIds, assetIds: placed.filter((a) => a.roomId != null && set.has(a.roomId)).map((a) => a.id),
       summary: presetSummary(p, roomIds, data.rooms, placed, (a) => live.get(a.id)?.status ?? a.status) };
   }, [preset, data.rooms, data.departments, placed, live]);
+  // Simulation results placed on the model: each resource's rooms, scanners and lifts, coloured by its load.
+  const simShown = useMemo(() => {
+    if (!simRes || !simOnModel) return null;
+    const rooms = new Map<number, number>(), devices: number[] = [], liftU = new Map<number, number>();
+    const devs = assetList.map((a) => ({ id: a.id, roomId: a.roomId, typeCode: a.typeCode }));
+    for (const r of simRes.resources) {
+      if (r.capacity <= 0) continue;
+      const pl = simPlace(r.key, data.rooms, devs), u = r.utilisation.mean;
+      for (const id of pl.rooms) rooms.set(id, Math.max(rooms.get(id) ?? 0, u));
+      devices.push(...pl.devices);
+      if (pl.lifts) for (const l of data.lifts) if (l.kind !== "AGV" && (pl.lifts === "all" || l.kind === "BED")) liftU.set(l.id, Math.max(liftU.get(l.id) ?? 0, u));
+    }
+    const lifts = new Map([...liftU].map(([id, u]) => [id, loadColor(u)]));
+    return { tint: new Map([...rooms].map(([id, u]) => [id, { color: loadColor(u), level: u > 0.85 ? 3 : u > 0.6 ? 2 : 1 }])), devices, lifts };
+  }, [simRes, simOnModel, assetList, data.rooms, data.lifts]);
+  useEffect(() => { if (ready) sceneRef.current?.setLiftTint(simShown?.lifts.size ? simShown.lifts : null); }, [simShown, ready]);
+  function runSim() {
+    if (!data.sim) return;
+    const req: SimRequest = { model: data.sim, base: { days: 7, runs: 10 }, whatIf: null };
+    setSimErr(null); setSimBusy({ done: 0, of: 10 });
+    const onReply = (r: SimReply) => {
+      if (r.kind === "progress") setSimBusy({ done: r.done, of: r.of });
+      else if (r.kind === "done") { setSimBusy(null); setSimRes(r.base); setSimOnModel(true); }
+      else { setSimBusy(null); setSimErr(r.message); }
+    };
+    const here = () => setTimeout(() => { try { onReply({ kind: "done", base: simulate(req.model, req.base), whatIf: null }); } catch (e) { onReply({ kind: "error", message: (e as Error).message }); } }, 30);
+    try {
+      simWorker.current?.terminate();
+      const w = new Worker(new URL("../../../lib/flows/simulate.worker.ts", import.meta.url), { type: "module" });
+      simWorker.current = w;
+      w.onmessage = (e: MessageEvent<SimReply>) => onReply(e.data);
+      w.onerror = () => { w.terminate(); simWorker.current = null; here(); };
+      w.postMessage(req);
+    } catch { here(); }
+  }
+  useEffect(() => () => simWorker.current?.terminate(), []);
   const presetTint = useMemo(() => presetInfo ? new Map(presetInfo.roomIds.map((id) => [id, { color: presetInfo.p.color, level: 1 }])) : null, [presetInfo]);
   const qualityTint = useMemo(() => {
     if (!confidenceTint) return null;
@@ -393,11 +442,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     if (presetTint) { sceneRef.current?.setRoomTint(presetTint, NEUTRAL); return; }
     if (qualityTint) { sceneRef.current?.setRoomTint(qualityTint, NEUTRAL); return; }
     if (tplTint) { sceneRef.current?.setRoomTint(tplTint, NEUTRAL); return; }
+    if (simShown) { sceneRef.current?.setRoomTint(simShown.tint, NEUTRAL); return; }
     if (comm.tint) { sceneRef.current?.setRoomTint(comm.tint, NEUTRAL); return; }
     if (planTint) { sceneRef.current?.setRoomTint(planTint, NEUTRAL); return; }
     sceneRef.current?.setRoomTint(layer === "department" || !legend ? null
       : new Map([...layerValues].map(([id, v]) => [id, { color: colorFor(v, legend) ?? NEUTRAL, level: bucketOf(v, legend.breaks) }])), NEUTRAL);
-  }, [layer, layerValues, legend, ready, planTint, comm.tint, presetTint, qualityTint, tplTint]);
+  }, [layer, layerValues, legend, ready, planTint, comm.tint, presetTint, qualityTint, tplTint, simShown]);
   // The worst places, for the legend panel (rooms, or departments when grouped).
   const worst = useMemo(() => {
     if (layer === "department") return [];
@@ -414,12 +464,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => {
     if (!ready) return;
     // Until the user searches, a spotlight (?recall=) stays highlighted.
-    const ids = matches.length ? matches.map((a) => a.id) : presetInfo ? presetInfo.assetIds : spotlight ? spotlight.ids : [];
+    const ids = matches.length ? matches.map((a) => a.id) : presetInfo ? presetInfo.assetIds : simShown ? simShown.devices : spotlight ? spotlight.ids : [];
     sceneRef.current?.setHighlight(new Set(ids));
-  }, [matches, ready, spotlight, presetInfo]);
+  }, [matches, ready, spotlight, presetInfo, simShown]);
   useEffect(() => {
     const s = sceneRef.current; if (!ready || !s || !spotlight?.ids.length) return;
-    setLayer("recalls");
+    setLayer((l) => (spotlight.label === "Clash check" ? l : "recalls"));
     const spots = spotlight.ids.map((id) => s.spotOfAsset(id)).filter((x) => x != null);
     if (spots.length) s.frameSpots(spots);
     setToast({ ok: spotlight.label });
@@ -454,7 +504,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => { if (ready) sceneRef.current?.setLibraryOverlay(libOverlay); }, [libOverlay, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setClashes(clashOn ? (data.clashes ?? []) : null); }, [clashOn, ready, data.clashes]);
   // Drawing confidence and presets are about exact rooms: drawn as blocks, never as a spreading glow.
-  useEffect(() => { if (ready) sceneRef.current?.setHeatMode(confidenceTint || templateTint || preset ? "blocks" : heatMode); }, [heatMode, ready, confidenceTint, templateTint, preset]);
+  useEffect(() => { if (ready) sceneRef.current?.setHeatMode(confidenceTint || templateTint || simShown || preset ? "blocks" : heatMode); }, [heatMode, ready, confidenceTint, templateTint, simShown, preset]);
   useEffect(() => { if (ready) sceneRef.current?.setSection(sectionAxis || null, sectionAt); }, [sectionAxis, sectionAt, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setCores(cores); }, [cores, ready]);
   // Fill the window below the app's top bar exactly (its height varies), so nothing hides under the bottom edge.
@@ -765,6 +815,31 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     shownWithRoutes.flatMap(({ f, rs }) => liftTripsOf(f, rs, (id) => floorById.get(id)?.level ?? 0)),
     (name) => data.lifts.find((l) => l.name === name)?.cars ?? 1,
   ), [shownWithRoutes, floorById, data.lifts]);
+  useEffect(() => {
+    if (!bedOn || !ready) return;
+    let live = true;
+    void (async () => {
+      const out: NonNullable<typeof bedIssues> = [];
+      for (const { f, rs } of shownWithRoutes) {
+        for (const [i, l] of f.links.entries()) {
+          if (l.transport !== "BED" && l.transport !== "TROLLEY") continue;
+          const rt = rs[i]; if (!rt) continue;
+          const leg = `${f.name}: ${f.steps.find((x) => x.key === l.fromKey)?.label ?? ""} → ${f.steps.find((x) => x.key === l.toKey)?.label ?? ""}`;
+          for (const lg of rt.legs) {
+            if (lg.kind !== "walk" || lg.estimated) continue;
+            const net = await routes.network(lg.floorId); if (!net) continue;
+            const c = legClearance(net, lg.points as [number, number][]);
+            for (const p of c.pinches) out.push({ floorId: lg.floorId, x: p.x, z: p.z, severity: p.need === "bed" ? "high" : "medium", leg,
+              text: p.need === "bed" ? `${p.width.toFixed(1)} m clear: too narrow for a bed (${CLEAR.bed} m)` : `${p.width.toFixed(1)} m for ${Math.round(p.length)} m: a bed can't pass someone (${CLEAR.passing} m)` });
+            for (const t of c.turns) if (!t.fits) out.push({ floorId: lg.floorId, x: t.x, z: t.z, severity: "high", leg, text: `a bed can't turn this corner (${t.a.toFixed(1)} m into ${t.b.toFixed(1)} m)` });
+          }
+        }
+      }
+      if (live) setBedIssues(out);
+    })();
+    return () => { live = false; };
+  }, [bedOn, ready, shownWithRoutes, routes]);
+  useEffect(() => { if (ready) sceneRef.current?.setMarkers("bed", bedOn ? bedIssues : null); }, [bedOn, bedIssues, ready]);
   const heat = useMemo(() => (heatOn ? [...corridorHeat(shownWithRoutes.flatMap(({ f, rs }) => heatLegsOf(f, rs))).values()] : null), [heatOn, shownWithRoutes]);
   useEffect(() => { if (ready) sceneRef.current?.setHeat(heat); }, [heat, ready]);
   const cdFlows = useMemo(() => flows.filter((f) => f.kind === "SUPPLIES" || f.kind === "WASTE"), [flows]);
@@ -1647,6 +1722,34 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const card = shownFlow && shownRoutes ? pathwayCard(shownFlow, shownRoutes) : null;
   const ready7c = shownFlow ? readiness(shownFlow.steps, data.rooms,
     placed.map((a) => ({ id: a.id, typeCode: a.typeCode, typeName: a.deviceType, roomId: a.roomId, status: a.status })), (a) => statusOf(a.id, a.status), shownFlow.names) : null;
+  const simSection = data.sim && data.sim.flows.length > 0 ? (
+    <div className="border-t border-[#123a55] pt-2">
+      <p className="twin-h mb-1!">Queue simulation on the model</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={runSim} disabled={!!simBusy} className="twin-act">{simBusy ? `Running… ${simBusy.done}/${simBusy.of}` : simRes ? "Run again" : "Simulate a week"}</button>
+        {simRes && <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={simOnModel} onChange={(e) => setSimOnModel(e.target.checked)} className="accent-[#2fd3ff]" />On the model</label>}
+        <Link href={`/flows/simulate?facilityId=${data.facility.id}`} className="text-xs text-[#5fd6ff] hover:underline">Simulator</Link>
+      </div>
+      {simErr && <p className="mt-1 text-xs text-[#ff8a96]">{simErr}</p>}
+      {!simRes && !simBusy && <p className="mt-1 text-xs text-[#8fb6cc]">Ten runs of a week of the published pathways ({data.sim.flows.length}); rooms, scanners and lifts are coloured by how busy they are.</p>}
+      {simRes && (
+        <>
+          <p className="mt-1 flex flex-wrap gap-x-2 text-[11px]">{([["#3ddc97", "under 60 % busy"], ["#ffd166", "60–85 %"], ["#ff5a6a", "over 85 % or long waits"]] as const).map(([c, t]) => <span key={c} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: c }} />{t}</span>)}</p>
+          <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto text-xs">
+            {[...simRes.resources].filter((r) => r.capacity > 0 && r.kind !== "staff").sort((a, b) => Number(b.flag) - Number(a.flag) || b.utilisation.mean - a.utilisation.mean).slice(0, 25).map((r) => {
+              const pl = simPlace(r.key, data.rooms, assetList.map((a) => ({ id: a.id, roomId: a.roomId, typeCode: a.typeCode })));
+              return (
+                <li key={r.key}><button type="button" className="w-full text-left hover:underline" onClick={() => { if (pl.rooms[0] != null) focus({ kind: "room", id: pl.rooms[0] }); }}>
+                  <span aria-hidden className="mr-1.5 inline-block size-2 rounded-sm" style={{ background: loadColor(r.utilisation.mean) }} /><span className="text-white">{r.label}</span>
+                  <span className={`block pl-3.5 ${r.flag ? "font-semibold text-[#ff8a96]" : "text-[#8fb6cc]"}`}>{Math.round(r.utilisation.mean * 100)} % busy · 1 in 10 waits {fmtMinutes(r.p90Wait.mean)} · peak {String(r.peakHour).padStart(2, "0")}:00</span>
+                </button></li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </div>
+  ) : null;
   const pathwaysPanel = (
     <div className="space-y-2 text-sm">
       {!flows.length ? (
@@ -1771,12 +1874,24 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               )}
             </div>
           )}
+          {simSection}
           {shownWithRoutes.length > 0 && (
             <div className="border-t border-[#123a55] pt-2">
               <p className="twin-h mb-1!">Load of these pathways</p>
               <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={heatOn} onChange={(e) => setHeatOn(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
                 <span>Corridor traffic<span className="block text-xs text-[#8fb6cc]">Patients a day along each 2 m of corridor, blue (few) to red (busiest){heat?.length ? `; busiest ${Math.round(Math.max(...heat.map((c) => c.perDay)) * 10) / 10} a day` : ""}.</span></span>
               </label>
+              <label className="mt-1 flex items-start gap-2 text-sm"><input type="checkbox" checked={bedOn} onChange={(e) => setBedOn(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
+                <span>Bed and stretcher clearance<span className="block text-xs text-[#8fb6cc]">On bed and trolley legs: points narrower than {CLEAR.bed} m, corridors under {CLEAR.passing} m, corners a {BED.length} m bed can&apos;t turn. Widths estimated from the walls.</span></span>
+              </label>
+              {bedOn && bedIssues && (bedIssues.length === 0 ? <p className="ml-6 text-xs text-[#b9ffe0]">No pinch points on these bed routes.</p> : (
+                <ul className="ml-6 mt-1 max-h-40 space-y-0.5 overflow-y-auto text-xs">
+                  {bedIssues.slice(0, 30).map((b, i) => (
+                    <li key={i}><button type="button" className="text-left hover:underline" onClick={() => { const s = sceneRef.current; if (!s) return; setFloorId(b.floorId); s.isolateFloor(b.floorId, false); s.frameSpots([{ floorId: b.floorId, x: b.x, z: b.z }]); }}>
+                      <span aria-hidden className="mr-1 inline-block size-2 rounded-full" style={{ background: b.severity === "high" ? "#ff3b5c" : "#ffb020" }} /><span className="text-white">{b.text}</span> <span className="text-[#8fb6cc]">· {b.leg}</span></button></li>
+                  ))}
+                </ul>
+              ))}
               {liftRows.length > 0 ? (
                 <ul className="mt-1.5 space-y-0.5 text-xs">
                   {liftRows.map((r) => (

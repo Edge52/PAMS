@@ -19,6 +19,7 @@ import { sizesFor } from "@/lib/assets/dimensions-server";
 import { checkedRooms, loadStandards } from "@/lib/assets/room-standards-server";
 import { libraryFor } from "@/lib/assets/equipment-library-server";
 import { facilityClashes } from "@/lib/assets/clash-server";
+import { hospitalSimModel } from "@/lib/flows/simulate-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "3D view" };
@@ -125,6 +126,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
       .from(drawingSymbols).where(sql`${inArray(drawingSymbols.floorId, floorIds)} and ${drawingSymbols.kind} <> 'outlet'`)) : [],
     library: lib.library,
     clashes: (await facilityClashes(facility.id)).floors.flatMap((f) => f.issues),
+    sim: (await hospitalSimModel(facility.id)).model,
     lifts: (await db.select().from(liftCores).where(eq(liftCores.facilityId, facility.id)).orderBy(asc(liftCores.name)))
       .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, cars: l.cars, waitSeconds: l.waitSeconds, waitByHour: l.waitByHour ?? null, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
   };

@@ -22,6 +22,12 @@ Migration `0037`. Update with `git pull` and `npm run demo`; your data is kept.
   the surveyed ceiling, rooms too small for their devices and clear zones, and non-MR-conditional devices in an MRI
   room. 3D view › View › **Clash check** rings them (red high, amber medium) and lists them; *Show in 3D* links
   spotlight the devices.
+- **Clinical flow on the model** (roadmap phase 8): 3D view › Pathways › **Queue simulation on the model** runs a
+  week of the published pathways (ten runs) and colours each room, scanner room and lift by how busy it is, lights up
+  the scanners and lists every resource with its load, the wait one patient in ten has, and the peak hour.
+  **Bed and stretcher clearance** marks, on the shown pathways' bed and trolley legs, points under 1.2 m clear,
+  corridors under 1.8 m (a bed can't pass someone) and corners a 2.3 m bed can't turn; the pathway checks warn about
+  them too. Widths are estimated from the walls.
 
 ## Wave 16 — merged 7 Nov 2026
 

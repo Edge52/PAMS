@@ -378,4 +378,10 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   `deviceModel`; `mrSafe` by code). Server `facilityClashes` (door points as the scene finds them; guessed or < 2 m²
   outlines skip area checks) → page `/facilities/[id]/clashes` and `TwinData.clashes`; scene `setClashes` rings.
   `/assets/3d?assets=1,2,3` spotlights devices.
+- **Flow on the model**: `twin/sim-on-model.ts` (`simPlace` maps simulator resource keys `room:r12|room:d4|bed:4|
+  scan:<place>:<prefix>|lift:bed|lift:all` to rooms, scanner devices, lifts; `loadColor`). `TwinData.sim` from
+  `hospitalSimModel`; the view runs `simulate.worker.ts` (10 runs, a week). Scene `setLiftTint`, `setMarkers(key,…)`
+  (generalises the clash rings). Bed clearance: `twin/nav/clearance.ts` (`clearWidth` on the network grid, +3.5 cells
+  calibrated on straight walls; `legClearance`; `longestThroughCorner`), used by `buildingChecks` for bed legs and by
+  the Pathways panel.
 

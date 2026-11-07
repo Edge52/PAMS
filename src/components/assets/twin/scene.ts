@@ -168,7 +168,9 @@ export class TwinScene {
   private zonesOn = false;
   private zoneGroup: THREE.Group | null = null;
   /** Clash and clearance issues to mark (wave 17): rings on the floors shown, red for high, amber for medium. */
-  private clashes: { floorId: number; x: number; z: number; severity: "high" | "medium" }[] | null = null;
+  /** Lift colours by lift id (wave 17: simulated load), else their kind's colour. */
+  private liftTint: Map<number, string> | null = null;
+  private markerSets = new Map<string, { floorId: number; x: number; z: number; severity: "high" | "medium" }[]>();
   private clashGroup: THREE.Group | null = null;
   private statusRings: THREE.InstancedMesh | null = null;         // near: a ring on the floor in the status colour
   private ringSize: number[] = [];
@@ -550,8 +552,10 @@ export class TwinScene {
       const st = l.stops.find((x) => x.floorId === f.id); if (!st) continue;
       const g = new THREE.BoxGeometry(2.4, 1, 2.4); g.translate(st.x * s, 0.5, st.y * s);
       const c = LIFT_COLORS[l.kind];
-      const body = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: l.inferred ? 0.18 : 0.34, depthWrite: false, toneMapped: false }));
-      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: l.inferred ? 0.55 : 0.9, depthWrite: false, toneMapped: false }));
+      const tint = this.liftTint?.get(l.id);
+      const body = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: tint ?? c, transparent: true, opacity: tint ? 0.6 : l.inferred ? 0.18 : 0.34, depthWrite: false, toneMapped: false }));
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: tint ?? c, transparent: true, opacity: l.inferred ? 0.55 : 0.9, depthWrite: false, toneMapped: false }));
+      body.userData.lift = l.id; edges.userData.lift = l.id;
       body.renderOrder = 4; edges.renderOrder = 4;
       out.push(body, edges);
     }
@@ -785,7 +789,25 @@ export class TwinScene {
   }
 
   /** Mark clash and clearance issues (wave 17), or clear them with null. */
-  setClashes(list: { floorId: number; x: number; z: number; severity: "high" | "medium" }[] | null) { this.clashes = list; this.drawClashes(); }
+  setClashes(list: { floorId: number; x: number; z: number; severity: "high" | "medium" }[] | null) { this.setMarkers("clash", list); }
+  /** Colour lift cores (e.g. by simulated load), or back to their kind's colour with null. */
+  setLiftTint(t: Map<number, string> | null) {
+    this.liftTint = t;
+    const kind = new Map((this.data.lifts ?? []).map((l) => [l.id, l]));
+    for (const v of this.floors.values()) v.cores?.traverse((o) => {
+      const id = o.userData.lift as number | undefined; if (id == null) return;
+      const l = kind.get(id); if (!l) return;
+      const m = (o as THREE.Mesh).material as THREE.MeshBasicMaterial;
+      const c = t?.get(id);
+      m.color.set(c ?? LIFT_COLORS[l.kind]);
+      if ((o as THREE.Mesh).isMesh) m.opacity = c ? 0.6 : l.inferred ? 0.18 : 0.34;
+    });
+  }
+  /** Rings for a named set of issues (clash check, bed clearance…); null removes the set. */
+  setMarkers(key: string, list: { floorId: number; x: number; z: number; severity: "high" | "medium" }[] | null) {
+    if (list && list.length) this.markerSets.set(key, list); else this.markerSets.delete(key);
+    this.drawClashes();
+  }
 
   private drawClashes() {
     if (this.clashGroup) {
@@ -793,7 +815,7 @@ export class TwinScene {
       this.clashGroup.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); (m.material as THREE.Material | undefined)?.dispose?.(); });
       this.clashGroup = null;
     }
-    const list = (this.clashes ?? []).filter((c) => this.floorShown(c.floorId));
+    const list = [...this.markerSets.values()].flat().filter((c) => this.floorShown(c.floorId) && this.floorById.has(c.floorId));
     if (!list.length) return;
     const g = new THREE.Group(); g.name = "clashes";
     for (const sev of ["high", "medium"] as const) {
@@ -967,7 +989,7 @@ export class TwinScene {
     }
     this.applyWallHeights();
     if (this.zonesOn) this.drawZones();
-    if (this.clashes) this.drawClashes();
+    if (this.markerSets.size) this.drawClashes();
     if (this.noteSpots.length) this.drawNotes(); // only on floors shown
     this.applyFurniture();
   }
