@@ -26,6 +26,10 @@ import { readiness, readinessLine } from "@/lib/flows/readiness";
 import type { TwinNote } from "@/lib/assets/twin-notes";
 import { NoteComposer, NoteList } from "./notes";
 import { JobRibbon } from "./job-ribbon";
+import { BUILTIN_KITS, type KitRule } from "./render/kits";
+import { PRESETS, presetById, presetRooms, presetSummary, type PresetId } from "./presets";
+import { statusesOn, type StatusRow } from "@/lib/assets/status-history";
+import { todayISO } from "@/lib/format";
 import { FitPanel, type Outline } from "./fit-panel";
 import { EVENT_COLORS, EVENT_LABELS, eventsAt, perDay, shortcutFor, SHORTCUTS, type TimeEvent } from "./timeline";
 import { useCommissioning } from "./commissioning-panel";
@@ -138,7 +142,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [tours, setTours] = useState<Tour[]>(initialTours);
   const [tourEdit, setTourEdit] = useState<{ id?: number; name: string; shared: boolean; stops: { state: string; caption: string; seconds: number }[] } | null>(null);
   const [tourPlay, setTourPlay] = useState<{ tour: Tour; i: number; paused: boolean } | null>(null);
-  const [history, setHistory] = useState<{ since: number; until: number; days: number; events: TimeEvent[] } | null>(null);
+  const [history, setHistory] = useState<{ since: number; until: number; days: number; events: TimeEvent[]; status: StatusRow[]; snapshotsSince: string | null } | null>(null);
+  // Replay each device's status on the slider's day (wave 16), instead of the live status.
+  const [replayStatus, setReplayStatus] = useState(true);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyDays, setHistoryDays] = useState(30);
   const [timeAt, setTimeAt] = useState(0);
@@ -158,6 +164,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [liveAt, setLiveAt] = useState(initialLive.at);
   const [liveError, setLiveError] = useState(false);
   const [layer, setLayer] = useState<LayerId>("department");
+  // View preset (wave 16): Imaging or ICU rooms tinted, the rest dimmed, the camera framed on them.
+  const [preset, setPreset] = useState<PresetId | null>(null);
+  // Detailed equipment models close up and illustrative furniture on one floor (wave 16).
+  const [detailedModels, setDetailedModels] = useState(true);
+  const [furniture, setFurniture] = useState(true);
+  const kitRules = useRef<KitRule[] | null>(null);
   const [scope, setScope] = useState<Scope>("room");
   const [assetList, setAssetList] = useState(data.assets);
   const [placingId, setPlacingId] = useState<number | null>(null);
@@ -280,10 +292,15 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     document.addEventListener("visibilitychange", onVis);
     return () => { stop = true; window.clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [data.facility.id]);
+  // The day being replayed (History panel, wave 16), or null for live statuses.
+  const replayDay = history && replayStatus && history.status.length ? todayISO(new Date(timeAt)) : null;
+  const replayed = useMemo(() => (replayDay && history ? statusesOn(history.status, replayDay) : null), [replayDay, history]);
   useEffect(() => {
     if (!ready) return;
-    sceneRef.current?.setStatuses(new Map([...live].map(([id, m]) => [id, m.status])));
-  }, [live, ready]);
+    const now = new Map([...live].map(([id, m]) => [id, m.status]));
+    // Devices with no row on that day keep their live status.
+    sceneRef.current?.setStatuses(replayed ? new Map([...now].map(([id, st]) => [id, replayed.get(id) ?? st])) : now);
+  }, [live, ready, replayed]);
 
   // Problem layer → room colours.
   const layerValues = useMemo(() => roomValues(layer, scope, data.rooms, placed.map((a) => ({ roomId: a.roomId, metrics: live.get(a.id) }))), [layer, scope, data.rooms, placed, live]);
@@ -322,18 +339,26 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     }
     return out;
   }, [plan, data.rooms]);
+  const presetInfo = useMemo(() => {
+    if (!preset) return null;
+    const p = presetById(preset), roomIds = presetRooms(p, data.rooms, data.departments), set = new Set(roomIds);
+    return { p, roomIds, assetIds: placed.filter((a) => a.roomId != null && set.has(a.roomId)).map((a) => a.id),
+      summary: presetSummary(p, roomIds, data.rooms, placed, (a) => live.get(a.id)?.status ?? a.status) };
+  }, [preset, data.rooms, data.departments, placed, live]);
+  const presetTint = useMemo(() => presetInfo ? new Map(presetInfo.roomIds.map((id) => [id, { color: presetInfo.p.color, level: 1 }])) : null, [presetInfo]);
   useEffect(() => {
     if (!ready) return;
     sceneRef.current?.setGhosts(plan ? spreadGhosts(plan.departments.map((d) => ({ departmentId: d.departmentId, missing: d.missing })), deptRooms) : null);
   }, [plan, deptRooms, ready]);
   useEffect(() => {
     if (!ready) return;
-    // Commissioning week (wave 14) first, then plan vs installed, then the problem layer.
+    // A view preset (wave 16) first, then the commissioning week (wave 14), plan vs installed, the problem layer.
+    if (presetTint) { sceneRef.current?.setRoomTint(presetTint, NEUTRAL); return; }
     if (comm.tint) { sceneRef.current?.setRoomTint(comm.tint, NEUTRAL); return; }
     if (planTint) { sceneRef.current?.setRoomTint(planTint, NEUTRAL); return; }
     sceneRef.current?.setRoomTint(layer === "department" || !legend ? null
       : new Map([...layerValues].map(([id, v]) => [id, { color: colorFor(v, legend) ?? NEUTRAL, level: bucketOf(v, legend.breaks) }])), NEUTRAL);
-  }, [layer, layerValues, legend, ready, planTint, comm.tint]);
+  }, [layer, layerValues, legend, ready, planTint, comm.tint, presetTint]);
   // The worst places, for the legend panel (rooms, or departments when grouped).
   const worst = useMemo(() => {
     if (layer === "department") return [];
@@ -350,9 +375,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => {
     if (!ready) return;
     // Until the user searches, a spotlight (?recall=) stays highlighted.
-    const ids = matches.length || !spotlight ? matches.map((a) => a.id) : spotlight.ids;
+    const ids = matches.length ? matches.map((a) => a.id) : presetInfo ? presetInfo.assetIds : spotlight ? spotlight.ids : [];
     sceneRef.current?.setHighlight(new Set(ids));
-  }, [matches, ready, spotlight]);
+  }, [matches, ready, spotlight, presetInfo]);
   useEffect(() => {
     const s = sceneRef.current; if (!ready || !s || !spotlight?.ids.length) return;
     setLayer("recalls");
@@ -362,6 +387,20 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
   useEffect(() => { if (ready) sceneRef.current?.setExplode(explode); }, [explode, ready]);
+  useEffect(() => { if (ready) sceneRef.current?.setDetailed(detailedModels); }, [detailedModels, ready]);
+  useEffect(() => {
+    if (!ready) return;
+    let stop = false;
+    (async () => {
+      // The hospital's room kits (Planning › Room kits), read once; the built-in ones if they can't be read.
+      if (furniture && !kitRules.current) {
+        const k = await fetch("/assets/3d/kits", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        kitRules.current = Array.isArray(k) && k.length ? (k as KitRule[]) : BUILTIN_KITS;
+      }
+      if (!stop) sceneRef.current?.setFurniture(furniture, kitRules.current ?? undefined);
+    })();
+    return () => { stop = true; };
+  }, [furniture, ready]);
   // Room labels stay in the free middle of the view, clear of the title bar and the panel columns.
   useEffect(() => {
     if (!ready) return;
@@ -897,10 +936,10 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     setHistoryBusy(true);
     try {
       const res = await fetch(`/assets/3d/history?facilityId=${data.facility.id}&days=${days}`, { cache: "no-store" });
-      const j = await res.json() as { since: string; until: string; events: TimeEvent[]; error?: string };
+      const j = await res.json() as { since: string; until: string; events: TimeEvent[]; status?: [number, string, string][]; snapshotsSince?: string | null; error?: string };
       if (!res.ok) throw new Error(j.error ?? String(res.status));
       const until = Date.parse(j.until);
-      setHistory({ since: Date.parse(j.since), until, days, events: j.events }); setTimeAt(until);
+      setHistory({ since: Date.parse(j.since), until, days, events: j.events, status: (j.status ?? []).map(([assetId, day, status]) => ({ assetId, day, status })), snapshotsSince: j.snapshotsSince ?? null }); setTimeAt(until);
     } catch (e) { setToast({ error: `The history couldn't be loaded (${(e as Error).message}).` }); }
     setHistoryBusy(false);
   }
@@ -952,7 +991,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       else if (sc.kind === "help") setHelpOpen((o) => !o);
       else if (sc.kind === "clear") {
         if (helpOpen) setHelpOpen(false);
-        else { setSelected(null); sceneRef.current?.select(null, false); clearRoute(); clearTrauma(); setFlowSel([]); setPlaying(false); }
+        else { setSelected(null); sceneRef.current?.select(null, false); clearRoute(); clearTrauma(); setFlowSel([]); setPlaying(false); setPreset(null); }
       }
     };
   });
@@ -982,6 +1021,18 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   }, [placingId]);
 
   function chooseFloor(id: number | null) { setFloorId(id); sceneRef.current?.isolateFloor(id); }
+  /** Show a preset (or clear it): one floor on its own when all its rooms are on it, then frame its rooms. */
+  function choosePreset(id: PresetId | null) {
+    setPreset(id);
+    const s = sceneRef.current; if (!id || !s) return;
+    const p = presetById(id), ids = presetRooms(p, data.rooms, data.departments);
+    if (!ids.length) { setToast({ error: `No ${p.label.toLowerCase()} rooms found: check the departments' types or the room names.` }); return; }
+    const fls = [...new Set(ids.map((r) => roomById.get(r)?.floorId))];
+    const fl = fls.length === 1 ? fls[0] ?? null : null;
+    if (fl !== floorId) { setFloorId(fl); s.isolateFloor(fl, false); }
+    s.frameSpots(ids.map((r) => s.spotOfRoom(r)).filter((x) => x != null));
+    if (mode !== "phone" && !panels.isOpen("views")) panels.toggle("views");
+  }
   function focus(p: PickResult) {
     setSelected(p); if (p) setSheetTab("details");
     // Jumping to a device or room shows its floor on its own, so floors above don't hide it and room names appear.
@@ -1092,6 +1143,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             {st === "dark" ? "Digital twin" : "Architectural"}
           </button>
         ))}
+      </div>
+      <div className="mb-3 space-y-1 text-xs">
+        <label className="flex items-center gap-1.5"><input type="checkbox" checked={detailedModels} onChange={(e) => setDetailedModels(e.target.checked)} className="accent-[#2fd3ff]" />Detailed equipment close up</label>
+        <label className="flex items-start gap-1.5"><input type="checkbox" checked={furniture} onChange={(e) => setFurniture(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
+          <span>Furniture on a floor shown on its own<span className="block text-[11px] text-[#8fb6cc]">Illustrative: room kits by room type, not the register.</span></span></label>
       </div>
       <div className="mb-3 flex items-center gap-2 text-xs">
         <button type="button" onClick={walking ? stopWalk : () => void startWalk()} aria-pressed={walking} className="twin-act" title="First person on the floor shown, kept to the walkable space (W)">{walking ? "Stop walking" : "Walk this floor"}</button>
@@ -1344,7 +1400,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         <button type="button" onClick={() => void loadHistory(historyDays)} disabled={historyBusy} className="twin-act">{historyBusy ? "Loading…" : history ? "Reload" : "Load"}</button>
         {history && <button type="button" onClick={() => { setHistory(null); setTimePlaying(false); }} className="twin-act">Clear</button>}
       </div>
-      {!history && <p className="text-xs text-[#8fb6cc]">Replay what happened: faults reported, repairs done, moves and installations, shown at each device. Device status at a past moment isn&apos;t stored, so it isn&apos;t replayed.</p>}
+      {!history && <p className="text-xs text-[#8fb6cc]">Replay what happened: faults reported, repairs done, moves and installations, shown at each device, and each device&apos;s status on the day.</p>}
       {history && (
         <>
           <div className="flex h-8 items-end gap-px" aria-hidden>{histo.map((n, i) => <div key={i} className="flex-1 bg-[#2f6b8f]" style={{ height: `${Math.max(4, (n / histoMax) * 100)}%` }} />)}</div>
@@ -1357,6 +1413,13 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               {[1, 3, 7].map((d) => <option key={d} value={d}>{d === 1 ? "Last day" : `Last ${d} days`}</option>)}
             </select>
           </div>
+          <label className="flex items-start gap-1.5 text-xs">
+            <input type="checkbox" checked={replayStatus} onChange={(e) => setReplayStatus(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
+            <span><span className="text-white">Device status on {replayDay ? new Date(`${replayDay}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "that day"}</span>
+              <span className="block text-[11px] text-[#8fb6cc]">{!history.status.length ? "No status history yet: it is recorded every hour from now on." : history.snapshotsSince
+                ? `Recorded since ${new Date(`${history.snapshotsSince}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}; earlier days rebuilt from work orders' downtime.`
+                : "Rebuilt from work orders' downtime; recorded from now on."}</span></span>
+          </label>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
             {(["fault", "repair", "move", "install"] as const).map((k) => (
               <label key={k} className="flex items-center gap-1">
@@ -1383,8 +1446,29 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       )}
     </div>
   );
+  const presetCard = presetInfo && (
+    <section className="mb-2 rounded-md border px-2 py-1.5" style={{ borderColor: presetInfo.p.color }} aria-label={`${presetInfo.p.label} summary`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] font-semibold text-white">{presetInfo.p.label}</p>
+        <button type="button" onClick={() => choosePreset(null)} className="text-xs text-[#8fb6cc] hover:text-white">Clear</button>
+      </div>
+      <p className="text-xs text-[#d6f3ff]">{presetInfo.summary.rooms} room{presetInfo.summary.rooms === 1 ? "" : "s"} on {presetInfo.summary.floors.length} floor{presetInfo.summary.floors.length === 1 ? "" : "s"} · {presetInfo.summary.devices.toLocaleString()} device{presetInfo.summary.devices === 1 ? "" : "s"}</p>
+      {presetInfo.summary.statuses.length > 0 && (
+        <p className="mt-0.5 text-[11px]">{presetInfo.summary.statuses.map((x, i) => <span key={x.status}>{i ? " · " : ""}<span style={{ color: STATUS_COLORS[x.status] ?? "#8fb6cc" }}>{x.n} {(STATUS_LABELS[x.status] ?? x.status).toLowerCase()}</span></span>)}</p>
+      )}
+      {presetInfo.summary.categories.length > 0 && <p className="mt-0.5 text-[11px] text-[#8fb6cc]">{presetInfo.summary.categories.slice(0, 4).map((c) => `${c.name} ${c.n}`).join(" · ")}</p>}
+      {presetInfo.summary.troubleRooms.length > 0 && (
+        <div className="mt-1">
+          <p className="text-[11px] text-[#ffb534]">Rooms with a device down:</p>
+          <ul className="text-[12px]">{presetInfo.summary.troubleRooms.slice(0, 6).map((id) => { const r = roomById.get(id); return r ? <li key={id}><button type="button" onClick={() => focus({ kind: "room", id })} className="text-left text-[#5fd6ff] hover:underline">{r.name} · {r.code}</button></li> : null; })}</ul>
+        </div>
+      )}
+      <p className="mt-1 text-[11px] text-[#8fb6cc]">Rooms by department type, room type or name. Esc clears.</p>
+    </section>
+  );
   const viewsPanel = (
     <div>
+      {presetCard}
       {views.length === 0 ? <p className="text-xs text-[#8fb6cc]">No saved views yet. Set up the model, then save it with a name.</p> : (
         <ul className="space-y-0.5">
           {views.map((v) => {
@@ -1899,6 +1983,13 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               {data.facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           )}
+          <span className="flex items-center gap-1" role="group" aria-label="Show a service">
+            {PRESETS.map((p) => (
+              <button key={p.id} type="button" onClick={() => choosePreset(preset === p.id ? null : p.id)} aria-pressed={preset === p.id}
+                className="twin-ctl" style={preset === p.id ? { borderColor: p.color, color: "#fff", boxShadow: `inset 0 -2px 0 ${p.color}` } : undefined}
+                title={`Show the ${p.label.toLowerCase()} rooms and their equipment across the hospital`}>{p.label}</button>
+            ))}
+          </span>
           <span className="twin-ctl flex items-center gap-1.5" role="status" title={liveError ? "Couldn't refresh; retrying every minute" : "Statuses refresh every minute"}>
             <span className={`size-2 rounded-full ${liveError ? "bg-[#ff4f62]" : "bg-[#3cf5a6] motion-safe:animate-pulse"}`} />
             {liveError ? "Offline" : "Live"} · {liveTime}

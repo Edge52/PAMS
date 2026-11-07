@@ -17,9 +17,10 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { deviceKind, interiorPoint, pointInPolygon, polygonArea, type Pt } from "../geometry";
+import { interiorPoint, pointInPolygon, polygonArea, type Pt } from "../geometry";
 import type { FloorGeometry, TwinAsset, TwinData, TwinFloor, TwinRoom } from "../types";
 import { BUILTIN_KITS, FINISH_COLORS, MODEL_SIZE, placeKit, roomLook, type KitRule, type Model, type Placement } from "./kits";
+import { deviceModel } from "./device-models";
 import { modelGeometry } from "./furniture";
 import { layoutLabels, type LabelIn } from "./labels";
 import { wallMass } from "./walls";
@@ -61,7 +62,6 @@ export type RenderOptions = {
 
 export const RENDER_SIZES = { "1080p": [1920, 1080], "4K": [3840, 2160], "8K": [7680, 4320] } as const;
 
-const KIND_MODEL: Record<string, Model> = { bed: "bed", monitor: "monitor", ventilator: "ventilator", imaging: "ct", pump: "iv-pole", other: "cabinet" };
 const LOOKS: Record<RenderLook, { sky: string; ground: string; hemi: number; sun: string; sunI: number; exposure: number; bg: string }> = {
   daylight: { sky: "#ffffff", ground: "#e4e1da", hemi: 2.3, sun: "#fff6e8", sunI: 2.2, exposure: 1.3, bg: "#f5f6f7" },
   warm: { sky: "#fff3df", ground: "#d8cbb5", hemi: 2.1, sun: "#ffd9a8", sunI: 2.5, exposure: 1.25, bg: "#f6f3ee" },
@@ -71,7 +71,6 @@ const WALL_SIDE = "#f2f0eb", WALL_TOP = "#878d93", GLASS = "#9cc8db", DOOR = "#a
 type Built = { group: THREE.Group; bounds: { x0: number; x1: number; z0: number; z1: number }; rooms: { room: TwinRoom; poly: Pt[] }[]; kitCount: number; registered: number; planned: number };
 
 /** A device type code's kind for drawing ("MON-PAT-HIGH" → group MON-PAT, category MON). */
-const kindOfCode = (code: string) => { const p = code.split("-"); return deviceKind(p.length >= 3 ? `${p[0]}-${p[1]}` : null, p[0]); };
 const PLAN_ROOMS = new Set(["PATIENT_ROOM", "WARD", "ICU_BAY", "OPERATING_ROOM", "PROCEDURE_ROOM", "IMAGING_ROOM", "CONSULTATION", "LAB", "NURSE_STATION"]);
 
 export class RenderStudio {
@@ -255,7 +254,7 @@ export class RenderStudio {
       const care = own.filter((r) => PLAN_ROOMS.has(r.room.type) || roomLook(r.room.name, r.room.type, this.kits).items.length > 0);
       const targets = (care.length ? care : own).map((r) => ({ id: r.room.id, area: Math.abs(polygonArea(r.poly)) })).sort((a, b) => b.area - a.area);
       if (!targets.length) continue;
-      const units = d.items.flatMap((it) => Array.from({ length: Math.max(0, Math.min(200, it.n)) }, () => KIND_MODEL[kindOfCode(it.code)] ?? "cabinet"));
+      const units = d.items.flatMap((it) => Array.from({ length: Math.max(0, Math.min(200, it.n)) }, () => deviceModel(it.code)));
       let k = 0;
       for (const m of units) {
         const t = targets[k % targets.length]; k++;
@@ -271,7 +270,7 @@ export class RenderStudio {
       const regs = assetsByRoom.get(room.id) ?? [];
       const exact: Placement[] = [], loose: Model[] = [], looseAssets: { m: Model; a: TwinAsset }[] = [];
       for (const a of regs) {
-        const m = KIND_MODEL[deviceKind(a.groupCode, a.categoryCode)] ?? "cabinet";
+        const m = deviceModel(a.typeCode, a.groupCode, a.categoryCode);
         if (a.posX != null && a.posY != null) {
           const [ix, iz] = interiorPoint(poly);
           const x = a.posX * s, z = a.posY * s;

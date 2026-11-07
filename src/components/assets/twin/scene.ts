@@ -9,6 +9,9 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { deviceModel } from "./render/device-models";
+import { modelGeometry } from "./render/furniture";
+import { BUILTIN_KITS, placeKit, roomLook, type KitRule, type Model, type Placement } from "./render/kits";
 import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, pointInPolygon, outlineFromRooms, polygonArea, presetCamera, spreadInRoom, wallsFromRooms, type CoreKind, type DeviceKind, type Pt } from "./geometry";
 import { STATUS_COLORS, type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinLift, type TwinRoom } from "./types";
 import type { Core } from "./nearest";
@@ -58,6 +61,13 @@ function kindGeometry(k: DeviceKind): { geo: THREE.BufferGeometry; y: number; ri
   const geo = mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)), false)!;
   for (const g of parts) g.dispose();
   return { geo, y: 0, ring };
+}
+
+/** Ring size under a kind's simple shape. */
+function kindGeometryRing(k: DeviceKind): number { return k === "bed" ? 1.15 : k === "imaging" ? 1.6 : k === "ventilator" ? 0.6 : k === "pump" ? 0.45 : 0.55; }
+/** A near shape's geometry by key: "m:<model>" = a detailed render model (a copy; the cache stays shared), else a kind. */
+function shapeGeometry(key: string): THREE.BufferGeometry {
+  return key.startsWith("m:") ? modelGeometry(key.slice(2) as Model).clone() : kindGeometry(key as DeviceKind).geo;
 }
 
 export type TwinStyle = "dark" | "light";
@@ -130,10 +140,17 @@ export class TwinScene {
   private bloom: UnrealBloomPass;
   private floors = new Map<number, FloorView>();
   private deviceMesh: THREE.InstancedMesh | null = null;          // far: one dot per device
-  private kindMeshes = new Map<DeviceKind, { mesh: THREE.InstancedMesh; ids: number[]; y: number }>(); // near: shapes
+  private kindMeshes = new Map<string, { mesh: THREE.InstancedMesh; ids: number[]; y: number }>(); // near: shapes, keyed by kind or "m:<model>"
+  /** Detailed equipment models close up (wave 16), or the simple shapes by kind. */
+  private detailed = true;
+  /** Illustrative furniture on the floor shown on its own (wave 16): room kits, built per floor on first use. */
+  private furnitureOn = false;
+  private furnitureRules: KitRule[] = BUILTIN_KITS;
+  private furniture = new Map<number, THREE.Group>();
+  private floorDoorSegs = new Map<number, number[]>();
   private statusRings: THREE.InstancedMesh | null = null;         // near: a ring on the floor in the status colour
   private ringSize: number[] = [];
-  private kindIndex = new Map<number, { kind: DeviceKind; i: number }>();
+  private kindIndex = new Map<number, { kind: string; i: number }>();
   private near = false;
   private roomById = new Map<number, TwinRoom>();
   private floorById = new Map<number, TwinFloor>();
@@ -142,7 +159,7 @@ export class TwinScene {
   private labelsAt = 0;
   private labelInsets = { top: 0, right: 0, bottom: 0, left: 0 };
   private placing: { assetId: number; floorId: number; done: (p: { x: number; y: number } | null) => void } | null = null;
-  private kindNominal = new Map<DeviceKind, THREE.Vector3>();
+  private kindNominal = new Map<string, THREE.Vector3>();
   private navOverlay: { floorId: number; mesh: THREE.Mesh } | null = null;
   private drop: {
     spec: DropSpec; floorId: number; rot: number; ghost: THREE.Group; body: THREE.Mesh; foot: THREE.LineLoop; fx: number; fz: number;
@@ -316,6 +333,7 @@ export class TwinScene {
   private u(f: TwinFloor) { return 1 / (f.unitsPerMetre || 10); }
 
   private buildFloor(f: TwinFloor, geo: FloorGeometry | null) {
+    this.floorDoorSegs.set(f.id, geo?.doors ?? []);
     const s = this.u(f);
     const group = new THREE.Group();
     group.name = `floor-${f.id}`;
@@ -515,21 +533,25 @@ export class TwinScene {
     return out;
   }
 
-  /** Size of a kind's model as built (metres), measured once. */
-  private nominalOf(kind: DeviceKind): THREE.Vector3 {
-    let n = this.kindNominal.get(kind);
+  /** Size of a kind's (or detailed model's) shape as built (metres), measured once. */
+  private nominalOf(key: string): THREE.Vector3 {
+    let n = this.kindNominal.get(key);
     if (!n) {
-      const { geo } = kindGeometry(kind);
+      const geo = shapeGeometry(key);
       geo.computeBoundingBox();
       n = geo.boundingBox!.getSize(new THREE.Vector3());
       geo.dispose();
-      this.kindNominal.set(kind, n);
+      this.kindNominal.set(key, n);
     }
     return n;
   }
+  /** The near shape of a device: its detailed model (wave 16) or its kind's simple shape. */
+  private shapeKey(a: TwinAsset): string {
+    return this.detailed ? `m:${deviceModel(a.typeCode, a.groupCode, a.categoryCode)}` : deviceKind(a.groupCode, a.categoryCode);
+  }
 
   /** Scale that turns a kind's model into a device of real size: length along the model's long axis. */
-  private realScale(kind: DeviceKind, dims: { l: number; w: number; h: number } | undefined, out: THREE.Vector3): THREE.Vector3 {
+  private realScale(kind: string, dims: { l: number; w: number; h: number } | undefined, out: THREE.Vector3): THREE.Vector3 {
     if (!dims) return out.set(1, 1, 1);
     const n = this.nominalOf(kind);
     const [sx, sz] = n.x >= n.z ? [dims.l / n.x, dims.w / n.z] : [dims.w / n.x, dims.l / n.z];
@@ -595,35 +617,20 @@ export class TwinScene {
     this.deviceMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false }), Math.max(1, n));
     this.deviceMesh.count = n;
     this.deviceMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    const byKind = new Map<DeviceKind, number[]>();
     for (let i = 0; i < n; i++) {
       const a = this.assetsById.get(this.deviceIds[i])!;
       this.deviceMesh.setColorAt(i, new THREE.Color(STATUS_COLORS[a.status] ?? "#cfe8ff").multiplyScalar(2.0));
-      const k = deviceKind(a.groupCode, a.categoryCode);
-      (byKind.get(k) ?? byKind.set(k, []).get(k)!).push(a.id);
     }
     this.deviceMesh.renderOrder = 5;
     this.scene.add(this.deviceMesh);
-    const ringOf = new Map<DeviceKind, number>();
-    for (const [kind, ids] of byKind) {
-      const { geo: g, y, ring } = kindGeometry(kind);
-      ringOf.set(kind, ring);
-      // Lit models in a neutral colour; the status shows as a ring on the floor (and colours search hits).
-      const mesh = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: "#ffffff" }), ids.length);
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      ids.forEach((id, i) => { this.kindIndex.set(id, { kind, i }); mesh.setColorAt(i, new THREE.Color(PALETTE[this.style].model)); });
-      mesh.visible = false;
-      mesh.renderOrder = 5;
-      this.kindMeshes.set(kind, { mesh, ids, y });
-      this.scene.add(mesh);
-    }
+    this.buildShapes();
     const ringGeo = new THREE.RingGeometry(0.78, 1, 36); ringGeo.rotateX(-Math.PI / 2);
     this.statusRings = new THREE.InstancedMesh(ringGeo, new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }), Math.max(1, n));
     this.statusRings.count = n;
     this.statusRings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.statusRings.visible = false;
     this.statusRings.renderOrder = 4;
-    this.ringSize = this.deviceIds.map((id) => ringOf.get(this.kindIndex.get(id)?.kind ?? "other") ?? 0.55);
+    this.ringSize = this.deviceIds.map((id) => { const a = this.assetsById.get(id)!; return kindGeometryRing(deviceKind(a.groupCode, a.categoryCode)); });
     this.scene.add(this.statusRings);
     const bg = new THREE.BufferGeometry();
     bg.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(n * 6), 3));
@@ -632,6 +639,25 @@ export class TwinScene {
     this.scene.add(this.beamLines);
     this.visibleAssets = new Set(this.deviceIds);
     this.positionDevices();
+  }
+
+  /** The near shapes: one instanced mesh per kind (simple) or per detailed model (wave 16). Rebuilt when the choice changes. */
+  private buildShapes() {
+    for (const km of this.kindMeshes.values()) { this.scene.remove(km.mesh); km.mesh.geometry.dispose(); (km.mesh.material as THREE.Material).dispose(); }
+    this.kindMeshes.clear(); this.kindIndex.clear();
+    const byKey = new Map<string, number[]>();
+    for (const id of this.deviceIds) { const k = this.shapeKey(this.assetsById.get(id)!); (byKey.get(k) ?? byKey.set(k, []).get(k)!).push(id); }
+    for (const [key, ids] of byKey) {
+      // Lit models; simple shapes in a neutral colour, detailed ones in their own colours. The status shows as a ring.
+      const detailedKey = key.startsWith("m:");
+      const mesh = new THREE.InstancedMesh(shapeGeometry(key), new THREE.MeshLambertMaterial({ color: "#ffffff", vertexColors: detailedKey }), ids.length);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      ids.forEach((id, i) => { this.kindIndex.set(id, { kind: key, i }); mesh.setColorAt(i, new THREE.Color(detailedKey ? "#ffffff" : PALETTE[this.style].model)); });
+      mesh.visible = this.near;
+      mesh.renderOrder = 5;
+      this.kindMeshes.set(key, { mesh, ids, y: 0 });
+      this.scene.add(mesh);
+    }
   }
 
   /** Scale of a device marker now (0 = hidden); faults pulse, search hits swell, the rest dim while searching. */
@@ -698,7 +724,8 @@ export class TwinScene {
       const ki = this.kindIndex.get(id);
       if (ki) {
         const hit = this.highlight.size > 0 && this.highlight.has(id);
-        const base = c.set(hit ? status : PALETTE[this.style].model);
+        // Detailed models keep their own colours (brighter when a search hit; the ring shows the status).
+        const base = ki.kind.startsWith("m:") ? c.set(hit || this.style === "light" ? "#ffffff" : "#c9d8e2") : c.set(hit ? status : PALETTE[this.style].model);
         if (dim) base.lerp(new THREE.Color(PALETTE[this.style].bg), 0.55);
         this.kindMeshes.get(ki.kind)!.mesh.setColorAt(ki.i, base);
       }
@@ -732,6 +759,24 @@ export class TwinScene {
   }
 
   /* ───────────── Public controls ───────────── */
+
+  /** Detailed equipment models close up, or the simple shapes by kind (wave 16). */
+  setDetailed(on: boolean) {
+    if (on === this.detailed) return;
+    this.detailed = on;
+    if (!this.deviceMesh) return;
+    this.buildShapes(); this.positionDevices();
+  }
+  /** Illustrative furniture (room kits) on the floor shown on its own (wave 16); `rules` = the hospital's room kits. */
+  setFurniture(on: boolean, rules?: KitRule[]) {
+    if (rules && rules !== this.furnitureRules) {
+      this.furnitureRules = rules;
+      for (const g of this.furniture.values()) { g.parent?.remove(g); g.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); (m.material as THREE.Material | undefined)?.dispose?.(); }); }
+      this.furniture.clear();
+    }
+    this.furnitureOn = on;
+    this.applyFurniture();
+  }
 
   setExplode(v: number) { this.explode = v; this.layoutFloors(); }
 
@@ -773,6 +818,54 @@ export class TwinScene {
     }
     this.applyWallHeights();
     if (this.noteSpots.length) this.drawNotes(); // only on floors shown
+    this.applyFurniture();
+  }
+
+  /** Furniture shows on the floor shown on its own, when switched on (built the first time it's needed). */
+  private applyFurniture() {
+    if (this.furnitureOn && this.isolated != null && !this.furniture.has(this.isolated)) this.buildFurniture(this.isolated);
+    for (const [id, g] of this.furniture) g.visible = this.furnitureOn && this.isolated === id;
+  }
+
+  /** Room kits (Planning › Room kits) placed in a floor's rooms, around the registered devices; illustrative. */
+  private buildFurniture(floorId: number) {
+    const v = this.floors.get(floorId); if (!v) return;
+    const s = 1 / (v.floor.unitsPerMetre || 10);
+    const segs = this.floorDoorSegs.get(floorId) ?? [];
+    const doors: Pt[] = [];
+    for (let i = 0; i + 3 < segs.length; i += 4) {
+      const p: Pt = [((segs[i] + segs[i + 2]) / 2) * s, ((segs[i + 1] + segs[i + 3]) / 2) * s];
+      if (!doors.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.8)) doors.push(p);
+    }
+    const devicesIn = new Map<number, TwinAsset[]>();
+    for (const a of this.assetsById.values()) if (a.roomId != null && this.devicePos.has(a.id)) (devicesIn.get(a.roomId) ?? devicesIn.set(a.roomId, []).get(a.roomId)!).push(a);
+    const placements: Placement[] = [];
+    for (const r of this.data.rooms) {
+      if (r.floorId !== floorId || r.type === "CORRIDOR" || coreKind(r.name)) continue;
+      const look = roomLook(r.name, r.type, this.furnitureRules);
+      if (!look.items.length) continue;
+      const poly = r.poly.map(([x, y]) => [x * s, y * s] as Pt);
+      const regs = devicesIn.get(r.id) ?? [];
+      // Registered devices keep their spots; no kit item of a kind the room already has (no kit beds beside real beds).
+      const taken: Placement[] = regs.map((a) => { const d = this.devicePos.get(a.id)!; return { model: deviceModel(a.typeCode, a.groupCode, a.categoryCode), x: d.x, z: d.z, rot: 0 }; });
+      const have = new Set(taken.map((t) => t.model));
+      const xs = poly.map((p) => p[0]), zs = poly.map((p) => p[1]);
+      const near = doors.filter(([x, z]) => x >= Math.min(...xs) - 0.6 && x <= Math.max(...xs) + 0.6 && z >= Math.min(...zs) - 0.6 && z <= Math.max(...zs) + 0.6);
+      placements.push(...placeKit(poly, { ...look, items: look.items.filter((it) => !have.has(it.model)) }, near, taken));
+    }
+    const group = new THREE.Group();
+    const byModel = new Map<Model, Placement[]>();
+    for (const p of placements) (byModel.get(p.model) ?? byModel.set(p.model, []).get(p.model)!).push(p);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
+    for (const [model, list] of byModel) {
+      const mesh = new THREE.InstancedMesh(modelGeometry(model).clone(), new THREE.MeshLambertMaterial({ vertexColors: true, color: this.style === "dark" ? "#b9c8d2" : "#ffffff" }), list.length);
+      list.forEach((p, i) => { q.setFromAxisAngle(TwinScene.UP, p.rot); m4.compose(new THREE.Vector3(p.x, 0, p.z), q, one); mesh.setMatrixAt(i, m4); });
+      mesh.renderOrder = 4;
+      group.add(mesh);
+    }
+    group.visible = false;
+    v.group.add(group);
+    this.furniture.set(floorId, group);
   }
 
   /** Walls full height on one floor or close up; a low cutaway over the whole building from afar. Doors and columns follow. */

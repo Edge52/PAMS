@@ -320,3 +320,16 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - **Render models**: `furniture.ts` builders are more detailed; `furniture.test.ts` keeps each model inside its
   `MODEL_SIZE` footprint (desk, nurse station and meeting table carry chairs outside it, as before) and under 12,000
   triangles.
+
+# Wave 16 additions
+- **View presets** (`twin/presets.ts`, pure): Imaging and ICU rooms by department type (`departments.department_type_code`,
+  now sent as `TwinDepartment.typeCode`), room type or name. The preset's tint wins over every other room tint.
+- **Device status by day**: table `asset_status_days` (migration `0034`, changes only, primary key asset + day).
+  `snapshotStatuses()` (`src/lib/assets/status-history-server.ts`) runs with the hourly alert job; on an empty table
+  it first rebuilds the past year from work orders' downtime (`reconstructDays`, source `reconstructed`). The 3D
+  history feed sends the rows; `statusesOn` gives the statuses of a day; replay wins over live statuses in the scene.
+- **Detailed models in the live view**: `deviceModel()` (`twin/render/device-models.ts`) picks a render model by
+  catalogue code (longest prefix), else by kind; used by the scene and the render studio. `TwinScene.setDetailed`
+  rebuilds the near shapes (keys `"m:<model>"`); `setFurniture(on, rules)` places room kits on the floor shown on its
+  own, built once per floor (`buildFurniture`), around registered devices.
+

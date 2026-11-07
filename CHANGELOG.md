@@ -1,5 +1,19 @@
 # Changelog
 
+## Wave 16 — on branch `wave-16`, not merged yet
+
+Migration `0034`. Update with `git pull` and `npm run demo`; your data is kept.
+
+- **Imaging and ICU presets** (3D view, top bar): one click tints every imaging (or ICU) room across the hospital,
+  dims the rest, lights up their equipment and frames the camera on them; a floor shown on its own when they are all
+  on one. A summary lists rooms, floors, devices by status and category, and the rooms with a device down.
+- **Device status history**: each device's status is stored by day (changes only), every hour by the background job.
+  The first run rebuilds the past year from work orders' downtime. 3D view › History now replays each device's status
+  on the slider's day (*Device status on …*, on by default).
+- **Detailed models in the live 3D view**: close up, devices are drawn with the detailed render models (beds, CT,
+  X-ray, ventilators, incubators, theatre tables…), chosen by catalogue code; **Furniture** (illustrative room kits)
+  appears on a floor shown on its own. Both can be switched off under View. Renders now pick models the same way.
+
 ## Wave 15 — merged 7 Nov 2026
 
 Migration `0033`. Update with `git pull` and `npm run demo`; your data is kept.

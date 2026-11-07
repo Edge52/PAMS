@@ -1,4 +1,4 @@
-# Hospital PAMS — User guide (release 3.0, updated for wave 15)
+# Hospital PAMS — User guide (release 3.0, updated for wave 16)
 
 How to do the everyday jobs, by role. Every screen is reached from the menu on the left (the **Menu** button on a
 phone). The search box at the top of every page finds equipment, rooms, departments, suppliers, documents and more.
@@ -222,8 +222,11 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 
 ## 3D view in two minutes
 
+- **Imaging** and **ICU** (top bar): every imaging or ICU room tinted and framed, the rest dimmed, with a summary of
+  their equipment and the rooms with a device down. Press again, *Clear* or Esc to go back.
 - **Floors**: pick one, or *Whole building*. **View**: *Digital twin* or *Architectural* look; *Isometric*, *Plan*, *Eye
   level*; floor spacing; basements; glass façade; *Section cut*; lifts and stairs.
+  *Detailed equipment close up* and *Furniture on a floor shown on its own* (illustrative room kits) are on by default.
 - **Problem layer**: faults, overdue maintenance, past service life, downtime, value, recalls — *Heat map* or *Blocks*,
   by room or department.
 - **Plan vs installed**: choose a BOQ; missing equipment shows as white wireframes.
@@ -234,7 +237,8 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - **Notes**: select a room or device and *Add a note* (or *Note on a spot*); choose who it's for. Close it when done,
   or turn a device note into a work order.
 - **History**: load the last 7–365 days and drag the slider (or *Play*): faults red, repairs green, moves blue,
-  installations purple, at each device.
+  installations purple, at each device. *Device status on …* colours every device by its status that day (recorded hourly; days before
+  recording began are rebuilt from work orders' downtime).
 - **Tours**: *New tour*, set up the model, *Add this view as a stop*, write a caption, save. *Play* runs it full screen
   (← → step, Space pauses, Esc ends); *Copy link* shares it.
 - **Walk this floor** (or W): first person on the floor shown. W A S D or arrows, Shift to hurry, drag to look, Esc to

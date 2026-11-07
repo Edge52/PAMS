@@ -135,6 +135,11 @@ Under **Assets** (release 2.2 / wave 3):
   what-if, and **saved scenarios**.
 - **Renders**: more detailed furniture and equipment, still built in code.
 
+## Wave 16
+
+- **3D view**: Imaging and ICU presets; detailed equipment and illustrative furniture in the live view; History replays
+  each device's status on a past day (stored daily from the hourly job, the past year rebuilt from downtime).
+
 ## Finding things and keeping the register tidy
 
 - **Search** (box at the top of every page): equipment by tag, serial number, maker, model or tag; device types; makes
