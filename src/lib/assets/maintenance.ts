@@ -156,3 +156,22 @@ export function maintenanceTypeLabel(t: string | null | undefined): string {
   const s = t.replace(/_/g, " ").toLowerCase();
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+/* ── Triage of the due list (wave 19) ── */
+
+/**
+ * Which list a due row belongs to: "never" = no PPM on record at all (the date is counted from installation, so it is
+ * usually a missing record rather than a missed visit), "overdue" = past due after a recorded PPM, "soon" = due in
+ * the next 30 days.
+ */
+export type DueView = "overdue" | "never" | "soon";
+export function dueView(r: { state: string; lastPpm: string | null }): DueView | null {
+  if (r.state === "DUE_SOON") return "soon";
+  if (r.state !== "OVERDUE") return null;
+  return r.lastPpm ? "overdue" : "never";
+}
+const CRIT_RANK: Record<string, number> = { LIFE_SUPPORT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+/** Life support first, then by criticality, then the longest overdue (earliest due date). */
+export function triageSort<T extends { criticality: string | null; due: string | null; tag: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => (CRIT_RANK[a.criticality ?? ""] ?? 4) - (CRIT_RANK[b.criticality ?? ""] ?? 4) || (a.due ?? "").localeCompare(b.due ?? "") || a.tag.localeCompare(b.tag));
+}

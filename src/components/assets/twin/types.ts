@@ -104,6 +104,8 @@ export type TwinData = {
   library?: Record<string, TwinLibrary>;
   /** The hospital's queue simulation model (published pathways with rooms, beds, scanners, lifts), wave 17. */
   sim?: import("@/lib/flows/simulate").SimModel | null;
+  /** The hospital has published pathways, so the queue simulation can run (wave 19: the model loads on demand). */
+  hasFlows?: boolean;
   /** Clash and clearance issues of the devices placed on the plans (wave 17). */
   clashes?: (import("@/lib/assets/clash").ClashIssue & { floorId: number })[];
 };

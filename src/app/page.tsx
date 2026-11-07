@@ -25,9 +25,17 @@ const ENTITY_HREF: Record<string, (id: number) => string> = {
   work_order: (id) => `/assets/work-orders/${id}`,
 };
 
-export default async function Dashboard() {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const me = await requireUser();
-  const scope = await facilityScope(me);
+  const fullScope = await facilityScope(me);
+  // Wave 19: one hospital at a time when the person sees more than one.
+  const sp = await searchParams;
+  const facs = await db.select({ id: facilities.id, name: facilities.name }).from(facilities)
+    .where(fullScope === null ? undefined : fullScope.length ? inArray(facilities.id, fullScope) : sql`false`).orderBy(facilities.name);
+  const wanted = Number(Array.isArray(sp.facilityId) ? sp.facilityId[0] : sp.facilityId);
+  const chosen = facs.find((f) => f.id === wanted) ?? null;
+  const scope: number[] | null = chosen ? [chosen.id] : fullScope;
+  const fq = chosen ? `facilityId=${chosen.id}` : "";
   /** Facility filter: assets always have a facility; projects/POs/BOQs without one are visible to everyone. */
   const own = (col: PgColumn): SQL | undefined => (scope === null ? undefined : scope.length ? inArray(col, scope) : sql`false`);
   const ownOrNone = (col: PgColumn): SQL | undefined => (scope === null ? undefined : or(isNull(col), scope.length ? inArray(col, scope) : sql`false`));
@@ -70,7 +78,8 @@ export default async function Dashboard() {
       .where(own(buildings.facilityId))
       .groupBy(floors.id, floors.name, floors.level, buildings.name, facilities.name).orderBy(facilities.name, buildings.name, floors.level),
     // Facility-limited users see their own recent actions (the log isn't facility-tagged).
-    db.select().from(activityLog).where(scope === null ? undefined : eq(activityLog.actor, me.name)).orderBy(desc(activityLog.at)).limit(10),
+    // Sign-ins are left out: they said nothing about the work (wave 19).
+    db.select().from(activityLog).where(and(sql`${activityLog.action} <> 'signed_in'`, fullScope === null ? undefined : eq(activityLog.actor, me.name))).orderBy(desc(activityLog.at)).limit(10),
   ]);
 
   // Jobs for me: open work orders assigned to me, and for whoever assigns jobs, faults nobody has picked up yet.
@@ -99,8 +108,17 @@ export default async function Dashboard() {
     <>
       <PageHeader
         title="Dashboard"
-        description="Tenders in flight, equipment on every floor, and what needs attention this week."
+        description={chosen ? `${chosen.name} · tenders, equipment on every floor, and what needs attention this week.` : "Tenders in flight, equipment on every floor, and what needs attention this week."}
         actions={<>
+          {facs.length > 1 && (
+            <form action="/" className="flex items-center gap-2">
+              <select name="facilityId" defaultValue={chosen?.id ?? ""} aria-label="Hospital" className="h-9 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-sm">
+                <option value="">All hospitals</option>
+                {facs.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+              <button className="h-9 rounded-[var(--radius-control)] border border-line bg-surface px-3 text-sm font-semibold hover:bg-sunken">Show</button>
+            </form>
+          )}
           {can(me.role, "boq.edit") && <LinkButton href="/boq/quick-start">BOQ quick start</LinkButton>}
           {can(me.role, "procurement.edit") && <LinkButton href="/procurement/new" variant="primary">New project</LinkButton>}
         </>}
@@ -160,8 +178,8 @@ export default async function Dashboard() {
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Assets tracked" value={formatNumber(total)}
-          hint={total ? `${Math.round((inService / total) * 100)}% in service` : undefined} href="/assets" />
-        <Stat label="Down for maintenance or out of service" value={formatNumber(down)} href="/assets?status=UNDER_MAINTENANCE" />
+          hint={total ? `${Math.round((inService / total) * 100)}% in service` : undefined} href={`/assets${fq ? `?${fq}` : ""}`} />
+        <Stat label="Down for maintenance or out of service" value={formatNumber(down)} href={`/assets?status=UNDER_MAINTENANCE${fq ? `&${fq}` : ""}`} />
         <Stat label="Planned maintenance due" value={formatNumber(overduePm[0]?.n ?? 0)}
           hint={`${formatNumber(warrantySoon[0]?.n ?? 0)} warranties end within 90 days`} href="/assets/maintenance" />
         <Stat label="Open projects" value={formatNumber(openProjects[0]?.n ?? 0)}

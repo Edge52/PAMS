@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Permission } from "@/lib/auth/permissions";
 
 /**
@@ -51,17 +51,22 @@ const sections: { title: string; links: NavLink[] }[] = [
     title: "Assets",
     links: [
       { href: "/assets", label: "Asset register", need: "assets.view" },
-      { href: "/assets/map", label: "Floor map", need: "assets.view" },
       { href: "/assets/3d", label: "3D view", need: "assets.view" },
+      { href: "/assets/map", label: "Floor map", need: "assets.view" },
       { href: "/assets/work-orders", label: "Work orders", need: "assets.view" },
       { href: "/assets/maintenance", label: "Maintenance", need: "assets.view" },
+      { href: "/assets/department", label: "My department", need: "assets.view" },
+      { href: "/assets/requests", label: "Equipment requests", need: "assets.view" },
+    ],
+  },
+  {
+    title: "Asset management",
+    links: [
       { href: "/assets/contracts", label: "Service contracts", need: "assets.view" },
       { href: "/assets/parts", label: "Spare parts", need: "assets.view" },
       { href: "/assets/recalls", label: "Recalls", need: "assets.view" },
-      { href: "/assets/fleet", label: "Fleet & standardisation", need: "assets.view" },
-      { href: "/assets/department", label: "My department", need: "assets.view" },
-      { href: "/assets/requests", label: "Equipment requests", need: "assets.view" },
       { href: "/assets/rounds", label: "Rounds and stock-take", need: "assets.view" },
+      { href: "/assets/fleet", label: "Fleet & standardisation", need: "assets.view" },
       { href: "/assets/imaging", label: "Imaging use", need: "assets.view" },
       { href: "/assets/replacement", label: "Replacement plan", need: "assets.view" },
       { href: "/assets/capital-plan", label: "Capital plan", need: "assets.view" },
@@ -89,13 +94,73 @@ function isActive(pathname: string, href: string) {
   return best === href;
 }
 
-export function SideNav({ perms, assistant = false }: { perms: Permission[]; assistant?: boolean }) {
+/**
+ * Wave 19: the groups in the order each role uses them (their own work first), so the links a person needs most are
+ * at the top. Groups not listed keep the default order after these.
+ */
+export const ROLE_ORDER: Record<string, string[]> = {
+  TECHNICIAN: ["Overview", "Assets", "Asset management", "Hospital"],
+  BIOMEDICAL: ["Overview", "Assets", "Asset management", "Hospital", "Planning"],
+  DEPARTMENT_HEAD: ["Overview", "Assets", "Planning"],
+  PROCUREMENT: ["Overview", "Procurement", "Planning"],
+  FINANCE: ["Overview", "Procurement", "Asset management"],
+  PLANNER: ["Overview", "Planning", "Hospital", "Assets"],
+  DIRECTOR: ["Overview", "Assets", "Procurement", "Planning"],
+  ADMIN: ["Overview", "Assets", "Procurement", "Planning", "Hospital", "Asset management"],
+};
+export function orderSections<T extends { title: string }>(list: T[], role: string | null | undefined): T[] {
+  const order = ROLE_ORDER[role ?? ""] ?? [];
+  const rank = (t: string) => { const i = order.indexOf(t); return i < 0 ? order.length + list.findIndex((x) => x.title === t) : i; };
+  return [...list].sort((a, b) => rank(a.title) - rank(b.title));
+}
+
+const PIN_KEY = "pams.nav.pinned", CLOSED_KEY = "pams.nav.closed";
+const readList = (k: string): string[] | null => { try { const v = window.localStorage.getItem(k); return v ? (JSON.parse(v) as string[]) : null; } catch { return null; } };
+const writeList = (k: string, v: string[]) => { try { window.localStorage.setItem(k, JSON.stringify(v)); } catch { /* private window: not remembered */ } };
+
+export function SideNav({ perms, assistant = false, role = null }: { perms: Permission[]; assistant?: boolean; role?: string | null }) {
   const pathname = usePathname();
   const allowed = new Set(perms);
-  const visible = sections
+  const visible = orderSections(sections
     .map((s) => ({ ...s, links: s.links.filter((l) => (!l.need || allowed.has(l.need)) && (l.flag !== "assistant" || assistant)) }))
-    .filter((s) => s.links.length > 0);
+    .filter((s) => s.links.length > 0), role);
   const [open, setOpen] = useState(false);
+  // Pinned links (top of the menu) and folded groups, remembered in this browser.
+  const [pinned, setPinned] = useState<string[]>([]);
+  const [closed, setClosed] = useState<string[] | null>(null);
+  useEffect(() => {
+    const t = setTimeout(() => { setPinned(readList(PIN_KEY) ?? []); setClosed(readList(CLOSED_KEY)); }, 0);
+    return () => clearTimeout(t);
+  }, []);
+  // First visit: the role's first three groups open, the rest folded. The group of the page shown is always open.
+  const isClosed = (title: string) => {
+    if (visible.find((s) => s.title === title)?.links.some((l) => isActive(pathname, l.href))) return false;
+    return closed ? closed.includes(title) : visible.findIndex((s) => s.title === title) >= 3;
+  };
+  const toggle = (title: string) => {
+    const now = visible.filter((s) => isClosed(s.title)).map((s) => s.title);
+    const next = now.includes(title) ? now.filter((t) => t !== title) : [...now, title];
+    setClosed(next); writeList(CLOSED_KEY, next);
+  };
+  const togglePin = (href: string) => {
+    const next = pinned.includes(href) ? pinned.filter((h) => h !== href) : [...pinned, href].slice(-8);
+    setPinned(next); writeList(PIN_KEY, next);
+  };
+  const allLinks = visible.flatMap((s) => s.links);
+  const pins = pinned.map((h) => allLinks.find((l) => l.href === h)).filter((l): l is NavLink => !!l);
+  const link = (l: NavLink, pin: boolean) => {
+    const active = isActive(pathname, l.href), isPinned = pinned.includes(l.href);
+    return (
+      <li key={`${pin ? "p" : ""}${l.href}`} className="group relative">
+        <Link href={l.href} onClick={() => setOpen(false)} aria-current={active ? "page" : undefined}
+          className={`block rounded-[var(--radius-control)] py-1.5 pl-2 pr-7 text-[14px] ${active ? "bg-primary-soft font-semibold text-primary-strong" : "text-ink hover:bg-sunken"}`}>
+          {l.label}
+        </Link>
+        <button type="button" onClick={() => togglePin(l.href)} aria-label={isPinned ? `Unpin ${l.label}` : `Pin ${l.label} to the top`} title={isPinned ? "Unpin" : "Pin to the top"}
+          className={`absolute right-1 top-1/2 -translate-y-1/2 rounded px-1 text-xs ${isPinned ? "text-primary" : "text-faint opacity-0 group-hover:opacity-100 focus:opacity-100"}`}>{isPinned ? "★" : "☆"}</button>
+      </li>
+    );
+  };
 
   return (
     <>
@@ -121,30 +186,24 @@ export function SideNav({ perms, assistant = false }: { perms: Permission[]; ass
             <span className="block text-xs text-muted">Procurement & assets</span>
           </span>
         </Link>
-        {visible.map((s) => (
-          <div key={s.title} className="mb-5">
-            <p className="mb-1 px-2 text-xs font-semibold text-faint">{s.title}</p>
-            <ul>
-              {s.links.map((l) => {
-                const active = isActive(pathname, l.href);
-                return (
-                  <li key={l.href}>
-                    <Link
-                      href={l.href}
-                      onClick={() => setOpen(false)}
-                      aria-current={active ? "page" : undefined}
-                      className={`block rounded-[var(--radius-control)] px-2 py-1.5 text-[14px] ${
-                        active ? "bg-primary-soft font-semibold text-primary-strong" : "text-ink hover:bg-sunken"
-                      }`}
-                    >
-                      {l.label}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+        {pins.length > 0 && (
+          <div className="mb-4">
+            <p className="mb-1 px-2 text-xs font-semibold text-faint">Pinned</p>
+            <ul>{pins.map((l) => link(l, true))}</ul>
           </div>
-        ))}
+        )}
+        {visible.map((s) => {
+          const shut = isClosed(s.title);
+          return (
+            <div key={s.title} className="mb-3">
+              <button type="button" onClick={() => toggle(s.title)} aria-expanded={!shut}
+                className="mb-1 flex w-full items-center justify-between rounded px-2 py-0.5 text-left text-xs font-semibold text-faint hover:text-ink">
+                <span>{s.title}</span><span aria-hidden className="text-[10px]">{shut ? `${s.links.length} ▸` : "▾"}</span>
+              </button>
+              {!shut && <ul>{s.links.map((l) => link(l, false))}</ul>}
+            </div>
+          );
+        })}
       </nav>
     </>
   );

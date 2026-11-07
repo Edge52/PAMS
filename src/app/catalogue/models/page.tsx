@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutoSubmit } from "@/components/auto-submit";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, deviceModels, deviceTypes } from "@/db/schema";
@@ -50,6 +51,7 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
         </>} />
       <Notice sp={sp} />
       <form action="/catalogue/models" className="mb-3 flex flex-wrap items-center gap-2" role="search">
+        <AutoSubmit />
         <input type="hidden" name="show" value={show} />
         <input type="search" name="q" defaultValue={q} placeholder="Maker, model or device type" aria-label="Search makes and models"
           className="min-w-0 flex-1 rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 sm:max-w-xs" />

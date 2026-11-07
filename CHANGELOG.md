@@ -1,5 +1,28 @@
 # Changelog
 
+## Wave 19 — on branch `wave-19`, not merged yet
+
+From the interface review (Claude doc "PAMS interface review — what to improve").
+
+- **Side menu**: groups fold and remember it; each role's own work comes first (technicians see Assets, procurement
+  sees Procurement); the long Assets group is split into *Assets* (daily work) and *Asset management*; any link can
+  be pinned to the top with its star.
+- **Maintenance**: devices with **no PPM on record** are listed apart from real overdue visits (946 against 44 in
+  the demo); every list puts life support first, then the longest overdue; 50 rows a page.
+- **Dashboard**: choose one hospital; sign-ins no longer fill *Recent activity*; figures that open a list show an
+  arrow.
+- **BOQ**: departments fold, with a list to jump to one and *Open all departments*.
+- **Lists**: filters apply as soon as a list changes (asset register, maintenance, work orders, offers, orders,
+  projects, suppliers, models); the asset register keeps search and the common filters in view, the rest under
+  *More filters*, and shows the active filters as chips to remove; on a phone it shows fewer columns, the make and
+  room under the device type. On wide screens, table headers stay in view while scrolling.
+- **3D view**: the View panel in groups — *Model*, *Colour rooms by* (one choice) and *Checks* — with the rest under
+  *More view options*. Clash check, room templates and the simulation model load only when switched on, so the view
+  opens faster.
+- **Hospital page**: *Checks and planning* tab with drawing quality, space planning, clash check, room templates,
+  pathways and commissioning, instead of buttons in the header.
+- **Purchase orders**: the listed orders added up, with a total in EGP at the latest saved exchange rates.
+
 ## Wave 18 — merged 7 Nov 2026
 
 - **Solid floors** (3D view › View › *Solid floors (not see-through)*): every floor is drawn as a built slab with

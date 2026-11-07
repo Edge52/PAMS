@@ -51,13 +51,14 @@ export function Panel({
 export function Stat({ label, value, hint, href }: { label: string; value: ReactNode; hint?: ReactNode; href?: string }) {
   const body = (
     <>
-      <p className="text-sm text-muted">{label}</p>
+      <p className="flex items-start justify-between gap-2 text-sm text-muted">{label}{href && <span aria-hidden className="text-faint transition-colors group-hover:text-primary">›</span>}</p>
       <p className="mt-1 text-2xl font-bold">{value}</p>
       {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
     </>
   );
   const cls = "block rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3";
-  return href ? <Link href={href} className={cx(cls, "hover:border-primary")}>{body}</Link> : <div className={cls}>{body}</div>;
+  // A figure that opens its list shows an arrow and lifts on hover (wave 19).
+  return href ? <Link href={href} className={cx(cls, "group hover:border-primary hover:shadow-sm")}>{body}</Link> : <div className={cls}>{body}</div>;
 }
 
 export function EmptyState({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
@@ -137,13 +138,14 @@ export function FormGrid({ cols = 2, children }: { cols?: 1 | 2 | 3 | 4; childre
 
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cx("overflow-x-auto rounded-[var(--radius-panel)] border border-line bg-surface", className)}>
+    // Wide screens: no scroll box, so the header row can stay on screen while the page scrolls (wave 19).
+    <div className={cx("overflow-x-auto rounded-[var(--radius-panel)] border border-line bg-surface xl:overflow-x-visible", className)}>
       <table className="w-full border-collapse text-[14px]">{children}</table>
     </div>
   );
 }
 export function THead({ children }: { children: ReactNode }) {
-  return <thead className="bg-sunken text-left text-[13px] text-muted">{children}</thead>;
+  return <thead className="bg-sunken text-left text-[13px] text-muted xl:sticky xl:top-0 xl:z-10 [&_th]:bg-sunken">{children}</thead>;
 }
 export function Th({ children, className, align }: { children?: ReactNode; className?: string; align?: "right" | "center" }) {
   return (

@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { AutoSubmit } from "@/components/auto-submit";
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { projects, purchaseOrders, suppliers } from "@/db/schema";
 import { EmptyState, Input, LinkButton, PageHeader, Select, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
 import { DaysLeft, Progress } from "@/components/procurement/bits";
 import { formatMoney } from "@/lib/format";
+import { rateToEgp } from "@/lib/server-utils";
 import { options } from "@/lib/procurement/labels";
 import { PO_STATUSES, type PoStatus } from "@/lib/procurement/po-status";
 import { poTotals } from "@/lib/procurement/server";
@@ -43,6 +45,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
     db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(inScope).limit(1),
   ]);
   const totals = await poTotals(rows.map((r) => r.id));
+  const egpRate = new Map(await Promise.all([...new Set(rows.map((r) => r.currency))].map(async (c) => [c, await rateToEgp(c)] as const)));
   const filtered = status !== "open" || Boolean(sp.supplierId) || Boolean(q);
 
   return (
@@ -50,6 +53,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
       <PageHeader title="Purchase orders" description="Orders placed with suppliers, what has arrived and what is still outstanding."
         actions={can(me.role, "po.create") ? <LinkButton href="/procurement/purchase-orders/new" variant="primary">New purchase order</LinkButton> : undefined} />
       <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
+        <AutoSubmit />
         <label className="min-w-0 flex-1 basis-52"><span className="sr-only">Search</span>
           <Input type="search" name="q" defaultValue={q ?? ""} placeholder="Search PO number, supplier or project" /></label>
         <label><span className="sr-only">Status</span>
@@ -69,6 +73,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
           </EmptyState>
         )
       ) : (
+        <>
         <Table>
           <THead><tr><Th>Number</Th><Th>Supplier</Th><Th>Project</Th><Th>Status</Th><Th align="right">Value</Th><Th>Expected delivery</Th><Th>Received</Th></tr></THead>
           <tbody>
@@ -90,6 +95,21 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
             })}
           </tbody>
         </Table>
+        {/* Wave 19: the orders listed, added up in one currency. */}
+        {(() => {
+          const by = new Map<string, number>();
+          for (const r of rows) by.set(r.currency, (by.get(r.currency) ?? 0) + (totals.get(r.id)?.value ?? 0));
+          const parts = [...by].map(([c, v]) => formatMoney(v, c));
+          const missing = [...by.keys()].filter((c) => egpRate.get(c) == null);
+          const egp = [...by].reduce((t, [c, v]) => t + v * (egpRate.get(c) ?? 0), 0);
+          return (
+            <p className="mt-2 text-right text-sm text-muted">
+              {rows.length} order{rows.length === 1 ? "" : "s"}: {parts.join(" + ")}
+              {by.size > 1 || !by.has("EGP") ? <> · <b className="text-ink">{formatMoney(egp, "EGP")}</b> at the latest saved exchange rates{missing.length ? ` (no rate for ${missing.join(", ")})` : ""}</> : null}
+            </p>
+          );
+        })()}
+        </>
       )}
     </>
   );

@@ -28,7 +28,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen">
         {user ? (
           <div className="flex min-h-screen">
-            <SideNav perms={permissionsOf(user.role)} assistant={assistant} />
+            <SideNav perms={permissionsOf(user.role)} assistant={assistant} role={user.role} />
             <main className="min-w-0 flex-1 px-5 py-3 md:px-8 lg:px-10">
               <TopBar user={user} />
               {children}

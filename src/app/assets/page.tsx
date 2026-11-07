@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { AutoSubmit } from "@/components/auto-submit";
+import { humanize } from "@/lib/status";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { purchaseOrders } from "@/db/schema";
@@ -39,6 +41,22 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
   const qs = (over: Parameters<typeof filterToQuery>[1] = {}) => { const s = filterToQuery(f, over); return s ? `?${s}` : ""; };
   const filtered = activeFilterCount(f) > 0;
   const floorsShown = f.buildingId ? tree.floors.filter((x) => x.buildingId === f.buildingId) : tree.floors;
+  // Active filters as removable chips (wave 19).
+  const nameOf = <T extends { id: number }>(list: T[], id: number | undefined, label: (x: T) => string) => { const x = list.find((y) => y.id === id); return x ? label(x) : String(id); };
+  const chips: { key: string; label: string; href: string }[] = [];
+  const chip = (key: keyof typeof f & string, label: string | null | undefined) => { if (label) chips.push({ key, label, href: `/assets${qs({ [key]: undefined, page: undefined } as Parameters<typeof qs>[0])}` }); };
+  if (f.q) chip("q", `“${f.q}”`);
+  if (f.facilityId) chip("facilityId", nameOf(facs, f.facilityId, (x) => x.code));
+  if (f.buildingId) chip("buildingId", nameOf(tree.buildings, f.buildingId, (x) => x.name));
+  if (f.floorId) chip("floorId", nameOf(tree.floors, f.floorId, (x) => x.name));
+  if (f.departmentId) chip("departmentId", nameOf(tree.departments, f.departmentId, (x) => x.name));
+  if (f.roomId) chip("roomId", nameOf(tree.rooms, f.roomId, (x) => `${x.code} ${x.name}`));
+  if (f.category) chip("category", cats.find((c) => c.code === f.category)?.name ?? f.category);
+  if (f.deviceType) chip("deviceType", f.deviceType);
+  if (f.status) chip("status", humanize(f.status));
+  if (f.criticality) chip("criticality", humanize(f.criticality));
+  if (f.warranty) chip("warranty", f.warranty === "expiring" ? "Warranty ends in 90 days" : "Warranty expired");
+  if (f.tag) chip("tag", `Tag: ${f.tag}`);
   const roomsShown = tree.rooms.filter((r) => (!f.floorId || r.floorId === f.floorId) && (!f.departmentId || r.departmentId === f.departmentId));
 
   return (
@@ -62,27 +80,38 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
         </p>
       )}
 
+      {/* Wave 19: search and the common filters first, the rest under More filters; lists apply as soon as they change. */}
       <form action="/assets" className="mb-4 rounded-[var(--radius-panel)] border border-line bg-surface p-3" role="search" aria-label="Filter assets">
+        <AutoSubmit />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           <label className="col-span-2 sm:col-span-3 lg:col-span-2"><span className="sr-only">Search</span>
             <input type="search" name="q" defaultValue={f.q} placeholder="Tag, serial, model or manufacturer" className={ctl} /></label>
           {facs.length > 1 && <NativeSelect name="facilityId" aria-label="Facility" options={facs.map((x) => ({ value: x.id, label: x.code }))} value={f.facilityId} placeholder="All facilities" />}
-          {tree.buildings.length > 1 && <NativeSelect name="buildingId" aria-label="Building" options={tree.buildings.map((b) => ({ value: b.id, label: b.name }))} value={f.buildingId} placeholder="All buildings" />}
-          <NativeSelect name="floorId" aria-label="Floor" options={floorsShown.map((x) => ({ value: x.id, label: x.name }))} value={f.floorId} placeholder="All floors" />
           <NativeSelect name="departmentId" aria-label="Department" options={tree.departments.map((d) => ({ value: d.id, label: d.name }))} value={f.departmentId} placeholder="All departments" />
-          <NativeSelect name="roomId" aria-label="Room" options={roomsShown.map((r) => ({ value: r.id, label: `${r.code} — ${r.name}` }))} value={f.roomId} placeholder="All rooms" />
-          <NativeSelect name="category" aria-label="Category" options={cats.map((c) => ({ value: c.code, label: c.level === 1 ? c.name : `   ${c.name}` }))} value={f.category} placeholder="All categories" />
-          <div className="col-span-2"><DeviceTypeSelect types={types} name="deviceType" by="code" value={f.deviceType} placeholder="All device types" /></div>
           <NativeSelect name="status" aria-label="Status" options={enumOptions(ASSET_STATUSES)} value={f.status} placeholder="Any status" />
-          <NativeSelect name="criticality" aria-label="Criticality" options={enumOptions(CRITICALITIES)} value={f.criticality} placeholder="Any criticality" />
-          <NativeSelect name="warranty" aria-label="Warranty" options={[{ value: "expiring", label: "Warranty ends in 90 days" }, { value: "expired", label: "Warranty expired" }]} value={f.warranty} placeholder="Any warranty" />
-          <label><span className="sr-only">Tag</span><input name="tag" defaultValue={f.tag} placeholder="Tag" className={ctl} /></label>
           <NativeSelect name="sort" aria-label="Sort by" options={[{ value: "tag", label: "Sort by tag" }, { value: "type", label: "Sort by device type" }, { value: "location", label: "Sort by location" }, { value: "warranty", label: "Sort by warranty end" }, { value: "status", label: "Sort by status" }]} value={f.sort ?? "tag"} />
         </div>
+        <details className="mt-2" open={!!(f.buildingId || f.floorId || f.roomId || f.category || f.deviceType || f.criticality || f.warranty || f.tag)}>
+          <summary className="cursor-pointer text-sm font-semibold text-primary">More filters</summary>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {tree.buildings.length > 1 && <NativeSelect name="buildingId" aria-label="Building" options={tree.buildings.map((b) => ({ value: b.id, label: b.name }))} value={f.buildingId} placeholder="All buildings" />}
+            <NativeSelect name="floorId" aria-label="Floor" options={floorsShown.map((x) => ({ value: x.id, label: x.name }))} value={f.floorId} placeholder="All floors" />
+            <NativeSelect name="roomId" aria-label="Room" options={roomsShown.map((r) => ({ value: r.id, label: `${r.code} — ${r.name}` }))} value={f.roomId} placeholder="All rooms" />
+            <NativeSelect name="category" aria-label="Category" options={cats.map((c) => ({ value: c.code, label: c.level === 1 ? c.name : `   ${c.name}` }))} value={f.category} placeholder="All categories" />
+            <div className="col-span-2"><DeviceTypeSelect types={types} name="deviceType" by="code" value={f.deviceType} placeholder="All device types" /></div>
+            <NativeSelect name="criticality" aria-label="Criticality" options={enumOptions(CRITICALITIES)} value={f.criticality} placeholder="Any criticality" />
+            <NativeSelect name="warranty" aria-label="Warranty" options={[{ value: "expiring", label: "Warranty ends in 90 days" }, { value: "expired", label: "Warranty expired" }]} value={f.warranty} placeholder="Any warranty" />
+            <label><span className="sr-only">Tag</span><input name="tag" defaultValue={f.tag} placeholder="Tag" className={ctl} /></label>
+          </div>
+        </details>
         {f.poId && <input type="hidden" name="poId" value={f.poId} />}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button className="rounded-[var(--radius-control)] border border-primary bg-primary px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-strong">Apply filters</button>
-          {filtered && <Link href="/assets" className="px-2 text-sm text-primary hover:underline">Clear all</Link>}
+          <button className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">Search</button>
+          {chips.map((c) => (
+            <Link key={c.key} href={c.href} className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary-soft px-2.5 py-0.5 text-xs text-primary-strong hover:border-primary" title="Remove this filter">
+              {c.label}<span aria-hidden>×</span><span className="sr-only">remove</span></Link>
+          ))}
+          {chips.length > 1 && <Link href="/assets" className="px-1 text-xs text-primary hover:underline">Clear all</Link>}
           <span className="ml-auto text-sm text-muted" aria-live="polite"><b className="text-ink">{formatNumber(total)}</b> asset{total === 1 ? "" : "s"}{filtered ? " match" : ""}</span>
         </div>
       </form>
@@ -108,7 +137,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
             <THead>
               <tr>
                 <Th><span className="sr-only">Select for labels</span></Th>
-                <Th>Tag</Th><Th>Device type</Th><Th>Manufacturer / model</Th><Th>Serial</Th><Th>Location</Th><Th>Status</Th><Th>Warranty end</Th><Th>Next PPM</Th>
+                <Th>Tag</Th><Th>Device type</Th><Th className="hidden md:table-cell">Manufacturer / model</Th><Th className="hidden lg:table-cell">Serial</Th><Th className="hidden sm:table-cell">Location</Th><Th>Status</Th><Th className="hidden md:table-cell">Warranty end</Th><Th className="hidden md:table-cell">Next PPM</Th>
               </tr>
             </THead>
             <tbody>
@@ -122,11 +151,13 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
                   <tr key={a.id} className="hover:bg-canvas">
                     <Td className="w-8"><input type="checkbox" name="ids" value={a.id} form="labels-form" aria-label={`Select ${a.assetTag} for labels`} /></Td>
                     <Td className="whitespace-nowrap"><Link href={`/assets/${a.id}`} className="font-mono text-[13px] font-semibold text-primary hover:underline">{a.assetTag}</Link></Td>
-                    <Td><Link href={`/catalogue/${a.deviceTypeCode}`} className="hover:text-primary">{a.deviceTypeName}</Link></Td>
-                    <Td>{a.manufacturer ?? "—"}<div className="text-xs text-muted">{a.model}</div>
+                    <Td><Link href={`/catalogue/${a.deviceTypeCode}`} className="hover:text-primary">{a.deviceTypeName}</Link>
+                      {/* Phones: the hidden columns in one line under the type. */}
+                      <span className="block text-xs text-muted md:hidden">{[a.manufacturer, a.model].filter(Boolean).join(" ")}{a.roomId ? <span className="sm:hidden"> · {a.roomName}</span> : null}</span></Td>
+                    <Td className="hidden md:table-cell">{a.manufacturer ?? "—"}<div className="text-xs text-muted">{a.model}</div>
                       {a.tags.length > 0 && <div className="mt-0.5 flex flex-wrap gap-1">{a.tags.map((t) => <Link key={t} href={`/assets${qs({ tag: t, page: undefined })}`}><Badge tone="info">{t}</Badge></Link>)}</div>}</Td>
-                    <Td className="font-mono text-xs">{a.serialNumber ?? <span className="text-faint">—</span>}</Td>
-                    <Td className="min-w-[12rem]">
+                    <Td className="hidden font-mono text-xs lg:table-cell">{a.serialNumber ?? <span className="text-faint">—</span>}</Td>
+                    <Td className="hidden min-w-[12rem] sm:table-cell">
                       {a.roomId ? (
                         <Link href={`/assets/map?assetId=${a.id}`} className="group block" title="Show on the floor map">
                           <span className="text-xs text-muted">{a.floorName} › {a.departmentName ?? "No department"}</span>
@@ -135,12 +166,12 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
                       ) : <span className="text-muted">{a.departmentName ?? "Not placed"}<div className="text-xs">no room</div></span>}
                     </Td>
                     <Td><StatusBadge value={a.status} /></Td>
-                    <Td className="whitespace-nowrap">
+                    <Td className="hidden whitespace-nowrap md:table-cell">
                       {formatDate(a.warrantyEnd)}
                       {w.state === "EXPIRING" && <div><Badge tone="warn">{w.days} days left</Badge></div>}
                       {w.state === "EXPIRED" && <div className="text-xs text-muted">expired</div>}
                     </Td>
-                    <Td className="whitespace-nowrap">
+                    <Td className="hidden whitespace-nowrap md:table-cell">
                       {ds === "NONE" ? <span className="text-faint">—</span> : <>{formatDate(next)}{ds === "OVERDUE" && <div><Badge tone="danger">Overdue</Badge></div>}{ds === "DUE_SOON" && <div><Badge tone="warn">Due soon</Badge></div>}</>}
                     </Td>
                   </tr>

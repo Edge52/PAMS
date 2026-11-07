@@ -280,6 +280,14 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - **Tours › Video** plays a tour and saves it as a video file with the captions, ready for a board meeting. Keep the
   tab in front while it records.
 
+## Finding your way (wave 19)
+
+- The side menu puts your own work first. Click a group's name to fold it; hover a link and click ☆ to pin it to the
+  top.
+- Lists apply a filter as soon as you choose it; remove one with the × on its chip.
+- Maintenance › *No PPM on record* lists devices with no visit recorded since installation: record the last visit
+  on the asset, or plan the first.
+
 ## 3D view in two minutes
 
 - **Imaging** and **ICU** (top bar): every imaging or ICU room tinted and framed, the rest dimmed, with a summary of

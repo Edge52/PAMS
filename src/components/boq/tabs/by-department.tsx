@@ -6,8 +6,10 @@ import { addManualLine, deleteLine, updateLine } from "@/app/boq/actions";
 import { LineRow } from "../line-row";
 import { DevicePicker, type DeviceOption } from "../device-picker";
 
-export function ByDepartmentTab({ ws, locked, showWhy, devices }: {
+export function ByDepartmentTab({ ws, locked, showWhy, devices, expand = false }: {
   ws: BoqWorkspace; locked: boolean; showWhy: boolean; devices: DeviceOption[];
+  /** Wave 19: every department open (else folded, with a list to jump to one). */
+  expand?: boolean;
 }) {
   const { boq, depts, lines, totals } = ws;
   const base = `/boq/${boq.id}?tab=department`;
@@ -28,15 +30,32 @@ export function ByDepartmentTab({ ws, locked, showWhy, devices }: {
             ? <Link href={base} className="font-semibold text-primary hover:underline">hide the calculations</Link>
             : <Link href={`${base}&why=1`} className="font-semibold text-primary hover:underline">show every calculation</Link>}.
         </p>
-        {!locked && <a href="#add-line" className="font-semibold text-primary hover:underline">Add a line by hand ↓</a>}
+        <span className="flex flex-wrap gap-3">
+          {depts.length > 3 && (expand
+            ? <Link href={`${base}${showWhy ? "&why=1" : ""}`} className="font-semibold text-primary hover:underline">Fold all departments</Link>
+            : <Link href={`${base}&expand=1${showWhy ? "&why=1" : ""}`} className="font-semibold text-primary hover:underline">Open all departments</Link>)}
+          {!locked && <a href="#add-line" className="font-semibold text-primary hover:underline">Add a line by hand ↓</a>}
+        </span>
       </div>
+      {depts.length > 3 && (
+        <nav aria-label="Departments" className="rounded-[var(--radius-panel)] border border-line bg-surface p-3">
+          <ul className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            {depts.map((d) => (
+              <li key={d.id} className="flex justify-between gap-2">
+                <a href={`#dept-${d.id}`} className="min-w-0 truncate text-primary hover:underline">{d.label}</a>
+                <span className="shrink-0 text-muted">{lines.filter((l) => l.boqDepartmentId === d.id).length} lines · {formatMoney(totals.byDepartment.get(d.id) ?? 0, boq.currency)}</span>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
 
       {depts.map((d) => {
         const dl = lines.filter((l) => l.boqDepartmentId === d.id);
         const sub = totals.byDepartment.get(d.id) ?? 0;
         return (
-          <section key={d.id} id={`dept-${d.id}`} className="scroll-mt-4">
-            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <details key={d.id} id={`dept-${d.id}`} className="group scroll-mt-4" open={expand || depts.length <= 3}>
+            <summary className="mb-2 flex cursor-pointer list-none flex-wrap items-baseline justify-between gap-2 [&::-webkit-details-marker]:hidden">
               <h3 className="text-[16px] font-semibold">
                 {d.label}
                 <span className="ml-2 text-sm font-normal text-muted">
@@ -46,8 +65,9 @@ export function ByDepartmentTab({ ws, locked, showWhy, devices }: {
                   {d.instances > 1 && ` · ×${d.instances}`}
                 </span>
               </h3>
-              <span className="text-sm"><span className="text-muted">Subtotal </span><span className="font-semibold">{formatMoney(sub, boq.currency)}</span></span>
-            </div>
+              <span className="text-sm"><span className="text-muted">{dl.length} lines · Subtotal </span><span className="font-semibold">{formatMoney(sub, boq.currency)}</span>
+                <span aria-hidden className="ml-2 inline-block text-muted transition-transform group-open:rotate-90">▸</span></span>
+            </summary>
             {dl.length === 0 ? (
               <p className="rounded-[var(--radius-panel)] border border-dashed border-line bg-surface px-4 py-3 text-sm text-muted">
                 The standard has no rules for this department type at the selected tiers. Add lines by hand, or add rules in the{" "}
@@ -76,7 +96,7 @@ export function ByDepartmentTab({ ws, locked, showWhy, devices }: {
                 </table>
               </div>
             )}
-          </section>
+          </details>
         );
       })}
 

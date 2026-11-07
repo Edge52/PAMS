@@ -1,13 +1,14 @@
 import Link from "next/link";
+import { AutoSubmit } from "@/components/auto-submit";
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, maintenanceEvents, rooms, suppliers, workOrders } from "@/db/schema";
 import { Badge, Button, EmptyState, Field, FormGrid, Input, LinkButton, PageHeader, Panel, Stat, StatusBadge, TabLinks, Textarea } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
-import { enumOptions, NativeSelect, Notice } from "@/components/assets/bits";
+import { enumOptions, NativeSelect, Notice, Pager } from "@/components/assets/bits";
 import { addDays, addMonths, monthLabel, startOfMonth, endOfMonth } from "@/lib/assets/dates";
 import { ASSET_CONDITIONS } from "@/lib/assets/filters";
-import { displayEventStatus, dueState, groupByMonth, nextPpmDue, warrantyState, maintenanceTypeLabel } from "@/lib/assets/maintenance";
+import { displayEventStatus, dueState, dueView, groupByMonth, nextPpmDue, triageSort, warrantyState, maintenanceTypeLabel, type DueView } from "@/lib/assets/maintenance";
 import { locationTree } from "@/lib/assets/queries";
 import { CURRENCIES, formatDate, formatNumber, todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
@@ -54,8 +55,12 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
     const n = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: a.lastPpm });
     return { ...a, due: n.due, interval: n.intervalMonths, isDefault: n.isDefaultInterval, state: dueState(n.due, today) };
   });
-  const overdue = withDue.filter((a) => a.state === "OVERDUE");
+  // Wave 19: devices with no PPM on record apart from real overdue visits; life support first.
+  const overdue = withDue.filter((a) => dueView(a) === "overdue");
+  const never = withDue.filter((a) => dueView(a) === "never");
   const dueSoon = withDue.filter((a) => a.state === "DUE_SOON");
+  const view: DueView = (["overdue", "never", "soon"] as const).find((v) => v === one(sp, "view")) ?? (overdue.length ? "overdue" : never.length ? "never" : "soon");
+  const page = Math.max(1, Number(one(sp, "page")) || 1);
   const warrantySoon = withDue.filter((a) => warrantyState(a.warrantyEnd, today).state === "EXPIRING");
   const [{ thisMonth }] = await db.select({ thisMonth: sql<number>`count(*)::int` }).from(maintenanceEvents)
     .innerJoin(assets, eq(assets.id, maintenanceEvents.assetId))
@@ -63,18 +68,21 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
       scopeWhere(assets.facilityId, scope)));
   const tree = await locationTree(undefined, scope);
   const base = (t: string) => `/assets/maintenance?tab=${t}${deptId ? `&departmentId=${deptId}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+  const viewHref = (v: DueView, p = 1) => `${base("due")}&view=${v}${p > 1 ? `&page=${p}` : ""}`;
 
   return (
     <>
       <PageHeader title="Maintenance" description="Planned preventive maintenance due from each device type's interval and the last completed PPM, plus warranties ending soon." actions={<LinkButton href="/assets/maintenance/budget">Maintenance budget</LinkButton>} />
       <Notice sp={sp} />
-      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="PPM overdue" value={formatNumber(overdue.length)} href={base("due")} hint={overdue.length ? "Past their due date" : "Nothing overdue"} />
-        <Stat label="Due in the next 30 days" value={formatNumber(dueSoon.length)} href={base("due")} />
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Stat label="PPM overdue" value={formatNumber(overdue.length)} href={viewHref("overdue")} hint={overdue.length ? `${overdue.filter((a) => a.criticality === "LIFE_SUPPORT").length} life support · after a recorded visit` : "Nothing overdue"} />
+        <Stat label="No PPM on record" value={formatNumber(never.length)} href={viewHref("never")} hint="Record the last visit, or plan the first" />
+        <Stat label="Due in the next 30 days" value={formatNumber(dueSoon.length)} href={viewHref("soon")} />
         <Stat label="Scheduled this month" value={formatNumber(thisMonth)} href={base("schedule")} />
         <Stat label="Warranties ending in 90 days" value={formatNumber(warrantySoon.length)} href={base("warranty")} />
       </div>
       <form action="/assets/maintenance" className="mb-4 flex flex-wrap items-end gap-2">
+        <AutoSubmit />
         <input type="hidden" name="tab" value={tab} />
         <label className="min-w-[12rem]"><span className="sr-only">Department</span>
           <NativeSelect name="departmentId" aria-label="Department" options={tree.departments.map((d) => ({ value: d.id, label: d.name }))} value={deptId} placeholder="All departments" /></label>
@@ -83,11 +91,35 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
         {(deptId || q) && <Link href={`/assets/maintenance?tab=${tab}`} className="px-2 py-1.5 text-sm text-primary hover:underline">Clear</Link>}
       </form>
       <TabLinks active={tab} tabs={[
-        { key: "due", label: `Due and overdue (${overdue.length + dueSoon.length})`, href: base("due") },
+        { key: "due", label: `Due and overdue (${overdue.length + never.length + dueSoon.length})`, href: base("due") },
         { key: "schedule", label: "Schedule", href: base("schedule") },
         { key: "warranty", label: `Warranty (${warrantySoon.length})`, href: base("warranty") },
       ]} />
-      {tab === "due" && <DueTab rows={[...overdue, ...dueSoon]} today={today} returnPath={base("due")} canMaint={canMaint} />}
+      {tab === "due" && (
+        <>
+          <div className="mb-3 flex flex-wrap gap-1 text-sm" role="group" aria-label="Which list">
+            {([["overdue", `Overdue (${overdue.length})`], ["never", `No PPM on record (${never.length})`], ["soon", `Due in 30 days (${dueSoon.length})`]] as const).map(([v, label]) => (
+              <Link key={v} href={viewHref(v)} aria-current={view === v ? "true" : undefined}
+                className={`rounded-[var(--radius-control)] border px-3 py-1 ${view === v ? "border-primary bg-primary-soft font-semibold text-primary-strong" : "border-line hover:bg-sunken"}`}>{label}</Link>
+            ))}
+          </div>
+          {view === "never" && <p className="mb-3 text-sm text-muted">These devices have no planned maintenance recorded since they were installed, so their due date is counted from installation. Most often the visits happened but weren&apos;t entered: record the last one on the asset, or plan the first.</p>}
+          {(() => {
+            const rows = triageSort(view === "overdue" ? overdue : view === "never" ? never : dueSoon);
+            const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+            const p = Math.min(page, pages);
+            return (
+              <>
+                <DueTab rows={rows.slice((p - 1) * PAGE, p * PAGE)} today={today} returnPath={viewHref(view, p)} canMaint={canMaint} />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
+                  <span>{rows.length ? `${(p - 1) * PAGE + 1}–${Math.min(rows.length, p * PAGE)} of ${formatNumber(rows.length)} · life support first, then the longest overdue` : ""}</span>
+                  <Pager page={p} pages={pages} href={(n) => viewHref(view, n)} />
+                </div>
+              </>
+            );
+          })()}
+        </>
+      )}
       {tab === "schedule" && <ScheduleTab sp={sp} deptId={deptId} q={q} today={today} departments={tree.departments} returnPath={base("schedule")} scope={scope} canMaint={canMaint} />}
       {tab === "warranty" && <WarrantyTab rows={withDue} today={today} />}
     </>
@@ -97,13 +129,15 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
 type DueRow = { id: number; tag: string; typeName: string; typeCode: string; departmentName: string | null; roomCode: string | null; roomName: string | null;
   lastPpm: string | null; openPpm: string | null; due: string | null; interval: number; isDefault: boolean; state: string; criticality: string | null };
 
+const PAGE = 50;
+
 function DueTab({ rows, today, returnPath, canMaint }: { rows: DueRow[]; today: string; returnPath: string; canMaint: boolean }) {
-  if (!rows.length) return <EmptyState title="Nothing due in the next 30 days">Every asset in use is within its planned maintenance interval.</EmptyState>;
-  const sorted = [...rows].sort((a, b) => (a.due ?? "").localeCompare(b.due ?? ""));
+  if (!rows.length) return <EmptyState title="Nothing in this list">Every asset in use here is within its planned maintenance interval.</EmptyState>;
+  const sorted = rows;
   return (
-    <div className="overflow-x-auto rounded-[var(--radius-panel)] border border-line bg-surface">
+    <div className="overflow-x-auto rounded-[var(--radius-panel)] border border-line bg-surface xl:overflow-x-visible">
       <table className="w-full border-collapse text-[14px]">
-        <thead className="bg-sunken text-left text-[13px] text-muted"><tr>
+        <thead className="bg-sunken xl:sticky xl:top-0 xl:z-10 text-left text-[13px] text-muted"><tr>
           <th className="px-3 py-2 font-semibold">Asset</th><th className="px-3 py-2 font-semibold">Location</th><th className="px-3 py-2 font-semibold">Last PPM</th>
           <th className="px-3 py-2 font-semibold">Interval</th><th className="px-3 py-2 font-semibold">Due</th><th className="px-3 py-2 font-semibold">Planned</th>
         </tr></thead>

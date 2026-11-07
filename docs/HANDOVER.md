@@ -39,7 +39,7 @@ Demo figures (site planning values, imaging volumes, budgets) are labelled as de
 
 - **Stack**: Next.js 16 App Router (server components and server actions), React 19, TypeScript strict, Tailwind 4,
   Drizzle ORM, PostgreSQL 16 or embedded PGlite, three.js, ExcelJS, zod 4, Vitest, Playwright.
-- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0038`, about 119 pages, 592 unit tests.
+- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0038`, about 119 pages, 595 unit tests.
 - **Database**: `npm run demo` and `npm run local` use embedded PGlite (`.pglite` for the demo, `.pglite-data` for
   your own data). A server uses PostgreSQL via `DATABASE_URL`; Supabase works too (`DATABASE_SSL`, see deploy guide).
 - **Layout** (more in `docs/system-documentation.md` › Codebase map):
@@ -118,6 +118,7 @@ Waves 1–18 are merged. Highlights per wave (details in `CHANGELOG.md`):
 | 16 | 3D roadmap phase 0: Imaging and ICU presets; device status by day with History replay; detailed equipment and illustrative furniture in the live view. Phase 1: drawing quality page, room sources and confidence, verified on site, 3D confidence tint. Phase 2: DXF input, layer and symbol rules per building, symbols into rooms, dimension check. Phase 3: solid walls with door and window openings, floor-to-floor wall heights, surveyed ceilings. Phase 4: clinical room templates (equipment, clearances, width; CSSD, triage, dental, labs), checks in 3D and BOQ |
 | 17 | Phase 5: equipment 3D library (clear zones, connection points, own .glb files, MRI/open MRI/C-arm shapes, first set of imaging models). Phase 6: space planning (area schedule, net-to-gross, circulation, density, bed places, snapshots). Phase 7: clash and clearance check. Phase 8: queue simulation on the model, bed and stretcher clearance on routes. Phase 9: textured finishes and light fittings in renders, tours as flythrough videos |
 | 18 | Solid floors option in the 3D view (floors not see-through) |
+| 19 (branch) | Interface: role-ordered foldable menu with pins, maintenance triage (no PPM on record apart), dashboard hospital choice, BOQ folded departments, filters on change with chips, phone columns, 3D View panel groups and checks on demand, hospital Checks and planning tab, PO totals in EGP |
 | 15 | Room standards in BOQ › Checks; gas outlets in the room survey; simulation staff, opening hours, appointment books, floor moves and saved scenarios; more detailed render furniture |
 
 Decisions Hisham has made: Law 182 rates and steps confirmed (bid bond 1.5 %, performance bond 5 %, two-envelope

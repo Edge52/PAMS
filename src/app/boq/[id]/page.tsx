@@ -46,7 +46,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function BoqPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; why?: string; regen?: string; notice?: string; error?: string }>;
+  searchParams: Promise<{ tab?: string; why?: string; expand?: string; regen?: string; notice?: string; error?: string }>;
 }) {
   const me = await requirePermission("boq.view");
   const { id } = await params;
@@ -183,7 +183,7 @@ export default async function BoqPage({ params, searchParams }: {
 
       <TabLinks active={tab} tabs={TABS.map((t) => ({ key: t.key, label: t.label, href: `/boq/${boq.id}?tab=${t.key}` }))} />
 
-      {tab === "department" && <ByDepartmentTab ws={ws} locked={locked} showWhy={sp.why === "1"} devices={await level3DeviceOptions()} />}
+      {tab === "department" && <ByDepartmentTab ws={ws} locked={locked} showWhy={sp.why === "1"} expand={sp.expand === "1"} devices={await level3DeviceOptions()} />}
       {tab === "device" && <ByDeviceTab ws={ws} />}
       {tab === "scope" && <ScopeData ws={ws} locked={locked} me={me} />}
       {tab === "gap" && <GapTab ws={ws} installed={await installedCounts(ws.depts.map((d) => d.departmentId).filter((x): x is number => !!x))} />}

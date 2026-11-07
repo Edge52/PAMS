@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutoSubmit } from "@/components/auto-submit";
 import { and, desc, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
@@ -99,6 +100,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
       ]} />
 
       <form className="mb-4 flex flex-wrap items-end gap-2" action="/assets/work-orders">
+        <AutoSubmit />
         <input type="hidden" name="tab" value={tab} />
         <label className="flex min-w-48 flex-1 flex-col text-xs text-muted">Search
           <input name="q" defaultValue={q} placeholder="Number, asset tag, device or fault"

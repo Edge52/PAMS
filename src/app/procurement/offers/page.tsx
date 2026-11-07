@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutoSubmit } from "@/components/auto-submit";
 import { and, asc, desc, eq, gte, ilike, isNotNull, lte, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { offerLines, offers, projects, suppliers } from "@/db/schema";
@@ -52,6 +53,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
       <PageHeader title="Offers" description="Every quotation received, across all projects."
         actions={can(me.role, "offers.edit") ? <LinkButton href="/procurement/offers/new" variant="primary">Register offer</LinkButton> : undefined} />
       <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
+        <AutoSubmit />
         <label className="min-w-0 flex-1 basis-52"><span className="sr-only">Search</span>
           <Input type="search" name="q" defaultValue={q ?? ""} placeholder="Search reference, supplier or project" /></label>
         <label><span className="sr-only">Status</span>

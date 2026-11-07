@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutoSubmit } from "@/components/auto-submit";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
@@ -50,6 +51,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         actions={mayCreate ? <LinkButton href="/procurement/new" variant="primary">New project</LinkButton> : undefined} />
 
       <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
+        <AutoSubmit />
         <label className="min-w-0 flex-1 basis-60">
           <span className="sr-only">Search projects</span>
           <Input name="q" type="search" defaultValue={q} placeholder="Search code, title, client or facility" />

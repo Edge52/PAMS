@@ -23,7 +23,7 @@ import { workerBuilder } from "./nav/worker-builder";
 import { formatDuration, type Route } from "./nav/route";
 import { BED, CLEAR, legClearance } from "./nav/clearance";
 import { loadColor, simPlace } from "./sim-on-model";
-import { fmtMinutes, simulate, type SimSummary } from "@/lib/flows/simulate";
+import { fmtMinutes, simulate, type SimModel, type SimSummary } from "@/lib/flows/simulate";
 import type { SimReply, SimRequest } from "@/lib/flows/simulate.worker";
 import { capPauses, FLOW_COLORS, heatLegsOf, journeyOf, liftTripsOf, pathwayCard, samplePath, stepRoom, trackOf, tubeRadius, visits, type TwinFlow } from "./pathways";
 import { cleanDirtyConflicts, corridorHeat, hourRanges, liftLoad } from "@/lib/flows/analysis";
@@ -194,6 +194,20 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [libOverlay, setLibOverlay] = useState(false);
   // Clash and clearance check (wave 17): rings on the devices with an issue, and the list.
   const [clashOn, setClashOn] = useState(false);
+  // Checks loaded only when switched on (wave 19): clash list, room templates by room, the simulation model.
+  const [checks, setChecks] = useState<{ clashes?: NonNullable<TwinData["clashes"]>; templates?: Map<number, NonNullable<TwinRoom["template"]>>; sim?: SimModel }>({});
+  const [checksBusy, setChecksBusy] = useState<string | null>(null);
+  const loadCheck = useCallback(async (what: "clashes" | "templates" | "sim") => {
+    setChecksBusy(what);
+    try {
+      const res = await fetch(`/assets/3d/checks?facilityId=${data.facility.id}&what=${what}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(await res.text());
+      const v = await res.json();
+      setChecks((c) => ({ ...c, [what]: what === "templates" ? new Map(v as [number, NonNullable<TwinRoom["template"]>][]) : v }));
+      return v;
+    } catch (e) { setToast({ error: (e as Error).message || "That check couldn't be loaded." }); return null; }
+    finally { setChecksBusy(null); }
+  }, [data.facility.id]);
   const kitRules = useRef<KitRule[] | null>(null);
   const [scope, setScope] = useState<Scope>("room");
   const [assetList, setAssetList] = useState(data.assets);
@@ -392,8 +406,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   }, [simRes, simOnModel, assetList, data.rooms, data.lifts]);
   useEffect(() => { if (ready) sceneRef.current?.setLiftTint(simShown?.lifts.size ? simShown.lifts : null); }, [simShown, ready]);
   function runSim() {
-    if (!data.sim) return;
-    const req: SimRequest = { model: data.sim, base: { days: 7, runs: 10 }, whatIf: null };
+    if (!checks.sim) { void loadCheck("sim").then((m) => { if (m) runSimWith(m as SimModel); }); return; }
+    runSimWith(checks.sim);
+  }
+  function runSimWith(model: SimModel) {
+    const req: SimRequest = { model, base: { days: 7, runs: 10 }, whatIf: null };
     setSimErr(null); setSimBusy({ done: 0, of: 10 });
     const onReply = (r: SimReply) => {
       if (r.kind === "progress") setSimBusy({ done: r.done, of: r.of });
@@ -431,12 +448,12 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     if (!templateTint) return null;
     const out = new Map<number, { color: string; level: number }>();
     for (const r of data.rooms) {
-      const t = r.template; if (!t) continue;
+      const t = checks.templates?.get(r.id); if (!t) continue;
       const k = templateKind(t);
       out.set(r.id, { color: TEMPLATE_COLORS[k], level: k === "short" ? 4 : k === "missing" ? 3 : k === "unknown" ? 2 : 1 });
     }
     return out;
-  }, [templateTint, data.rooms]);
+  }, [templateTint, data.rooms, checks.templates]);
   useEffect(() => {
     if (!ready) return;
     // A view preset (wave 16) first, then the commissioning week (wave 14), plan vs installed, the problem layer.
@@ -504,7 +521,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => { if (ready) sceneRef.current?.setSolidWalls(solid); }, [solid, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setSolidFloors(solidFloors); }, [solidFloors, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setLibraryOverlay(libOverlay); }, [libOverlay, ready]);
-  useEffect(() => { if (ready) sceneRef.current?.setClashes(clashOn ? (data.clashes ?? []) : null); }, [clashOn, ready, data.clashes]);
+  useEffect(() => { if (clashOn && !checks.clashes && checksBusy !== "clashes") { const t = setTimeout(() => void loadCheck("clashes"), 0); return () => clearTimeout(t); } }, [clashOn, checks.clashes, checksBusy, loadCheck]);
+  useEffect(() => { if (templateTint && !checks.templates && checksBusy !== "templates") { const t = setTimeout(() => void loadCheck("templates"), 0); return () => clearTimeout(t); } }, [templateTint, checks.templates, checksBusy, loadCheck]);
+  useEffect(() => { if (ready) sceneRef.current?.setClashes(clashOn ? (checks.clashes ?? []) : null); }, [clashOn, ready, checks.clashes]);
   // Drawing confidence and presets are about exact rooms: drawn as blocks, never as a spreading glow.
   useEffect(() => { if (ready) sceneRef.current?.setHeatMode(confidenceTint || templateTint || simShown || preset ? "blocks" : heatMode); }, [heatMode, ready, confidenceTint, templateTint, simShown, preset]);
   useEffect(() => { if (ready) sceneRef.current?.setSection(sectionAxis || null, sectionAt); }, [sectionAxis, sectionAt, ready]);
@@ -1230,6 +1249,9 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
 
   const selAsset = selected?.kind === "asset" ? assetById.get(selected.id) : undefined;
   const selRoom = selected?.kind === "room" ? roomById.get(selected.id) : selAsset ? roomById.get(selAsset.roomId!) : undefined;
+  // A selected room shows its template check: load the templates the first time one is selected (wave 19).
+  const roomSelected = selected?.kind === "room";
+  useEffect(() => { if (roomSelected && !checks.templates && checksBusy !== "templates") { const t = setTimeout(() => void loadCheck("templates"), 0); return () => clearTimeout(t); } }, [roomSelected, checks.templates, checksBusy, loadCheck]);
   const roomAssets = selected?.kind === "room" ? placed.filter((a) => a.roomId === selected.id) : [];
   // Hover cards (wave 7e): a room's equipment, devices down, open jobs and notes; a device's status and jobs.
   const hoverCard = (() => {
@@ -1282,6 +1304,10 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       <p className="mt-2 text-xs text-[#8fb6cc]">Choose a floor and zoom in to see room names and device shapes.</p>
     </div>
   );
+  // Wave 19: the View panel in three groups — the look of the model, one way to colour the rooms, and the checks.
+  const roomColour: "layer" | "confidence" | "templates" = confidenceTint ? "confidence" : templateTint ? "templates" : "layer";
+  const setRoomColour = (v: "layer" | "confidence" | "templates") => { setConfidenceTint(v === "confidence"); setTemplateTint(v === "templates"); };
+  const groupH = "mb-1 mt-3 text-[11px] font-semibold uppercase tracking-wide text-[#8fb6cc]";
   const viewControls = (
     <div>
       <div className="mb-3 flex gap-1 text-xs" role="group" aria-label="Look">
@@ -1292,28 +1318,39 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           </button>
         ))}
       </div>
-      <div className="mb-3 space-y-1 text-xs">
+      <p className={groupH}>Model</p>
+      <div className="space-y-1 text-xs">
         <label className="flex items-center gap-1.5"><input type="checkbox" checked={detailedModels} onChange={(e) => setDetailedModels(e.target.checked)} className="accent-[#2fd3ff]" />Detailed equipment close up</label>
         <label className="flex items-start gap-1.5"><input type="checkbox" checked={furniture} onChange={(e) => setFurniture(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
           <span>Furniture on a floor shown on its own<span className="block text-[11px] text-[#8fb6cc]">Where the drawing shows it; elsewhere illustrative room kits by room type.</span></span></label>
-        <label className="flex items-start gap-1.5"><input type="checkbox" checked={confidenceTint} onChange={(e) => { setConfidenceTint(e.target.checked); if (e.target.checked) setTemplateTint(false); }} className="mt-0.5 accent-[#2fd3ff]" />
+      </div>
+      <label className="mt-1 flex items-center gap-1.5 text-xs" title="On the floor shown on its own: walls stand floor to slab, with door and window openings; surveyed ceilings show as orange outlines"><input type="checkbox" checked={solid} onChange={(e) => setSolid(e.target.checked)} className="accent-[#2fd3ff]" /> Solid walls (one floor)</label>
+      <label className="mt-1 flex items-center gap-1.5 text-xs" title="Every floor drawn as a built slab with solid room floors, so you can't see the floors below through it"><input type="checkbox" checked={solidFloors} onChange={(e) => setSolidFloors(e.target.checked)} className="accent-[#2fd3ff]" /> Solid floors (not see-through)</label>
+
+      <p className={groupH}>Colour rooms by</p>
+      <div className="space-y-1 text-xs" role="radiogroup" aria-label="Colour rooms by">
+        <label className="flex items-center gap-1.5"><input type="radio" name="twin-room-colour" checked={roomColour === "layer"} onChange={() => setRoomColour("layer")} className="accent-[#2fd3ff]" />Departments or the problem layer</label>
+        <label className="flex items-start gap-1.5"><input type="radio" name="twin-room-colour" checked={roomColour === "confidence"} onChange={() => setRoomColour("confidence")} className="mt-0.5 accent-[#2fd3ff]" />
           <span>Drawing confidence
             {confidenceTint && <span className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">{(["assumed", "fallback", "verified"] as const).map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: CONFIDENCE_COLORS[k] }} />{CONFIDENCE_WORDS[k]}</span>)}</span>}
-            <span className="block text-[11px] text-[#8fb6cc]"><a href={`/facilities/${data.facility.id}/drawing-quality`} className="text-[#5fd6ff] hover:underline">Drawing quality</a> lists the issues floor by floor.</span></span></label>
-        <label className="flex items-start gap-1.5"><input type="checkbox" checked={templateTint} onChange={(e) => { setTemplateTint(e.target.checked); if (e.target.checked) setConfidenceTint(false); }} className="mt-0.5 accent-[#2fd3ff]" />
+            {confidenceTint && <span className="block text-[11px] text-[#8fb6cc]"><a href={`/facilities/${data.facility.id}/drawing-quality`} className="text-[#5fd6ff] hover:underline">Drawing quality</a> lists the issues floor by floor.</span>}</span></label>
+        <label className="flex items-start gap-1.5"><input type="radio" name="twin-room-colour" checked={roomColour === "templates"} onChange={() => setRoomColour("templates")} className="mt-0.5 accent-[#2fd3ff]" />
           <span>Room templates
             {templateTint && <span className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">{(["short", "missing", "unknown", "ok"] as const).map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: TEMPLATE_COLORS[k] }} />{TEMPLATE_WORDS[k]}</span>)}</span>}
-            <span className="block text-[11px] text-[#8fb6cc]">Each room against the <Link href="/facilities/room-standards" className="text-[#5fd6ff] hover:underline">template</Link> for its kind: size, services and equipment.</span></span></label>
+            {templateTint && <span className="block text-[11px] text-[#8fb6cc]">Each room against the <Link href="/facilities/room-standards" className="text-[#5fd6ff] hover:underline">template</Link> for its kind.</span>}</span></label>
+      </div>
+      <p className={groupH}>Checks</p>
+      <div className="mb-3 space-y-1 text-xs">
         <label className="flex items-start gap-1.5"><input type="checkbox" checked={libOverlay} onChange={(e) => setLibOverlay(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
           <span>Clearance zones and connections
             {libOverlay && <span className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">{ZONE_KINDS.map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: ZONE_COLORS[k] }} />{ZONE_LABELS[k]}</span>)}
               {CONN_KINDS.map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-full" style={{ background: CONN_COLORS[k] }} />{CONN_LABELS[k]}</span>)}</span>}
             <span className="block text-[11px] text-[#8fb6cc]">On a floor shown on its own, or the selected device&apos;s floor, from the <Link href="/catalogue/library" className="text-[#5fd6ff] hover:underline">equipment library</Link>.</span></span></label>
         <label className="flex items-start gap-1.5"><input type="checkbox" checked={clashOn} onChange={(e) => setClashOn(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
-          <span>Clash check{data.clashes ? <span className="text-[#8fb6cc]"> · {data.clashes.length} issue{data.clashes.length === 1 ? "" : "s"}</span> : null}
+          <span>Clash check{checksBusy === "clashes" ? <span className="text-[#8fb6cc]"> · checking…</span> : checks.clashes ? <span className="text-[#8fb6cc]"> · {checks.clashes.length} issue{checks.clashes.length === 1 ? "" : "s"}</span> : null}
             <span className="block text-[11px] text-[#8fb6cc]">Out of their room, on top of each other, clear zones blocked, in a door, in an MRI field, too tall, rooms too full. <Link href={`/facilities/${data.facility.id}/clashes`} className="text-[#5fd6ff] hover:underline">Full list</Link></span></span></label>
-        {clashOn && (data.clashes?.length ?? 0) > 0 && (() => {
-          const list = (data.clashes ?? []).filter((c) => floorId == null || c.floorId === floorId);
+        {clashOn && (checks.clashes?.length ?? 0) > 0 && (() => {
+          const list = (checks.clashes ?? []).filter((c) => floorId == null || c.floorId === floorId);
           return (
             <ul className="max-h-48 space-y-0.5 overflow-y-auto pl-5 text-[12px]">
               {list.length === 0 ? <li className="text-[#8fb6cc]">None on this floor.</li> : list.slice(0, 40).map((c, i) => {
@@ -1341,11 +1378,11 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       </div>
       <label className="flex items-center justify-between text-[13px]" htmlFor="twin-explode">Floor spacing <span className="text-[#8fb6cc]">{explode.toFixed(1)}×</span></label>
       <input id="twin-explode" type="range" min={1} max={4} step={0.1} value={explode} onChange={(e) => setExplode(Number(e.target.value))} className="w-full accent-[#2fd3ff]" />
+      <details className="mt-2">
+        <summary className="cursor-pointer text-[13px] text-[#5fd6ff]">More view options</summary>
       {style === "dark" && <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={bloom} onChange={(e) => setBloom(e.target.checked)} className="accent-[#2fd3ff]" /> Glow</label>}
       {hasBasements && <label className="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" checked={basements} onChange={(e) => setBasements(e.target.checked)} className="accent-[#2fd3ff]" /> Basements in the whole building</label>}
       <label className="mt-1 flex items-center gap-2 text-sm"><input type="checkbox" checked={facade} onChange={(e) => setFacade(e.target.checked)} className="accent-[#2fd3ff]" /> Glass façade (from afar)</label>
-      <label className="mt-1 flex items-center gap-2 text-sm" title="On the floor shown on its own: walls stand floor to slab, with door and window openings; surveyed ceilings show as orange outlines"><input type="checkbox" checked={solid} onChange={(e) => setSolid(e.target.checked)} className="accent-[#2fd3ff]" /> Solid walls (one floor)</label>
-      <label className="mt-1 flex items-center gap-2 text-sm" title="Every floor drawn as a built slab with solid room floors, so you can't see the floors below through it"><input type="checkbox" checked={solidFloors} onChange={(e) => setSolidFloors(e.target.checked)} className="accent-[#2fd3ff]" /> Solid floors (not see-through)</label>
       <div className="mt-3 border-t border-[#123a55] pt-2">
         <label className="flex items-center justify-between gap-2 text-[13px]" htmlFor="twin-section">Section cut
           <select id="twin-section" value={sectionAxis} onChange={(e) => setSectionAxis(e.target.value as "" | "x" | "z")} className="twin-input w-auto py-0.5 text-xs">
@@ -1366,6 +1403,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           )}
         </>
       )}
+      </details>
     </div>
   );
   const statusList = (
@@ -1754,7 +1792,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const card = shownFlow && shownRoutes ? pathwayCard(shownFlow, shownRoutes) : null;
   const ready7c = shownFlow ? readiness(shownFlow.steps, data.rooms,
     placed.map((a) => ({ id: a.id, typeCode: a.typeCode, typeName: a.deviceType, roomId: a.roomId, status: a.status })), (a) => statusOf(a.id, a.status), shownFlow.names) : null;
-  const simSection = data.sim && data.sim.flows.length > 0 ? (
+  const simSection = data.hasFlows ? (
     <div className="border-t border-[#123a55] pt-2">
       <p className="twin-h mb-1!">Queue simulation on the model</p>
       <div className="flex flex-wrap items-center gap-2">
@@ -1763,7 +1801,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         <Link href={`/flows/simulate?facilityId=${data.facility.id}`} className="text-xs text-[#5fd6ff] hover:underline">Simulator</Link>
       </div>
       {simErr && <p className="mt-1 text-xs text-[#ff8a96]">{simErr}</p>}
-      {!simRes && !simBusy && <p className="mt-1 text-xs text-[#8fb6cc]">Ten runs of a week of the published pathways ({data.sim.flows.length}); rooms, scanners and lifts are coloured by how busy they are.</p>}
+      {checksBusy === "sim" && <p className="mt-1 text-xs text-[#8fb6cc]">Loading the pathways…</p>}
+      {!simRes && !simBusy && checksBusy !== "sim" && <p className="mt-1 text-xs text-[#8fb6cc]">Ten runs of a week of the published pathways; rooms, scanners and lifts are coloured by how busy they are.</p>}
       {simRes && (
         <>
           <p className="mt-1 flex flex-wrap gap-x-2 text-[11px]">{([["#3ddc97", "under 60 % busy"], ["#ffd166", "60–85 %"], ["#ff5a6a", "over 85 % or long waits"]] as const).map(([c, t]) => <span key={c} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: c }} />{t}</span>)}</p>
@@ -2166,8 +2205,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               </div>
             );
           })()}
-          {!selAsset && selRoom.template && (() => {
-            const t = selRoom.template, k = templateKind(t);
+          {!selAsset && checks.templates?.get(selRoom.id) && (() => {
+            const t = checks.templates!.get(selRoom.id)!, k = templateKind(t);
             return (
               <div className="mt-3 border-t border-[#123a55] pt-2 text-[13px]">
                 <p><span className="font-semibold text-[#5fd6ff]">Room template</span>{" "}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutoSubmit } from "@/components/auto-submit";
 import { and, asc, eq, ilike, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { offers, purchaseOrders, suppliers } from "@/db/schema";
@@ -43,6 +44,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
       <PageHeader title="Suppliers" description="Agents and distributors, the brands they represent, and how they have performed on your tenders."
         actions={can(me.role, "suppliers.edit") ? <LinkButton href="/procurement/suppliers/new" variant="primary">Add supplier</LinkButton> : undefined} />
       <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
+        <AutoSubmit />
         <label className="min-w-0 flex-1 basis-52"><span className="sr-only">Search</span>
           <Input type="search" name="q" defaultValue={q ?? ""} placeholder="Search name, brand or contact" /></label>
         <label><span className="sr-only">Type</span>

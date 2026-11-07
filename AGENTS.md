@@ -384,6 +384,10 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   (generalises the clash rings). Bed clearance: `twin/nav/clearance.ts` (`clearWidth` on the network grid, +3.5 cells
   calibrated on straight walls; `legClearance`; `longestThroughCorner`), used by `buildingChecks` for bed legs and by
   the Pathways panel.
+- **Wave 19 (interface)**: `side-nav.tsx` (`ROLE_ORDER`/`orderSections`, folded groups and pins in localStorage);
+  `components/auto-submit.tsx` (GET filter forms apply on change); maintenance `dueView`/`triageSort` in
+  `lib/assets/maintenance.ts`; `/assets/3d/checks?what=clashes|templates|sim` loads 3D checks on demand
+  (`TwinData.hasFlows` instead of the model); Table headers sticky on xl screens (no scroll box there).
 - **Solid floors** (wave 18): scene `setSolidFloors` — opaque slab plane and room mesh with depth write, the
   thick `slabBox` shown in both looks (dark concrete in the dark one); `styleFloor`/`applyFloorVisibility` read it.
 - **Photoreal**: `render/finishes.ts` (`finishPixels` seeded procedural tiles → `finishTexture` DataTexture, UVs in

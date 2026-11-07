@@ -46,7 +46,7 @@ export default async function FacilityPage({ params, searchParams }: { params: P
   await requireFacilityAccess(fac.id, me);
   const canEdit = can(me.role, "facilities.edit");
   const canAddAssets = can(me.role, "assets.edit");
-  const tab = (["overview", "buildings", "departments", "rooms", "lifts", "network"] as const).find((t) => t === one(sp, "tab")) ?? "overview";
+  const tab = (["overview", "buildings", "departments", "rooms", "lifts", "network", "analysis"] as const).find((t) => t === one(sp, "tab")) ?? "overview";
   const base = `/facilities/${fac.id}`;
 
   return (
@@ -58,9 +58,7 @@ export default async function FacilityPage({ params, searchParams }: { params: P
         actions={<>
           <LinkButton href={`/assets/map?facilityId=${fac.id}`} variant="primary">Open floor map</LinkButton>
           <LinkButton href={`/assets?facilityId=${fac.id}`}>Asset register</LinkButton>
-          <LinkButton href={`/facilities/${fac.id}/drawing-quality`} variant="ghost">Drawing quality</LinkButton>
-          <LinkButton href={`/facilities/${fac.id}/space`} variant="ghost">Space planning</LinkButton>
-          <LinkButton href={`/facilities/${fac.id}/clashes`} variant="ghost">Clash check</LinkButton>
+          <LinkButton href={`/assets/3d?facilityId=${fac.id}`}>3D view</LinkButton>
           {canEdit && <LinkButton href={`/facilities/${fac.id}/drawings`} variant="ghost">Update drawings</LinkButton>}
         </>}
       />
@@ -71,8 +69,10 @@ export default async function FacilityPage({ params, searchParams }: { params: P
         { key: "rooms", label: "Rooms", href: `${base}?tab=rooms` },
         { key: "lifts", label: "Lifts", href: `${base}?tab=lifts` },
         { key: "network", label: "Walking network", href: `${base}?tab=network` },
+        { key: "analysis", label: "Checks and planning", href: `${base}?tab=analysis` },
       ]} />
       <Notice sp={sp} />
+      {tab === "analysis" && <AnalysisTab facilityId={fac.id} />}
       {tab === "overview" && <Overview fac={fac} edit={canEdit && one(sp, "edit") === "1"} canEdit={canEdit} canAddAssets={canAddAssets} />}
       {tab === "buildings" && <BuildingsTab facilityId={fac.id} edit={canEdit ? one(sp, "edit") : undefined} canEdit={canEdit} />}
       {tab === "departments" && <DepartmentsTab facilityId={fac.id} edit={canEdit ? numParam(sp, "edit") : null} canEdit={canEdit} />}
@@ -618,6 +618,28 @@ async function RoomsTab({ facilityId, floorId, edit, canEdit }: { facilityId: nu
             <span className="text-xs text-muted">Tip: dragging and resizing rooms is easier in the layout editor.</span></SubmitRow>
         </ActionForm>
       </Panel>}
+    </div>
+  );
+}
+
+/** Checks and planning (wave 19): the hospital's analysis pages in one place instead of the page header. */
+function AnalysisTab({ facilityId }: { facilityId: number }) {
+  const cards: { href: string; title: string; text: string }[] = [
+    { href: `/facilities/${facilityId}/drawing-quality`, title: "Drawing quality", text: "How far the 3D model can be trusted: layers, room outlines, scale and alignment, with a score per floor." },
+    { href: `/facilities/${facilityId}/space`, title: "Space planning", text: "Areas by floor and department, net-to-gross, circulation, equipment density, bed places and before-and-after snapshots." },
+    { href: `/facilities/${facilityId}/clashes`, title: "Clash check", text: "Devices against their rooms, each other, doors, clear zones and MRI fields; ceilings and crowded rooms." },
+    { href: `/facilities/room-standards?facilityId=${facilityId}`, title: "Room standards and templates", text: "Each room against the template for its kind: size, services and the equipment it needs." },
+    { href: `/flows/analysis?facilityId=${facilityId}`, title: "Patient pathways", text: "Load, beds and scanners for the published pathways; the queue simulation and routes." },
+    { href: `/assets/commissioning?facilityId=${facilityId}`, title: "Commissioning", text: "A new building or wing room by room, from handover to acceptance." },
+  ];
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {cards.map((c) => (
+        <Link key={c.href} href={c.href} className="group block rounded-[var(--radius-panel)] border border-line bg-surface p-4 hover:border-primary">
+          <p className="flex items-center justify-between font-semibold">{c.title}<span aria-hidden className="text-faint group-hover:text-primary">›</span></p>
+          <p className="mt-1 text-sm text-muted">{c.text}</p>
+        </Link>
+      ))}
     </div>
   );
 }
