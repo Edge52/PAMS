@@ -1550,6 +1550,19 @@ export const commissioningRooms = pgTable("commissioning_rooms", {
   note: text("note"),
 }, (t) => [primaryKey({ columns: [t.planId, t.roomId] }), index("commissioning_rooms_room_idx").on(t.roomId)]);
 
+/** Saved queue simulation scenarios (wave 15): the settings and what-if of /flows/simulate, private unless shared.
+ *  The shape is SimScenario in src/lib/flows/scenarios.ts (read defensively: old or hand-edited settings are cleaned). */
+export const simScenarios = pgTable("sim_scenarios", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  settings: jsonb("settings").$type<Record<string, unknown>>().notNull(),
+  shared: boolean("shared").notNull().default(false),
+  createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name"),
+  createdAt: createdAt(),
+}, (t) => [index("sim_scenarios_facility_idx").on(t.facilityId)]);
+
 /** In-app notifications. dedupeKey stops the alert generator repeating itself. */
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),

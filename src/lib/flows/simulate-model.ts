@@ -78,3 +78,29 @@ export function buildSimModel(flows: MFlow[], rooms: MRoom[], depts: ADept[], as
   const porter = moved ? add({ key: "porter", label: "Porters on duty", kind: "porter", capacity: porters }) : null;
   return { model: { flows: simFlows, resources: [...resources.values()], liftForBeds, liftForAll, porter }, skipped };
 }
+
+/* ── Staff other than porters (wave 15) ── */
+
+/** A group of staff on duty (radiographers, nurses, sonographers…) who work the rooms and scanners listed in `uses`. */
+export type StaffGroup = { key: string; label: string; count: number; uses: string[] };
+/** Kinds of resource a staff group can work: a bed stay doesn't hold a nurse for its whole length. */
+export const STAFFED_KINDS = ["room", "scanner"] as const;
+
+/**
+ * The model with staff groups added: each group becomes a resource (kind "staff", capacity = staff on duty), and every
+ * step that uses one of its rooms or scanners holds one of them too. A step takes the first group that lists its
+ * resource. Groups with no name or nothing to work are left out.
+ */
+export function withStaff(model: SimModel, groups: StaffGroup[]): SimModel {
+  const staffable = new Set(model.resources.filter((r) => (STAFFED_KINDS as readonly string[]).includes(r.kind)).map((r) => r.key));
+  const used = groups.map((g, i) => ({ ...g, key: g.key || `staff:${i + 1}`, count: Math.max(0, Math.round(g.count)), uses: g.uses.filter((u) => staffable.has(u)) }))
+    .filter((g) => g.label.trim() && g.uses.length);
+  if (!used.length) return model;
+  const groupOf = new Map<string, string>();
+  for (const g of used) for (const u of g.uses) if (!groupOf.has(u)) groupOf.set(u, g.key);
+  return {
+    ...model,
+    resources: [...model.resources, ...used.map((g): SimResource => ({ key: g.key, label: g.label.trim(), kind: "staff", capacity: g.count }))],
+    flows: model.flows.map((f) => ({ ...f, steps: f.steps.map((s) => (s.kind === "STEP" && s.resource && groupOf.has(s.resource) ? { ...s, staff: groupOf.get(s.resource)! } : s)) })),
+  };
+}
