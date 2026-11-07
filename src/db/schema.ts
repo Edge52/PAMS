@@ -1563,6 +1563,16 @@ export const simScenarios = pgTable("sim_scenarios", {
   createdAt: createdAt(),
 }, (t) => [index("sim_scenarios_facility_idx").on(t.facilityId)]);
 
+/** Device status by day (wave 16), changes only: a row on the day a device's status differed from its last row. The
+ *  hourly background job adds today's changes; the first run rebuilds the past year from work orders' downtime
+ *  (source "reconstructed"). The 3D view's History panel replays statuses from it. */
+export const assetStatusDays = pgTable("asset_status_days", {
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  day: date("day").notNull(),
+  status: assetStatus("status").notNull(),
+  source: varchar("source", { length: 16 }).notNull().default("snapshot"),
+}, (t) => [primaryKey({ columns: [t.assetId, t.day] }), index("asset_status_days_day_idx").on(t.day)]);
+
 /** In-app notifications. dedupeKey stops the alert generator repeating itself. */
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),

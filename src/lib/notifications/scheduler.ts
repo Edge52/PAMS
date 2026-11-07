@@ -1,5 +1,6 @@
 /**
- * Starts the alert generator in the background: once shortly after startup, then hourly.
+ * Starts the alert generator in the background (and, since wave 16, the daily device status snapshot): once shortly
+ * after startup, then hourly.
  * Called from src/instrumentation.ts (Node runtime only). Timers are unref'd so they never keep a process alive,
  * and a process-wide flag stops a second scheduler (dev hot reloads call register() again).
  */
@@ -15,6 +16,9 @@ export function startAlertScheduler(): void {
     // Imported lazily so nothing touches the database until the first tick.
     import("./alerts").then(({ runAlerts }) => runAlerts(trigger))
       .catch((e) => console.error("[alerts] scheduled run failed:", e));
+    // Device status by day (wave 16), for the 3D view's History replay.
+    import("../assets/status-history-server").then(({ snapshotStatuses }) => snapshotStatuses())
+      .catch((e) => console.error("[status-days] snapshot failed:", e));
   };
   setTimeout(() => tick("startup"), STARTUP_DELAY_MS).unref?.();
   setInterval(() => tick("hourly"), ALERT_INTERVAL_MS).unref?.();
