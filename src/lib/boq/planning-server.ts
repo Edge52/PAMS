@@ -8,7 +8,7 @@ import { coreKind, polygonArea, rectPoly, type Pt } from "@/components/assets/tw
 import { cashFlow, cleanPhaseMonths } from "./phasing";
 import type { BoqWorkspace } from "./queries";
 import { checkRoom, standardFor } from "@/lib/assets/room-standards";
-import { loadStandards, roomAreaM2 } from "@/lib/assets/room-standards-server";
+import { drawingGasesFor, loadStandards, roomAreaM2 } from "@/lib/assets/room-standards-server";
 import { checkRooms, needFor, type ReqRoom } from "./room-requirements";
 import { summariseStandards, type StdRoom } from "./room-standards-check";
 import { tcoSummary } from "./tco";
@@ -44,9 +44,10 @@ export async function roomStandardsCheck(ws: BoqWorkspace) {
     .from(rooms).innerJoin(floors, eq(floors.id, rooms.floorId)).innerJoin(buildings, eq(buildings.id, floors.buildingId))
     .where(inArray(rooms.departmentId, [...boqDeptOf.keys()]));
   const { rules } = await loadStandards();
+  const gases = await drawingGasesFor(rows.map((x) => x.room.id));
   const std: StdRoom[] = rows.filter(({ room: r }) => r.type !== "CORRIDOR" && !coreKind(r.name)).map(({ room: r, floor, upm, facilityId }) => {
     const m = standardFor(r.name, r.type, rules);
-    const rowsOut = m ? checkRoom(m.rule.spec, { areaM2: roomAreaM2(r, upm), beds: r.beds, ceilingM: r.ceilingM, doorWidthM: r.doorWidthM, floorLoadKgM2: r.floorLoadKgM2, services: r.services }) : [];
+    const rowsOut = m ? checkRoom(m.rule.spec, { areaM2: roomAreaM2(r, upm), beds: r.beds, ceilingM: r.ceilingM, doorWidthM: r.doorWidthM, floorLoadKgM2: r.floorLoadKgM2, services: r.services, drawingGases: gases.get(r.id) }) : [];
     return { id: r.id, code: r.code, name: r.name, floor, facilityId, boqDepartmentId: boqDeptOf.get(r.departmentId!)!, standard: m?.rule.label ?? null, rows: rowsOut };
   });
   // One summary per real department (the first BOQ department linked to it).

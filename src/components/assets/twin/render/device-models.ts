@@ -32,3 +32,10 @@ export function deviceModel(typeCode: string | null | undefined, groupCode?: str
   }
   return KIND_MODEL[deviceKind(groupCode, categoryCode)] ?? "cabinet";
 }
+
+/** The model for a symbol read from a drawing (wave 16): equipment and furniture by catalogue code, fittings by name. */
+export function symbolModel(s: { kind: string; code: string | null; label: string }): Model | null {
+  if (s.kind === "sanitary") return /WC|TOILET/i.test(s.label) ? "wc" : /SHOWER/i.test(s.label) ? "shower" : "basin";
+  if (s.kind === "equipment" || s.kind === "furniture") return s.code ? deviceModel(s.code) : /CHAIR/i.test(s.label) ? "chair" : /DESK/i.test(s.label) ? "desk" : null;
+  return null;
+}

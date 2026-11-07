@@ -91,7 +91,10 @@ export type TwinData = {
   siteModels?: TwinSiteModel[];
   /** Published patient pathways of this hospital (wave 7c). */
   flows?: TwinFlowData[];
+  /** Equipment, furniture and fittings read from the drawings (wave 16, phase 2), plan units, turn in radians. */
+  symbols?: TwinSymbol[];
 };
+export type TwinSymbol = { floorId: number; roomId: number | null; kind: string; code: string | null; label: string; x: number; y: number; rot: number };
 
 export type TwinFlowData = {
   id: number; name: string; version: number; dailyVolume: number | null;

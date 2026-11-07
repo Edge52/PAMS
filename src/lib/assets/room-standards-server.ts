@@ -1,8 +1,8 @@
 import "server-only";
 /** Room standards (wave 14): the editable list or the built-in one, and a hospital's rooms checked against them. */
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { buildings, departments, floors, rooms, roomStandards } from "@/db/schema";
+import { buildings, departments, drawingSymbols, floors, rooms, roomStandards } from "@/db/schema";
 import { BUILTIN_STANDARDS, checkRoom, checkState, standardFor, type CheckRow, type StandardRule } from "./room-standards";
 
 export async function loadStandards(): Promise<{ rules: StandardRule[]; custom: boolean }> {
@@ -30,10 +30,24 @@ export async function checkedRooms(facilityId: number, rules: StandardRule[]): P
     .from(rooms).innerJoin(floors, eq(floors.id, rooms.floorId)).innerJoin(buildings, eq(buildings.id, floors.buildingId))
     .leftJoin(departments, eq(departments.id, rooms.departmentId))
     .where(eq(buildings.facilityId, facilityId)).orderBy(asc(floors.level), asc(rooms.code));
+  const gases = await drawingGasesFor(rs.map((x) => x.room.id));
   return rs.map(({ room: r, floor, upm, dept }) => {
     const m = standardFor(r.name, r.type, rules);
     const areaM2 = roomAreaM2(r, upm);
-    const rows = m ? checkRoom(m.rule.spec, { areaM2, beds: r.beds, ceilingM: r.ceilingM, doorWidthM: r.doorWidthM, floorLoadKgM2: r.floorLoadKgM2, services: r.services }) : [];
+    const rows = m ? checkRoom(m.rule.spec, { areaM2, beds: r.beds, ceilingM: r.ceilingM, doorWidthM: r.doorWidthM, floorLoadKgM2: r.floorLoadKgM2, services: r.services, drawingGases: gases.get(r.id) }) : [];
     return { id: r.id, code: r.code, name: r.name, type: r.type, floor, department: dept, areaM2, beds: r.beds, standardIndex: m?.index ?? null, rows, state: m ? checkState(rows) : "none" };
   });
+}
+
+/** Gas outlets read from the drawing per room (wave 16): roomId → { O2: 2, VAC: 2, … } from symbols coded GAS-*. */
+export async function drawingGasesFor(roomIds: number[]): Promise<Map<number, Record<string, number>>> {
+  const out = new Map<number, Record<string, number>>();
+  if (!roomIds.length) return out;
+  const rows = await db.select({ roomId: drawingSymbols.roomId, code: drawingSymbols.code, n: sql<number>`count(*)::int` }).from(drawingSymbols)
+    .where(sql`${inArray(drawingSymbols.roomId, roomIds)} and ${like(drawingSymbols.code, "GAS-%")}`).groupBy(drawingSymbols.roomId, drawingSymbols.code);
+  for (const r of rows) {
+    if (r.roomId == null || !r.code) continue;
+    const m = out.get(r.roomId) ?? {}; m[r.code.slice(4)] = Number(r.n); out.set(r.roomId, m);
+  }
+  return out;
 }

@@ -178,10 +178,35 @@ export const floorCad = pgTable("floor_cad", {
   columns: jsonb("columns").$type<number[]>(),
   importedAt: createdAt(),
   /** How well this floor lined up with the reference floor on import (wave 16): lift labels used, residual error (mm). */
-  alignment: jsonb("alignment").$type<{ lifts: number; residualMm: number }>(),
+  alignment: jsonb("alignment").$type<{ lifts: number; residualMm: number | null; reference?: boolean }>(),
+  /** What the reader found (wave 16, phase 2): DWG or DXF, the units the file states, block names no symbol rule
+   *  knows (most frequent first) and the dimension check (typed figures against the distances they span). */
+  drawing: jsonb("drawing").$type<CadDrawingInfo>(),
   /** Drawing revision as the hospital names it (e.g. "Rev C, 2026-05"), set on the Drawing quality page. */
   revision: text("revision"),
 });
+
+export type CadDrawingInfo = {
+  reader: "dwg" | "dxf"; drawingUnits: string | null;
+  unmatched: { name: string; n: number }[];
+  dims: { count: number; ratio: number | null; typed: number } | null;
+};
+
+/** Symbols read from a floor's drawing by block name (wave 16, phase 2): equipment, furniture, sanitary fittings, gas
+ *  outlets, in plan units with their turn (radians), in the room they fall in. Replaced on every re-import. */
+export const drawingSymbols = pgTable("drawing_symbols", {
+  id: serial("id").primaryKey(),
+  floorId: integer("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+  roomId: integer("room_id").references(() => rooms.id, { onDelete: "set null" }),
+  kind: varchar("kind", { length: 16 }).notNull(),
+  /** Catalogue code or gas code (GAS-O2…) when the rule gives one. */
+  code: varchar("code", { length: 32 }),
+  label: text("label").notNull(),
+  block: text("block"),
+  x: real("x").notNull(),
+  y: real("y").notNull(),
+  rot: real("rot").notNull().default(0),
+}, (t) => [index("drawing_symbols_floor_idx").on(t.floorId), index("drawing_symbols_room_idx").on(t.roomId)]);
 
 /** Department types are the BOQ planning vocabulary (ICU, OR, ER, RAD...). */
 export const departmentTypes = pgTable("department_types", {

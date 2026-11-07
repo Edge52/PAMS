@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceTypes, facilities, floorCad, floors, rooms } from "@/db/schema";
+import { assets, buildings, departments, deviceTypes, drawingSymbols, facilities, floorCad, floors, rooms } from "@/db/schema";
 import { PrintButton } from "@/components/reports/print";
 import { Notice } from "@/components/assets/bits";
 import { can } from "@/lib/auth/permissions";
@@ -12,7 +12,7 @@ import { ReportPrintStyles } from "@/components/reports/print-styles";
 import { roomLook } from "@/components/assets/twin/render/kits";
 import { loadKits } from "@/lib/assets/room-kits";
 import { checkRoom, GAS_LABELS, GASES, specLines, standardFor } from "@/lib/assets/room-standards";
-import { loadStandards } from "@/lib/assets/room-standards-server";
+import { drawingGasesFor, loadStandards } from "@/lib/assets/room-standards-server";
 import { plansForFacility, planVsInstalled } from "@/lib/assets/plan-installed-server";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate } from "@/lib/format";
@@ -51,7 +51,10 @@ export default async function RoomSheet({ params, searchParams }: { params: Prom
   const s = r.room.services ?? null;
   // The standard for this kind of room (wave 14) and how the room compares.
   const std = standardFor(r.room.name, r.room.type, (await loadStandards()).rules);
-  const checks = std ? checkRoom(std.rule.spec, { areaM2: m2, beds: r.room.beds, ceilingM: r.room.ceilingM, doorWidthM: r.room.doorWidthM, floorLoadKgM2: r.room.floorLoadKgM2, services: s }) : [];
+  const drawnGases = (await drawingGasesFor([roomId])).get(roomId) ?? null;
+  const checks = std ? checkRoom(std.rule.spec, { areaM2: m2, beds: r.room.beds, ceilingM: r.room.ceilingM, doorWidthM: r.room.doorWidthM, floorLoadKgM2: r.room.floorLoadKgM2, services: s, drawingGases: drawnGases }) : [];
+  // Symbols read from the drawing in this room (wave 16, phase 2), counted by what they are.
+  const drawn = await db.select({ label: drawingSymbols.label, n: sql<number>`count(*)::int` }).from(drawingSymbols).where(eq(drawingSymbols.roomId, roomId)).groupBy(drawingSymbols.label);
   const stdLines = std ? specLines(std.rule.spec).filter((l) => !["Room", "Notes"].includes(l.group)) : [];
   // Where the room came from (wave 16): drawing, revision, how its outline was made, and whether someone checked it.
   const [cadRow] = await db.select({ sourceFile: floorCad.sourceFile, revision: floorCad.revision, importedAt: floorCad.importedAt }).from(floorCad).where(eq(floorCad.floorId, r.floor.id));
@@ -83,6 +86,7 @@ export default async function RoomSheet({ params, searchParams }: { params: Prom
         <table className="mb-2 w-full"><tbody>
           {row("Drawing", cadRow ? `${cadRow.sourceFile ?? "file not recorded"}${cadRow.revision ? ` · ${cadRow.revision}` : ""} · imported ${formatDate(cadRow.importedAt)}` : "none: drawn in the app")}
           {row("Outline", OUTLINE_LABELS[r.room.outlineSource ?? "unknown"] ?? r.room.outlineSource)}
+          {row("In the drawing", drawn.length ? drawn.sort((a, b) => b.n - a.n).map((d) => `${d.n} × ${d.label.toLowerCase()}`).join(", ") : "no symbols read")}
           {row("Confidence", <span className={conf === "assumed" ? "font-semibold text-warn" : conf === "verified" ? "font-semibold text-ok" : undefined}>{CONFIDENCE_LABELS[conf]}{r.room.verifiedAt ? ` by ${r.room.verifiedByName ?? "someone"} on ${formatDate(r.room.verifiedAt)}` : ""}</span>)}
         </tbody></table>
         {can(me.role, "facilities.edit") && (

@@ -253,6 +253,13 @@
       "when": 1794067475234,
       "tag": "0035_wave16_drawing_quality",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794069800570,
+      "tag": "0036_wave16_drawing_symbols",
+      "breakpoints": true
     }
   ]
 }

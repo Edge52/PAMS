@@ -131,6 +131,17 @@ def segs(code, items, min_len_mm=40):
         if inside(u1, v1) and inside(u2, v2): out += [u1, v1, u2, v2]
     return out
 
+def symbols_of(code, d):
+    R = transforms[code][0]; turn = math.atan2(R[1, 0], R[0, 0])
+    out = []
+    for sy in d.get("symbols", []):
+        X, Y = tf(code, sy["x"], sy["y"])
+        if not in_clip(code, X, Y): continue
+        u, v = P(X, Y)
+        if not inside(u, v): continue
+        out.append({"kind": sy["kind"], "code": sy.get("code"), "label": sy.get("label"), "block": sy.get("block"), "x": u, "y": v, "rot": round(-(sy.get("rot", 0) + turn), 3)})
+    return out
+
 ROOM_CODE_SAFE = lambda s: "".join(ch for ch in s.upper() if ch.isalnum() or ch == "-")[:32]
 floors_out = []
 for code, name, level in FLOORS:
@@ -153,7 +164,11 @@ for code, name, level in FLOORS:
         "code": code, "name": name, "level": level, "elevation": level * FLOOR_TO_FLOOR_M, "sourceFile": d["file"],
         "walls": segs(code, d["segs"]["wall"]), "doors": segs(code, d["segs"]["door"]), "glass": segs(code, d["segs"]["glass"]),
         "columns": segs(code, d["segs"]["col"]), "rooms": rooms,
-        "alignment": {"lifts": transforms[code][3], "residualMm": None if math.isnan(transforms[code][2]) else round(transforms[code][2])},
+        # Wave 16: symbols in plan units (turn in radians, plan y points down so the turn flips), the block names not
+        # recognised, the dimension check and which reader was used.
+        "symbols": symbols_of(code, d),
+        "drawing": {"reader": d.get("reader", "dwg"), "drawingUnits": d.get("drawingUnits"), "unmatched": d.get("unmatched", [])[:60], "dims": d.get("dims")},
+        "alignment": {"lifts": transforms[code][3], "residualMm": None if math.isnan(transforms[code][2]) else round(transforms[code][2]), "reference": code == REF},
     })
     print(f"{code} {name}: {len(rooms)} rooms, {len(floors_out[-1]['walls']) // 4} wall segments")
 

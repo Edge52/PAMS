@@ -1,10 +1,26 @@
-// Extract one floor: wall/door/column/glazing segments (mm), room tags with name/number, zone labels.
+// Extract one floor: wall/door/column/glazing segments (mm), room tags with name/number, zone labels; since wave 16
+// also symbols (equipment, sanitary, gas outlets) from block names, the block names it couldn't place, and dimensions.
+// Reads DWG (LibreDWG) or DXF (dxf.mjs). Layer and symbol rules: rules.mjs, extended by the building's config.
+//   node extract.mjs <floor.dwg|.dxf> <out.json> [config.json]
 import { readFileSync, writeFileSync } from 'node:fs';
-import { Dwg_File_Type, LibreDwg } from '@mlightcad/libredwg-web';
-const [, , file, out] = process.argv;
-const lib = await LibreDwg.create(new URL('../../node_modules/@mlightcad/libredwg-web/wasm/', import.meta.url).pathname);
-const data = lib.dwg_read_data(readFileSync(file), Dwg_File_Type.DWG);
-const db = lib.convert(data);
+import { MM_PER_UNIT, readDxf } from './dxf.mjs';
+import { dimensionScale, makeRules } from './rules.mjs';
+const [, , file, out, cfgPath] = process.argv;
+const cfg = cfgPath ? JSON.parse(readFileSync(cfgPath, 'utf8')) : {};
+const rules = makeRules(cfg);
+const isDxf = /\.dxf$/i.test(file);
+let db, lib = null, data = null, units = null;
+if (isDxf) {
+  db = readDxf(readFileSync(file, 'utf8'));
+  units = db.units;
+} else {
+  const { Dwg_File_Type, LibreDwg } = await import('@mlightcad/libredwg-web');
+  lib = await LibreDwg.create(new URL('../../node_modules/@mlightcad/libredwg-web/wasm/', import.meta.url).pathname);
+  data = lib.dwg_read_data(readFileSync(file), Dwg_File_Type.DWG);
+  db = lib.convert(data);
+}
+// Everything downstream is in millimetres; a DXF that says it is in metres (or inches…) is scaled.
+const K = (units && MM_PER_UNIT[units]) || 1;
 const base = (l) => (l || '').split('$0$').pop();
 // ── Explode block references (bound xrefs, door families, curtain walls) into world coordinates. ──
 const blocks = new Map((db.tables?.BLOCK_RECORD?.entries ?? []).map((r) => [r.name, r]));
@@ -14,19 +30,31 @@ function xf(ins, rec) {
   const ip = ins.insertionPoint ?? { x: 0, y: 0 };
   return (p) => { const x = (p.x - bp.x) * sx, y = (p.y - bp.y) * sy; return { x: ip.x + x * c - y * sn, y: ip.y + x * sn + y * c }; };
 }
-const ident = (p) => p;
+const ident = K === 1 ? (p) => p : (p) => ({ x: p.x * K, y: p.y * K });
 const flat = [];
+const symbols = [], blockCounts = {}, dims = [];
 const WANT = (L, e) => /TEXT/.test(e.type) || cls0(L) != null || e.type === 'INSERT';
-function walk(list, T, parentLayer, depth, rot) {
+function walk(list, T, parentLayer, depth, rot, inSymbol = false) {
   for (const e of list) {
     const L = (e.layer === '0' || !e.layer) && parentLayer ? parentLayer : base(e.layer);
     if (e.type === 'INSERT') {
       if (/Room Tag/i.test(e.name)) flat.push({ ...e, layer: L, insertionPoint: T(e.insertionPoint) });
+      // Symbols: a block whose name says what it is; nested parts of a symbol aren't symbols of their own.
+      const sym = inSymbol ? null : rules.symbolFor(e.name);
+      if (sym) { const p = T(e.insertionPoint ?? { x: 0, y: 0 }); symbols.push({ ...sym, block: base(e.name), x: Math.round(p.x), y: Math.round(p.y), rot: +(rot + (e.rotation ?? 0)).toFixed(3) }); }
+      else if (!inSymbol && depth <= 2 && !/Room Tag/i.test(e.name)) { const n = base(e.name); if (n && !n.startsWith('*')) blockCounts[n] = (blockCounts[n] || 0) + 1; }
       const rec = blocks.get(e.name);
       if (rec?.entities?.length && depth < 5) {
         const inner = xf(e, rec);
-        walk(rec.entities, (p) => T(inner(p)), L, depth + 1, rot + (e.rotation ?? 0));
+        walk(rec.entities, (p) => T(inner(p)), L, depth + 1, rot + (e.rotation ?? 0), inSymbol || !!sym);
       }
+      continue;
+    }
+    if (e.type === 'DIMENSION' && !inSymbol) {
+      // The figure written on the dimension (when typed over) or its measurement, against the distance it spans.
+      const typed = typeof e.text === 'string' && /^[\d.,]+$/.test(e.text.trim()) ? Number(e.text.trim().replace(',', '.')) : null;
+      const m = typed ?? e.measurement;
+      if (m > 0 && e.subDefinitionPoint1 && e.subDefinitionPoint2 && (e.dimensionType ?? 0) <= 1) dims.push({ measurement: m, p1: T(e.subDefinitionPoint1), p2: T(e.subDefinitionPoint2), typed: typed != null });
       continue;
     }
     if (!WANT(L, e)) continue;
@@ -43,13 +71,13 @@ function walk(list, T, parentLayer, depth, rot) {
   }
 }
 
-// Layer naming differs between the floors' templates (A-WALL, I-WALL, A-200-M_WALL_INT…); PDF* layers are reference overlays.
-const cls0 = (L) => /^PDF/i.test(L) ? null : /COLS|COLUMN/i.test(L) ? 'col' : /GLAZ|GLS|CURT|MULL/i.test(L) ? 'glass' : /DOOR|(^|-)DOR(-|$)/i.test(L) ? 'door'
-  : ((/WALL?([-_]|$)/i.test(L) && !/PAT/i.test(L)) || /partation|partition/i.test(L)) ? 'wall' : null;
+// Layer naming differs between the floors' templates (A-WALL, I-WALL, A-200-M_WALL_INT…); PDF* layers are reference
+// overlays. The rules live in rules.mjs; a building's config adds its own (floors.json "layers").
+const cls0 = (L) => rules.layerClass(L);
 const cls = cls0;
 walk(db.entities, ident, null, 0, 0);
 const ENTS = flat;
-const ROOM_TEXT = (L) => !/^PDF/i.test(L) && /ROOMFINISH|[-_]ROOM$/i.test(L);
+const ROOM_TEXT = (L) => rules.isRoomText(L);
 const segs = { wall: [], door: [], col: [], glass: [] };
 const push = (k, a, b) => segs[k].push([Math.round(a.x), Math.round(a.y), Math.round(b.x), Math.round(b.y)]);
 function arcPts(c, r, a0, a1, n = 8) { const pts = []; if (a1 < a0) a1 += Math.PI * 2; for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; pts.push({ x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) }); } return pts; }
@@ -95,7 +123,11 @@ for (const e of ENTS) {
   const m = /^Elevator\s*-\s*(\d+)$/i.exec(txt(e)); const p = pos(e);
   if (m && p) (lifts[m[1]] ??= []).push([Math.round(p.x), Math.round(p.y)]);
 }
-writeFileSync(out, JSON.stringify({ file: file.split('/').pop(), units: 'mm', marker, segs, rooms, zones, lifts }));
+// Block names not recognised as symbols, most frequent first: what to add to the config's "symbols" next.
+const unmatched = Object.entries(blockCounts).sort((a, b) => b[1] - a[1]).slice(0, 60).map(([name, n]) => ({ name, n }));
+const dimCheck = { ...dimensionScale(dims), typed: dims.filter((d) => d.typed).length };
+writeFileSync(out, JSON.stringify({ file: file.split('/').pop(), reader: isDxf ? 'dxf' : 'dwg', drawingUnits: units, units: 'mm', marker, segs, rooms, zones, lifts, symbols, unmatched, dims: dimCheck }));
 console.log(file.split('/').pop(), 'marker', marker, 'walls', segs.wall.length, 'doors', segs.door.length, 'cols', segs.col.length, 'glass', segs.glass.length, 'lifts', Object.keys(lifts).length, 'rooms', rooms.length,
   'named', rooms.filter((r) => r.name).length, 'numbered', rooms.filter((r) => r.num).length);
-lib.dwg_free(data);
+console.log('  symbols', symbols.length, 'unmatched block names', unmatched.length, 'dimensions', dimCheck.count, dimCheck.ratio != null ? `ratio ${dimCheck.ratio.toFixed(3)}` : '');
+if (lib) lib.dwg_free(data);

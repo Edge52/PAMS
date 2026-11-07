@@ -4,6 +4,7 @@
  */
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DB } from "../../db";
+import { writeFloorSymbols } from "./cad-symbols";
 import { activityLog, assets, buildings, departments, floorCad, floors, rooms } from "../../db/schema";
 import { classifyRoom, DEPARTMENTS, titleCase, type CadBuilding, type CadRoom } from "./cad-rooms";
 import { deptKey, deptOf, planMerge, type ExistingFloor, type ExistingRoom, type MergePlan } from "./cad-merge";
@@ -55,7 +56,7 @@ export async function applyMerge(db: DB, facilityId: number, b: CadBuilding, act
     }
     const deptFor = (r: CadRoom) => { const d = deptOf(r); return d ? deptId.get(deptKey(d)!) ?? null : null; };
     const newRoom = (floorId: number, r: CadRoom) => ({ floorId, code: r.code, name: titleCase(r.name), departmentId: deptFor(r), ...classifyRoom(r.name, r.dept), ...rect(r), polygon: r.poly, outlineSource: r.shape });
-    const cadRow = (floorId: number, f: CadBuilding["floors"][number]) => ({ floorId, sourceFile: f.sourceFile, walls: f.walls, doors: f.doors, glass: f.glass, columns: f.columns, alignment: f.alignment ?? null });
+    const cadRow = (floorId: number, f: CadBuilding["floors"][number]) => ({ floorId, sourceFile: f.sourceFile, walls: f.walls, doors: f.doors, glass: f.glass, columns: f.columns, alignment: f.alignment ?? null, drawing: f.drawing ?? null });
 
     // Floors in both: new linework, name, height and scale.
     for (const { floorId, cad } of plan.floorsUpdated) {
@@ -91,6 +92,9 @@ export async function applyMerge(db: DB, facilityId: number, b: CadBuilding, act
       const [fid, code] = key.split("|");
       await tx.update(rooms).set({ outlineSource: r.shape }).where(and(eq(rooms.floorId, Number(fid)), sql`upper(${rooms.code}) = ${code}`, sql`${rooms.outlineSource} is distinct from ${r.shape}`));
     }
+    // Symbols from the new drawing (wave 16), each in its room: every floor in the file.
+    for (const { floorId, cad } of plan.floorsUpdated) await writeFloorSymbols(t, floorId, cad.symbols);
+    for (const cad of plan.floorsAdded) { const id = floorOfLevel.get(cad.level) ?? (await tx.select({ id: floors.id }).from(floors).where(and(eq(floors.buildingId, bld.id), eq(floors.level, cad.level))))[0]?.id; if (id) await writeFloorSymbols(t, id, cad.symbols); }
     const n = plan.counts;
     await tx.insert(activityLog).values({
       entityType: "facility", entityId: facilityId, action: "drawings_updated", actor,

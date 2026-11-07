@@ -82,6 +82,8 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
 2. Fix what you can: re-import the drawing (Update drawings), or fix doors in the 3D view (Routes).
 3. After checking a room on the floor, open its data sheet and **Mark as verified on site**.
 4. Type each floor's drawing revision so everyone knows which drawing the model is built from.
+5. *Symbols read from the drawing* shows the equipment, furniture, fittings and gas outlets the import recognised, and
+   the block names it didn't: ask whoever runs the import to add rules for those (tools/cad/README.md).
 
 **Will it fit?** — catalogue and 3D view
 - On a make and model's page, **Site planning**: enter the figures from the manufacturer's site planning guide, or

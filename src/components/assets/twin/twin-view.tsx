@@ -1162,7 +1162,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
       <div className="mb-3 space-y-1 text-xs">
         <label className="flex items-center gap-1.5"><input type="checkbox" checked={detailedModels} onChange={(e) => setDetailedModels(e.target.checked)} className="accent-[#2fd3ff]" />Detailed equipment close up</label>
         <label className="flex items-start gap-1.5"><input type="checkbox" checked={furniture} onChange={(e) => setFurniture(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
-          <span>Furniture on a floor shown on its own<span className="block text-[11px] text-[#8fb6cc]">Illustrative: room kits by room type, not the register.</span></span></label>
+          <span>Furniture on a floor shown on its own<span className="block text-[11px] text-[#8fb6cc]">Where the drawing shows it; elsewhere illustrative room kits by room type.</span></span></label>
         <label className="flex items-start gap-1.5"><input type="checkbox" checked={confidenceTint} onChange={(e) => setConfidenceTint(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
           <span>Drawing confidence
             {confidenceTint && <span className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">{(["assumed", "fallback", "verified"] as const).map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: CONFIDENCE_COLORS[k] }} />{CONFIDENCE_WORDS[k]}</span>)}</span>}

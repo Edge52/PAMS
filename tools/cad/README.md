@@ -52,3 +52,25 @@ set uses different layer names.
 | Garden floor | 151 | 100% | 0 |
 | Ground floor | 175 | 98% | reference |
 | First–Fifth floor | 181–200 each | 99–100% | 0 (shared coordinates) |
+
+## DXF, layer rules and symbols (wave 16)
+
+- **DXF works as well as DWG**: give `.dxf` files in the config's `"file"` entries. `dxf.mjs` reads ASCII DXF (lines,
+  polylines, arcs, circles, text, blocks, dimensions). A file that states its units (`$INSUNITS`) is converted to
+  millimetres; one that doesn't is read as millimetres and the Drawing quality page says so.
+- **Layer rules per building**: add `"layers"` to the config to read layer names this template uses, tried before the
+  built-in rules (`rules.mjs`): `"layers": { "wall": ["^A-PART"], "door": [], "glass": [], "column": [], "ignore": ["^OLD-"], "roomText": [] }`
+  (case-insensitive regular expressions on the layer name).
+- **Symbols**: blocks whose names say what they are become symbols: equipment (MRI, CT, X-ray, theatre tables and
+  lights, incubators, dental chairs), furniture (beds, stretchers, couches), sanitary fittings and medical gas outlets.
+  Add a building's own names under `"symbols"`: `[{ "match": "^BED-ICU", "kind": "furniture", "code": "FUR-BED", "label": "ICU bed" }]`
+  (`kind`: equipment, furniture, sanitary or outlet; `code`: a catalogue code, or `GAS-O2` / `GAS-VAC` / `GAS-AIR` / `GAS-AIR7` /
+  `GAS-N2O` / `GAS-AGSS` for outlets). The import lists the block names it didn't recognise, most used first, on the
+  Drawing quality page: that's the list to write rules for.
+- **What symbols do in the app**: each lands in the room it's in. Gas outlets count towards the room standards where
+  the room survey has no figure; beds, equipment and fittings are drawn in the 3D view where the drawing shows them
+  (before illustrative room kits, after registered devices).
+- **Dimensions**: typed dimension figures are compared with the distances they span; a plan drawn at the wrong scale
+  shows as "Dimensions disagree with the drawing".
+- **Try it without drawings**: `node tools/cad/sample/make-sample.mjs /tmp/sample` writes a two-floor DXF sample and
+  its config; `npm run cad:import -- /tmp/sample /tmp/sample/sample.json` runs the whole pipeline on it.

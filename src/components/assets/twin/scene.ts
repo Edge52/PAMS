@@ -9,7 +9,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { deviceModel } from "./render/device-models";
+import { deviceModel, symbolModel } from "./render/device-models";
 import { modelGeometry } from "./render/furniture";
 import { BUILTIN_KITS, placeKit, roomLook, type KitRule, type Model, type Placement } from "./render/kits";
 import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, pointInPolygon, outlineFromRooms, polygonArea, presetCamera, spreadInRoom, wallsFromRooms, type CoreKind, type DeviceKind, type Pt } from "./geometry";
@@ -840,14 +840,23 @@ export class TwinScene {
     const devicesIn = new Map<number, TwinAsset[]>();
     for (const a of this.assetsById.values()) if (a.roomId != null && this.devicePos.has(a.id)) (devicesIn.get(a.roomId) ?? devicesIn.set(a.roomId, []).get(a.roomId)!).push(a);
     const placements: Placement[] = [];
+    const symbolsIn = new Map<number, NonNullable<TwinData["symbols"]>>();
+    for (const sy of this.data.symbols ?? []) if (sy.floorId === floorId && sy.roomId != null) (symbolsIn.get(sy.roomId) ?? symbolsIn.set(sy.roomId, []).get(sy.roomId)!).push(sy);
     for (const r of this.data.rooms) {
       if (r.floorId !== floorId || r.type === "CORRIDOR" || coreKind(r.name)) continue;
       const look = roomLook(r.name, r.type, this.furnitureRules);
-      if (!look.items.length) continue;
+      if (!look.items.length && !symbolsIn.has(r.id)) continue;
       const poly = r.poly.map(([x, y]) => [x * s, y * s] as Pt);
       const regs = devicesIn.get(r.id) ?? [];
       // Registered devices keep their spots; no kit item of a kind the room already has (no kit beds beside real beds).
       const taken: Placement[] = regs.map((a) => { const d = this.devicePos.get(a.id)!; return { model: deviceModel(a.typeCode, a.groupCode, a.categoryCode), x: d.x, z: d.z, rot: 0 }; });
+      // What the drawing shows (wave 16, phase 2) goes exactly where it is drawn, unless a registered device of that kind is there.
+      const regModels = new Set(taken.map((t) => t.model));
+      for (const sy of symbolsIn.get(r.id) ?? []) {
+        const m = symbolModel(sy); if (!m || regModels.has(m)) continue;
+        const p = { model: m, x: sy.x * s, z: sy.y * s, rot: sy.rot };
+        taken.push(p); placements.push(p);
+      }
       const have = new Set(taken.map((t) => t.model));
       const xs = poly.map((p) => p[0]), zs = poly.map((p) => p[1]);
       const near = doors.filter(([x, z]) => x >= Math.min(...xs) - 0.6 && x <= Math.max(...xs) + 0.6 && z >= Math.min(...zs) - 0.6 && z <= Math.max(...zs) + 0.6);

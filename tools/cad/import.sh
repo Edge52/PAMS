@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Import a hospital's DWG floor plans into the 3D model and the system.
+# Import a hospital's DWG or DXF floor plans into the 3D model and the system (one file per floor; layer and symbol
+# rules can be added in the config, see tools/cad/README.md).
 #   npm run cad:import -- <folder with the DWG files> [tools/cad/floors.json]
 # Then load it: npm run db:seed (or npm run demo), which imports every building in seed-data/cad/.
 # Needs Node 22+ and Python 3 with numpy, scipy, opencv-python, shapely, pillow:
@@ -12,7 +13,7 @@ out="$root/$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['ou
 python3 -c "import json,sys; [print(f['code'] + '\t' + f['file']) for f in json.load(open(sys.argv[1]))['floors']]" "$cfg" |
 while IFS=$'\t' read -r code file; do
   echo "· $code  $file"
-  node --max-old-space-size=6000 "$here/extract.mjs" "$cad/$file" "$work/$code.json" 2>&1 | grep -v "error code" || true
+  node --max-old-space-size=6000 "$here/extract.mjs" "$cad/$file" "$work/$code.json" "$cfg" 2>&1 | grep -v "error code" || true
   (cd "$work" && python3 "$here/rooms.py" "$code.json" "$code-rooms.json")
 done
 mkdir -p "$(dirname "$out")"

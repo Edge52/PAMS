@@ -7,7 +7,8 @@ import type { rooms } from "../../db/schema";
 
 export type Pt = [number, number];
 export type CadRoom = { code: string; name: string; dept: string | null; num: string | null; shape: string; area: number | null; poly: Pt[]; label: Pt };
-export type CadFloor = { code: string; name: string; level: number; elevation: number; sourceFile: string; alignment?: { lifts: number; residualMm: number }; walls: number[]; doors: number[]; glass: number[]; columns: number[]; rooms: CadRoom[] };
+export type CadFloor = { code: string; name: string; level: number; elevation: number; sourceFile: string; alignment?: { lifts: number; residualMm: number | null; reference?: boolean };
+  symbols?: import("./cad-symbols").CadSymbol[]; drawing?: import("../../db/schema").CadDrawingInfo; walls: number[]; doors: number[]; glass: number[]; columns: number[]; rooms: CadRoom[] };
 export type CadBuilding = { name: string; facilityCode?: string; unitsPerMetre: number; planWidth: number; planHeight: number; floors: CadFloor[] };
 export type RoomType = (typeof rooms.$inferInsert)["type"];
 

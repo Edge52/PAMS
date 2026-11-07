@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Drawing quality" };
 
 const GRADE = { good: { tone: "ok", label: "Good" }, fair: { tone: "warn", label: "Fair" }, poor: { tone: "danger", label: "Poor" } } as const;
+const SYMBOL_KINDS: Record<string, string> = { equipment: "Equipment", furniture: "Furniture", sanitary: "Sanitary fittings", outlet: "Gas outlets and bed-heads" };
 const SEV = { high: { tone: "danger", label: "High" }, medium: { tone: "warn", label: "Medium" }, low: { tone: "info", label: "Low" } } as const;
 
 /**
@@ -110,10 +111,20 @@ export default async function DrawingQualityPage({ params, searchParams }: { par
                     </div>
                     {f.cad && (
                       <div>
+                        <p className="mb-1 text-xs font-semibold text-muted">Symbols read from the drawing</p>
+                        {f.cad.symbols && Object.keys(f.cad.symbols).length ? (
+                          <ul className="space-y-0.5">{Object.entries(f.cad.symbols).sort((a, b) => b[1] - a[1]).map(([k, n]) => <li key={k} className="flex justify-between gap-2"><span>{SYMBOL_KINDS[k] ?? k}</span><span className="text-muted">{n}</span></li>)}</ul>
+                        ) : <p className="text-xs text-muted">None: re-import with the phase 2 reader to read equipment, fittings and gas outlets from block names.</p>}
+                        {f.cad.drawing?.unmatched?.length ? <p className="mt-1 text-xs text-muted">Not recognised: {f.cad.drawing.unmatched.slice(0, 8).map((u) => `${u.name} ×${u.n}`).join(", ")}{f.cad.drawing.unmatched.length > 8 ? "…" : ""}</p> : null}
+                      </div>
+                    )}
+                    {f.cad && (
+                      <div>
                         <p className="mb-1 text-xs font-semibold text-muted">Drawing</p>
                         <p className="break-words">{f.cad.sourceFile ?? "Source file not recorded"}</p>
                         <p className="text-xs text-muted">Imported {formatDate(f.cad.importedAt)} · walls {f.cad.segments.walls.toLocaleString()}, doors {f.cad.segments.doors.toLocaleString()}, glazing {f.cad.segments.glass.toLocaleString()}, columns {f.cad.segments.columns.toLocaleString()} lines
-                          {f.cad.alignment ? ` · aligned on ${f.cad.alignment.lifts} lifts, ${Math.round(f.cad.alignment.residualMm)} mm off` : ""}</p>
+                          {f.cad.alignment ? (f.cad.alignment.reference ? " · the reference floor" : f.cad.alignment.residualMm != null ? ` · aligned on ${f.cad.alignment.lifts} lifts, ${Math.round(f.cad.alignment.residualMm)} mm off` : " · not aligned") : ""}
+                          {f.cad.drawing ? ` · read as ${f.cad.drawing.reader.toUpperCase()}${f.cad.drawing.drawingUnits ? ` in ${f.cad.drawing.drawingUnits}` : ""}` : ""}</p>
                         {canEdit ? (
                           <form action={setRevisionAction} className="mt-2 flex gap-2">
                             <input type="hidden" name="floorId" value={f.id} />

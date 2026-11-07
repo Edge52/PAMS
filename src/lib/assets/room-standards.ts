@@ -74,6 +74,8 @@ export type RoomSurvey = {
   areaM2: number; beds: number;
   ceilingM: number | null; doorWidthM: number | null; floorLoadKgM2: number | null;
   services: RoomServices | null;
+  /** Gas outlets read from the drawing's symbols (wave 16), used where the survey has no count. */
+  drawingGases?: Record<string, number> | null;
 };
 export type CheckRow = { label: string; need: string; have: string; state: "ok" | "short" | "unknown" };
 
@@ -96,8 +98,9 @@ export function checkRoom(s: RoomStandardSpec, r: RoomSurvey): CheckRow[] {
   // Medical gas outlets (wave 15): the standard counts per bed space when the room has beds, as areas do.
   for (const g of GASES) {
     const per = s.gases?.[g] ?? 0; if (per <= 0) continue;
-    const need = per * Math.max(1, r.beds), have = r.services?.gases?.[g];
-    out.push({ label: `${GAS_LABELS[g]} outlets`, need: perBed ? `≥ ${need} (${per} a bed)` : `≥ ${need}`, have: have == null ? "not surveyed" : String(have), state: have == null ? "unknown" : have >= need ? "ok" : "short" });
+    const need = per * Math.max(1, r.beds), surveyed = r.services?.gases?.[g], drawn = r.drawingGases?.[g];
+    const have = surveyed ?? drawn;
+    out.push({ label: `${GAS_LABELS[g]} outlets`, need: perBed ? `≥ ${need} (${per} a bed)` : `≥ ${need}`, have: have == null ? "not surveyed" : surveyed == null ? `${have} (drawing)` : String(have), state: have == null ? "unknown" : have >= need ? "ok" : "short" });
   }
   flag("RF shielding", s.rfShield, r.services?.rfShield);
   flag("Lead lining", s.leadLined, r.services?.leadLined);

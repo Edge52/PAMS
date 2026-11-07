@@ -39,7 +39,7 @@ Demo figures (site planning values, imaging volumes, budgets) are labelled as de
 
 - **Stack**: Next.js 16 App Router (server components and server actions), React 19, TypeScript strict, Tailwind 4,
   Drizzle ORM, PostgreSQL 16 or embedded PGlite, three.js, ExcelJS, zod 4, Vitest, Playwright.
-- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0035`, about 116 pages, 555 unit tests.
+- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0036`, about 116 pages, 560 unit tests.
 - **Database**: `npm run demo` and `npm run local` use embedded PGlite (`.pglite` for the demo, `.pglite-data` for
   your own data). A server uses PostgreSQL via `DATABASE_URL`; Supabase works too (`DATABASE_SSL`, see deploy guide).
 - **Layout** (more in `docs/system-documentation.md` › Codebase map):
@@ -116,7 +116,7 @@ Waves 1–14 are merged. Highlights per wave (details in `CHANGELOG.md`):
 | 12 | Department view and requests, rounds and stock-take, audit log, backups page, supplier contacts, maintenance budget, room outlines, room data sheets, routes in a worker, clean/dirty routes |
 | 13 | Department heads edit their own pathways and room zones; Supabase database and Microsoft/Google sign-in; the assistant; Law 182 notes removed (confirmed) |
 | 14 | Queue simulation (B3); commissioning timeline (C5); room standards per room type; backups page (missing since wave 12) with PostgreSQL dumps; assistant look-ups for BOQs, contracts, recalls, saved chats, Word downloads |
-| 16 (branch) | 3D roadmap phase 0: Imaging and ICU presets; device status by day with History replay; detailed equipment and illustrative furniture in the live view. Phase 1: drawing quality page, room sources and confidence, verified on site, 3D confidence tint |
+| 16 (branch) | 3D roadmap phase 0: Imaging and ICU presets; device status by day with History replay; detailed equipment and illustrative furniture in the live view. Phase 1: drawing quality page, room sources and confidence, verified on site, 3D confidence tint. Phase 2: DXF input, layer and symbol rules per building, symbols into rooms, dimension check |
 | 15 | Room standards in BOQ › Checks; gas outlets in the room survey; simulation staff, opening hours, appointment books, floor moves and saved scenarios; more detailed render furniture |
 
 Decisions Hisham has made: Law 182 rates and steps confirmed (bid bond 1.5 %, performance bond 5 %, two-envelope
@@ -146,6 +146,12 @@ no finance export or e-procurement portal yet.
 | --- | --- | --- |
 | Own model files for renders (optional) | Wave 15 made the built-in models detailed. If Hisham wants licensed models (e.g. a maker's bed or CT), add a drop-in: `.glb` files listed with their licence and credit, baked to vertex colours and scaled to the footprint. Openly licensed hospital models are rare (most are commercial), and Kenney's site isn't reachable from the session. | M |
 | Simulation: shifts and breaks | Staff numbers by hour of the day; beds closing at night; patients leaving without being seen. | M |
+
+### To check with Hisham (wave 16)
+
+- La Plaza's building file predates phase 2, so it has no symbols. Re-run `npm run cad:import` on the original DWG
+  files (they were in `~/Desktop/HS/hospital-pams/CAD`), then Update drawings: symbols, unrecognised block names and the
+  dimension check appear. The block names it lists are what to add to `tools/cad/floors.json` "symbols".
 
 ### To check with Hisham (wave 15)
 

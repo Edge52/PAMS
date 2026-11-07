@@ -2,7 +2,7 @@
 
 ## Wave 16 — on branch `wave-16`, not merged yet
 
-Migrations `0034`–`0035`. Update with `git pull` and `npm run demo`; your data is kept.
+Migrations `0034`–`0036`. Update with `git pull` and `npm run demo`; your data is kept.
 
 - **Imaging and ICU presets** (3D view, top bar): one click tints every imaging (or ICU) room across the hospital,
   dims the rest, lights up their equipment and frames the camera on them; a floor shown on its own when they are all
@@ -22,6 +22,13 @@ Migrations `0034`–`0035`. Update with `git pull` and `npm run demo`; your data
   confidence: *from the drawing*, *assumed* or *verified on site* (**Mark as verified on site**; a re-imported outline
   that changes loses the mark). Imports now record this; existing hospitals are filled in from their building files on
   the next start. 3D view › View › **Drawing confidence** colours assumed, guessed and verified rooms.
+- **CAD import upgrade** (roadmap phase 2): DXF files as well as DWG; layer rules per building in the import config;
+  **symbols** read from block names (equipment, beds and other furniture, sanitary fittings, medical gas outlets), each
+  in its room; block names not recognised listed on Drawing quality, to add rules for; dimensions checked against
+  the geometry (a plan at the wrong scale is flagged). Gas outlets from the drawing count towards room standards when
+  the survey has no figure; drawn beds, equipment and fittings appear in the 3D view where the drawing shows them.
+  Room data sheets list what the drawing shows in the room. A two-floor DXF sample runs the whole pipeline without
+  real drawings (`tools/cad/README.md`).
 
 ## Wave 15 — merged 7 Nov 2026
 

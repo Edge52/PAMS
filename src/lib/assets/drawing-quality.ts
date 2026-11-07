@@ -17,9 +17,12 @@ export type QFloor = {
   cad: null | {
     sourceFile: string | null; revision: string | null; importedAt: string;
     segments: { walls: number; doors: number; glass: number; columns: number };
-    alignment: { lifts: number; residualMm: number } | null;
-    /** The reference floor others are aligned to (no alignment of its own). */
-    reference?: boolean;
+    /** Lift labels used and the residual error; `reference` = the floor the others are aligned to. */
+    alignment: { lifts: number; residualMm: number | null; reference?: boolean } | null;
+    /** What the reader found (phase 2): reader, stated units, unrecognised block names, dimension check. */
+    drawing?: { reader: string; drawingUnits: string | null; unmatched: { name: string; n: number }[]; dims: { count: number; ratio: number | null; typed: number } | null } | null;
+    /** Symbols read from the drawing, by kind. */
+    symbols?: Record<string, number>;
   };
   rooms: QRoom[];
   /** Rooms the walking network can't reach (from the routes service), when worked out. */
@@ -110,10 +113,21 @@ export function drawingQuality(floors: QFloor[]): FloorReport[] {
         issues.push({ key: "units", severity: "high", title: "Different scale from the other floors", detail: `${f.unitsPerMetre} plan units a metre against ${usual} on the others: check the drawing's units.` }); score -= 30;
       }
       const a = f.cad.alignment;
-      if (!f.cad.reference) {
+      if (!a?.reference) {
         if (!a) { issues.push({ key: "align-unknown", severity: "low", title: "Alignment not recorded", detail: "How well this floor lines up with the others isn't known." }); score -= 2; }
         else if (a.lifts < 2) { issues.push({ key: "align-few", severity: "medium", title: "Aligned on too few lifts", detail: `Only ${plural(a.lifts, "lift label")} matched the reference floor, so the floor may be shifted or turned.` }); score -= 10; }
-        else if (a.residualMm > 200) { issues.push({ key: "align-off", severity: "medium", title: "Floors don't line up well", detail: `Lift positions differ by ${Math.round(a.residualMm)} mm on average from the reference floor.` }); score -= 8; }
+        else if (a.residualMm != null && a.residualMm > 200) { issues.push({ key: "align-off", severity: "medium", title: "Floors don't line up well", detail: `Lift positions differ by ${Math.round(a.residualMm)} mm on average from the reference floor.` }); score -= 8; }
+      }
+      // Phase 2: dimensions against the distances they span; stated units; blocks no rule knows.
+      const dr = f.cad.drawing;
+      const ratio = dr?.dims?.ratio;
+      if (ratio != null && dr!.dims!.count > 0 && ![1, 10, 1000].some((k) => Math.abs(ratio / k - 1) < 0.03)) {
+        issues.push({ key: "dims", severity: "high", title: "Dimensions disagree with the drawing", detail: `Typed dimension figures are ${ratio < 1 ? (1 / ratio).toFixed(2) + "× longer" : ratio.toFixed(2) + "× shorter"} than the distances they span (${plural(dr!.dims!.count, "dimension")}): the plan may be drawn at the wrong scale.` }); score -= 30;
+      }
+      if (dr?.reader === "dxf" && !dr.drawingUnits) { issues.push({ key: "units-unstated", severity: "low", title: "Units not stated in the file", detail: "Read as millimetres. Set the drawing's units ($INSUNITS) when you export it." }); score -= 2; }
+      if (dr?.unmatched?.length) {
+        const top = dr.unmatched.slice(0, 5).map((u) => `${u.name} (${u.n})`).join(", ");
+        issues.push({ key: "blocks", severity: "low", title: `${plural(dr.unmatched.length, "kind")} of block not recognised`, detail: `Most used: ${top}. Add rules for them under "symbols" in the building's import config to read them as equipment or fittings.` });
       }
       const age = newest - Date.parse(f.cad.importedAt);
       if (age > 30 * DAY) { issues.push({ key: "outdated", severity: "medium", title: "Older than the other floors", detail: `Imported ${Math.round(age / DAY)} days before the newest floor: check it is the latest revision.` }); score -= 8; }

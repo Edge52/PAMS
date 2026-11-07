@@ -340,4 +340,11 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   counts by `jsonb_array_length`, unreachable rooms from `networkCoverage`). Page `/facilities/[id]/drawing-quality`,
   actions `setRevisionAction`, `verifyRoomAction` (`facilities.edit`). The 3D "Drawing confidence" tint and presets
   force the blocks heat mode.
+- **CAD phase 2** (migration `0036`): `tools/cad/dxf.mjs` (DXF → the LibreDWG shape), `rules.mjs` (layer classes,
+  room-text layers, symbol rules; a building config's `layers`/`symbols` first), `extract.mjs` takes the config as a
+  third argument and writes `symbols`, `unmatched` block names and a `dims` check; `build.py` carries them as
+  `floors[].symbols` (plan units, turn in radians) and `floors[].drawing`. App: `floor_cad.drawing`
+  (`CadDrawingInfo`), table `drawing_symbols` (written by `writeFloorSymbols` in `src/lib/assets/cad-symbols.ts`, each
+  in its room by `roomAt`). `drawingGasesFor` feeds `checkRoom`'s `drawingGases`; `symbolModel` draws symbols in the 3D
+  furniture layer. Tests: `tools/cad/cad.test.mjs` with the generated sample (`tools/cad/sample/make-sample.mjs`).
 

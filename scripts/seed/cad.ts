@@ -10,6 +10,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { DB } from "../../src/db";
+import { writeFloorSymbols } from "../../src/lib/assets/cad-symbols";
 import { assetMovements, assets, buildings, departments, deviceTypes, facilities, floorCad, floors, rooms } from "../../src/db/schema";
 
 import { classifyRoom, contextual, DEPARTMENTS, titleCase, type CadBuilding, type CadRoom, type RoomType } from "../../src/lib/assets/cad-rooms";
@@ -182,7 +183,7 @@ export async function importBuilding(db: DB, b: CadBuilding, opts: { equipment?:
       buildingId: bld.id, level: f.level, name: f.name, planWidth: b.planWidth, planHeight: b.planHeight,
       elevation: f.elevation, unitsPerMetre: b.unitsPerMetre,
     }).returning();
-    await db.insert(floorCad).values({ floorId: fl.id, sourceFile: f.sourceFile, walls: f.walls, doors: f.doors, glass: f.glass, columns: f.columns, alignment: f.alignment ?? null });
+    await db.insert(floorCad).values({ floorId: fl.id, sourceFile: f.sourceFile, walls: f.walls, doors: f.doors, glass: f.glass, columns: f.columns, alignment: f.alignment ?? null, drawing: f.drawing ?? null });
     const values = f.rooms.map((r) => {
       const { type, beds } = classifyRoom(r.name, r.dept);
       const xs = r.poly.map((p) => p[0]), ys = r.poly.map((p) => p[1]);
@@ -201,6 +202,7 @@ export async function importBuilding(db: DB, b: CadBuilding, opts: { equipment?:
       });
     }
     roomCount += values.length;
+    await writeFloorSymbols(db, fl.id, f.symbols);
   }
 
   const placed = opts.equipment !== false ? await insertDemoDevices(db, code, fac.id, fit) : 0;

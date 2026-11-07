@@ -1,7 +1,7 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceModels, deviceTypes, siteRequirements, facilities, floorCad, floors, liftCores, patientFlows, recallAssets, recalls, documents, rooms, routeFixes, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
+import { drawingSymbols, assets, buildings, departments, deviceModels, deviceTypes, siteRequirements, facilities, floorCad, floors, liftCores, patientFlows, recallAssets, recalls, documents, rooms, routeFixes, twinNotes, twinTours, twinViews, userFacilities, users } from "@/db/schema";
 import { noteOf } from "@/lib/assets/twin-notes";
 import { equipmentNames, loadFlow } from "@/lib/flows/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
@@ -106,6 +106,9 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
         req: { lengthM: s.lengthM, widthM: s.widthM, heightM: s.heightM, clearanceM: s.clearanceM, minRoomLengthM: s.minRoomLengthM, minRoomWidthM: s.minRoomWidthM, minAreaM2: s.minAreaM2, minCeilingM: s.minCeilingM,
           doorWidthM: s.doorWidthM, doorHeightM: s.doorHeightM, weightKg: s.weightKg, powerKva: s.powerKva, heatKw: s.heatKw, chilledWater: s.chilledWater, quenchPipe: s.quenchPipe, rfShield: s.rfShield, leadLined: s.leadLined,
           fringeAlongM: s.fringeAlongM, fringeAcrossM: s.fringeAcrossM } })),
+    // Things drawn in the plans (not gas outlets): placed where the drawing shows them, before illustrative room kits.
+    symbols: floorIds.length ? (await db.select({ floorId: drawingSymbols.floorId, roomId: drawingSymbols.roomId, kind: drawingSymbols.kind, code: drawingSymbols.code, label: drawingSymbols.label, x: drawingSymbols.x, y: drawingSymbols.y, rot: drawingSymbols.rot })
+      .from(drawingSymbols).where(sql`${inArray(drawingSymbols.floorId, floorIds)} and ${drawingSymbols.kind} <> 'outlet'`)) : [],
     lifts: (await db.select().from(liftCores).where(eq(liftCores.facilityId, facility.id)).orderBy(asc(liftCores.name)))
       .map((l) => ({ id: l.id, name: l.name, kind: l.kind, inferred: l.inferred, cars: l.cars, waitSeconds: l.waitSeconds, waitByHour: l.waitByHour ?? null, stops: l.stops.filter((st) => floorIds.includes(st.floorId)) })),
   };
