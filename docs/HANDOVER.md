@@ -1,8 +1,8 @@
 # Hospital PAMS — handover
 
 The starting point for anyone (or any new Claude session) picking up the project. It says what the app is, how it's
-built and run, how work is done here, what's finished and what's left. Last updated 7 Nov 2026, after wave 14 was
-merged into `main`.
+built and run, how work is done here, what's finished and what's left. Last updated 7 Nov 2026, with wave 15 on branch
+`wave-15` (not merged yet; `main` has waves 1–14).
 
 Read next: `AGENTS.md` (coding conventions; they're strict), `docs/system-documentation.md` (modules in depth),
 `docs/user-guide.md` (by role), `docs/deploy.md` (servers, Supabase), `CHANGELOG.md` (what each wave added),
@@ -39,7 +39,7 @@ Demo figures (site planning values, imaging volumes, budgets) are labelled as de
 
 - **Stack**: Next.js 16 App Router (server components and server actions), React 19, TypeScript strict, Tailwind 4,
   Drizzle ORM, PostgreSQL 16 or embedded PGlite, three.js, ExcelJS, zod 4, Vitest, Playwright.
-- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0032`, about 115 pages, 530 unit tests.
+- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0033`, about 115 pages, 545 unit tests.
 - **Database**: `npm run demo` and `npm run local` use embedded PGlite (`.pglite` for the demo, `.pglite-data` for
   your own data). A server uses PostgreSQL via `DATABASE_URL`; Supabase works too (`DATABASE_SSL`, see deploy guide).
 - **Layout** (more in `docs/system-documentation.md` › Codebase map):
@@ -82,7 +82,8 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 14.
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 14; branch `wave-15` has wave 15, waiting for
+  Hisham's OK to merge.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
 - Old branches: `wave-13` and `wave-14` are merged and can be deleted from GitHub's branch page (the session's
   connection can't delete branches). The Mac still has two old local branches (`claude/vigilant-noether-2l33kc`,
@@ -113,6 +114,7 @@ Waves 1–14 are merged. Highlights per wave (details in `CHANGELOG.md`):
 | 12 | Department view and requests, rounds and stock-take, audit log, backups page, supplier contacts, maintenance budget, room outlines, room data sheets, routes in a worker, clean/dirty routes |
 | 13 | Department heads edit their own pathways and room zones; Supabase database and Microsoft/Google sign-in; the assistant; Law 182 notes removed (confirmed) |
 | 14 | Queue simulation (B3); commissioning timeline (C5); room standards per room type; backups page (missing since wave 12) with PostgreSQL dumps; assistant look-ups for BOQs, contracts, recalls, saved chats, Word downloads |
+| 15 (branch) | Room standards in BOQ › Checks; gas outlets in the room survey; simulation staff, opening hours, appointment books, floor moves and saved scenarios; more detailed render furniture |
 
 Decisions Hisham has made: Law 182 rates and steps confirmed (bid bond 1.5 %, performance bond 5 %, two-envelope
 steps, minutes); no Arabic interface; department heads may edit pathways; the assistant is wanted (off by default);
@@ -139,9 +141,14 @@ no finance export or e-procurement portal yet.
 
 | Item | Notes | Size |
 | --- | --- | --- |
-| Better furniture models for renders | Openly licensed models in place of the simple boxes. | S–M |
-| Simulation extras | Saved scenarios; staff other than porters; opening hours and appointment books; moving a step to another floor as a what-if. | M |
-| Room standards checks in BOQ | Use the room standards (area, gases, power) in BOQ › Checks alongside the room needs. | S |
+| Own model files for renders (optional) | Wave 15 made the built-in models detailed. If Hisham wants licensed models (e.g. a maker's bed or CT), add a drop-in: `.glb` files listed with their licence and credit, baked to vertex colours and scaled to the footprint. Openly licensed hospital models are rare (most are commercial), and Kenney's site isn't reachable from the session. | M |
+| Simulation: shifts and breaks | Staff numbers by hour of the day; beds closing at night; patients leaving without being seen. | M |
+
+### To check with Hisham (wave 15)
+
+- Merge `wave-15` into `main` when he says OK.
+- The room standards panel in BOQ › Checks shows most La Plaza rooms below their standard on area: the draft areas
+  (HBN / FGI) are larger than many drawn rooms. The figures need the engineers' review before anyone acts on them.
 
 ### To check with Hisham (wave 14)
 

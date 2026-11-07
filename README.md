@@ -126,6 +126,15 @@ Under **Assets** (release 2.2 / wave 3):
 - **Room standards** (`/facilities/room-standards`): the data sheet per room type, checked against each room.
 - Backups from the page on PostgreSQL too; the assistant keeps chats and downloads answers as Word files.
 
+## Wave 15
+
+- **BOQ › Checks › Room standards**: the linked departments' rooms against their room standards (area, ceiling,
+  door, floor load, power, medical gas outlets, shielding), per department.
+- The room survey records **medical gas outlets**.
+- **Queue simulation**: staff on duty, opening hours, appointment books, moving a step to another floor as a
+  what-if, and **saved scenarios**.
+- **Renders**: more detailed furniture and equipment, still built in code.
+
 ## Finding things and keeping the register tidy
 
 - **Search** (box at the top of every page): equipment by tag, serial number, maker, model or tag; device types; makes

@@ -14,7 +14,7 @@ import { summariseStandards, type StdRoom } from "./room-standards-check";
 import { tcoSummary } from "./tco";
 
 export async function roomsCheck(ws: BoqWorkspace) {
-  const deptLabel = new Map(ws.depts.map((d) => [d.id, d.realName ? `${d.label} (${d.realName})` : d.label]));
+  const deptLabel = new Map(ws.depts.map((d) => [d.id, d.realName && d.realName !== d.label ? `${d.label} (${d.realName})` : d.label]));
   const lines = ws.lines.filter((l) => l.quantity > 0 && needFor(l.deviceCode));
   if (!lines.length) return [];
   // Real rooms of the linked departments, areas in m² from the CAD outline (or the drawn rectangle).
@@ -50,7 +50,7 @@ export async function roomStandardsCheck(ws: BoqWorkspace) {
     return { id: r.id, code: r.code, name: r.name, floor, facilityId, boqDepartmentId: boqDeptOf.get(r.departmentId!)!, standard: m?.rule.label ?? null, rows: rowsOut };
   });
   // One summary per real department (the first BOQ department linked to it).
-  const firsts = linked.filter((d) => boqDeptOf.get(d.departmentId!) === d.id).map((d) => ({ id: d.id, label: d.realName ? `${d.label} (${d.realName})` : d.label }));
+  const firsts = linked.filter((d) => boqDeptOf.get(d.departmentId!) === d.id).map((d) => ({ id: d.id, label: d.realName && d.realName !== d.label ? `${d.label} (${d.realName})` : d.label }));
   return { departments: summariseStandards(firsts, std), unlinked: ws.depts.length - linked.length };
 }
 export type RoomStandardsCheck = Awaited<ReturnType<typeof roomStandardsCheck>>;

@@ -99,7 +99,7 @@ export function Simulator({ model, porterDefault, facilityId, floors, scenarios:
   const set = (f: (x: SimScenario) => SimScenario) => setS(f);
 
   const effective = useMemo(() => withStaff(model, s.staff), [model, s.staff]);
-  const changes = whatIfChanges(model, s);
+  const changes = whatIfChanges(model, s, (l) => floors.find((f) => f.level === l)?.name ?? `level ${l}`);
 
   const run = () => {
     const { model: m, base, whatIf } = buildRuns(model, s);

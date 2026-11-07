@@ -1,4 +1,4 @@
-# Hospital PAMS — User guide (release 3.0, updated for wave 14)
+# Hospital PAMS — User guide (release 3.0, updated for wave 15)
 
 How to do the everyday jobs, by role. Every screen is reached from the menu on the left (the **Menu** button on a
 phone). The search box at the top of every page finds equipment, rooms, departments, suppliers, documents and more.
@@ -79,7 +79,7 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
 **Will it fit?** — catalogue and 3D view
 - On a make and model's page, **Site planning**: enter the figures from the manufacturer's site planning guide, or
   **Start from typical values** (marked *typical* until you replace them).
-- In the 3D view, select a room: **Edit survey** records its ceiling, door, floor load and services; **Check a make
+- In the 3D view, select a room: **Edit survey** records its ceiling, door, floor load, services and medical gas outlets (blank = not surveyed); **Check a make
   and model** places it at the best spot, draws its footprint, service space and (MRI) 5 gauss line, and lists what
   passes, fails or is still to confirm. **Readiness sheet** prints it for sign-off.
 
@@ -144,7 +144,8 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
   target budget, opening phase.
 - *Price scenarios* panel: **Price at basic / standard / premium**. A price you type on a line is kept.
 - *Checks* tab: risk flags, **Fit to budget** (review the list, then **Apply these changes**), room requirements against
-  the real rooms, benchmarks.
+  the real rooms, **room standards** (each room of the linked departments against the standard for its kind of room:
+  open *Rooms below their standard* for the list, each linked to its data sheet), benchmarks.
 - *Phasing & costs* tab: opening date and phases, cash flow by quarter, cost of ownership over 5 and 10 years.
 - **Submit for approval** when ready; **Export to Excel** any time.
 
@@ -158,6 +159,15 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
    results show side by side. Ranges are the middle 90 % of the runs.
 4. The load figures on **Analysis** stay as the quick check; the simulation adds waits and knock-on effects (more
    theatre capacity fills the ward, for example).
+5. Optional, in the boxes under the settings:
+   - **Staff on duty**: **Add a staff group**, name it (e.g. Radiographers), say how many are on duty and tick the
+     rooms and scanners they work. The group appears in the table, so you can change it in the What-if column.
+   - **Opening hours**: choose a room, scanner or staff group and **Set opening hours**; tick *Weekdays only* if it
+     closes at weekends. For the what-if, choose *Other hours* (e.g. MRI until 22:00).
+   - **Appointment books**: choose a pathway and **Book its patients** from, to, with a no-show share.
+   - **What-if: move a step to another floor**: choose the step and the floor.
+6. **Save scenario** keeps every setting and the what-if under a name (tick *Share with everyone* to share it).
+   Choose it under *Saved scenario* and **Load** it later; **Start again** goes back to the defaults.
 
 ---
 

@@ -78,7 +78,7 @@ const sameHours = (a: OpeningHours | null | undefined, b: OpeningHours | null | 
   (a ?? null) === (b ?? null) || (!!a && !!b && a.open === b.open && a.close === b.close && a.weekends === b.weekends);
 
 /** What the what-if changes, for the line under the Run button. Empty = no what-if. */
-export function whatIfChanges(model: SimModel, s: SimScenario): string[] {
+export function whatIfChanges(model: SimModel, s: SimScenario, floorName: (level: number) => string = (l) => `floor ${l}`): string[] {
   const m = withStaff(model, s.staff);
   const label = (k: string) => m.resources.find((r) => r.key === k)?.label ?? k;
   const have = (k: string) => (k === "porter" ? s.porters : m.resources.find((r) => r.key === k)?.capacity);
@@ -89,7 +89,7 @@ export function whatIfChanges(model: SimModel, s: SimScenario): string[] {
   for (const [k, lv] of Object.entries(s.whatIf.moves)) {
     const [fid, step] = [Number(k.slice(0, k.indexOf(":"))), k.slice(k.indexOf(":") + 1)];
     const f = m.flows.find((x) => x.id === fid), st = f?.steps.find((x) => x.key === step);
-    if (st && st.level !== lv) out.push(`${st.label} (${f!.name}) to floor ${lv}`);
+    if (st && st.level !== lv) out.push(`${st.label} (${f!.name}) to ${floorName(lv)}`);
   }
   return out;
 }

@@ -30,7 +30,8 @@ const issue = (r: StdRoom): StdRoomIssue => ({
 });
 const tally = (items: string[][]) => {
   const m = new Map<string, number>();
-  for (const list of items) for (const l of new Set(list)) m.set(l, (m.get(l) ?? 0) + 1);
+  // "Area per bed space (2 beds)" and "(4 beds)" count as one item.
+  for (const list of items) for (const l of new Set(list.map((x) => x.replace(/ \(\d+ beds\)$/, "")))) m.set(l, (m.get(l) ?? 0) + 1);
   return [...m.entries()].map(([label, rooms]) => ({ label, rooms })).sort((a, b) => b.rooms - a.rooms || a.label.localeCompare(b.label));
 };
 

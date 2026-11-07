@@ -305,3 +305,18 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - **Assistant**: tools `list_boqs`, `get_boq`, `service_contracts`, `recalls`; answers are parsed by `parseAnswer`
   (`answer-format.ts`) for both the chat and the Word file (`src/lib/docx.ts`, a minimal .docx writer on `zip()`).
   Chats are private to their owner (`chats-server.ts`).
+
+# Wave 15 additions
+- **Room survey gases**: `rooms.services.gases` (gas code → outlets in the room; type `RoomServices` in `schema.ts`, no
+  migration). `checkRoom` compares them with the standard per bed space. Saved by `setRoomSiteAction` (`gas_<CODE>`).
+- **Room standards in BOQ checks**: `roomStandardsCheck(ws)` in `src/lib/boq/planning-server.ts`; summary pure in
+  `src/lib/boq/room-standards-check.ts`.
+- **Simulation extras**: `SimOptions.hours` / `books` / `levels` in `simulate.ts` (all optional; unset = wave 14
+  behaviour, the M/M/1 test still holds). Staff groups are added to the model by `withStaff` (`simulate-model.ts`);
+  a step holds its room, then its staff. The page keeps one `SimScenario` (`src/lib/flows/scenarios.ts`):
+  `cleanScenario` reads anything defensively, `buildRuns` makes the baseline and what-if. Saved scenarios: table
+  `sim_scenarios` (migration `0033`), actions in `src/app/flows/simulate/actions.ts` (private unless shared; author or
+  administrator deletes).
+- **Render models**: `furniture.ts` builders are more detailed; `furniture.test.ts` keeps each model inside its
+  `MODEL_SIZE` footprint (desk, nurse station and meeting table carry chairs outside it, as before) and under 12,000
+  triangles.

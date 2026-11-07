@@ -14,11 +14,13 @@ describe("room standards in BOQ checks", () => {
     room(4, 10, [row("Area", "ok"), row("Clear ceiling", "unknown")]),
     room(5, 10, [], null),
     room(6, 20, [row("Area", "ok")]),
+    room(7, 20, [row("Area per bed space (2 beds)", "short")]), room(8, 20, [row("Area per bed space (4 beds)", "short")]),
   ];
   const [icu, ward, empty] = summariseStandards([{ id: 10, label: "ICU" }, { id: 20, label: "Ward" }, { id: 30, label: "Day case" }], rooms);
   it("counts rooms per department", () => {
     expect(icu).toMatchObject({ rooms: 5, withStandard: 4, ok: 1, short: 2, unknown: 1 });
-    expect(ward).toMatchObject({ rooms: 1, ok: 1, short: 0 });
+    expect(ward).toMatchObject({ rooms: 3, ok: 1, short: 2 });
+    expect(ward.shortItems).toEqual([{ label: "Area per bed space", rooms: 2 }]);
     expect(empty).toMatchObject({ rooms: 0, withStandard: 0 });
   });
   it("lists the worst rooms first and what is most often short", () => {
@@ -29,6 +31,6 @@ describe("room standards in BOQ checks", () => {
     expect(icu.unsurveyed).toEqual([{ label: "Clear ceiling", rooms: 2 }]);
   });
   it("adds up the totals", () => {
-    expect(standardsTotals([icu, ward, empty])).toEqual({ rooms: 6, withStandard: 5, ok: 2, short: 2, unknown: 1 });
+    expect(standardsTotals([icu, ward, empty])).toEqual({ rooms: 8, withStandard: 7, ok: 2, short: 4, unknown: 1 });
   });
 });
