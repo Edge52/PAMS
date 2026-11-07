@@ -157,7 +157,8 @@ const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /** Room standards (wave 15): the linked departments' rooms against the standard for their kind of room. */
 function RoomStandardsPanel({ boqId, standards }: { boqId: number; standards: RoomStandardsCheck }) {
-  const { departments, unlinked } = standards;
+  const { departments, equipment, unlinked } = standards;
+  const gaps = equipment.reduce((t, d) => t + d.items.filter((i) => i.gap > 0).length, 0);
   const t = standardsTotals(departments);
   return (
     <Panel title="Room standards" actions={<span className="text-xs text-muted">{t.withStandard ? `${t.short} of ${t.withStandard} rooms below the standard` : ""}</span>}>
@@ -192,6 +193,23 @@ function RoomStandardsPanel({ boqId, standards }: { boqId: number; standards: Ro
               ))}
             </tbody>
           </Table>
+          {equipment.length > 0 && (
+            <details className="mt-3" open={gaps > 0 && gaps <= 12}>
+              <summary className="cursor-pointer text-sm font-semibold text-primary">Room templates&apos; equipment against this BOQ ({gaps ? `${gaps} short` : "all covered"})</summary>
+              <p className="mt-1 text-xs text-muted">What the room templates ask for in each department&apos;s drawn rooms (per bed space where the template says so) against the quantities in this BOQ. A BOQ line counts when its code is the template&apos;s code or under it.</p>
+              <Table>
+                <THead><tr><Th>Department</Th><Th>Equipment</Th><Th align="right">Rooms</Th><Th align="right">Templates need</Th><Th align="right">In the BOQ</Th><Th align="right">Short</Th></tr></THead>
+                <tbody>{equipment.flatMap((d) => d.items.map((i, k) => (
+                  <tr key={`${d.boqDepartmentId}-${i.code}`}>
+                    <Td>{k === 0 ? d.department : ""}</Td>
+                    <Td>{i.label} <span className="font-mono text-xs text-muted">{i.code}</span></Td>
+                    <Td align="right">{i.rooms}</Td><Td align="right">{i.need}</Td><Td align="right">{i.planned}</Td>
+                    <Td align="right" className={i.gap ? "font-semibold text-danger" : "text-ok"}>{i.gap || "—"}</Td>
+                  </tr>
+                )))}</tbody>
+              </Table>
+            </details>
+          )}
           {departments.some((d) => d.shortRooms.length) && (
             <details className="mt-3" open={t.short <= 8}>
               <summary className="cursor-pointer text-sm font-semibold text-primary">Rooms below their standard ({t.short})</summary>

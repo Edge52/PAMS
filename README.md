@@ -123,7 +123,8 @@ Under **Assets** (release 2.2 / wave 3):
   porters and lifts hour by hour, over a day or a week, with what-if capacities.
 - **Commissioning** (`/assets/commissioning`): a new building or wing room by room from handover to acceptance, as a
   curve, a Gantt (also on the project) and a week slider in 3D.
-- **Room standards** (`/facilities/room-standards`): the data sheet per room type, checked against each room.
+- **Room standards** (`/facilities/room-standards`): the data sheet per room type, checked against each room. Since
+  wave 16 each is a room template with the equipment it needs (and clearances) and a minimum clear width.
 - Backups from the page on PostgreSQL too; the assistant keeps chats and downloads answers as Word files.
 
 ## Wave 15

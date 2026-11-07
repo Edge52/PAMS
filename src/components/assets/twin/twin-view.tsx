@@ -172,6 +172,8 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [furniture, setFurniture] = useState(true);
   // Rooms coloured by drawing confidence (wave 16, drawing quality).
   const [confidenceTint, setConfidenceTint] = useState(false);
+  // Rooms coloured by their room template check (wave 16, phase 4).
+  const [templateTint, setTemplateTint] = useState(false);
   const kitRules = useRef<KitRule[] | null>(null);
   const [scope, setScope] = useState<Scope>("room");
   const [assetList, setAssetList] = useState(data.assets);
@@ -364,16 +366,27 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
     if (!ready) return;
     sceneRef.current?.setGhosts(plan ? spreadGhosts(plan.departments.map((d) => ({ departmentId: d.departmentId, missing: d.missing })), deptRooms) : null);
   }, [plan, deptRooms, ready]);
+  const tplTint = useMemo(() => {
+    if (!templateTint) return null;
+    const out = new Map<number, { color: string; level: number }>();
+    for (const r of data.rooms) {
+      const t = r.template; if (!t) continue;
+      const k = templateKind(t);
+      out.set(r.id, { color: TEMPLATE_COLORS[k], level: k === "short" ? 4 : k === "missing" ? 3 : k === "unknown" ? 2 : 1 });
+    }
+    return out;
+  }, [templateTint, data.rooms]);
   useEffect(() => {
     if (!ready) return;
     // A view preset (wave 16) first, then the commissioning week (wave 14), plan vs installed, the problem layer.
     if (presetTint) { sceneRef.current?.setRoomTint(presetTint, NEUTRAL); return; }
     if (qualityTint) { sceneRef.current?.setRoomTint(qualityTint, NEUTRAL); return; }
+    if (tplTint) { sceneRef.current?.setRoomTint(tplTint, NEUTRAL); return; }
     if (comm.tint) { sceneRef.current?.setRoomTint(comm.tint, NEUTRAL); return; }
     if (planTint) { sceneRef.current?.setRoomTint(planTint, NEUTRAL); return; }
     sceneRef.current?.setRoomTint(layer === "department" || !legend ? null
       : new Map([...layerValues].map(([id, v]) => [id, { color: colorFor(v, legend) ?? NEUTRAL, level: bucketOf(v, legend.breaks) }])), NEUTRAL);
-  }, [layer, layerValues, legend, ready, planTint, comm.tint, presetTint, qualityTint]);
+  }, [layer, layerValues, legend, ready, planTint, comm.tint, presetTint, qualityTint, tplTint]);
   // The worst places, for the legend panel (rooms, or departments when grouped).
   const worst = useMemo(() => {
     if (layer === "department") return [];
@@ -428,7 +441,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => { if (ready) sceneRef.current?.setFacade(facade); }, [facade, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setSolidWalls(solid); }, [solid, ready]);
   // Drawing confidence and presets are about exact rooms: drawn as blocks, never as a spreading glow.
-  useEffect(() => { if (ready) sceneRef.current?.setHeatMode(confidenceTint || preset ? "blocks" : heatMode); }, [heatMode, ready, confidenceTint, preset]);
+  useEffect(() => { if (ready) sceneRef.current?.setHeatMode(confidenceTint || templateTint || preset ? "blocks" : heatMode); }, [heatMode, ready, confidenceTint, templateTint, preset]);
   useEffect(() => { if (ready) sceneRef.current?.setSection(sectionAxis || null, sectionAt); }, [sectionAxis, sectionAt, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setCores(cores); }, [cores, ready]);
   // Fill the window below the app's top bar exactly (its height varies), so nothing hides under the bottom edge.
@@ -1165,10 +1178,14 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         <label className="flex items-center gap-1.5"><input type="checkbox" checked={detailedModels} onChange={(e) => setDetailedModels(e.target.checked)} className="accent-[#2fd3ff]" />Detailed equipment close up</label>
         <label className="flex items-start gap-1.5"><input type="checkbox" checked={furniture} onChange={(e) => setFurniture(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
           <span>Furniture on a floor shown on its own<span className="block text-[11px] text-[#8fb6cc]">Where the drawing shows it; elsewhere illustrative room kits by room type.</span></span></label>
-        <label className="flex items-start gap-1.5"><input type="checkbox" checked={confidenceTint} onChange={(e) => setConfidenceTint(e.target.checked)} className="mt-0.5 accent-[#2fd3ff]" />
+        <label className="flex items-start gap-1.5"><input type="checkbox" checked={confidenceTint} onChange={(e) => { setConfidenceTint(e.target.checked); if (e.target.checked) setTemplateTint(false); }} className="mt-0.5 accent-[#2fd3ff]" />
           <span>Drawing confidence
             {confidenceTint && <span className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">{(["assumed", "fallback", "verified"] as const).map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: CONFIDENCE_COLORS[k] }} />{CONFIDENCE_WORDS[k]}</span>)}</span>}
             <span className="block text-[11px] text-[#8fb6cc]"><a href={`/facilities/${data.facility.id}/drawing-quality`} className="text-[#5fd6ff] hover:underline">Drawing quality</a> lists the issues floor by floor.</span></span></label>
+        <label className="flex items-start gap-1.5"><input type="checkbox" checked={templateTint} onChange={(e) => { setTemplateTint(e.target.checked); if (e.target.checked) setConfidenceTint(false); }} className="mt-0.5 accent-[#2fd3ff]" />
+          <span>Room templates
+            {templateTint && <span className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">{(["short", "missing", "unknown", "ok"] as const).map((k) => <span key={k} className="flex items-center gap-1"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: TEMPLATE_COLORS[k] }} />{TEMPLATE_WORDS[k]}</span>)}</span>}
+            <span className="block text-[11px] text-[#8fb6cc]">Each room against the <Link href="/facilities/room-standards" className="text-[#5fd6ff] hover:underline">template</Link> for its kind: size, services and equipment.</span></span></label>
       </div>
       <div className="mb-3 flex items-center gap-2 text-xs">
         <button type="button" onClick={walking ? stopWalk : () => void startWalk()} aria-pressed={walking} className="twin-act" title="First person on the floor shown, kept to the walkable space (W)">{walking ? "Stop walking" : "Walk this floor"}</button>
@@ -1954,6 +1971,19 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               </div>
             );
           })()}
+          {!selAsset && selRoom.template && (() => {
+            const t = selRoom.template, k = templateKind(t);
+            return (
+              <div className="mt-3 border-t border-[#123a55] pt-2 text-[13px]">
+                <p><span className="font-semibold text-[#5fd6ff]">Room template</span>{" "}
+                  <a href={`/facilities/room-standards/${t.index}?facilityId=${data.facility.id}`} className="text-white hover:underline">{t.label}</a>{" "}
+                  <span className="ml-1 inline-flex items-center gap-1 text-[11px]"><span aria-hidden className="inline-block size-2 rounded-sm" style={{ background: TEMPLATE_COLORS[k] }} />{TEMPLATE_WORDS[k]}</span></p>
+                {t.short.length > 0 && <p className="mt-0.5 text-[12px] text-[#ffb3b3]">Short: {t.short.join("; ")}</p>}
+                {t.missing.length > 0 && <p className="mt-0.5 text-[12px] text-[#ffd0a0]">Equipment missing: {t.missing.join("; ")}</p>}
+                {t.unknown.length > 0 && <p className="mt-0.5 text-[11px] text-[#8fb6cc]">Not surveyed: {t.unknown.slice(0, 6).join(", ")}{t.unknown.length > 6 ? "…" : ""}</p>}
+              </div>
+            );
+          })()}
           {!selAsset && floorById.get(selRoom.floorId) && (
             <FitPanel key={selRoom.id} room={selRoom} floor={floorById.get(selRoom.floorId)!} floorRooms={data.rooms.filter((r) => r.floorId === selRoom.floorId)}
               models={data.siteModels ?? []} canEdit={!!data.can.editFacility} facilityId={data.facility.id} onOverlay={setOutlines}
@@ -2239,6 +2269,13 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
         }} />}
     </div>
   );
+}
+
+/** Room template colours (wave 16, phase 4): below the template, equipment missing, not surveyed, meets it. */
+const TEMPLATE_COLORS = { short: "#ff5a5a", missing: "#ff9f43", unknown: "#e8d36a", ok: "#3ddc97" } as const;
+const TEMPLATE_WORDS = { short: "Short", missing: "Equipment missing", unknown: "To survey", ok: "Meets it" } as const;
+function templateKind(t: NonNullable<TwinRoom["template"]>): keyof typeof TEMPLATE_COLORS {
+  return t.short.length ? "short" : t.missing.length ? "missing" : t.state === "unknown" ? "unknown" : "ok";
 }
 
 /** Drawing confidence colours (wave 16): from the drawing, assumed (split or drawn), guessed (no outline found), verified. */

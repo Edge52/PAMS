@@ -12,7 +12,7 @@ import { ReportPrintStyles } from "@/components/reports/print-styles";
 import { roomLook } from "@/components/assets/twin/render/kits";
 import { loadKits } from "@/lib/assets/room-kits";
 import { checkRoom, GAS_LABELS, GASES, specLines, standardFor } from "@/lib/assets/room-standards";
-import { drawingGasesFor, loadStandards } from "@/lib/assets/room-standards-server";
+import { drawingGasesFor, loadStandards, roomDevicesFor, roomWidth } from "@/lib/assets/room-standards-server";
 import { plansForFacility, planVsInstalled } from "@/lib/assets/plan-installed-server";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate } from "@/lib/format";
@@ -52,10 +52,11 @@ export default async function RoomSheet({ params, searchParams }: { params: Prom
   // The standard for this kind of room (wave 14) and how the room compares.
   const std = standardFor(r.room.name, r.room.type, (await loadStandards()).rules);
   const drawnGases = (await drawingGasesFor([roomId])).get(roomId) ?? null;
-  const checks = std ? checkRoom(std.rule.spec, { areaM2: m2, beds: r.room.beds, ceilingM: r.room.ceilingM, doorWidthM: r.room.doorWidthM, floorLoadKgM2: r.room.floorLoadKgM2, services: s, drawingGases: drawnGases }) : [];
+  const checks = std ? checkRoom(std.rule.spec, { areaM2: m2, beds: r.room.beds, ceilingM: r.room.ceilingM, doorWidthM: r.room.doorWidthM, floorLoadKgM2: r.room.floorLoadKgM2, services: s, drawingGases: drawnGases,
+    widthM: roomWidth(r.room, r.floor.unitsPerMetre), devices: (await roomDevicesFor([roomId])).get(roomId) ?? [] }) : [];
   // Symbols read from the drawing in this room (wave 16, phase 2), counted by what they are.
   const drawn = await db.select({ label: drawingSymbols.label, n: sql<number>`count(*)::int` }).from(drawingSymbols).where(eq(drawingSymbols.roomId, roomId)).groupBy(drawingSymbols.label);
-  const stdLines = std ? specLines(std.rule.spec).filter((l) => !["Room", "Notes"].includes(l.group)) : [];
+  const stdLines = std ? specLines(std.rule.spec).filter((l) => !["Room", "Notes", "Equipment"].includes(l.group)) : [];
   // Where the room came from (wave 16): drawing, revision, how its outline was made, and whether someone checked it.
   const [cadRow] = await db.select({ sourceFile: floorCad.sourceFile, revision: floorCad.revision, importedAt: floorCad.importedAt }).from(floorCad).where(eq(floorCad.floorId, r.floor.id));
   const conf = roomConfidence({ outlineSource: r.room.outlineSource, verified: r.room.verifiedAt != null });
@@ -111,10 +112,11 @@ export default async function RoomSheet({ params, searchParams }: { params: Prom
         <h2 className="mb-1 font-semibold">Standard for this kind of room</h2>
         {!std ? <p className="mb-4 text-muted">No room standard matches this room&apos;s name or type. <Link href="/facilities/room-standards" className="no-print text-primary hover:underline">Room standards</Link></p> : (<>
           <p className="mb-1 text-xs text-muted">Follows <Link href={`/facilities/room-standards/${std.index}?facilityId=${facilityId}`} className="text-primary hover:underline">{std.rule.label}</Link>{std.rule.source ? ` (${std.rule.source})` : ""}. Draft planning figures: confirm with the engineers.</p>
+          {checks.some((c) => c.kind === "equipment") && <p className="mb-1 text-xs text-muted">Equipment rows count the devices registered in this room; clearances are in the room type&apos;s sheet.</p>}
           {checks.length > 0 && (
             <table className="mb-2 w-full text-xs"><thead><tr className="border-b border-ink text-left"><th className="py-1">Check</th><th>Standard</th><th>This room</th><th /></tr></thead>
               <tbody>{checks.map((c) => <tr key={c.label} className="border-b border-line/60"><td className="py-1">{c.label}</td><td>{c.need}</td><td>{c.have}</td>
-                <td className={c.state === "short" ? "font-semibold text-danger" : c.state === "ok" ? "text-ok" : "text-muted"}>{c.state === "short" ? "Short" : c.state === "ok" ? "Meets it" : "Survey it"}</td></tr>)}</tbody></table>
+                <td className={c.state === "short" ? "font-semibold text-danger" : c.state === "ok" ? "text-ok" : "text-muted"}>{c.state === "short" ? (c.kind === "equipment" ? "Missing" : "Short") : c.state === "ok" ? "Meets it" : "Survey it"}</td></tr>)}</tbody></table>
           )}
           {stdLines.length > 0 && <table className="mb-4 w-full"><tbody>{stdLines.map((l) => <tr key={l.label} className="border-b border-line/60"><th className="w-48 py-1 pr-3 text-left font-normal text-muted">{l.label === "Outlets" ? "Medical gas outlets" : l.label}</th><td className="py-1">{l.value}</td></tr>)}</tbody></table>}
         </>)}

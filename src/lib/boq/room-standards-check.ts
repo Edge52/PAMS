@@ -3,7 +3,7 @@
  * the standard for their kind of room (area, ceiling, door, floor load, power, medical gas outlets, shielding and
  * services; see src/lib/assets/room-standards.ts), summed up per department.
  */
-import type { CheckRow } from "@/lib/assets/room-standards";
+import { codeMatches, type CheckRow } from "../assets/room-standards";
 
 export type StdRoom = {
   id: number; code: string; name: string; floor: string; facilityId: number;
@@ -50,6 +50,20 @@ export function summariseStandards(departments: { id: number; label: string }[],
       shortItems: tally(shortRooms.map((r) => r.short)), unsurveyed: tally(withStd.map((r) => r.rows.filter((x) => x.state === "unknown").map((x) => x.label))),
     };
   });
+}
+
+/** One template item against a BOQ department (wave 16, phase 4): what the room templates ask for and what the BOQ plans. */
+export type TemplateGap = { code: string; label: string; need: number; rooms: number; planned: number; gap: number };
+
+/**
+ * The room templates' equipment for a department's rooms against the BOQ lines of that department: a line counts
+ * towards an item when its device code is the item's code or under it. Short items first.
+ */
+export function compareTemplateEquipment(needs: Map<string, { label: string; need: number; rooms: number }>, lines: { deviceCode: string; quantity: number }[]): TemplateGap[] {
+  return [...needs.entries()].map(([code, n]) => {
+    const planned = lines.filter((l) => codeMatches(code, l.deviceCode)).reduce((t, l) => t + l.quantity, 0);
+    return { code, label: n.label, need: n.need, rooms: n.rooms, planned, gap: Math.max(0, n.need - planned) };
+  }).sort((a, b) => b.gap - a.gap || a.label.localeCompare(b.label));
 }
 
 /** Totals over every department, for the panel's heading. */

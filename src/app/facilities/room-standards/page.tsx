@@ -8,7 +8,7 @@ import { Crumbs, NativeSelect, Notice } from "@/components/assets/bits";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/assets/access";
-import { GAS_LABELS, GASES, STANDARDS_NOTE, type RoomStandardSpec } from "@/lib/assets/room-standards";
+import { equipmentText, GAS_LABELS, GASES, STANDARDS_NOTE, type RoomStandardSpec } from "@/lib/assets/room-standards";
 import { checkedRooms, loadStandards } from "@/lib/assets/room-standards-server";
 import { humanize } from "@/lib/status";
 import { deleteStandardAction, moveStandardAction, resetStandardsAction, saveStandardAction } from "./actions";
@@ -54,13 +54,14 @@ export default async function RoomStandardsPage({ searchParams }: { searchParams
       )}
       {!rules.length ? <EmptyState title="No room standards">Add one below, or reset to the built-in set.</EmptyState> : (
         <Table>
-          <THead><tr><Th>Standard</Th><Th>Applies to</Th><Th align="right">Area</Th><Th>Gases</Th><Th>Air</Th><Th align="right">{fac ? `Rooms in ${fac.name}` : "Rooms"}</Th>{mayEdit && <Th />}</tr></THead>
+          <THead><tr><Th>Standard</Th><Th>Applies to</Th><Th align="right">Area</Th><Th>Equipment</Th><Th>Gases</Th><Th>Air</Th><Th align="right">{fac ? `Rooms in ${fac.name}` : "Rooms"}</Th>{mayEdit && <Th />}</tr></THead>
           <tbody>
             {rules.map((r, i) => { const c = count(i); return (
               <tr key={r.id ?? `b${i}`} className={editIdx === i ? "bg-primary-soft/40" : undefined}>
                 <Td><Link href={`/facilities/room-standards/${i}${q}`} className="font-semibold text-primary hover:underline">{r.label}</Link></Td>
                 <Td>{r.match ? <code className="break-all text-xs">{r.match}</code> : <Badge>{humanize(r.roomType ?? "")}</Badge>}</Td>
                 <Td align="right">{r.spec.minAreaM2 != null ? `${r.spec.minAreaM2} m²` : "—"}</Td>
+                <Td><span className="text-xs">{r.spec.equipment?.length ? r.spec.equipment.map((e) => e.label).join(", ") : "—"}</span></Td>
                 <Td><span className="text-xs">{gasText(r.spec)}</span></Td>
                 <Td><span className="text-xs">{airText(r.spec)}</span></Td>
                 <Td align="right">{c.n ? <>{c.n}{c.short > 0 && <span className="block text-xs font-semibold text-danger">{c.short} short</span>}</> : <span className="text-muted">—</span>}</Td>
@@ -97,12 +98,18 @@ export default async function RoomStandardsPage({ searchParams }: { searchParams
               </Field>
             </FormGrid>
             <h3 className="mt-4 mb-2 text-sm font-semibold">Room</h3>
-            <FormGrid cols={4}>
+            <FormGrid cols={3}>
+              <Field label="Clear width, m" hint="Narrowest side of the room"><Input name="minWidthM" inputMode="decimal" defaultValue={s.minWidthM ?? ""} /></Field>
               <Field label="Clear floor area, m²" hint="Per bed space when the room has beds"><Input name="minAreaM2" inputMode="decimal" defaultValue={s.minAreaM2 ?? ""} /></Field>
               <Field label="Clear ceiling, m"><Input name="minCeilingM" inputMode="decimal" defaultValue={s.minCeilingM ?? ""} /></Field>
               <Field label="Door clear width, m"><Input name="minDoorWidthM" inputMode="decimal" defaultValue={s.minDoorWidthM ?? ""} /></Field>
               <Field label="Floor load, kg/m²"><Input name="minFloorLoadKgM2" inputMode="numeric" defaultValue={s.minFloorLoadKgM2 ?? ""} /></Field>
             </FormGrid>
+            <h3 className="mt-4 mb-2 text-sm font-semibold">Equipment</h3>
+            <Field label="One item a line: catalogue code, how many, clearance around it in metres, name"
+              hint="e.g. MON-PAT, 1 a bed, 0.6, Patient monitor. A code counts every device under it (MON-PAT counts MON-PAT-HIGH). Leave the clearance empty if none.">
+              <Textarea name="equipment" rows={4} maxLength={4000} defaultValue={equipmentText(s.equipment)} className="font-mono text-xs" />
+            </Field>
             <h3 className="mt-4 mb-2 text-sm font-semibold">Finishes</h3>
             <FormGrid cols={3}>
               <Field label="Floor"><Input name="floorFinish" maxLength={160} defaultValue={s.floorFinish ?? ""} /></Field>

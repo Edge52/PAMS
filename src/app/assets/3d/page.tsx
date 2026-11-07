@@ -16,6 +16,7 @@ import { scopeWhere } from "@/lib/assets/access";
 import { twinLive } from "@/lib/assets/twin-live";
 import { plansForFacility } from "@/lib/assets/plan-installed-server";
 import { sizesFor } from "@/lib/assets/dimensions-server";
+import { checkedRooms, loadStandards } from "@/lib/assets/room-standards-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "3D view" };
@@ -75,6 +76,14 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     steps: f.steps.map(({ id: _i, ...s }) => { void _i; return s; }), links: f.links.map(({ id: _i, ...l }) => { void _i; return l; }),
   }));
 
+  // Room templates (wave 16, phase 4): each room against the template for its kind, for the 3D tint and room card.
+  const templates = new Map((await checkedRooms(facility.id, (await loadStandards()).rules)).filter((c) => c.standardIndex != null && c.state !== "none").map((c) => [c.id, {
+    label: c.standard ?? "", index: c.standardIndex!, state: c.state as "ok" | "short" | "unknown",
+    short: c.rows.filter((x) => x.state === "short" && x.kind !== "equipment").map((x) => `${x.label}: ${x.have} (${x.need})`),
+    missing: c.rows.filter((x) => x.state === "short" && x.kind === "equipment").map((x) => `${x.label}: ${x.have} of ${x.need.replace("≥ ", "")}`),
+    unknown: c.rows.filter((x) => x.state === "unknown").map((x) => x.label),
+  }]));
+
   const [brand] = await db.select({ logo: facilities.logo, brandColor: facilities.brandColor }).from(facilities).where(eq(facilities.id, facility.id));
   const data: TwinData = {
     facility: { ...facility, logo: brand?.logo ?? null, brandColor: brand?.brandColor ?? null },
@@ -91,7 +100,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
       id: r.id, floorId: r.floorId, code: r.code, name: r.name, type: r.type, departmentId: r.departmentId, zone: r.zone, workshop: r.workshop,
       site: { ceilingM: r.ceilingM, doorWidthM: r.doorWidthM, doorHeightM: r.doorHeightM, floorLoadKgM2: r.floorLoadKgM2, services: r.services ?? null },
       poly: r.polygon && r.polygon.length >= 3 ? r.polygon : rectPoly(r.x, r.y, r.w, r.h),
-      outlineSource: r.outlineSource, verified: r.verifiedAt != null,
+      outlineSource: r.outlineSource, verified: r.verifiedAt != null, template: templates.get(r.id) ?? null,
     })),
     departments: deptRows.map((d, i) => ({ ...d, color: DEPARTMENT_PALETTE[i % DEPARTMENT_PALETTE.length] })),
     assets: sized.filter((a) => a.roomId != null),

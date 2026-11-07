@@ -34,6 +34,13 @@ Migrations `0034`–`0036`. Update with `git pull` and `npm run demo`; your data
   glazing (sill to 0.9 m, glass, head from 2.1 m). Wall heights come from the floor-to-floor heights, not a fixed
   3.3 m. Surveyed room ceilings (room survey) show as orange outlines at their height. View › **Solid walls (one
   floor)** switches back to the light linework.
+- **Clinical room templates** (roadmap phase 4): each room standard now lists the equipment the room needs (catalogue
+  code, number per room or per bed space, clearance) and a minimum clear width. Rooms are checked against the devices
+  registered in them and the width of their outline (room data sheet, room type sheet, 3D view). New templates:
+  CSSD decontamination, CSSD packing and sterilising, triage, dental surgery, clinical laboratory, microbiology
+  laboratory and blood bank. 3D view › View › **Room templates** colours rooms by their check; the room card shows the
+  template and what is short. BOQ › Checks › Room standards compares the templates' equipment with the BOQ's
+  quantities per department. Edited standards keep your copy: reset to the built-in set to get the new templates.
 
 ## Wave 15 — merged 7 Nov 2026
 

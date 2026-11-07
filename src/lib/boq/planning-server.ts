@@ -7,10 +7,10 @@ import { num, todayISO } from "@/lib/format";
 import { coreKind, polygonArea, rectPoly, type Pt } from "@/components/assets/twin/geometry";
 import { cashFlow, cleanPhaseMonths } from "./phasing";
 import type { BoqWorkspace } from "./queries";
-import { checkRoom, standardFor } from "@/lib/assets/room-standards";
+import { checkRoom, standardFor, templateNeeds, type RoomStandardSpec } from "@/lib/assets/room-standards";
 import { drawingGasesFor, loadStandards, roomAreaM2 } from "@/lib/assets/room-standards-server";
 import { checkRooms, needFor, type ReqRoom } from "./room-requirements";
-import { summariseStandards, type StdRoom } from "./room-standards-check";
+import { compareTemplateEquipment, summariseStandards, type StdRoom } from "./room-standards-check";
 import { tcoSummary } from "./tco";
 
 export async function roomsCheck(ws: BoqWorkspace) {
@@ -37,7 +37,7 @@ export async function roomsCheck(ws: BoqWorkspace) {
 /** Room standards (wave 15): every real room of the linked departments against the standard for its kind of room. */
 export async function roomStandardsCheck(ws: BoqWorkspace) {
   const linked = ws.depts.filter((d) => d.departmentId != null);
-  if (!linked.length) return { departments: [], unlinked: ws.depts.length };
+  if (!linked.length) return { departments: [], equipment: [], unlinked: ws.depts.length };
   const boqDeptOf = new Map<number, number>();
   for (const d of linked) if (!boqDeptOf.has(d.departmentId!)) boqDeptOf.set(d.departmentId!, d.id);
   const rows = await db.select({ room: rooms, floor: floors.name, upm: floors.unitsPerMetre, facilityId: buildings.facilityId })
@@ -45,14 +45,23 @@ export async function roomStandardsCheck(ws: BoqWorkspace) {
     .where(inArray(rooms.departmentId, [...boqDeptOf.keys()]));
   const { rules } = await loadStandards();
   const gases = await drawingGasesFor(rows.map((x) => x.room.id));
+  const specs: { boqDepartmentId: number; spec: RoomStandardSpec; beds: number }[] = [];
   const std: StdRoom[] = rows.filter(({ room: r }) => r.type !== "CORRIDOR" && !coreKind(r.name)).map(({ room: r, floor, upm, facilityId }) => {
     const m = standardFor(r.name, r.type, rules);
+    if (m) specs.push({ boqDepartmentId: boqDeptOf.get(r.departmentId!)!, spec: m.rule.spec, beds: r.beds });
     const rowsOut = m ? checkRoom(m.rule.spec, { areaM2: roomAreaM2(r, upm), beds: r.beds, ceilingM: r.ceilingM, doorWidthM: r.doorWidthM, floorLoadKgM2: r.floorLoadKgM2, services: r.services, drawingGases: gases.get(r.id) }) : [];
     return { id: r.id, code: r.code, name: r.name, floor, facilityId, boqDepartmentId: boqDeptOf.get(r.departmentId!)!, standard: m?.rule.label ?? null, rows: rowsOut };
   });
   // One summary per real department (the first BOQ department linked to it).
   const firsts = linked.filter((d) => boqDeptOf.get(d.departmentId!) === d.id).map((d) => ({ id: d.id, label: d.realName && d.realName !== d.label ? `${d.label} (${d.realName})` : d.label }));
-  return { departments: summariseStandards(firsts, std), unlinked: ws.depts.length - linked.length };
+  // Room templates' equipment (wave 16, phase 4) against this BOQ: every BOQ department linked to the same real department counts.
+  const realOf = new Map(linked.map((d) => [d.id, d.departmentId!]));
+  const equipment = firsts.map((d) => {
+    const real = realOf.get(d.id);
+    const lines = ws.lines.filter((l) => l.boqDepartmentId != null && realOf.get(l.boqDepartmentId) === real).map((l) => ({ deviceCode: l.deviceCode, quantity: l.quantity }));
+    return { boqDepartmentId: d.id, department: d.label, items: compareTemplateEquipment(templateNeeds(specs.filter((s) => s.boqDepartmentId === d.id)), lines) };
+  }).filter((d) => d.items.length);
+  return { departments: summariseStandards(firsts, std), equipment, unlinked: ws.depts.length - linked.length };
 }
 export type RoomStandardsCheck = Awaited<ReturnType<typeof roomStandardsCheck>>;
 

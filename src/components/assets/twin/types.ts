@@ -33,6 +33,8 @@ export type TwinRoom = {
   /** Where the outline came from and whether someone checked it on site (wave 16, drawing quality). */
   outlineSource?: string | null;
   verified?: boolean;
+  /** The room template it follows and how it compares (wave 16, phase 4); absent = no template matches. */
+  template?: { label: string; index: number; state: "ok" | "short" | "unknown"; short: string[]; missing: string[]; unknown: string[] } | null;
 };
 
 export type TwinSiteModel = { id: number; name: string; typeName: string; typical: boolean; verified: boolean; req: import("@/lib/assets/site-fit").SiteReq };

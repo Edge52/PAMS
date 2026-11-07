@@ -123,6 +123,15 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
   editable copy of the built-in set (draft figures to be confirmed by the engineers).
 - Open a standard for its printable sheet and the rooms that follow it, with what each falls short of. Each room's own
   data sheet shows its standard and the comparison.
+- Each standard is a **room template**: it also lists the **equipment** the room needs (catalogue code, how many,
+  per bed space or per room, clearance around it) and the narrowest **clear width**. Rooms are checked against the
+  devices registered in them (*Equipment missing*) and the width of their outline. Templates cover sterile services
+  (decontamination, packing and sterilising), triage, dental surgeries and laboratories (clinical, microbiology,
+  blood bank) as well as the clinical rooms. If you edited the standards before, **Reset to the built-in
+  standards** to get the new templates.
+- In 3D, **View › Room templates** colours rooms: short, equipment missing, to survey, meets it. A selected room shows
+  its template and what is short. **BOQ › Checks › Room standards** compares the templates' equipment for the
+  departments' rooms with the BOQ quantities.
 
 **Register equipment**
 - **Asset register** › **Register asset** (one), **Bulk place** (e.g. a monitor at every ICU bed) or **Import Excel**

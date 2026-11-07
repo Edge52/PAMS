@@ -352,4 +352,11 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   and windows (glazing minus wall); `wallHeights` = floor-to-floor less a 0.35 m slab (top floor as the one below).
   `scene.ts` keeps each floor's geometry, builds the shell on first isolation (`buildShell`, instanced boxes, rebuilt
   on look change), hides the translucent walls on that floor, and scales those walls to `FloorView.wallH`.
+- **Room templates** (3D phase 4): `RoomStandardSpec.equipment` (`TemplateItem`: code prefix, n, perBed, clearanceM)
+  and `minWidthM`, in `seed-data/room-standards.json` (one rule per line, keep it that way). `checkRoom` counts
+  `RoomSurvey.devices` (catalogue codes; absent = not checked, as in BOQ checks) with `codeMatches`, and checks
+  `widthM` (`roomWidthM`, narrowest extent across edge directions). Equipment rows have `kind: "equipment"`.
+  Server: `roomDevicesFor`, `roomWidth` in `room-standards-server.ts`; editor text format `parseEquipment` /
+  `equipmentText`. BOQ: `templateNeeds` + `compareTemplateEquipment` (`roomStandardsCheck().equipment`).
+  3D: `TwinRoom.template` from `checkedRooms`, tint `TEMPLATE_COLORS` (forces blocks), room card block.
 

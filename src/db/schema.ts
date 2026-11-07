@@ -1531,7 +1531,13 @@ export const assistantChats = pgTable("assistant_chats", {
 }, (t) => [index("assistant_chats_user_idx").on(t.userId, t.updatedAt)]);
 
 /** Standard finishes and services for a kind of room (wave 14). Every value is optional; see src/lib/assets/room-standards.ts. */
+/** Equipment a room template needs (wave 16, phase 4): catalogue code (a type, group or category prefix), how many, clearance. */
+export type TemplateItem = { code: string; label: string; n?: number; perBed?: boolean; clearanceM?: number };
 export type RoomStandardSpec = {
+  /** Narrowest clear width of the room, m (wave 16). */
+  minWidthM?: number;
+  /** Equipment the room needs (wave 16): counted against the devices registered in it. */
+  equipment?: TemplateItem[];
   minAreaM2?: number; minCeilingM?: number; minDoorWidthM?: number; minFloorLoadKgM2?: number;
   floorFinish?: string; wallFinish?: string; ceilingFinish?: string;
   /** Medical gas outlets per bed space or room: O2, VAC, AIR, AIR7 (surgical air), N2O, AGSS. */

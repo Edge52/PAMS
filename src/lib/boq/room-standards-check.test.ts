@@ -34,3 +34,13 @@ describe("room standards in BOQ checks", () => {
     expect(standardsTotals([icu, ward, empty])).toEqual({ rooms: 8, withStandard: 7, ok: 2, short: 4, unknown: 1 });
   });
 });
+
+describe("room templates against a BOQ (wave 16, phase 4)", () => {
+  it("counts BOQ lines under each template code", async () => {
+    const { compareTemplateEquipment } = await import("./room-standards-check");
+    const needs = new Map([["MON-PAT", { label: "Patient monitor", need: 10, rooms: 2 }], ["IMG-CT", { label: "CT scanner", need: 1, rooms: 1 }]]);
+    const out = compareTemplateEquipment(needs, [{ deviceCode: "MON-PAT-HIGH", quantity: 6 }, { deviceCode: "MON-PAT-MID", quantity: 2 }, { deviceCode: "IMG-CT-128", quantity: 1 }, { deviceCode: "MON-PATX", quantity: 9 }]);
+    expect(out[0]).toMatchObject({ code: "MON-PAT", planned: 8, gap: 2 });
+    expect(out[1]).toMatchObject({ code: "IMG-CT", planned: 1, gap: 0 });
+  });
+});
