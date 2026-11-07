@@ -46,7 +46,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     .from(floors).innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(eq(buildings.facilityId, facility.id)).orderBy(asc(floors.level));
   const floorIds = floorRows.map((r) => r.f.id);
   const roomRows = floorIds.length ? await db.select().from(rooms).where(inArray(rooms.floorId, floorIds)) : [];
-  const deptRows = await db.select({ id: departments.id, name: departments.name, code: departments.code }).from(departments)
+  const deptRows = await db.select({ id: departments.id, name: departments.name, code: departments.code, typeCode: departments.departmentTypeCode }).from(departments)
     .where(eq(departments.facilityId, facility.id)).orderBy(asc(departments.name));
 
   const group = alias(deviceTypes, "grp"), cat = alias(deviceTypes, "cat");

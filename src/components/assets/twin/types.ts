@@ -34,7 +34,7 @@ export type TwinRoom = {
 
 export type TwinSiteModel = { id: number; name: string; typeName: string; typical: boolean; verified: boolean; req: import("@/lib/assets/site-fit").SiteReq };
 
-export type TwinDepartment = { id: number; name: string; code: string; color: string };
+export type TwinDepartment = { id: number; name: string; code: string; color: string; /** Department type (seed-data/department-types.json), for view presets. */ typeCode?: string | null };
 
 /** A declared lift core (Facilities › Lifts) and where it stops on each floor (plan units of that floor). */
 export type TwinLift = {
