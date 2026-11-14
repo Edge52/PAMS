@@ -1,7 +1,7 @@
 "use client";
 /** HUD building blocks for the 3D view: width-driven layout mode, remembered panel state and the collapsible panel. */
 import { useCallback, useId, useSyncExternalStore, type ReactNode, type RefObject } from "react";
-import { hudMode, isPanelOpen, parsePrefs, prefKey, type HudMode, type PanelId, type PanelPrefs } from "./hud-state";
+import { hudMode, isPanelOpen, parsePrefs, type HudMode, type PanelId, type PanelPrefs, togglePanel } from "./hud-state";
 
 /* ── layout mode from the element's own width ── */
 
@@ -22,7 +22,7 @@ export function useHudMode(ref: RefObject<HTMLElement | null>): HudMode {
 
 /* ── panel open/closed, remembered in localStorage (per browser; absent storage just means defaults) ── */
 
-const STORAGE_KEY = "hpams.twin.panels";
+const STORAGE_KEY = "hpams.twin.panels.v2"; // v2 (wave 22): one panel open per side
 let cache: PanelPrefs | null = null;
 const listeners = new Set<() => void>();
 
@@ -35,8 +35,8 @@ function readPrefs(): PanelPrefs {
 }
 const EMPTY: PanelPrefs = {};
 
-function writePref(key: string, open: boolean) {
-  cache = { ...readPrefs(), [key]: open };
+function writePrefs(next: PanelPrefs) {
+  cache = next;
   try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cache)); } catch { /* keep it for this visit only */ }
   for (const l of listeners) l();
 }
@@ -48,7 +48,7 @@ export function usePanelPrefs(mode: HudMode) {
     () => EMPTY,
   );
   const isOpen = (id: PanelId) => isPanelOpen(prefs, id, mode);
-  const toggle = (id: PanelId) => writePref(prefKey(id, mode), !isOpen(id));
+  const toggle = (id: PanelId) => writePrefs(togglePanel(readPrefs(), id, mode));
   return { isOpen, toggle };
 }
 

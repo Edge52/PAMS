@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hudMode, isPanelOpen, parsePrefs, prefKey, visibleSheetTab } from "./hud-state";
+import { hudMode, isPanelOpen, parsePrefs, prefKey, togglePanel, visibleSheetTab } from "./hud-state";
 
 describe("3D view HUD layout", () => {
   it("picks the layout from the view's width", () => {
@@ -11,9 +11,19 @@ describe("3D view HUD layout", () => {
     expect(hudMode(1280)).toBe("wide");
   });
 
-  it("panels start open on wide screens and folded on compact ones", () => {
+  it("starts with one panel open per side on wide screens and all folded on compact ones", () => {
     expect(isPanelOpen({}, "floors", "wide")).toBe(true);
+    expect(isPanelOpen({}, "find", "wide")).toBe(true);
+    expect(isPanelOpen({}, "status", "wide")).toBe(false);
     expect(isPanelOpen({}, "floors", "compact")).toBe(false);
+  });
+
+  it("opening a panel folds the others in its column, and leaves the other column alone (wave 22)", () => {
+    const next = togglePanel({}, "layers", "wide");
+    expect(isPanelOpen(next, "layers", "wide")).toBe(true);
+    expect(isPanelOpen(next, "floors", "wide")).toBe(false);
+    expect(isPanelOpen(next, "find", "wide")).toBe(true);
+    expect(isPanelOpen(togglePanel(next, "layers", "wide"), "layers", "wide")).toBe(false);
   });
 
   it("remembers the user's choice per panel and per layout", () => {

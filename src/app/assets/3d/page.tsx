@@ -136,7 +136,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
   const tours = (await db.select().from(twinTours)
     .where(sql`${twinTours.facilityId} = ${facility.id} and (${twinTours.shared} or ${twinTours.createdById} = ${me.id})`).orderBy(asc(twinTours.name)))
     .map((t) => ({ id: t.id, name: t.name, stops: t.stops, shared: t.shared, mine: t.createdById === me.id, by: t.createdByName }));
-  return <TwinView data={data} live={await twinLive(facility.id)} notes={notes} tours={tours} people={people} me={{ id: me.id, canEditAssets: can(me.role, "assets.edit") }}
+  return <TwinView data={data} live={await twinLive(facility.id)} notes={notes} tours={tours} people={people} me={{ id: me.id, canEditAssets: can(me.role, "assets.edit"), role: me.role }}
     views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName, render: v.render ?? null }))}
     canManageViews={can(me.role, "users.manage")}
     plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []}

@@ -100,3 +100,6 @@ main :is(p, dd, li, span, label) a.text-primary:not([class*="font-"]):not([class
 /* A field with a validation error (wave 21): set by <ActionForm> from the action's `fields`. */
 [aria-invalid="true"] { border-color: var(--color-danger) !important; box-shadow: 0 0 0 1px var(--color-danger); }
 dialog::backdrop { backdrop-filter: blur(2px); }
+
+/* Wave 22: the menu is tucked away on the 3D view, so the top bar leaves room for its Menu button at every width. */
+body[data-nav-tucked="1"] .topbar-row { padding-left: 6rem; }

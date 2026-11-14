@@ -27,6 +27,10 @@ const WALL_HEIGHT = 3.3;
 const DEVICE_HEIGHT = 1.3;
 /** Closer than this (metres from the camera to its target) devices show their shapes instead of dots. */
 const NEAR_DISTANCE = 75;
+/** Wave 22: time between frames when nothing is moving (10 a second). */
+const IDLE_FRAME_MS = 100;
+/** Wave 22: the slow idle orbit runs for two minutes, then the view rests until someone touches it. */
+const ORBIT_MS = 120_000;
 /** Room labels appear on the isolated floor when the camera is closer than this. */
 const LABEL_DISTANCE = 120;
 const MAX_LABELS = 70;
@@ -275,8 +279,11 @@ export class TwinScene {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.maxPolarAngle = Math.PI * 0.49;
-    this.controls.addEventListener("start", () => { this.flight = null; this.idleSince = Infinity; this.userMoved = true; });
-    this.controls.addEventListener("end", () => { this.idleSince = performance.now(); });
+    this.controls.addEventListener("start", () => { this.flight = null; this.idleSince = Infinity; this.userMoved = true; this.interacting = true; });
+    // The camera keeps gliding for a moment after the hand lets go (damping): stay at full rate for that.
+    this.controls.addEventListener("end", () => { this.idleSince = performance.now(); this.interacting = false; this.wake(1500); });
+    // Wave 22: if the browser drops the graphics context (sleep, driver reset, too many tabs), say so and offer a reload.
+    this.renderer.domElement.addEventListener("webglcontextlost", (e) => { e.preventDefault(); this.showContextLost(); });
 
     this.ambient = new THREE.AmbientLight("#9fd8ff", 0.6);
     this.hemi = new THREE.HemisphereLight("#ffffff", "#8a98a6", 0.45);
@@ -2026,6 +2033,8 @@ export class TwinScene {
       this.events.onHover?.(hit, hit ? { x: e.offsetX, y: e.offsetY } : null);
     });
     el.addEventListener("pointerleave", () => this.events.onHover?.(null, null));
+    el.addEventListener("pointermove", () => this.wake(400), { passive: true });
+    el.addEventListener("wheel", () => this.wake(1200), { passive: true });
     el.addEventListener("pointercancel", () => { if (this.dragging) this.cancelDrop(); endDrag(); });
   }
 
@@ -2132,10 +2141,29 @@ export class TwinScene {
     this.camera.updateProjectionMatrix();
   }
 
+  /* ── Drawing only as often as needed (wave 22) ──
+   * Full rate while something moves: the camera, a flight, a walk, a tour or pathway playing, a recording, or just
+   * after a change. Otherwise 10 frames a second (30 during the slow idle orbit), which keeps the gentle pulses
+   * alive at a fraction of the work. A hidden tab draws nothing (the browser stops the loop). */
+  private lastDraw = 0;
+  private wakeUntil = 0;
+  private interacting = false;
+  /** Ask for full-rate drawing for a moment: call after a change that animates or should show at once. */
+  wake(ms = 600) { this.wakeUntil = Math.max(this.wakeUntil, performance.now() + ms); }
+  /** Share of frames skipped since the view opened, for the page check and for tuning. */
+  drawStats = { drawn: 0, skipped: 0 };
+
   private loop = () => {
     if (this.disposed) return;
     this.frame = requestAnimationFrame(this.loop);
     const now = performance.now();
+    const busy = !this.perfChecked || this.interacting || !!this.flight || !!this.walk || !!this.play || !!this.rec || this.flashes.length > 0 || now < this.wakeUntil;
+    const idleFor = now - this.idleSince;
+    const orbiting = !busy && !this.reducedMotion && idleFor > 12000 && idleFor < 12000 + ORBIT_MS;
+    const gap = busy ? 0 : orbiting ? 1000 / 30 : IDLE_FRAME_MS;
+    if (gap && now - this.lastDraw < gap - 2) { this.drawStats.skipped++; return; }
+    const sinceDraw = Math.min(0.1, (now - this.lastDraw) / 1000);
+    this.lastDraw = now; this.drawStats.drawn++;
     if (this.flight) {
       const k = Math.min(1, (now - this.flight.t0) / this.flight.dur);
       const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
@@ -2146,9 +2174,9 @@ export class TwinScene {
     if (this.walk) this.updateWalk(now);
     else {
       // Slow orbit when nobody has touched the view for a while.
-      this.controls.autoRotate = !this.reducedMotion && !this.flight && now - this.idleSince > 12000;
+      this.controls.autoRotate = !this.reducedMotion && !this.flight && idleFor > 12000 && idleFor < 12000 + ORBIT_MS;
       this.controls.autoRotateSpeed = 0.35;
-      this.controls.update();
+      this.controls.update(sinceDraw);
     }
     const t = this.clock.getElapsedTime();
     const near = this.camera.position.distanceTo(this.controls.target) < NEAR_DISTANCE;
@@ -2208,6 +2236,18 @@ export class TwinScene {
    * Once, a few seconds after the devices are in: if frames are slow (a tablet or an older laptop), drop the glow and
    * render at 1× pixels. The person can switch the glow back on.
    */
+  private showContextLost() {
+    if (this.container.querySelector("[data-context-lost]")) return;
+    const box = document.createElement("div");
+    box.dataset.contextLost = ""; box.setAttribute("role", "alert");
+    box.style.cssText = "position:absolute;inset:0;z-index:50;display:grid;place-items:center;background:rgb(3 10 20 / 0.88);color:#d6f3ff;text-align:center;padding:24px;font-size:15px";
+    const inner = document.createElement("div");
+    const p = document.createElement("p"); p.textContent = "The 3D picture stopped: the browser dropped its graphics. Nothing is lost.";
+    const b = document.createElement("button"); b.type = "button"; b.textContent = "Reload the 3D view"; b.className = "twin-ctl"; b.style.marginTop = "12px";
+    b.addEventListener("click", () => window.location.reload());
+    inner.append(p, b); box.append(inner); this.container.append(box);
+  }
+
   private watchFrameRate(now: number) {
     const dt = now - this.lastFrame; this.lastFrame = now;
     if (this.perfChecked || !this.deviceMesh || document.visibilityState !== "visible" || this.flight) return;

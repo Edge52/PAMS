@@ -39,7 +39,7 @@ Demo figures (site planning values, imaging volumes, budgets) are labelled as de
 
 - **Stack**: Next.js 16 App Router (server components and server actions), React 19, TypeScript strict, Tailwind 4,
   Drizzle ORM, PostgreSQL 16 or embedded PGlite, three.js, ExcelJS, zod 4, Vitest, Playwright.
-- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0038`, about 119 pages, 604 unit tests.
+- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0038`, about 119 pages, 605 unit tests.
 - **Database**: `npm run demo` and `npm run local` use embedded PGlite (`.pglite` for the demo, `.pglite-data` for
   your own data). A server uses PostgreSQL via `DATABASE_URL`; Supabase works too (`DATABASE_SSL`, see deploy guide).
 - **Layout** (more in `docs/system-documentation.md` › Codebase map):
@@ -82,7 +82,7 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 19. `wave-20` (quick fixes and automatic checks) is pushed and waits for Hisham's OK to merge. `wave-21` (new look, nine modules, shared UI parts) is pushed on top of it and also waits. The plan for waves 20–28 is the Claude doc "PAMS review and plan"; the agreed new look and the nine modules are in the Claude design "PAMS modern luxury look" (both go in wave 21). A GitHub workflow (`.github/workflows/ci.yml`) runs the checks on every push.
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 19. `wave-20` (quick fixes and automatic checks) is pushed and waits for Hisham's OK to merge. `wave-21` (new look, nine modules, shared UI parts) is pushed on top of it and also waits. `wave-22` (3D view: draws less, compressed linework, two looks, more room) is pushed on top of that. The plan for waves 20–28 is the Claude doc "PAMS review and plan"; the agreed new look and the nine modules are in the Claude design "PAMS modern luxury look" (both go in wave 21). A GitHub workflow (`.github/workflows/ci.yml`) runs the checks on every push.
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).

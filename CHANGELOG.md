@@ -1,5 +1,24 @@
 # Changelog
 
+## Wave 22 — on branch `wave-22` (not merged yet)
+
+3D view: lighter to run and easier to see (Claude doc "PAMS review and plan").
+
+- **Draws only as often as needed**: full rate while the camera moves, a tour or pathway plays or something just
+  changed; 10 frames a second when the view is still (it drew every frame before). The slow idle orbit stops after
+  two minutes. Measured on the demo hospital: 61 of 287 frames drawn while still.
+- **Floor linework**: sent compressed (La Plaza: 4.4 MB down to 1.1 MB) and kept by the browser; an unchanged floor
+  is not sent again (300 bytes to confirm, not 100 KB).
+- **Two looks, one click**: *Presentation* (light, built floors, no glow) and *Technical* (the glowing see-through
+  model). Directors, finance and viewers start on Presentation the first time; a person's own choice is remembered.
+- **More room for the model**: the app menu tucks away on the 3D page (the Menu button brings it back); one panel
+  open per side, the rest folded to their headers; *Hide panels* and *Full screen* buttons in the top row.
+- **Lost graphics**: if the browser drops the graphics context (sleep, driver reset), the view says so and offers a
+  reload, where it used to go blank.
+- Not done yet (still in the plan): opening on one floor with the others as plain slabs, a tool rail in place of
+  the panels, the selection card with right-click actions, a mini-map with north arrow and scale bar, labels that
+  never overlap, and splitting the two large 3D files.
+
 ## Wave 21 — on branch `wave-21` (not merged yet)
 
 New look, modules and shared UI parts (Claude doc "PAMS review and plan"; Claude design "PAMS modern luxury look").

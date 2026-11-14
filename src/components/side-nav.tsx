@@ -26,6 +26,12 @@ export function SideNav({ perms, assistant = false, role = null }: { perms: Perm
   const active = activeHref(pathname);
   const overview = OVERVIEW.filter((l) => l.flag !== "assistant" || assistant);
   const [open, setOpen] = useState(false);
+  // Wave 22: on the 3D view the menu tucks away at every width (the Menu button brings it back), so the model gets the whole window.
+  const tucked = pathname.startsWith("/assets/3d");
+  useEffect(() => {
+    if (tucked) document.body.dataset.navTucked = "1"; else delete document.body.dataset.navTucked;
+    return () => { delete document.body.dataset.navTucked; };
+  }, [tucked]);
   const [pinned, setPinned] = useState<string[]>([]);
   useEffect(() => {
     const t = setTimeout(() => setPinned(readList(PIN_KEY) ?? []), 0);
@@ -62,11 +68,11 @@ export function SideNav({ perms, assistant = false, role = null }: { perms: Perm
   return (
     <>
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="side-nav"
-        className="fixed left-3 top-3 z-40 rounded-full border border-line bg-surface px-4 py-1.5 text-sm font-semibold md:hidden">
+        className={`fixed left-3 top-3 z-40 rounded-full border border-line bg-surface px-4 py-1.5 text-sm font-semibold ${tucked ? "" : "md:hidden"}`}>
         {open ? "Close" : "Menu"}
       </button>
       <nav id="side-nav" aria-label="Main menu"
-        className={`${open ? "translate-x-0" : "-translate-x-full"} fixed inset-y-0 left-0 z-30 flex w-64 shrink-0 flex-col gap-6 overflow-y-auto bg-nav px-4 py-6 transition-transform md:sticky md:top-0 md:h-screen md:translate-x-0`}>
+        className={`${open ? "translate-x-0" : "-translate-x-full"} fixed inset-y-0 left-0 z-30 flex w-64 shrink-0 flex-col gap-6 overflow-y-auto bg-nav px-4 py-6 pt-14 transition-transform md:pt-6 ${tucked ? "md:pt-14" : "md:sticky md:top-0 md:h-screen md:translate-x-0"}`}>
         <Link href="/" className="flex items-center gap-3 px-2" onClick={() => setOpen(false)}>
           <span className="grid size-9 place-items-center rounded-[10px] border border-nav-gold font-display text-xl text-nav-gold">P</span>
           <span className="leading-tight">

@@ -47,6 +47,10 @@ const STYLE_KEY = "hpams.twin.style";
 const styleListeners = new Set<() => void>();
 function subscribeStyle(cb: () => void) { styleListeners.add(cb); return () => { styleListeners.delete(cb); }; }
 function readStyle(): TwinStyle { try { return window.localStorage.getItem(STYLE_KEY) === "light" ? "light" : "dark"; } catch { return memoryStyle ?? "dark"; } }
+/** True when this viewer has never picked a look in this browser (wave 22: managers then start on the presentation look). */
+function styleUnset(): boolean { try { return window.localStorage.getItem(STYLE_KEY) === null; } catch { return memoryStyle === null; } }
+/** Roles that open the 3D view to look, not to work in it. */
+const PRESENTATION_ROLES = ["DIRECTOR", "FINANCE", "VIEWER"];
 function writeStyle(v: TwinStyle) {
   try { window.localStorage.setItem(STYLE_KEY, v); } catch { /* private window: not remembered */ }
   memoryStyle = v;
@@ -76,7 +80,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   tours?: Tour[];
   data: TwinData; live: LivePayload; views: SavedView[]; canManageViews: boolean;
   /** Notes in the model (wave 7e), people a note can be for, and who is looking. */
-  notes?: TwinNote[]; people?: { id: number; name: string }[]; me?: { id: number; canEditAssets: boolean };
+  notes?: TwinNote[]; people?: { id: number; name: string }[]; me?: { id: number; canEditAssets: boolean; role?: string };
   /** BOQs of this hospital the user may compare against (empty when they can't view BOQs). */
   plans?: PlanChoice[];
 }) {
@@ -102,6 +106,24 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const [facade, setFacade] = useState(true);
   const [solid, setSolid] = useState(true);
   const [solidFloors, setSolidFloors] = useState(false);
+  // Wave 22: two looks in one click. Presentation = light, built floors, no glow; Technical = the glowing see-through twin.
+  const presentation = style === "light" && solidFloors;
+  const setLook = (look: "presentation" | "technical") => { setStyle(look === "presentation" ? "light" : "dark"); setSolidFloors(look === "presentation"); setBloom(look === "technical"); };
+  const [panelsHidden, setPanelsHidden] = useState(false);
+  const [isFull, setIsFull] = useState(false);
+  useEffect(() => {
+    const on = () => setIsFull(document.fullscreenElement === root.current);
+    document.addEventListener("fullscreenchange", on);
+    return () => document.removeEventListener("fullscreenchange", on);
+  }, []);
+  const toggleFull = () => { if (document.fullscreenElement) void document.exitFullscreen().catch(() => {}); else void root.current?.requestFullscreen?.().catch(() => {}); };
+  useEffect(() => {
+    // First visit by a manager: start on the presentation look. Their own later choice is remembered and wins.
+    if (!PRESENTATION_ROLES.includes(me.role ?? "") || !styleUnset()) return;
+    const t = setTimeout(() => { setStyle("light"); setSolidFloors(true); setBloom(false); }, 0);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [heatMode, setHeatMode] = useState<"smooth" | "blocks">("smooth");
   const [sectionAxis, setSectionAxis] = useState<"" | "x" | "z">("");
   const [sectionAt, setSectionAt] = useState(0.5);
@@ -2281,12 +2303,20 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
             {liveError ? "Offline" : "Live"} · {liveTime}
           </span>
           <Link href="/assets/map" className="twin-ctl">2D map</Link>
+          <span className="flex items-center gap-1" role="group" aria-label="Look">
+            <button type="button" onClick={() => setLook("presentation")} aria-pressed={presentation} className="twin-ctl" style={presentation ? { borderColor: "#d4b483", color: "#fff", boxShadow: "inset 0 -2px 0 #d4b483" } : undefined}
+              title="Light, with built floors and no glow: the look for showing the hospital">Presentation</button>
+            <button type="button" onClick={() => setLook("technical")} aria-pressed={style === "dark" && !solidFloors} className="twin-ctl" style={style === "dark" && !solidFloors ? { borderColor: "#2fd3ff", color: "#fff", boxShadow: "inset 0 -2px 0 #2fd3ff" } : undefined}
+              title="The glowing see-through model: the look for working in it">Technical</button>
+          </span>
+          {!phone && <button type="button" onClick={() => setPanelsHidden((f) => !f)} aria-pressed={panelsHidden} className="twin-ctl" title="Hide the side panels to see the whole model">{panelsHidden ? "Show panels" : "Hide panels"}</button>}
+          <button type="button" onClick={toggleFull} aria-pressed={isFull} className="twin-ctl" title="Fill the screen with the 3D view (Esc to leave)">{isFull ? "Leave full screen" : "Full screen"}</button>
           <button type="button" onClick={() => sceneRef.current?.frameAll()} className="twin-ctl">Reset view</button>
           <button type="button" onClick={() => setHelpOpen((o) => !o)} aria-expanded={helpOpen} className="twin-ctl" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
         </div>
       </div>
 
-      {!phone && (
+      {!phone && !panelsHidden && (
         <>
           {/* Left: floors + view + status. The column itself lets clicks through to the model. */}
           <div className={`pointer-events-none absolute bottom-4 left-4 flex flex-col gap-2 overflow-y-auto ${compact ? "top-32 w-52" : "top-28 w-60"}`}>

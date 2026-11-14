@@ -301,6 +301,15 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - Maintenance › *No PPM on record* lists devices with no visit recorded since installation: record the last visit
   on the asset, or plan the first.
 
+## 3D view: looks and room (wave 22)
+
+- **Presentation** and **Technical** in the top row switch the whole look in one click. Presentation is light with
+  built floors, for showing the hospital; Technical is the glowing see-through model, for working in it.
+- The app menu is tucked away on this page. **Menu** (top left) brings it back.
+- One panel is open on each side; click another panel's header to switch. **Hide panels** clears both sides and
+  **Full screen** fills the screen (Esc to leave).
+- If the picture stops after the computer sleeps, press **Reload the 3D view**.
+
 ## 3D view in two minutes
 
 - **Imaging** and **ICU** (top bar): every imaging or ICU room tinted and framed, the rest dimmed, with a summary of
