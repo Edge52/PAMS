@@ -52,11 +52,11 @@ export function Stat({ label, value, hint, href }: { label: string; value: React
   const body = (
     <>
       <p className="flex items-start justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{label}{href && <span aria-hidden className="text-faint transition-colors group-hover:text-primary">›</span>}</p>
-      <p className="mt-1 font-display text-[34px] leading-none">{value}</p>
+      <p className="mt-1 font-display text-[26px] leading-none [overflow-wrap:anywhere] sm:text-[34px]">{value}</p>
       {hint && <p className="mt-2 text-[13px] text-muted">{hint}</p>}
     </>
   );
-  const cls = "block rounded-[var(--radius-panel)] border border-line bg-surface px-5 py-4 shadow-[var(--shadow-card)]";
+  const cls = "block min-w-0 rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-4 shadow-[var(--shadow-card)] sm:px-5";
   // A figure that opens its list shows an arrow and lifts on hover (wave 19).
   return href ? <Link href={href} className={cx(cls, "group hover:border-primary hover:shadow-sm")}>{body}</Link> : <div className={cls}>{body}</div>;
 }

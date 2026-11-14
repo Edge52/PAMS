@@ -23,6 +23,8 @@ Safety records (Claude doc "PAMS review and plan"). Migration `0039_safety_recor
   `workorders.report`, which every role has.
 - Demo data: scores for life-support and high-criticality types, an analyser per hospital (one out of
   calibration), a year of safety tests and four incidents.
+- Fix for wave 21: figure cards with a long amount no longer make a phone page scroll sideways (found by the checks
+  on GitHub, where the new fonts load).
 - Not done: the calibration check applies to safety tests only, not yet to signing off a planned maintenance job.
   The limits are the usual IEC 62353 figures and should be checked against the hospital's copy of the standard.
 
