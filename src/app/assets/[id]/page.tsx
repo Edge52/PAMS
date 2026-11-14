@@ -234,7 +234,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
           <Panel title="Maintenance history" padded={false}
             actions={<Link href={`/assets/maintenance?q=${encodeURIComponent(x.assetTag)}`} className="text-sm text-primary hover:underline">Maintenance planner</Link>}>
             {events.length === 0 ? <p className="p-4 text-sm text-muted">No maintenance recorded yet.{canMaint && " Log the first PPM or repair with the form on this page."}</p> : (
-              <div className="overflow-x-auto"><table className="w-full text-[14px]">
+              <div className="overflow-x-auto" tabIndex={0} role="group" aria-label="Table, scrolls sideways"><table className="w-full text-[14px]">
                 <thead className="bg-sunken text-left text-[13px] text-muted"><tr>
                   <th className="px-4 py-2 font-semibold">Date</th><th className="px-4 py-2 font-semibold">Type</th><th className="px-4 py-2 font-semibold">Status</th>
                   <th className="px-4 py-2 font-semibold">By</th><th className="px-4 py-2 text-right font-semibold">Cost</th><th className="px-4 py-2 text-right font-semibold">Downtime</th><th className="px-4 py-2 font-semibold">Findings</th>

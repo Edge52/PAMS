@@ -15,7 +15,7 @@ export function FlowDiagram({ steps, links, volumes, placeOf, problems }: {
   const at = (k: string) => pos.get(k)!;
   const fill = (s: Step) => (s.kind === "START" ? "var(--color-ok-soft)" : s.kind === "END" ? "var(--color-sunken)" : "var(--color-surface)");
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto" tabIndex={0} role="group" aria-label="Pathway diagram, scrolls sideways">
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Pathway diagram" className="text-ink">
         <defs>
           <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" /></marker>

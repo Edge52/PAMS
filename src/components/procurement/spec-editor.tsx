@@ -98,9 +98,9 @@ export function SpecEditor({ action, items, title, notes, sections }: {
                 </td>
                 <td className="px-1 py-1"><input aria-label={`Weight, row ${idx + 1}`} type="number" min={0} max={100} step="0.5" value={r.weight} onChange={(e) => update(r.key, { weight: Number(e.target.value) })} className={cell} /></td>
                 <td className="whitespace-nowrap px-1 py-1 text-right">
-                  <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0} className="rounded px-1.5 py-1 text-muted hover:bg-sunken disabled:opacity-30" aria-label={`Move row ${idx + 1} up`}>↑</button>
-                  <button type="button" onClick={() => move(idx, 1)} disabled={idx === rows.length - 1} className="rounded px-1.5 py-1 text-muted hover:bg-sunken disabled:opacity-30" aria-label={`Move row ${idx + 1} down`}>↓</button>
-                  <button type="button" onClick={() => add(idx)} className="rounded px-1.5 py-1 text-primary hover:bg-primary-soft" aria-label={`Insert a row after row ${idx + 1}`}>+</button>
+                  <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0} className="min-h-6 min-w-6 rounded px-1.5 py-1 text-muted hover:bg-sunken disabled:opacity-30" aria-label={`Move row ${idx + 1} up`}>↑</button>
+                  <button type="button" onClick={() => move(idx, 1)} disabled={idx === rows.length - 1} className="min-h-6 min-w-6 rounded px-1.5 py-1 text-muted hover:bg-sunken disabled:opacity-30" aria-label={`Move row ${idx + 1} down`}>↓</button>
+                  <button type="button" onClick={() => add(idx)} className="min-h-6 min-w-6 rounded px-1.5 py-1 text-primary hover:bg-primary-soft" aria-label={`Insert a row after row ${idx + 1}`}>+</button>
                   <button type="button" onClick={() => remove(r.key)} className="rounded px-1.5 py-1 text-danger hover:bg-danger-soft" aria-label={`Remove row ${idx + 1}`}>Remove</button>
                 </td>
               </tr>

@@ -13,16 +13,16 @@
   --color-sunken: #e9eeec;      /* table headers, wells */
   --color-ink: #16201e;         /* primary text */
   --color-muted: #5a6865;       /* secondary text */
-  --color-faint: #8b9794;       /* placeholders, disabled */
+  --color-faint: #626e6b;       /* hints, placeholders: 4.5:1 on white, canvas and sunken */
   --color-line: #d6dedb;        /* borders */
   --color-primary: #1d5c4d;     /* theatre green — primary actions, active nav */
   --color-primary-strong: #144437;
   --color-primary-soft: #e2efeb;
   --color-tag: #e0a526;         /* asset-tag amber — pins, highlights */
   --color-tag-soft: #fbf1d9;
-  --color-ok: #2f7d4f;
+  --color-ok: #276b43;
   --color-ok-soft: #e3f2e8;
-  --color-warn: #a86a00;
+  --color-warn: #8a5600;
   --color-warn-soft: #fbefd6;
   --color-danger: #b4362b;
   --color-danger-soft: #f8e3e0;
@@ -47,6 +47,16 @@ body {
 [lang="ar"], .font-arabic { font-family: var(--font-arabic); }
 
 :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+/* "Skip to content": the first Tab stop on every page, shown only when it has focus. */
+.skip-link { position: absolute; left: 8px; top: -48px; z-index: 100; border-radius: var(--radius-control); background: var(--color-primary); color: #fff; padding: 8px 14px; font-weight: 600; }
+.skip-link:focus { top: 8px; }
+
+/* A link inside a sentence is underlined, so it doesn't rely on colour alone (WCAG 1.4.1). */
+main :is(p, dd, li, span, label) a.text-primary:not([class*="font-"]):not([class*="block"]):not([class*="flex"]) { text-decoration: underline; text-underline-offset: 2px; }
+
+/* 3D view controls: at least 24 px to click (WCAG 2.5.8). */
+.twin-ctl, .twin-act, .twin-floor, .twin-chip { min-height: 24px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

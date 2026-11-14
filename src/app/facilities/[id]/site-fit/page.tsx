@@ -7,7 +7,7 @@ import { PrintButton } from "@/components/reports/print";
 import { ReportPrintStyles } from "@/components/reports/print-styles";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate } from "@/lib/format";
-import { checkFit, siteSummary, type Pt, type SiteRoom } from "@/lib/assets/site-fit";
+import { checkFit, SITE_DATA_LABELS, siteDataState, siteSummary, type Pt, type SiteRoom } from "@/lib/assets/site-fit";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Site readiness" };
@@ -87,7 +87,7 @@ export default async function SiteFitPage({ params, searchParams }: { params: Pr
             </table>
             <p className="mt-3 font-semibold">Requirements</p>
             <ul className="mt-0.5 space-y-0.5 text-xs">{siteSummary(m.s).map((l) => <li key={l}>{l}</li>)}</ul>
-            <p className="mt-1 text-[11px] text-muted">Source: {m.s.source ?? "not given"}{m.s.verified ? " (checked against the guide)" : ""}.</p>
+            <p className="mt-1 text-[11px] text-muted">Source: {m.s.source ?? "not given"}. <b className={m.s.verified ? "text-ok" : "text-warn"}>{SITE_DATA_LABELS[siteDataState(m.s)]}</b>{m.s.verified ? " against the guide." : typical ? "." : ": check them against the maker's guide."}</p>
           </div>
         </div>
         <div className="mt-6 grid grid-cols-3 gap-6 text-xs">

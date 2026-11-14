@@ -1,5 +1,22 @@
 # Changelog
 
+## Wave 20 — on branch `wave-20` (not merged yet)
+
+First wave of the Nov 2026 plan (Claude doc "PAMS review and plan"): quick fixes and automatic checks.
+
+- **Contrast**: the grey hint text, the amber badges and the green badges are darker and now pass WCAG 2.2 (4.5:1)
+  on every page. Three colour tokens changed in `globals.css`: `faint`, `warn`, `ok`.
+- **Keyboard**: a *Skip to content* link is the first Tab stop on every page. Links inside a sentence are underlined.
+- **Small fixes**: bigger click targets in the specification editor, the recall form and the 3D view; the device
+  type filter has a name for screen readers; the pathway diagram can be scrolled with the keyboard.
+- **Phone**: *BOQ standards* and *Pathway analysis* no longer scroll sideways.
+- **Site data**: the Equipment 3D library counts how many models are verified, entered but not checked, or still on
+  typical values; the site readiness sheet says which of the three its figures are.
+- **Page check**: `npm run check:pages` opens every kind of page in the running demo (104) and fails on a server
+  error, a script error, an accessibility finding or sideways scrolling on a phone.
+- **Checks on push**: a GitHub workflow runs types, lint, unit tests and the page check on every push.
+- New dev packages: `playwright` and `axe-core` (for the page check only).
+
 ## Wave 19 — merged 7 Nov 2026
 
 From the interface review (Claude doc "PAMS interface review — what to improve").

@@ -55,7 +55,7 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
         <input type="hidden" name="show" value={show} />
         <input type="search" name="q" defaultValue={q} placeholder="Maker, model or device type" aria-label="Search makes and models"
           className="min-w-0 flex-1 rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 sm:max-w-xs" />
-        <div className="min-w-0 sm:w-80"><DeviceTypeSelect types={await deviceTypeOptions()} name="deviceType" by="code" value={type} placeholder="All device types" /></div>
+        <div className="min-w-0 sm:w-80"><DeviceTypeSelect types={await deviceTypeOptions()} name="deviceType" by="code" value={type} placeholder="All device types" label="Device type" /></div>
         <Button variant="secondary">Filter</Button>
       </form>
       <nav className="mb-3 flex gap-1" aria-label="Show">{tab("active", "In use")}{tab("support", "Support ending or ended")}{tab("retired", "Retired")}</nav>

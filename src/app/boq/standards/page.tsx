@@ -44,7 +44,7 @@ export default async function StandardsPage({ searchParams }: { searchParams: Pr
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {sets.map(({ set, rules, deptTypes, sourced, draft, boqs: used }) => (
-            <article key={set.id} className="flex flex-col rounded-[var(--radius-panel)] border border-line bg-surface p-4">
+            <article key={set.id} className="flex min-w-0 flex-col rounded-[var(--radius-panel)] border border-line bg-surface p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h2 className="text-[17px] font-semibold">
@@ -60,7 +60,7 @@ export default async function StandardsPage({ searchParams }: { searchParams: Pr
                 )}
               </div>
               {set.description && <p className="mt-2 text-sm text-muted">{set.description}</p>}
-              <dl className="mt-3 grid grid-cols-4 gap-2 text-sm">
+              <dl className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
                 <div><dt className="text-xs text-muted">Rules</dt><dd className="font-semibold">{formatNumber(rules ?? 0)}</dd></div>
                 <div><dt className="text-xs text-muted">Departments</dt><dd className="font-semibold">{formatNumber(deptTypes ?? 0)}</dd></div>
                 <div><dt className="text-xs text-muted">Sourced</dt><dd className="font-semibold">{formatNumber(sourced ?? 0)}</dd></div>

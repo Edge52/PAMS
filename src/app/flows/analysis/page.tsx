@@ -78,7 +78,7 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
             <p className="mt-2 text-xs text-muted">Flag above 85 %. A patient is counted at every step in the hour they arrive, so later steps&apos; peaks are approximate. For waits and queues hour by hour, with what-ifs, <Link href={`/flows/simulate?facilityId=${fac.id}`} className="text-primary hover:underline">simulate the queues</Link>.</p>
           </Panel>
 
-          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+          <div className="mt-5 grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
             <Panel title="Beds needed">
               {beds.length === 0 ? <p className="text-sm text-muted">No stays of 12 hours or more.</p> : (
                 <Table>

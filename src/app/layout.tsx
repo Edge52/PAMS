@@ -26,16 +26,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body className="min-h-screen">
+        <a href="#content" className="skip-link">Skip to content</a>
         {user ? (
           <div className="flex min-h-screen">
             <SideNav perms={permissionsOf(user.role)} assistant={assistant} role={user.role} />
-            <main className="min-w-0 flex-1 px-5 py-3 md:px-8 lg:px-10">
+            <main id="content" tabIndex={-1} className="min-w-0 flex-1 px-5 py-3 outline-none md:px-8 lg:px-10">
               <TopBar user={user} />
               {children}
             </main>
           </div>
         ) : (
-          <main className="px-5 py-6">{children}</main>
+          <main id="content" tabIndex={-1} className="px-5 py-6 outline-none">{children}</main>
         )}
       </body>
     </html>

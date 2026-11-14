@@ -232,9 +232,9 @@ export default async function FlowPage({ params, searchParams }: {
               <div className="mt-3"><Button variant="secondary">Save details</Button></div>
             </ActionForm>
           ) : (
-            <dl className="space-y-1 text-sm"><div><dt className="inline text-muted">Patients a day: </dt><dd className="inline">{flow.dailyVolume ?? "—"}</dd></div>
-              <div><dt className="inline text-muted">Owner: </dt><dd className="inline">{flow.ownerName ?? "—"}</dd></div>
-              {flow.description && <p className="mt-2 text-muted">{flow.description}</p>}</dl>
+            <><dl className="space-y-1 text-sm"><div><dt className="inline text-muted">Patients a day: </dt><dd className="inline">{flow.dailyVolume ?? "—"}</dd></div>
+              <div><dt className="inline text-muted">Owner: </dt><dd className="inline">{flow.ownerName ?? "—"}</dd></div></dl>
+              {flow.description && <p className="mt-2 text-sm text-muted">{flow.description}</p>}</>
           )}
         </Panel>
         <Panel title="Versions">

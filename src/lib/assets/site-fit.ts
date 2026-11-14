@@ -196,3 +196,20 @@ export function siteSummary(r: SiteReq & { heatKw?: number | null }): string[] {
   if (r.fringeAlongM && r.fringeAcrossM) o.push(`5 gauss line ${r.fringeAlongM} m along, ${r.fringeAcrossM} m across`);
   return o;
 }
+
+/** How far a model's site data can be trusted: checked against the maker's guide, entered but unchecked, or typical values. */
+export type SiteDataState = "verified" | "entered" | "typical" | "none";
+export const SITE_DATA_LABELS: Record<SiteDataState, string> = { verified: "Verified", entered: "Entered, not checked", typical: "Typical values", none: "None" };
+
+export function siteDataState(site: { source?: string | null; verified: boolean } | null | undefined): SiteDataState {
+  if (!site) return "none";
+  if (site.verified) return "verified";
+  return site.source?.toLowerCase().startsWith("typical") ? "typical" : "entered";
+}
+
+/** Counts per state, to show how many figures still need the maker's guide. */
+export function countSiteData(list: ({ source?: string | null; verified: boolean } | null | undefined)[]): Record<SiteDataState, number> {
+  const n: Record<SiteDataState, number> = { verified: 0, entered: 0, typical: 0, none: 0 };
+  for (const s of list) n[siteDataState(s)]++;
+  return n;
+}

@@ -29,7 +29,7 @@ export default async function NewRecallPage() {
               <Field label="Issued on"><Input type="date" name="issuedDate" defaultValue={todayISO()} /></Field>
               <Field label="Complete by"><Input type="date" name="dueDate" /></Field>
             </FormGrid>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="urgent" /> Urgent: patient risk, act immediately</label>
+            <label className="flex min-h-6 items-center gap-2 text-sm"><input type="checkbox" name="urgent" className="size-5" /> Urgent: patient risk, act immediately</label>
             <Field label="What the notice says"><Textarea name="description" rows={4} /></Field>
             <fieldset className="rounded-[var(--radius-control)] border border-line p-4">
               <legend className="px-1 text-sm font-semibold">Which devices</legend>

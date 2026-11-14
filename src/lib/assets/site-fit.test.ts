@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoPlacement, checkFit, roomSize, TYPICAL, type SiteRoom } from "./site-fit";
+import { autoPlacement, checkFit, countSiteData, roomSize, siteDataState, TYPICAL, type SiteRoom } from "./site-fit";
 
 const sq = (x0: number, z0: number, x1: number, z1: number): [number, number][] => [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
 const ct = TYPICAL.ct.req, mri = TYPICAL.mri.req;
@@ -43,5 +43,18 @@ describe("best spot", () => {
     const L: [number, number][] = [[0, 0], [9, 0], [9, 3], [7, 3], [7, 9], [0, 9]];
     const r = checkFit(TYPICAL.ct.req, { id: 1, name: "L", poly: L });
     expect(r.checks.find((c) => c.key === "footprint")?.status).toBe("ok");
+  });
+});
+
+describe("site data state", () => {
+  it("tells verified, entered and typical apart", () => {
+    expect(siteDataState(null)).toBe("none");
+    expect(siteDataState({ source: "Typical values — replace with the guide", verified: false })).toBe("typical");
+    expect(siteDataState({ source: "Site planning guide rev C, p. 12", verified: false })).toBe("entered");
+    expect(siteDataState({ source: "Typical values", verified: true })).toBe("verified");
+  });
+  it("counts each state", () => {
+    expect(countSiteData([null, { source: "typical", verified: false }, { source: "guide", verified: true }, { source: null, verified: false }]))
+      .toEqual({ verified: 1, entered: 1, typical: 1, none: 1 });
   });
 });

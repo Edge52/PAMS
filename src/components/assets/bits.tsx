@@ -22,8 +22,10 @@ export function Notice({ sp }: { sp: Record<string, string | string[] | undefine
 }
 
 /** Device type picker for ~650 types: native select grouped by category › group (type-ahead works). */
-export function DeviceTypeSelect({ types, name = "deviceTypeId", value, required, placeholder = "Choose a device type…", by = "id", className }: {
+export function DeviceTypeSelect({ types, name = "deviceTypeId", value, required, placeholder = "Choose a device type…", by = "id", className, label }: {
   types: DeviceTypeOption[]; name?: string; value?: number | string | null; required?: boolean; placeholder?: string; by?: "id" | "code"; className?: string;
+  /** Name read by screen readers when the select has no visible label (a filter bar). */
+  label?: string;
 }) {
   const groups = new Map<string, DeviceTypeOption[]>();
   for (const t of types) {
@@ -31,7 +33,7 @@ export function DeviceTypeSelect({ types, name = "deviceTypeId", value, required
     groups.set(k, [...(groups.get(k) ?? []), t]);
   }
   return (
-    <select name={name} defaultValue={value ?? ""} required={required} className={cx(control, className)}>
+    <select name={name} defaultValue={value ?? ""} required={required} aria-label={label} className={cx(control, className)}>
       <option value="">{placeholder}</option>
       {[...groups.entries()].map(([g, list]) => (
         <optgroup key={g} label={g}>
