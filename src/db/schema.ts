@@ -77,6 +77,14 @@ export const assetStatus = pgEnum("asset_status", [
 ]);
 export const assetCondition = pgEnum("asset_condition", ["NEW", "GOOD", "FAIR", "POOR", "CONDEMNED"]);
 export const criticality = pgEnum("criticality", ["LIFE_SUPPORT", "HIGH", "MEDIUM", "LOW"]);
+/** Wave 23: how a device type is maintained. */
+export const maintenanceStrategy = pgEnum("maintenance_strategy", ["MANUFACTURER", "ALTERNATIVE", "RUN_TO_FAILURE"]);
+export const incidentHarm = pgEnum("incident_harm", ["NONE", "NEAR_MISS", "MINOR", "SERIOUS", "DEATH"]);
+export const incidentStatus = pgEnum("incident_status", ["OPEN", "INVESTIGATING", "CLOSED"]);
+export const protectionClass = pgEnum("protection_class", ["I", "II", "INTERNAL"]);
+export const appliedPart = pgEnum("applied_part", ["NONE", "B", "BF", "CF"]);
+export const leakageMethod = pgEnum("leakage_method", ["DIRECT", "DIFFERENTIAL", "ALTERNATIVE"]);
+export const safetyResult = pgEnum("safety_result", ["PASS", "FAIL"]);
 export const maintenanceType = pgEnum("maintenance_type", ["PPM", "CORRECTIVE", "CALIBRATION", "INSPECTION", "SAFETY_TEST"]);
 export const maintenanceStatus = pgEnum("maintenance_status", ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "OVERDUE"]);
 // added in wave 3 (work orders)
@@ -294,6 +302,14 @@ export const deviceTypes = pgTable("device_types", {
   lifeExpectancyYears: integer("life_expectancy_years"),
   ppmIntervalMonths: integer("ppm_interval_months"),
   requiresCalibration: boolean("requires_calibration").notNull().default(false),
+  /** Risk score (wave 23, after Fennigkoh and Smith): equipment function 2–10, physical risk 1–5, maintenance need 1–5.
+   *  Their sum is the equipment management number; 12 or more belongs in the planned maintenance programme. */
+  riskFunction: integer("risk_function"),
+  riskPhysical: integer("risk_physical"),
+  riskMaintenance: integer("risk_maintenance"),
+  /** How this type is maintained and why (AAMI EQ89: choose a strategy per device type and write the reason down). */
+  maintenanceStrategy: maintenanceStrategy("maintenance_strategy"),
+  strategyReason: text("strategy_reason"),
   isCapital: boolean("is_capital").notNull().default(true),
   priceMinUsd: money("price_min_usd"),
   priceMaxUsd: money("price_max_usd"),
@@ -688,6 +704,10 @@ export const assets = pgTable("assets", {
   warrantyEnd: date("warranty_end"),
   lifeExpectancyYears: integer("life_expectancy_years"),
   notes: text("notes"),
+  /** Wave 23: a tester or analyser used to check other devices. Its calibration must be in date when it is used. */
+  isTestEquipment: boolean("is_test_equipment").notNull().default(false),
+  calibrationDue: date("calibration_due"),
+  calibrationCertRef: text("calibration_cert_ref"),
   /** Free labels for grouping and search (wave 5), e.g. "loan", "teaching", "donated". Lower case. */
   tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
@@ -1812,3 +1832,68 @@ export const serviceContractAssetsRelations = relations(serviceContractAssets, (
   contract: one(serviceContracts, { fields: [serviceContractAssets.contractId], references: [serviceContracts.id] }),
   asset: one(assets, { fields: [serviceContractAssets.assetId], references: [assets.id] }),
 }));
+
+
+/* ─────────────────────── Wave 23: safety records ─────────────────────── */
+
+/** Something that went wrong with a device, or nearly did (wave 23). Kept for the hospital's own review and for the
+ *  report to the manufacturer and the Egyptian Drug Authority (medical device vigilance). */
+export const incidents = pgTable("incidents", {
+  id: serial("id").primaryKey(),
+  number: varchar("number", { length: 24 }).notNull().unique(),          // INC-2026-0001
+  facilityId: integer("facility_id").notNull().references(() => facilities.id),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  harm: incidentHarm("harm").notNull().default("NONE"),
+  patientInvolved: boolean("patient_involved").notNull().default(false),
+  /** The device was taken out of use and kept as found. */
+  deviceQuarantined: boolean("device_quarantined").notNull().default(false),
+  immediateAction: text("immediate_action"),
+  status: incidentStatus("status").notNull().default("OPEN"),
+  rootCause: text("root_cause"),
+  correctiveAction: text("corrective_action"),
+  manufacturerNotifiedOn: date("manufacturer_notified_on"),
+  edaNotifiedOn: date("eda_notified_on"),
+  edaReference: text("eda_reference"),
+  /** The date the hospital set itself to report by (the authority's guideline gives the limit). */
+  reportBy: date("report_by"),
+  workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "set null" }),
+  recallId: integer("recall_id").references(() => recalls.id, { onDelete: "set null" }),
+  reportedById: integer("reported_by_id").references(() => users.id, { onDelete: "set null" }),
+  reportedByName: text("reported_by_name"),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  closedByName: text("closed_by_name"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index("incidents_asset_idx").on(t.assetId), index("incidents_facility_idx").on(t.facilityId, t.status)]);
+
+/** One electrical safety test of a device (wave 23, IEC 62353: after repair and at intervals in service). */
+export const safetyTests = pgTable("safety_tests", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
+  workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "set null" }),
+  testedOn: date("tested_on").notNull(),
+  testedById: integer("tested_by_id").references(() => users.id, { onDelete: "set null" }),
+  testedByName: text("tested_by_name"),
+  protectionClass: protectionClass("protection_class").notNull(),
+  appliedPart: appliedPart("applied_part").notNull().default("NONE"),
+  method: leakageMethod("method").notNull().default("DIRECT"),
+  visualOk: boolean("visual_ok").notNull(),
+  earthResistanceOhm: real("earth_resistance_ohm"),
+  insulationMOhm: real("insulation_mohm"),
+  equipmentLeakageUa: real("equipment_leakage_ua"),
+  appliedPartLeakageUa: real("applied_part_leakage_ua"),
+  functionalOk: boolean("functional_ok").notNull(),
+  /** The analyser used, and its calibration due date on the day (kept even if the analyser is later recalibrated). */
+  analyserAssetId: integer("analyser_asset_id").references(() => assets.id, { onDelete: "set null" }),
+  analyserLabel: text("analyser_label"),
+  analyserCalibrationDue: date("analyser_calibration_due"),
+  result: safetyResult("result").notNull(),
+  /** Which checks failed, in words, as shown on the record. */
+  failures: text("failures").array().notNull().default(sql`'{}'::text[]`),
+  nextDue: date("next_due"),
+  notes: text("notes"),
+  createdAt: createdAt(),
+}, (t) => [index("safety_tests_asset_idx").on(t.assetId, t.testedOn)]);

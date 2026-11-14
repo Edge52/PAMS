@@ -17,6 +17,7 @@ import { formatHours } from "@/lib/assets/work-orders";
 import { Badge, Button, Details, Field, FormGrid, Input, LinkButton, PageHeader, Panel, StatusBadge, Textarea } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents-panel";
 import { AcceptancePanel } from "@/components/assets/acceptance-panel";
+import { SafetyPanel, TestEquipmentForm } from "@/components/assets/safety-panel";
 import { ActionForm } from "@/components/assets/action-form";
 import { Crumbs, enumOptions, Meter, NativeSelect, Notice, RoomSelect } from "@/components/assets/bits";
 import { MiniMap } from "@/components/assets/mini-map";
@@ -140,6 +141,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
         back={{ href: "/assets", label: "Asset register" }}
         actions={<>
           {canReport && x.status !== "DISPOSED" && <LinkButton href={`/assets/work-orders/new?assetId=${x.id}`} variant="danger">Report a fault</LinkButton>}
+          {canReport && x.status !== "DISPOSED" && <LinkButton href={`/assets/incidents/new?assetId=${x.id}`}>Report an incident</LinkButton>}
           <LinkButton href={`/assets/labels?ids=${x.id}`}>Print label</LinkButton>
           {canDispose && <LinkButton href={`/assets/disposals/new?assetId=${x.id}`} variant="ghost">Propose disposal</LinkButton>}
           {x.roomId && <LinkButton href={`/assets/3d?facilityId=${x.facilityId}&assetId=${x.id}`}>Show in 3D</LinkButton>}
@@ -258,6 +260,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
             )}
           </Panel>
 
+          <SafetyPanel assetId={x.id} canTest={canMaint} canReport={canReport} disposed={x.status === "DISPOSED"} />
           <Panel title="Movement history" padded={false}>
             {moves.length === 0 ? <p className="p-4 text-sm text-muted">Never moved since it was registered.</p> : (
               <ol className="divide-y divide-line">
@@ -403,6 +406,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
             </ActionForm>
           </Panel>}
 
+          {canEdit && x.status !== "DISPOSED" && <TestEquipmentForm asset={{ id: x.id, isTestEquipment: x.isTestEquipment, calibrationDue: x.calibrationDue, calibrationCertRef: x.calibrationCertRef }} />}
           {canMaint && <Panel title={<span id="record-maintenance">Record maintenance</span>}>
             <ActionForm action={logMaintenanceAction} className="space-y-3">
               <input type="hidden" name="assetId" value={x.id} />

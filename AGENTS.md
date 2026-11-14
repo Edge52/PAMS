@@ -421,3 +421,11 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   (a still view redraws within 100 ms anyway). Don't add a second `requestAnimationFrame` loop.
 - Panels: one open per side. A new panel goes in `PANEL_COLUMNS` in `hud-state.ts`.
 - `/assets/3d/geometry/[floorId]` answers with an ETag and gzip; keep it a plain GET so the browser can reuse it.
+
+## Wave 23: safety records
+
+- Rules are pure and tested: `lib/assets/incidents.ts` (what is reportable, what is still to do, when it may close),
+  `lib/assets/risk.ts` (score, level, consistency checks), `lib/assets/safety-tests.ts` (limits, pass or fail,
+  analyser calibration). Change a limit there, with its test, never in a page.
+- An incident's or a safety test's device must be in a hospital the user can see (`requireFacilityAccess`).
+- Asset history is kept: `incidents` and `safety_tests` reference assets with `onDelete: "restrict"`.

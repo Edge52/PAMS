@@ -1,5 +1,31 @@
 # Changelog
 
+## Wave 23 — on branch `wave-23` (not merged yet)
+
+Safety records (Claude doc "PAMS review and plan"). Migration `0039_safety_records`.
+
+- **Incidents** (*Maintenance › Incidents*): anyone can report that a device harmed someone, nearly did, or behaved
+  dangerously, from the list or from the device's page. A quarantined device is marked out of service. The
+  biomedical team is told, then records the root cause, the corrective action, and the dates the manufacturer and
+  the Egyptian Drug Authority (EDA) were told. An incident with serious harm can't be closed before both were told.
+  *Report sheet* prints the hospital's record, laid out to copy into the EDA's own form.
+- **Risk and strategy** (*Maintenance › Risk and strategy*): each device type the hospital owns gets a risk score
+  (equipment function + physical risk + maintenance need, after Fennigkoh and Smith; 12 or more is in the planned
+  programme), a maintenance strategy and the written reason for it (AAMI EQ89). The page lists what is missing or
+  doesn't add up, such as life support set to repair when it fails.
+- **Electrical safety tests** (*Maintenance › Safety tests*, and on each device's page): readings after IEC 62353
+  (protective earth, insulation, equipment leakage, applied part leakage). The app compares them with the limits
+  for the device's class and applied part and says pass or fail; a required reading left empty fails. Shows what is
+  due, what failed and the latest tests.
+- **Test equipment**: a device can be marked as a tester or analyser with a calibration date. A safety test can't
+  be recorded with an analyser whose calibration has run out.
+- New permission `incidents.manage` (biomedical and administrators). Reporting an incident needs only
+  `workorders.report`, which every role has.
+- Demo data: scores for life-support and high-criticality types, an analyser per hospital (one out of
+  calibration), a year of safety tests and four incidents.
+- Not done: the calibration check applies to safety tests only, not yet to signing off a planned maintenance job.
+  The limits are the usual IEC 62353 figures and should be checked against the hospital's copy of the standard.
+
 ## Wave 22 — on branch `wave-22` (not merged yet)
 
 3D view: lighter to run and easier to see (Claude doc "PAMS review and plan").

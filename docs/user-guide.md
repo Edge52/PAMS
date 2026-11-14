@@ -280,6 +280,20 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - **Tours › Video** plays a tour and saves it as a video file with the captions, ready for a board meeting. Keep the
   tab in front while it records.
 
+## Safety records (wave 23)
+
+- **Report an incident** from a device's page (or *Maintenance › Incidents*) when a device harms someone, nearly
+  does, or behaves dangerously. Look after the patient first, then take the device out of use and keep it as found.
+- The biomedical team records the cause, the corrective action and the dates the manufacturer and the EDA were
+  told. *Report sheet* prints the record to copy into the EDA's form. Take the time limit for reporting from the
+  EDA's medical device vigilance guideline and enter it as *Report to the EDA by*.
+- **Risk and strategy** lists every device type the hospital owns with its risk score, how it is maintained and
+  why. Press *Score* or *Edit* on a row to fill it in.
+- **Record a test** on a device's page stores an electrical safety test. Enter the readings; the app says pass or
+  fail against the IEC 62353 limits. *Maintenance › Safety tests* shows what is due and what failed.
+- Mark the safety analyser as **Test equipment** on its own page and enter when its calibration runs out. A test
+  can't be recorded with an analyser that is out of calibration.
+
 ## Modules, sorting and saved filters (wave 21)
 
 - **All modules** (in the menu, or the first page after the dashboard) shows one card per module: Planning,

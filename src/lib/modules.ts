@@ -47,12 +47,15 @@ export const MODULES: AppModule[] = [
     { href: "/assets/disposals", label: "Disposals", need: "assets.view" },
     { href: "/catalogue", label: "Device catalogue", need: "assets.view" },
   ] },
-  { id: "maintenance", name: "Maintenance", description: "Fault reports, planned maintenance, contracts, spare parts and recalls.", links: [
+  { id: "maintenance", name: "Maintenance", description: "Fault reports, planned maintenance, safety tests, incidents and recalls.", links: [
     { href: "/assets/work-orders", label: "Work orders", need: "assets.view" },
     { href: "/assets/maintenance", label: "Planned maintenance", need: "assets.view" },
     { href: "/assets/contracts", label: "Service contracts", need: "assets.view" },
     { href: "/assets/parts", label: "Spare parts", need: "assets.view" },
     { href: "/assets/recalls", label: "Recalls", need: "assets.view" },
+    { href: "/assets/incidents", label: "Incidents", need: "assets.view" },
+    { href: "/assets/safety-tests", label: "Safety tests", need: "assets.view" },
+    { href: "/assets/maintenance/strategy", label: "Risk and strategy", need: "assets.view" },
   ] },
   { id: "buildings", name: "Buildings & 3D", description: "Hospitals, floors and rooms, the floor map and the 3D view.", links: [
     { href: "/facilities", label: "Facilities & floors", need: "assets.view" },
