@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, startTransition, useActionState, useContext, type FormEvent, type ReactNode } from "react";
+import { createContext, startTransition, useActionState, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/lib/procurement/forms";
 
@@ -19,20 +19,59 @@ export function ActionForm({ action, children, className, confirm }: {
   action: Action; children: ReactNode; className?: string; confirm?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
+  const form = useRef<HTMLFormElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [waiting, setWaiting] = useState<FormData | null>(null);
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (pending) return; // ignore double submits
-    if (confirm && !window.confirm(confirm)) return;
     const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const fd = new FormData(e.currentTarget, submitter);
+    // Wave 21: the app's own confirm box in place of the browser's.
+    if (confirm) { setWaiting(fd); dialog.current?.showModal(); return; }
     startTransition(() => formAction(fd));
   }
+  const answer = (yes: boolean) => {
+    dialog.current?.close();
+    const fd = waiting; setWaiting(null);
+    if (yes && fd) startTransition(() => formAction(fd));
+  };
+  // Wave 21: show each validation message beside its field and move to the first one.
+  useEffect(() => {
+    const el = form.current;
+    if (!el) return;
+    el.querySelectorAll("[data-field-error]").forEach((n) => n.remove());
+    el.querySelectorAll("[aria-invalid='true']").forEach((n) => { n.removeAttribute("aria-invalid"); n.removeAttribute("aria-describedby"); });
+    let first: HTMLElement | null = null;
+    for (const [name, message] of Object.entries(state?.fields ?? {})) {
+      const input = el.querySelector<HTMLElement>(`[name="${CSS.escape(name)}"]:not([type="hidden"])`);
+      if (!input) continue;
+      const id = `err-${name.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+      const note = document.createElement("span");
+      note.id = id; note.dataset.fieldError = ""; note.className = "mt-1 block text-xs font-semibold text-danger"; note.textContent = message;
+      input.setAttribute("aria-invalid", "true"); input.setAttribute("aria-describedby", id);
+      input.insertAdjacentElement("afterend", note);
+      first ??= input;
+    }
+    first?.focus();
+  }, [state]);
   return (
-    <form onSubmit={onSubmit} className={className} aria-busy={pending || undefined}>
+    <form ref={form} onSubmit={onSubmit} className={className} aria-busy={pending || undefined} noValidate={false}>
       <PendingContext.Provider value={pending}>
         {children}
         <FormMessages state={state} />
       </PendingContext.Provider>
+      {confirm && (
+        <dialog ref={dialog} onClose={() => setWaiting(null)} aria-labelledby="confirm-title"
+          className="m-auto w-[min(92vw,440px)] rounded-[var(--radius-panel)] border border-line bg-surface p-6 text-ink shadow-2xl backdrop:bg-nav/50">
+          <p id="confirm-title" className="font-display text-[22px] leading-tight">Are you sure?</p>
+          <p className="mt-2 text-sm text-muted">{confirm}</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" autoFocus onClick={() => answer(false)} className="min-h-9 rounded-full border border-line bg-surface px-4 text-sm font-semibold hover:bg-sunken">Cancel</button>
+            <button type="button" onClick={() => answer(true)} className="min-h-9 rounded-full border border-primary bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-strong">Yes, go ahead</button>
+          </div>
+        </dialog>
+      )}
     </form>
   );
 }
@@ -77,7 +116,7 @@ export function SubmitButton({ children, pendingLabel, variant = "primary", clas
       name={name}
       value={value}
       disabled={pending}
-      className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius-control)] border px-3 py-1.5 text-sm font-semibold disabled:pointer-events-none disabled:opacity-50 ${variants[variant]} ${className ?? ""}`}
+      className={`inline-flex min-h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-4 py-1.5 text-sm font-semibold disabled:pointer-events-none disabled:opacity-50 ${variants[variant]} ${className ?? ""}`}
     >
       {pending ? pendingLabel ?? "Saving…" : children}
     </button>

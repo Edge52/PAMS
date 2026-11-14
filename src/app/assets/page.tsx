@@ -6,6 +6,8 @@ import { db } from "@/db";
 import { purchaseOrders } from "@/db/schema";
 import { Badge, EmptyState, LinkButton, PageHeader, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
 import { DeviceTypeSelect, enumOptions, NativeSelect, Notice, Pager } from "@/components/assets/bits";
+import { SortTh } from "@/components/ui/sort-th";
+import { SavedFilters } from "@/components/saved-filters";
 import { activeFilterCount, ASSET_STATUSES, CRITICALITIES, filterToQuery, parseAssetFilter } from "@/lib/assets/filters";
 import { dueState, nextPpmDue, warrantyState } from "@/lib/assets/maintenance";
 import { categoryOptions, deviceTypeOptions, listFacilities, locationTree, PAGE_SIZE, ppmInfo, searchAssets } from "@/lib/assets/queries";
@@ -115,6 +117,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
           <span className="ml-auto text-sm text-muted" aria-live="polite"><b className="text-ink">{formatNumber(total)}</b> asset{total === 1 ? "" : "s"}{filtered ? " match" : ""}</span>
         </div>
       </form>
+      <SavedFilters />
 
       {rows.length === 0 ? (
         filtered ? (
@@ -137,7 +140,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
             <THead>
               <tr>
                 <Th><span className="sr-only">Select for labels</span></Th>
-                <Th>Tag</Th><Th>Device type</Th><Th className="hidden md:table-cell">Manufacturer / model</Th><Th className="hidden lg:table-cell">Serial</Th><Th className="hidden sm:table-cell">Location</Th><Th>Status</Th><Th className="hidden md:table-cell">Warranty end</Th><Th className="hidden md:table-cell">Next PPM</Th>
+                <SortTh k="tag">Tag</SortTh><SortTh k="type">Device type</SortTh><Th className="hidden md:table-cell">Manufacturer / model</Th><Th className="hidden lg:table-cell">Serial</Th><SortTh k="location" className="hidden sm:table-cell">Location</SortTh><SortTh k="status">Status</SortTh><SortTh k="warranty" className="hidden md:table-cell">Warranty end</SortTh><Th className="hidden md:table-cell">Next PPM</Th>
               </tr>
             </THead>
             <tbody>

@@ -118,12 +118,13 @@ function assetBase() {
 }
 
 function orderFor(f: AssetFilter) {
+  const way = f.dir === "desc" ? desc : asc;
   switch (f.sort) {
-    case "type": return [asc(deviceTypes.name), asc(assets.assetTag)];
-    case "location": return [asc(floors.level), asc(rooms.code), asc(assets.assetTag)];
-    case "warranty": return [sql`${assets.warrantyEnd} asc nulls last`, asc(assets.assetTag)];
-    case "status": return [asc(assets.status), asc(assets.assetTag)];
-    default: return [asc(assets.assetTag)];
+    case "type": return [way(deviceTypes.name), asc(assets.assetTag)];
+    case "location": return [way(floors.level), way(rooms.code), asc(assets.assetTag)];
+    case "warranty": return [f.dir === "desc" ? sql`${assets.warrantyEnd} desc nulls last` : sql`${assets.warrantyEnd} asc nulls last`, asc(assets.assetTag)];
+    case "status": return [way(assets.status), asc(assets.assetTag)];
+    default: return [way(assets.assetTag)];
   }
 }
 

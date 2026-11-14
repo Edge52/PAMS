@@ -280,6 +280,19 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - **Tours › Video** plays a tour and saves it as a video file with the captions, ready for a board meeting. Keep the
   tab in front while it records.
 
+## Modules, sorting and saved filters (wave 21)
+
+- **All modules** (in the menu, or the first page after the dashboard) shows one card per module: Planning,
+  Procurement, Finance, Assets, Maintenance, Buildings & 3D, Patient pathways, Reports, Administration. You see the
+  ones your role can open. Inside a module the menu shows that module's pages.
+- The line above each page title shows where you are, for example *Modules › Maintenance › Work orders*. Click a
+  part to go back up.
+- Press **Ctrl+K** (⌘K on a Mac) and type part of a page's name to jump to it.
+- Click a **column heading** to sort a list; click again for the other way, and a third time to clear it.
+- Set your filters, then **Save this filter** and give it a name. It appears as a chip above the list on this
+  computer; the cross removes it.
+- When a form has a mistake, the message shows under the field and the cursor moves there.
+
 ## Finding your way (wave 19)
 
 - The side menu puts your own work first. Click a group's name to fold it; hover a link and click ☆ to pin it to the

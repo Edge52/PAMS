@@ -8,7 +8,7 @@ import { db } from "@/db";
 import { boqs, deviceTypes, projects, rfqLines as rfqLineRows, rfqs, rfqSuppliers, suppliers } from "@/db/schema";
 import { todayISO } from "@/lib/format";
 import { logActivity, nextNumber } from "@/lib/server-utils";
-import { fail, formObject, idParam, isUniqueViolation, optDate, optStr, reqStr, zodErrors, type ActionState } from "@/lib/procurement/forms";
+import { fail, formObject, idParam, isUniqueViolation, optDate, optStr, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { humanizeEnum, RFQ_STATUSES } from "@/lib/procurement/labels";
 import { advanceProject, deriveRfqLines, joinRfqNotes, splitRfqNotes } from "@/lib/procurement/server";
 import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
@@ -35,7 +35,7 @@ export async function createRfq(_prev: ActionState, fd: FormData): Promise<Actio
     notes: optStr(4000),
     intent: z.enum(["draft", "issue"]).default("draft"),
   }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const d = parsed.data;
   const [project] = await db.select().from(projects).where(eq(projects.id, d.projectId));
   if (!project) return fail("This project no longer exists.");
@@ -96,7 +96,7 @@ export async function createRfq(_prev: ActionState, fd: FormData): Promise<Actio
 export async function setRfqStatus(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("procurement.edit");
   const parsed = z.object({ rfqId: idParam("RFQ missing"), status: z.enum(RFQ_STATUSES) }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const rfq = await rfqFor(parsed.data.rfqId, me);
   if (!rfq) return fail("This RFQ no longer exists.");
   const to = parsed.data.status;
@@ -161,7 +161,7 @@ export async function updateRfqNotes(_prev: ActionState, fd: FormData): Promise<
   const rfqId = Number(fd.get("rfqId"));
   const parsed = z.object({ title: reqStr("Enter a title", 300), closingDate: optDate("Enter the closing date as a date"), notes: optStr(4000) })
     .safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const rfq = await rfqFor(rfqId, me);
   if (!rfq) return fail("This RFQ no longer exists.");
   const { scope } = splitRfqNotes(rfq.notes);

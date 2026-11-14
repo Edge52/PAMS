@@ -106,8 +106,13 @@ export default async function StandardSetPage({ params, searchParams }: {
               Clear a filter or add a rule for this department type.
             </EmptyState>
           ) : [...groups.entries()].map(([code, list]) => (
-            <section key={code} id={`rule-${code}`} className="scroll-mt-4">
-              <h2 className="mb-2 text-[16px] font-semibold">{list[0].deptName} <span className="font-mono text-xs font-normal text-muted">{code}</span></h2>
+            // Wave 21: departments fold, so a set with hundreds of rules opens as a short list. One department, or a filter, opens it.
+            <details key={code} id={`rule-${code}`} className="group scroll-mt-4" open={groups.size <= 2 || !!filter || list.some((r) => r.id === editing?.id)}>
+              <summary className="mb-2 flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-[var(--radius-control)] px-1 hover:bg-sunken [&::-webkit-details-marker]:hidden">
+                <span aria-hidden className="text-muted transition-transform group-open:rotate-90">›</span>
+                <h2 className="text-[16px] font-semibold">{list[0].deptName} <span className="font-mono text-xs font-normal text-muted">{code}</span></h2>
+                <span className="text-sm text-muted">{list.length} rule{list.length === 1 ? "" : "s"}</span>
+              </summary>
               <div className="overflow-x-auto rounded-[var(--radius-panel)] border border-line bg-surface">
                 <table className="w-full min-w-[860px] border-collapse text-[14px]">
                   <thead className="bg-sunken text-left text-[13px] text-muted">
@@ -157,7 +162,7 @@ export default async function StandardSetPage({ params, searchParams }: {
                   </tbody>
                 </table>
               </div>
-            </section>
+            </details>
           ))}
         </div>
 

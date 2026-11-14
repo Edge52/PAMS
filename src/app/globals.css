@@ -4,36 +4,49 @@
  * Design tokens. Use the Tailwind utilities they generate (bg-surface, text-ink, border-line,
  * text-primary, bg-tag ...) rather than raw hex values, so the whole app stays consistent.
  *
- * Palette rationale: porcelain base, ink near-black-green for text, operating-theatre green
- * as the primary action colour, asset-tag amber reserved for location pins and highlights.
+ * Look (wave 21, "modern luxury"): a pearl page, white cards with a faint shadow, a deep green-black menu,
+ * theatre green for actions and one champagne-gold accent used sparingly. Serif (Fraunces) for page titles and
+ * big figures, Inter for everything else. Every text colour passes 4.5:1 on the grounds it is used on.
  */
 @theme {
-  --color-canvas: #f3f5f4;      /* page background — cool porcelain */
+  --color-canvas: #f4f5f3;      /* page background: pearl */
   --color-surface: #ffffff;     /* panels, tables */
-  --color-sunken: #e9eeec;      /* table headers, wells */
-  --color-ink: #16201e;         /* primary text */
-  --color-muted: #5a6865;       /* secondary text */
-  --color-faint: #626e6b;       /* hints, placeholders: 4.5:1 on white, canvas and sunken */
-  --color-line: #d6dedb;        /* borders */
-  --color-primary: #1d5c4d;     /* theatre green — primary actions, active nav */
-  --color-primary-strong: #144437;
-  --color-primary-soft: #e2efeb;
-  --color-tag: #e0a526;         /* asset-tag amber — pins, highlights */
+  --color-sunken: #edf0ed;      /* table headers, wells */
+  --color-ink: #0f1a17;         /* primary text */
+  --color-muted: #55615d;       /* secondary text */
+  --color-faint: #5f6a66;       /* hints, placeholders: 4.5:1 or better on white, canvas and sunken */
+  --color-line: #dfe4e0;        /* borders */
+  --color-primary: #14503f;     /* theatre green: primary actions */
+  --color-primary-strong: #0c3a2d;
+  --color-primary-soft: #e3eee9;
+  --color-tag: #e0a526;         /* asset-tag amber: pins on plans */
   --color-tag-soft: #fbf1d9;
+  --color-gold: #b08d57;        /* champagne accent: thin lines, marks, big figures on dark. Never small text on white. */
+  --color-gold-ink: #7a5c2e;    /* the accent as text on a light ground (6:1) */
+  --color-gold-soft: #f6efe2;
   --color-ok: #276b43;
   --color-ok-soft: #e3f2e8;
   --color-warn: #8a5600;
   --color-warn-soft: #fbefd6;
-  --color-danger: #b4362b;
+  --color-danger: #a3342a;
   --color-danger-soft: #f8e3e0;
   --color-info: #2c5aa0;
   --color-info-soft: #e3ebf7;
+  /* The side menu and module headers: deep green-black with pale text. */
+  --color-nav: #0c1f1a;
+  --color-nav-raised: #173a30;
+  --color-nav-line: #2a4a40;
+  --color-nav-ink: #c9d2ce;
+  --color-nav-muted: #8fa39b;
+  --color-nav-gold: #d4b483;
 
-  --font-sans: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;   /* page titles and big figures only */
   --font-arabic: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
 
-  --radius-control: 6px;
-  --radius-panel: 10px;
+  --radius-control: 10px;
+  --radius-panel: 16px;
+  --shadow-card: 0 18px 40px -30px rgb(12 31 26 / 0.35);
 }
 
 html { background: var(--color-canvas); }
@@ -83,3 +96,7 @@ main :is(p, dd, li, span, label) a.text-primary:not([class*="font-"]):not([class
 .twin-input:focus { border-color: #2fd3ff; outline: none; }
 .twin-chip[aria-pressed="true"] { background: rgb(47 211 255 / 0.14); }
 .twin :focus-visible { outline: 2px solid #2fd3ff; outline-offset: 2px; }
+
+/* A field with a validation error (wave 21): set by <ActionForm> from the action's `fields`. */
+[aria-invalid="true"] { border-color: var(--color-danger) !important; box-shadow: 0 0 0 1px var(--color-danger); }
+dialog::backdrop { backdrop-filter: blur(2px); }

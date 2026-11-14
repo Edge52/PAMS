@@ -3,13 +3,16 @@ import { AutoSubmit } from "@/components/auto-submit";
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { projects, purchaseOrders, suppliers } from "@/db/schema";
-import { EmptyState, Input, LinkButton, PageHeader, Select, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
+import { EmptyState, Input, LinkButton, PageHeader, Select, StatusBadge, Table, Td, THead } from "@/components/ui";
 import { DaysLeft, Progress } from "@/components/procurement/bits";
 import { formatMoney } from "@/lib/format";
 import { rateToEgp } from "@/lib/server-utils";
 import { options } from "@/lib/procurement/labels";
 import { PO_STATUSES, type PoStatus } from "@/lib/procurement/po-status";
 import { poTotals } from "@/lib/procurement/server";
+import { SortTh } from "@/components/ui/sort-th";
+import { SavedFilters } from "@/components/saved-filters";
+import { parseSort, sortRows } from "@/lib/list";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
@@ -19,7 +22,7 @@ export const metadata = { title: "Purchase orders" };
 
 const OPEN: PoStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "ISSUED", "ACKNOWLEDGED", "PARTIALLY_DELIVERED"];
 
-export default async function PurchaseOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; supplierId?: string; q?: string }> }) {
+export default async function PurchaseOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; supplierId?: string; q?: string; sort?: string; dir?: string }> }) {
   const me = await requirePermission("procurement.view");
   const sp = await searchParams;
   const status = sp.status ?? "open";
@@ -34,7 +37,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
   const q = sp.q?.trim();
   if (q) where.push(or(ilike(purchaseOrders.number, `%${q}%`), ilike(suppliers.name, `%${q}%`), ilike(projects.code, `%${q}%`))!);
 
-  const [rows, supplierList, anyPo] = await Promise.all([
+  const [found, supplierList, anyPo] = await Promise.all([
     db.select({
       id: purchaseOrders.id, number: purchaseOrders.number, status: purchaseOrders.status, currency: purchaseOrders.currency,
       issueDate: purchaseOrders.issueDate, expectedDelivery: purchaseOrders.expectedDelivery,
@@ -44,8 +47,15 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).orderBy(asc(suppliers.name)),
     db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(inScope).limit(1),
   ]);
-  const totals = await poTotals(rows.map((r) => r.id));
-  const egpRate = new Map(await Promise.all([...new Set(rows.map((r) => r.currency))].map(async (c) => [c, await rateToEgp(c)] as const)));
+  const totals = await poTotals(found.map((r) => r.id));
+  const egpRate = new Map(await Promise.all([...new Set(found.map((r) => r.currency))].map(async (c) => [c, await rateToEgp(c)] as const)));
+  // Wave 21: a heading can re-sort the list. Value sorts in EGP so mixed currencies compare.
+  const sort = parseSort(sp, ["number", "supplier", "project", "status", "value", "delivery", "received"] as const);
+  const rows = sortRows(found, sort, {
+    number: (r) => r.number, supplier: (r) => r.supplier, project: (r) => r.project, status: (r) => r.status,
+    value: (r) => (totals.get(r.id)?.value ?? 0) * (egpRate.get(r.currency) ?? 1), delivery: (r) => r.expectedDelivery,
+    received: (r) => { const t = totals.get(r.id); return t && t.ordered ? t.received / t.ordered : 0; },
+  });
   const filtered = status !== "open" || Boolean(sp.supplierId) || Boolean(q);
 
   return (
@@ -54,6 +64,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
         actions={can(me.role, "po.create") ? <LinkButton href="/procurement/purchase-orders/new" variant="primary">New purchase order</LinkButton> : undefined} />
       <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
         <AutoSubmit />
+        {sort && <input type="hidden" name="sort" value={sort.key} />}{sort?.dir === "desc" && <input type="hidden" name="dir" value="desc" />}
         <label className="min-w-0 flex-1 basis-52"><span className="sr-only">Search</span>
           <Input type="search" name="q" defaultValue={q ?? ""} placeholder="Search PO number, supplier or project" /></label>
         <label><span className="sr-only">Status</span>
@@ -63,6 +74,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
         <button className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">Apply filters</button>
         {filtered && <Link href="/procurement/purchase-orders" className="px-2 py-1.5 text-sm text-primary hover:underline">Clear</Link>}
       </form>
+      <SavedFilters />
 
       {rows.length === 0 ? (
         anyPo.length ? (
@@ -75,7 +87,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
       ) : (
         <>
         <Table>
-          <THead><tr><Th>Number</Th><Th>Supplier</Th><Th>Project</Th><Th>Status</Th><Th align="right">Value</Th><Th>Expected delivery</Th><Th>Received</Th></tr></THead>
+          <THead><tr><SortTh k="number">Number</SortTh><SortTh k="supplier">Supplier</SortTh><SortTh k="project">Project</SortTh><SortTh k="status">Status</SortTh><SortTh k="value" align="right">Value</SortTh><SortTh k="delivery">Expected delivery</SortTh><SortTh k="received">Received</SortTh></tr></THead>
           <tbody>
             {rows.map((r) => {
               const t = totals.get(r.id);

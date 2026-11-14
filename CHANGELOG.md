@@ -1,5 +1,30 @@
 # Changelog
 
+## Wave 21 — on branch `wave-21` (not merged yet)
+
+New look, modules and shared UI parts (Claude doc "PAMS review and plan"; Claude design "PAMS modern luxury look").
+
+- **New look**: a deep green-black menu, a pearl page, white cards with a faint shadow, pill buttons, one
+  champagne-gold accent. Fraunces for page titles and big figures, Inter for everything else. All in the tokens in
+  `globals.css`; every text colour still passes 4.5:1.
+- **Modules**: the pages are grouped into nine modules (Planning, Procurement, Finance, Assets, Maintenance,
+  Buildings & 3D, Patient pathways, Reports, Administration). *All modules* (`/modules`) shows a card per module
+  with a live figure; the side menu shows one module at a time; each user sees the modules their role can open.
+  The list of modules and their links is one file, `src/lib/modules.ts`.
+- **Path and jump box**: every page shows where it is (Modules › Maintenance › Work orders). **Ctrl+K** (⌘K) opens
+  a box to jump to any page by name.
+- **Lists**: click a column heading to sort (up, down, off) on the asset register, work orders, purchase orders and
+  suppliers; the sort is in the address. **Save this filter** keeps the current filters and sort under a name, in
+  this browser.
+- **Forms**: a validation message now shows beside its field, the field is marked and gets the focus. Confirm
+  questions use the app's own box, not the browser's.
+- **Waiting and errors**: a page shape shows while a page loads; a failed page says so in plain words with *Try
+  again*; a wrong address gets a *Page not found* page.
+- **Charts and icons**: a small chart kit (bars, donut, columns, trend line) and an icon set, both drawn as SVG with
+  no new package. *Administration › Design parts* shows every shared part.
+- **BOQ standards**: a standard set's rules fold by department (a set of 851 rules opened as one very long page).
+- Not done: the commissioning plan page still has all its inputs on one page.
+
 ## Wave 20 — on branch `wave-20` (not merged yet)
 
 First wave of the Nov 2026 plan (Claude doc "PAMS review and plan"): quick fixes and automatic checks.

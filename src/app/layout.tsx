@@ -22,7 +22,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500&family=IBM+Plex+Sans+Arabic:wght@400;600&display=swap"
         />
       </head>
       <body className="min-h-screen">
@@ -31,7 +31,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <div className="flex min-h-screen">
             <SideNav perms={permissionsOf(user.role)} assistant={assistant} role={user.role} />
             <main id="content" tabIndex={-1} className="min-w-0 flex-1 px-5 py-3 outline-none md:px-8 lg:px-10">
-              <TopBar user={user} />
+              <TopBar user={user} assistant={assistant} />
               {children}
             </main>
           </div>

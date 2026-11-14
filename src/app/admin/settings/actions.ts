@@ -7,7 +7,7 @@ import { approvalPolicies, facilities } from "@/db/schema";
 import { ROLES, ROLE_LABELS } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { formatMoney } from "@/lib/format";
-import { fail, formObject, optNum, reqStr, zodErrors, type ActionState } from "@/lib/procurement/forms";
+import { fail, formObject, optNum, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { logActivity } from "@/lib/server-utils";
 import { DEFAULT_SETTINGS, getSettings, setSetting, type Settings } from "@/lib/settings";
 
@@ -38,7 +38,7 @@ const AWARD_AUTHORITY_MSG = "Awards must always be approved by the competent aut
 export async function savePolicy(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("settings.manage");
   const p = policySchema.safeParse(formObject(fd));
-  if (!p.success) return fail(...zodErrors(p.error));
+  if (!p.success) return zodFail(p.error);
   const d = p.data;
   if (d.approverRole === "VIEWER") return fail("Viewers can't approve anything. Choose another role.");
   if (d.entity === "AWARD" && d.approverRole !== "DIRECTOR") {
@@ -105,7 +105,7 @@ const settingsSchema = z.object({
 export async function saveSettings(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("settings.manage");
   const p = settingsSchema.safeParse(formObject(fd));
-  if (!p.success) return fail(...zodErrors(p.error));
+  if (!p.success) return zodFail(p.error);
   const next: Settings = { ...p.data, emailEnabled: fd.get("emailEnabled") === "on", assistantEnabled: fd.get("assistantEnabled") === "on", demoAccounts: fd.get("demoAccounts") === "on" };
   if (next.stateCouncilFromEgp < next.mofRepFromEgp) return fail("The State Council threshold is normally at or above the Ministry of Finance threshold. Check the amounts.");
   const before = await getSettings();

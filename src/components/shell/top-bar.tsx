@@ -1,23 +1,27 @@
 import Link from "next/link";
-import { ROLE_LABELS } from "@/lib/auth/permissions";
+import { permissionsOf, ROLE_LABELS } from "@/lib/auth/permissions";
 import type { CurrentUser } from "@/lib/auth/session";
 import { signOut } from "@/app/login/actions";
 import { NotificationBell } from "@/components/notification-bell";
+import { CommandPalette } from "@/components/shell/command-palette";
+import { PathBar } from "@/components/shell/path-bar";
 
 /** Right-hand bar above every page: notifications and the signed-in user's menu. */
-export function TopBar({ user }: { user: CurrentUser }) {
+export function TopBar({ user, assistant = false }: { user: CurrentUser; assistant?: boolean }) {
   const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
   return (
-    <div className="mb-4 flex items-center justify-end gap-2 pl-20 md:pl-0">
+    <>
+    <div className="mb-5 flex items-center justify-end gap-2 pl-24 md:pl-0">
       <form action="/search" role="search" className="mr-auto min-w-0 flex-1 sm:max-w-sm md:ml-0">
         <label htmlFor="global-search" className="sr-only">Search everything</label>
         <input id="global-search" type="search" name="q" placeholder="Search equipment, rooms, suppliers…" autoComplete="off"
-          className="w-full rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm placeholder:text-faint focus:border-primary focus:outline-none" />
+          className="min-h-9 w-full rounded-full border border-line bg-surface px-4 py-1.5 text-sm placeholder:text-faint focus:border-primary focus:outline-none" />
       </form>
+      <CommandPalette perms={permissionsOf(user.role)} assistant={assistant} />
       <NotificationBell userId={user.id} />
       <details className="relative">
         <summary className="flex cursor-pointer list-none items-center gap-2 rounded-[var(--radius-control)] px-2 py-1 hover:bg-sunken [&::-webkit-details-marker]:hidden">
-          <span className="grid size-7 place-items-center rounded-full bg-primary-soft text-xs font-bold text-primary-strong" aria-hidden>{initials}</span>
+          <span className="grid size-9 place-items-center rounded-full bg-nav text-xs font-semibold text-nav-gold" aria-hidden>{initials}</span>
           <span className="hidden text-left leading-tight sm:block">
             <span className="block text-sm font-semibold">{user.name}</span>
             <span className="block text-xs text-muted">{ROLE_LABELS[user.role]}</span>
@@ -31,5 +35,7 @@ export function TopBar({ user }: { user: CurrentUser }) {
         </div>
       </details>
     </div>
+    <PathBar />
+    </>
   );
 }

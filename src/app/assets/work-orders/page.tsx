@@ -4,8 +4,12 @@ import { and, desc, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, rooms, users, workOrders } from "@/db/schema";
-import { Badge, Button, EmptyState, LinkButton, PageHeader, Stat, StatusBadge, TabLinks, Table, Td, Th, THead } from "@/components/ui";
+import { Badge, Button, EmptyState, LinkButton, PageHeader, Stat, StatusBadge, TabLinks, Table, Td, THead } from "@/components/ui";
 import { enumOptions, NativeSelect, Notice, Pager } from "@/components/assets/bits";
+import { SortTh } from "@/components/ui/sort-th";
+import { SavedFilters } from "@/components/saved-filters";
+import { parseSort } from "@/lib/list";
+import type { PgColumn } from "drizzle-orm/pg-core";
 import { scopeWhere } from "@/lib/assets/access";
 import {
   ACTIVE_STATUSES, formatHours, isLate, WORK_ORDER_PRIORITIES, WORK_ORDER_STATUSES, workOrderKpis,
@@ -21,6 +25,7 @@ export const metadata = { title: "Work orders" };
 type SP = Record<string, string | string[] | undefined>;
 const one = (sp: SP, k: string) => { const v = sp[k]; return (Array.isArray(v) ? v[0] : v)?.trim() || undefined; };
 const PAGE = 50;
+const SORT_KEYS = ["number", "device", "location", "priority", "status", "assigned", "reported"] as const;
 const TABS = ["open", "mine", "unassigned", "done", "all"] as const;
 const KPI_DAYS = 90;
 const assignee = alias(users, "assignee");
@@ -49,6 +54,11 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
     conds.push(or(sql`${workOrders.number} ilike ${like}`, sql`${assets.assetTag} ilike ${like}`, sql`${workOrders.title} ilike ${like}`, sql`${deviceTypes.name} ilike ${like}`));
   }
   const where = and(...conds);
+  // Wave 21: a column heading can re-sort the list; the list's own order is most urgent first, then newest.
+  const sort = parseSort(sp, SORT_KEYS);
+  const byPriority = sql`case ${workOrders.priority} when 'URGENT' then 0 when 'HIGH' then 1 when 'NORMAL' then 2 else 3 end`;
+  const way = (c: SQL | PgColumn) => (sort?.dir === "desc" ? sql`${c} desc nulls last` : sql`${c} asc nulls last`);
+  const order: SQL[] = !sort ? [byPriority, desc(workOrders.reportedAt)] : [way({ number: workOrders.number, device: deviceTypes.name, location: departments.name, priority: byPriority, status: workOrders.status, assigned: assignee.name, reported: workOrders.reportedAt }[sort.key]), desc(workOrders.reportedAt)];
 
   const since = new Date(now.getTime() - KPI_DAYS * 86_400_000);
   const [rows, [{ n: total }], kpiRows] = await Promise.all([
@@ -57,7 +67,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
     }).from(workOrders).innerJoin(assets, eq(assets.id, workOrders.assetId)).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
       .leftJoin(rooms, eq(rooms.id, assets.roomId)).leftJoin(departments, eq(departments.id, assets.departmentId))
       .leftJoin(assignee, eq(assignee.id, workOrders.assignedToId)).where(where)
-      .orderBy(sql`case ${workOrders.priority} when 'URGENT' then 0 when 'HIGH' then 1 when 'NORMAL' then 2 else 3 end`, desc(workOrders.reportedAt))
+      .orderBy(...order)
       .limit(PAGE).offset((page - 1) * PAGE),
     db.select({ n: sql<number>`count(*)::int` }).from(workOrders).innerJoin(assets, eq(assets.id, workOrders.assetId))
       .innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).where(where),
@@ -72,7 +82,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
 
   const qs = (over: Record<string, string | number | undefined>) => {
     const p = new URLSearchParams();
-    const base = { tab, status, priority, q, ...over };
+    const base = { tab, status, priority, q, sort: sort?.key, dir: sort?.dir === "desc" ? "desc" : undefined, ...over };
     for (const [key, v] of Object.entries(base)) if (v !== undefined && v !== "" && !(key === "page" && String(v) === "1")) p.set(key, String(v));
     return `/assets/work-orders?${p}`;
   };
@@ -102,6 +112,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
       <form className="mb-4 flex flex-wrap items-end gap-2" action="/assets/work-orders">
         <AutoSubmit />
         <input type="hidden" name="tab" value={tab} />
+        {sort && <input type="hidden" name="sort" value={sort.key} />}{sort?.dir === "desc" && <input type="hidden" name="dir" value="desc" />}
         <label className="flex min-w-48 flex-1 flex-col text-xs text-muted">Search
           <input name="q" defaultValue={q} placeholder="Number, asset tag, device or fault"
             className="mt-1 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 py-1.5 text-[14px] text-ink" />
@@ -115,6 +126,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
         <Button variant="secondary">Filter</Button>
         {(q || status || priority) && <Link href={qs({ q: undefined, status: undefined, priority: undefined, page: 1 })} className="px-2 py-1.5 text-sm text-primary hover:underline">Clear</Link>}
       </form>
+      <SavedFilters />
 
       {rows.length === 0 ? (
         <EmptyState title={tab === "mine" ? "Nothing assigned to you" : "No work orders here"}
@@ -124,7 +136,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
       ) : (
         <>
           <Table>
-            <THead><tr><Th>Work order</Th><Th>Device</Th><Th>Location</Th><Th>Priority</Th><Th>Status</Th><Th>Assigned to</Th><Th>Reported</Th></tr></THead>
+            <THead><tr><SortTh k="number">Work order</SortTh><SortTh k="device">Device</SortTh><SortTh k="location">Location</SortTh><SortTh k="priority">Priority</SortTh><SortTh k="status">Status</SortTh><SortTh k="assigned">Assigned to</SortTh><SortTh k="reported">Reported</SortTh></tr></THead>
             <tbody>
               {rows.map(({ wo, tag, typeName, roomCode, departmentName, assigneeName }) => {
                 const late = isLate(wo, now);

@@ -45,6 +45,8 @@ export type AssetFilter = {
   /** One free label (wave 5). */
   tag?: string;
   sort?: AssetSort;
+  /** Wave 21: set by a column heading; ascending when absent. */
+  dir?: "desc";
   page?: number;
 };
 
@@ -89,6 +91,7 @@ export function parseAssetFilter(p: Params): AssetFilter {
     poId: id(p, "poId"),
     tag: cleanTag(get(p, "tag")) ?? undefined,
     sort: oneOf(p, "sort", SORTS),
+    dir: get(p, "dir") === "desc" ? "desc" : undefined,
     page: page && page > 1 ? page : undefined,
   };
 }
@@ -98,7 +101,7 @@ export function filterToQuery(f: AssetFilter, over: Partial<Record<keyof AssetFi
   const out = new URLSearchParams();
   const merged: Record<string, unknown> = { ...f, ...over };
   const order: (keyof AssetFilter)[] = ["q", "facilityId", "buildingId", "floorId", "departmentId", "roomId", "category", "deviceType",
-    "status", "criticality", "warranty", "poId", "tag", "sort", "page"];
+    "status", "criticality", "warranty", "poId", "tag", "sort", "dir", "page"];
   for (const k of order) {
     const v = merged[k];
     if (v === undefined || v === null || v === "") continue;
@@ -109,7 +112,7 @@ export function filterToQuery(f: AssetFilter, over: Partial<Record<keyof AssetFi
 
 /** Number of user-visible filters in effect (ignores sort/page). */
 export function activeFilterCount(f: AssetFilter): number {
-  return (Object.keys(f) as (keyof AssetFilter)[]).filter((k) => k !== "sort" && k !== "page" && f[k] !== undefined).length;
+  return (Object.keys(f) as (keyof AssetFilter)[]).filter((k) => k !== "sort" && k !== "dir" && k !== "page" && f[k] !== undefined).length;
 }
 
 /** Parse ids from ?ids=1,2,3 and/or repeated ?ids=1&ids=2. */

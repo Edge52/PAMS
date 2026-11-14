@@ -2,7 +2,8 @@
 import { z } from "zod";
 
 /** What every procurement server action returns to <ActionForm>. */
-export type ActionState = { errors?: string[]; message?: string } | null;
+/** `fields`: the first error per form field name, shown beside that field (wave 21). */
+export type ActionState = { errors?: string[]; message?: string; fields?: Record<string, string> } | null;
 
 export const fail = (...errors: string[]): ActionState => ({ errors });
 export const ok = (message: string): ActionState => ({ message });
@@ -10,6 +11,16 @@ export const ok = (message: string): ActionState => ({ message });
 export function zodErrors(e: z.ZodError): string[] {
   const msgs = e.issues.map((i) => i.message);
   return [...new Set(msgs)].slice(0, 8);
+}
+
+/** A failed validation, with each message tied to its field so the form can show it there and focus it. */
+export function zodFail(e: z.ZodError): ActionState {
+  const fields: Record<string, string> = {};
+  for (const i of e.issues) {
+    const name = typeof i.path[0] === "string" ? i.path[0] : null;
+    if (name && !(name in fields)) fields[name] = i.message;
+  }
+  return { errors: zodErrors(e), fields };
 }
 
 const blank = (v: unknown) => (v === "" || v === null || v === undefined ? undefined : typeof v === "string" ? v.trim() || undefined : v);

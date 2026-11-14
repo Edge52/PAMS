@@ -395,3 +395,21 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   cache key). Video: scene `startRecording(title)` copies each rendered frame plus a caption band to a canvas
   (`captureStream`), the view's `recordTour` runs `MediaRecorder` (MP4 when supported) and stops with the tour.
 
+
+## Wave 21: look, modules and shared parts
+
+- **Look**: use the tokens (`bg-nav`, `text-gold-ink`, `shadow-[var(--shadow-card)]`, `font-display` …), never raw
+  hex. `font-display` (Fraunces) is for page titles and big figures only. Gold (`gold`, `nav-gold`) is an accent for
+  marks and for text on the dark menu; on a light ground use `text-gold-ink`. See every part at `/admin/design`.
+- **Modules and menu**: a new page goes in its module in `src/lib/modules.ts` (`MODULES`); the side menu, the modules
+  page, the path bar and the Ctrl+K box all read that file. Don't add links in `side-nav.tsx`.
+- **Sortable lists**: headings are `<SortTh k="…">` (`@/components/ui/sort-th`); the page reads the choice with
+  `parseSort(sp, KEYS)` and sorts with `sortRows(...)` (rows already loaded) or its own `orderBy` (paged in the
+  database). Both in `@/lib/list`. Add `<SavedFilters />` under the filter form of a list whose filters are in the
+  address, and carry `sort`/`dir` through the form as hidden inputs.
+- **Form errors**: return `zodFail(parsed.error)` (not `fail(...zodErrors(...))`), so `<ActionForm>` can show each
+  message beside its field. The field's `name` must match the schema key.
+- **Charts and icons**: `@/components/ui/charts` (`BarList`, `Donut`, `Columns`, `Sparkline`) and
+  `@/components/ui/icons` (`<Icon name="…" />`). No chart or icon package.
+- **Waiting and errors**: `app/loading.tsx`, `app/error.tsx`, `app/not-found.tsx` cover every page; a section can
+  add its own `loading.tsx` when its shape differs.

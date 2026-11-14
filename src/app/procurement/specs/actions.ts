@@ -7,7 +7,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { deviceTypes, offerLines, projects, specItems, techSpecs } from "@/db/schema";
 import { logActivity } from "@/lib/server-utils";
-import { fail, formObject, idParam, jsonField, optStr, reqStr, zodErrors, type ActionState } from "@/lib/procurement/forms";
+import { fail, formObject, idParam, jsonField, optStr, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { initialSpecItems, planSpecItems } from "@/lib/procurement/spec-items";
 import { advanceProject } from "@/lib/procurement/server";
 import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
@@ -28,7 +28,7 @@ export async function createSpec(_prev: ActionState, fd: FormData): Promise<Acti
     title: optStr(300),
     includeGeneral: z.string().optional(),
   }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const { projectId, deviceTypeId } = parsed.data;
   const [[project], [dt]] = await Promise.all([
     db.select().from(projects).where(eq(projects.id, projectId)),
@@ -71,7 +71,7 @@ export async function saveSpecItems(specId: number, _prev: ActionState, fd: Form
   if (plan.errors.length) return fail(...plan.errors);
 
   const header = z.object({ title: reqStr("Enter a title for the specification", 300), notes: optStr(4000) }).safeParse(formObject(fd));
-  if (!header.success) return fail(...zodErrors(header.error));
+  if (!header.success) return zodFail(header.error);
 
   await db.transaction(async (tx) => {
     await tx.update(techSpecs).set({ title: header.data.title, notes: header.data.notes ?? null }).where(eq(techSpecs.id, specId));

@@ -8,7 +8,7 @@ import { approvalRequests, committeeMembers, committees, offers, projects, userF
 import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { logActivity } from "@/lib/server-utils";
 import { CAPACITIES, CAPACITY_LABELS, COMMITTEE_KINDS, KIND_LABELS, votesByDefault, type Capacity, type CommitteeKind } from "@/lib/procurement/committees";
-import { fail, formObject, idParam, isUniqueViolation, optDate, optStr, zodErrors, type ActionState } from "@/lib/procurement/forms";
+import { fail, formObject, idParam, isUniqueViolation, optDate, optStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 
 const back = (projectId: number) => revalidatePath(`/procurement/${projectId}`);
 
@@ -46,7 +46,7 @@ const committeeSchema = z.object({
 export async function createCommittee(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("procurement.edit");
   const parsed = committeeSchema.extend({ projectId: idParam("Project missing") }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const d = parsed.data;
   const p = await projectFor(d.projectId, me);
   if (!p) return fail("This project no longer exists.");
@@ -70,7 +70,7 @@ export async function createCommittee(_prev: ActionState, fd: FormData): Promise
 export async function updateCommittee(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("procurement.edit");
   const parsed = committeeSchema.omit({ kind: true }).extend({ committeeId: idParam("Committee missing") }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const d = parsed.data;
   const found = await committeeFor(d.committeeId, me);
   if (!found) return fail("This committee no longer exists.");
@@ -101,7 +101,7 @@ export async function addCommitteeMember(_prev: ActionState, fd: FormData): Prom
     name: optStr(200),
     capacity: z.enum(CAPACITIES as [Capacity, ...Capacity[]], { error: "Choose the member's capacity" }),
   }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const d = parsed.data;
   const found = await committeeFor(d.committeeId, me);
   if (!found) return fail("This committee no longer exists.");

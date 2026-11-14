@@ -8,13 +8,16 @@ import { formatMoney } from "@/lib/format";
 import { options, SUPPLIER_TYPES, type SupplierType } from "@/lib/procurement/labels";
 import { poTotals, sumInCurrency } from "@/lib/procurement/server";
 import { Stars } from "@/components/procurement/stars";
+import { SortTh } from "@/components/ui/sort-th";
+import { SavedFilters } from "@/components/saved-filters";
+import { parseSort, sortRows } from "@/lib/list";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Suppliers" };
 
-export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{ q?: string; type?: string; show?: string }> }) {
+export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{ q?: string; type?: string; show?: string; sort?: string; dir?: string }> }) {
   const me = await requirePermission("procurement.view");
   const sp = await searchParams;
   const where: SQL[] = [];
@@ -23,20 +26,24 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
   const q = sp.q?.trim();
   if (q) where.push(or(ilike(suppliers.name, `%${q}%`), sql`array_to_string(${suppliers.brands}, ',') ilike ${`%${q}%`}`, ilike(suppliers.contactName, `%${q}%`))!);
 
-  const rows = await db.select({
+  const found = await db.select({
     s: suppliers,
     offerCount: sql<number>`(select count(*)::int from ${offers} where ${offers.supplierId} = ${suppliers.id})`,
     awardedCount: sql<number>`(select count(*)::int from ${offers} where ${offers.supplierId} = ${suppliers.id} and ${offers.status} = 'AWARDED')`,
   }).from(suppliers).where(where.length ? and(...where) : undefined).orderBy(asc(suppliers.name));
 
-  const pos = rows.length ? await db.select({ id: purchaseOrders.id, supplierId: purchaseOrders.supplierId, currency: purchaseOrders.currency })
+  const pos = found.length ? await db.select({ id: purchaseOrders.id, supplierId: purchaseOrders.supplierId, currency: purchaseOrders.currency })
     .from(purchaseOrders).where(ne(purchaseOrders.status, "CANCELLED")) : [];
   const totals = await poTotals(pos.map((p) => p.id));
   const ordered = new Map<number, { total: number | null; partial: number }>();
-  for (const r of rows) {
+  for (const r of found) {
     const mine = pos.filter((p) => p.supplierId === r.s.id);
     if (mine.length) ordered.set(r.s.id, await sumInCurrency(mine.map((p) => ({ amount: totals.get(p.id)?.value ?? 0, currency: p.currency })), "EGP"));
   }
+  const sort = parseSort(sp, ["name", "type", "rating", "offers", "awarded", "ordered"] as const);
+  const rows = sortRows(found, sort, {
+    name: (r) => r.s.name, type: (r) => r.s.type, rating: (r) => r.s.rating, offers: (r) => r.offerCount, awarded: (r) => r.awardedCount, ordered: (r) => ordered.get(r.s.id)?.total ?? 0,
+  });
   const filtered = Boolean(q || sp.type || sp.show === "all");
 
   return (
@@ -45,6 +52,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
         actions={can(me.role, "suppliers.edit") ? <LinkButton href="/procurement/suppliers/new" variant="primary">Add supplier</LinkButton> : undefined} />
       <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
         <AutoSubmit />
+        {sort && <input type="hidden" name="sort" value={sort.key} />}{sort?.dir === "desc" && <input type="hidden" name="dir" value="desc" />}
         <label className="min-w-0 flex-1 basis-52"><span className="sr-only">Search</span>
           <Input type="search" name="q" defaultValue={q ?? ""} placeholder="Search name, brand or contact" /></label>
         <label><span className="sr-only">Type</span>
@@ -54,13 +62,14 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
         <button className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">Apply filters</button>
         {filtered && <Link href="/procurement/suppliers" className="px-2 py-1.5 text-sm text-primary hover:underline">Clear</Link>}
       </form>
+      <SavedFilters />
       {rows.length === 0 ? (
         filtered ? <EmptyState title="No suppliers match" action={<LinkButton href="/procurement/suppliers">Show all suppliers</LinkButton>}>Try another name or brand.</EmptyState>
           : <EmptyState title="No suppliers yet" action={can(me.role, "suppliers.edit") ? <LinkButton href="/procurement/suppliers/new" variant="primary">Add the first supplier</LinkButton> : undefined}>
             Add the local agents and distributors you invite to tenders, with the brands they represent.</EmptyState>
       ) : (
         <Table>
-          <THead><tr><Th>Supplier</Th><Th>Type</Th><Th>Brands</Th><Th>Contact</Th><Th>Rating</Th><Th align="right">Offers</Th><Th align="right">Awarded</Th><Th align="right">Ordered (EGP)</Th></tr></THead>
+          <THead><tr><SortTh k="name">Supplier</SortTh><SortTh k="type">Type</SortTh><Th>Brands</Th><Th>Contact</Th><SortTh k="rating">Rating</SortTh><SortTh k="offers" align="right">Offers</SortTh><SortTh k="awarded" align="right">Awarded</SortTh><SortTh k="ordered" align="right">Ordered (EGP)</SortTh></tr></THead>
           <tbody>
             {rows.map(({ s, offerCount, awardedCount }) => {
               const o = ordered.get(s.id);

@@ -8,9 +8,7 @@ import { db } from "@/db";
 import { projects } from "@/db/schema";
 import { logActivity } from "@/lib/server-utils";
 import { formatMoney } from "@/lib/format";
-import {
-  currency, fail, formObject, idParam, isUniqueViolation, optDate, optNum, optStr, reqStr, zodErrors, type ActionState,
-} from "@/lib/procurement/forms";
+import { currency, fail, formObject, idParam, isUniqueViolation, optDate, optNum, optStr, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { humanizeEnum, PROJECT_STATUSES } from "@/lib/procurement/labels";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 
@@ -37,7 +35,7 @@ function values(d: z.infer<typeof projectSchema>) {
 export async function createProject(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("procurement.edit");
   const parsed = projectSchema.safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   await requireFacilityAccess(parsed.data.facilityId, me);
   let id: number;
   try {
@@ -56,7 +54,7 @@ export async function createProject(_prev: ActionState, fd: FormData): Promise<A
 export async function updateProject(projectId: number, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("procurement.edit");
   const parsed = projectSchema.safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const [before] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!before) return fail("This project no longer exists.");
   await requireFacilityAccess(before.facilityId, me);
@@ -82,7 +80,7 @@ export async function setProjectStatus(_prev: ActionState, fd: FormData): Promis
   const me = await requirePermission("procurement.edit");
   const parsed = z.object({ projectId: idParam("Project missing"), status: z.enum(PROJECT_STATUSES, { error: "Choose a status" }) })
     .safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const { projectId, status } = parsed.data;
   const [p] = await db.select({ status: projects.status, facilityId: projects.facilityId }).from(projects).where(eq(projects.id, projectId));
   if (!p) return fail("This project no longer exists.");

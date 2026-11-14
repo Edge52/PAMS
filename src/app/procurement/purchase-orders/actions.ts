@@ -10,7 +10,7 @@ import { formatDate, formatMoney, round2, todayISO } from "@/lib/format";
 import { convert, logActivity, nextNumber } from "@/lib/server-utils";
 import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { cancelApproval, startApproval } from "@/lib/approvals/server";
-import { fail, formObject, idParam, isUniqueViolation, optDate, optInt, optStr, reqDate, reqStr, zodErrors, type ActionState } from "@/lib/procurement/forms";
+import { fail, formObject, idParam, isUniqueViolation, optDate, optInt, optStr, reqDate, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { humanizeEnum, INCOTERMS } from "@/lib/procurement/labels";
 import { canSubmit, canTransition, isEditable, transitionPermission, type PoStatus, PO_STATUSES } from "@/lib/procurement/po-status";
 import { parseSerials, validateOrderQty } from "@/lib/procurement/receipt";
@@ -41,7 +41,7 @@ async function alreadyOrdered(offerLineIds: number[], excludePoId?: number) {
 export async function createPurchaseOrder(offerId: number, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("po.create");
   const parsed = poHeader.extend({ intent: z.enum(["draft", "submit"]).default("draft") }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const h = parsed.data;
   const [row] = await db.select({ offer: offers, project: projects, supplier: suppliers.name }).from(offers)
     .innerJoin(projects, eq(projects.id, offers.projectId)).innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).where(eq(offers.id, offerId));
@@ -174,7 +174,7 @@ export async function withdrawPurchaseOrder(_prev: ActionState, fd: FormData): P
 export async function setPoStatus(_prev: ActionState, fd: FormData): Promise<ActionState> {
   // The permission depends on the target status (issue → po.issue, cancel → po.create); checked right after parsing.
   const parsed = z.object({ poId: idParam("Purchase order missing"), status: z.enum(PO_STATUSES as [PoStatus, ...PoStatus[]]) }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const { poId, status } = parsed.data;
   const me = await requirePermission(transitionPermission(status));
   const po = await loadPoForAction(poId, me);
@@ -210,7 +210,7 @@ export async function setPoStatus(_prev: ActionState, fd: FormData): Promise<Act
 export async function updatePurchaseOrder(poId: number, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("po.create");
   const parsed = poHeader.safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const po = await loadPoForAction(poId, me);
   if (!po) return fail("This purchase order no longer exists.");
   if (po.status === "CANCELLED" || po.status === "CLOSED") return fail(`A ${humanizeEnum(po.status).toLowerCase()} purchase order can't be changed.`);
@@ -268,7 +268,7 @@ export async function recordDelivery(poId: number, _prev: ActionState, fd: FormD
     receivedBy: optStr(200),
     notes: optStr(2000),
   }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   if (parsed.data.deliveryDate > todayISO()) return fail("The delivery date cannot be in the future.");
   const po = await loadPoForAction(poId, me);
   if (!po) return fail("This purchase order no longer exists.");

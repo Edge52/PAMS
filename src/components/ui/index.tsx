@@ -23,7 +23,7 @@ export function PageHeader({
             ‹ {back.label}
           </Link>
         )}
-        <h1 className="text-2xl font-bold tracking-tight text-ink">{title}</h1>
+        <h1 className="font-display text-[32px] leading-tight tracking-tight text-ink">{title}</h1>
         {description && <p className="mt-1 max-w-3xl text-[15px] text-muted">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -35,14 +35,14 @@ export function Panel({
   title, actions, children, className, padded = true,
 }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; padded?: boolean }) {
   return (
-    <section className={cx("rounded-[var(--radius-panel)] border border-line bg-surface", className)}>
+    <section className={cx("rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-card)]", className)}>
       {(title || actions) && (
-        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-          {title && <h2 className="text-[15px] font-semibold">{title}</h2>}
+        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+          {title && <h2 className="text-[16px] font-semibold">{title}</h2>}
           {actions && <div className="flex items-center gap-2">{actions}</div>}
         </div>
       )}
-      <div className={padded ? "p-4" : undefined}>{children}</div>
+      <div className={padded ? "p-5" : undefined}>{children}</div>
     </section>
   );
 }
@@ -51,12 +51,12 @@ export function Panel({
 export function Stat({ label, value, hint, href }: { label: string; value: ReactNode; hint?: ReactNode; href?: string }) {
   const body = (
     <>
-      <p className="flex items-start justify-between gap-2 text-sm text-muted">{label}{href && <span aria-hidden className="text-faint transition-colors group-hover:text-primary">›</span>}</p>
-      <p className="mt-1 text-2xl font-bold">{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
+      <p className="flex items-start justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{label}{href && <span aria-hidden className="text-faint transition-colors group-hover:text-primary">›</span>}</p>
+      <p className="mt-1 font-display text-[34px] leading-none">{value}</p>
+      {hint && <p className="mt-2 text-[13px] text-muted">{hint}</p>}
     </>
   );
-  const cls = "block rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3";
+  const cls = "block rounded-[var(--radius-panel)] border border-line bg-surface px-5 py-4 shadow-[var(--shadow-card)]";
   // A figure that opens its list shows an arrow and lifts on hover (wave 19).
   return href ? <Link href={href} className={cx(cls, "group hover:border-primary hover:shadow-sm")}>{body}</Link> : <div className={cls}>{body}</div>;
 }
@@ -81,7 +81,7 @@ const btn: Record<Variant, string> = {
   danger: "bg-surface text-danger border-line hover:bg-danger-soft",
 };
 const btnBase =
-  "inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border px-3 py-1.5 text-sm font-semibold whitespace-nowrap disabled:opacity-50 disabled:pointer-events-none";
+  "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-semibold whitespace-nowrap disabled:opacity-50 disabled:pointer-events-none";
 
 export function Button({ variant = "primary", className, ...p }: ComponentProps<"button"> & { variant?: Variant }) {
   return <button type="submit" {...p} className={cx(btnBase, btn[variant], className)} />;
@@ -139,17 +139,17 @@ export function FormGrid({ cols = 2, children }: { cols?: 1 | 2 | 3 | 4; childre
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (
     // Wide screens: no scroll box, so the header row can stay on screen while the page scrolls (wave 19).
-    <div className={cx("overflow-x-auto rounded-[var(--radius-panel)] border border-line bg-surface xl:overflow-x-visible", className)}>
+    <div className={cx("overflow-x-auto rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-card)] xl:overflow-x-visible [&_thead_th:first-child]:rounded-tl-[var(--radius-panel)] [&_thead_th:last-child]:rounded-tr-[var(--radius-panel)]", className)}>
       <table className="w-full border-collapse text-[14px]">{children}</table>
     </div>
   );
 }
 export function THead({ children }: { children: ReactNode }) {
-  return <thead className="bg-sunken text-left text-[13px] text-muted xl:sticky xl:top-0 xl:z-10 [&_th]:bg-sunken">{children}</thead>;
+  return <thead className="bg-sunken text-left text-[11px] uppercase tracking-[0.1em] text-muted xl:sticky xl:top-0 xl:z-10 [&_th]:bg-sunken">{children}</thead>;
 }
 export function Th({ children, className, align }: { children?: ReactNode; className?: string; align?: "right" | "center" }) {
   return (
-    <th className={cx("whitespace-nowrap border-b border-line px-3 py-2 font-semibold", align === "right" && "text-right", align === "center" && "text-center", className)}>
+    <th className={cx("whitespace-nowrap border-b border-line px-3 py-2.5 font-semibold", align === "right" && "text-right", align === "center" && "text-center", className)}>
       {children}
     </th>
   );
@@ -158,7 +158,7 @@ export function Td({ children, className, align, colSpan }: {
   children?: ReactNode; className?: string; align?: "right" | "center"; colSpan?: number;
 }) {
   return (
-    <td colSpan={colSpan} className={cx("border-b border-line px-3 py-2 align-top", align === "right" && "text-right", align === "center" && "text-center", className)}>
+    <td colSpan={colSpan} className={cx("border-b border-line px-3 py-2.5 align-top", align === "right" && "text-right", align === "center" && "text-center", className)}>
       {children}
     </td>
   );
@@ -175,11 +175,11 @@ const tones: Record<Tone, string> = {
   warn: "bg-warn-soft text-warn",
   danger: "bg-danger-soft text-danger",
   info: "bg-info-soft text-info",
-  tag: "bg-tag-soft text-warn",
+  tag: "bg-gold-soft text-gold-ink",
 };
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
   return (
-    <span className={cx("inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold whitespace-nowrap", tones[tone])}>
+    <span className={cx("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap", tones[tone])}>
       {children}
     </span>
   );

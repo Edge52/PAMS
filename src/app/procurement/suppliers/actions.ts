@@ -8,7 +8,7 @@ import { requirePermission } from "@/lib/auth/session";
 import { db } from "@/db";
 import { suppliers } from "@/db/schema";
 import { logActivity } from "@/lib/server-utils";
-import { fail, formObject, optNum, optStr, reqStr, zodErrors, type ActionState } from "@/lib/procurement/forms";
+import { fail, formObject, optNum, optStr, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { SUPPLIER_TYPES } from "@/lib/procurement/labels";
 
 const schema = z.object({
@@ -38,7 +38,7 @@ function values(d: z.infer<typeof schema>) {
 export async function createSupplier(_prev: ActionState, fd: FormData): Promise<ActionState> {
   await requirePermission("suppliers.edit");
   const parsed = schema.safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const existing = await db.select({ id: suppliers.id }).from(suppliers).where(eq(suppliers.name, parsed.data.name));
   if (existing.length) return fail(`A supplier called ${parsed.data.name} already exists.`);
   const [row] = await db.insert(suppliers).values(values(parsed.data)).returning({ id: suppliers.id });
@@ -50,7 +50,7 @@ export async function createSupplier(_prev: ActionState, fd: FormData): Promise<
 export async function updateSupplier(id: number, _prev: ActionState, fd: FormData): Promise<ActionState> {
   await requirePermission("suppliers.edit");
   const parsed = schema.safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const [before] = await db.select().from(suppliers).where(eq(suppliers.id, id));
   if (!before) return fail("This supplier no longer exists.");
   await db.update(suppliers).set(values(parsed.data)).where(eq(suppliers.id, id));

@@ -8,9 +8,7 @@ import { db } from "@/db";
 import { boqLines, deviceTypes, offerCompliance, offerLines, offers, projects, purchaseOrders, rfqs, rfqSuppliers, suppliers } from "@/db/schema";
 import { formatMoney, lineTotal } from "@/lib/format";
 import { logActivity } from "@/lib/server-utils";
-import {
-  currency, fail, formObject, idParam, jsonField, optDate, optInt, optNum, optStr, reqDate, reqStr, zodErrors, type ActionState,
-} from "@/lib/procurement/forms";
+import { currency, fail, formObject, idParam, jsonField, optDate, optInt, optNum, optStr, reqDate, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { humanizeEnum, INCOTERMS, OFFER_STATUSES, offerActions, type OfferStatus } from "@/lib/procurement/labels";
 import { planOfferLines } from "@/lib/procurement/offer-lines";
 import { COMPLIANCE_STATUSES, type ComplianceStatus } from "@/lib/procurement/scoring";
@@ -85,7 +83,7 @@ const headerValues = (d: z.infer<typeof headerSchema>) => ({
 export async function createOffer(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("offers.edit");
   const parsed = headerSchema.safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const d = parsed.data;
   const check = await checkHeader(d, me);
   if ("error" in check) return fail(check.error!);
@@ -123,7 +121,7 @@ export async function updateOffer(offerId: number, _prev: ActionState, fd: FormD
   const locked = await evaluationLock(before);
   if (locked) return fail(locked);
   const parsed = headerSchema.safeParse({ ...formObject(fd), projectId: String(before.projectId) });
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const d = parsed.data;
   const check = await checkHeader(d, me);
   if ("error" in check) return fail(check.error!);
@@ -212,7 +210,7 @@ export async function setOfferStatus(_prev: ActionState, fd: FormData): Promise<
   const me = await requirePermission("offers.edit");
   const parsed = z.object({ offerId: idParam("Offer missing"), status: z.enum(OFFER_STATUSES), reason: optStr(500), returnTo: optStr(300) })
     .safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const { offerId, status, reason } = parsed.data;
   if (status === "AWARDED") return fail("Offers are awarded through a recommendation that the committee and the competent authority approve. Use “Recommend award”.");
   const [o] = await db.select({ offer: offers, supplier: suppliers.name, facilityId: projects.facilityId }).from(offers)
@@ -273,7 +271,7 @@ export async function deleteOffer(_prev: ActionState, fd: FormData): Promise<Act
 export async function recommendAward(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("award.recommend");
   const parsed = z.object({ offerId: idParam("Offer missing"), reason: optStr(1000) }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const { offerId, reason } = parsed.data;
   const [o] = await db.select({ offer: offers, supplier: suppliers.name, project: projects }).from(offers)
     .innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).innerJoin(projects, eq(projects.id, offers.projectId)).where(eq(offers.id, offerId));
@@ -335,7 +333,7 @@ export async function withdrawAwardRecommendation(_prev: ActionState, fd: FormDa
 export async function recordAcceptanceNotice(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("award.recommend");
   const parsed = z.object({ offerId: idParam("Offer missing"), sentOn: reqDate("Enter the date the acceptance notice was sent") }).safeParse(formObject(fd));
-  if (!parsed.success) return fail(...zodErrors(parsed.error));
+  if (!parsed.success) return zodFail(parsed.error);
   const { offerId, sentOn } = parsed.data;
   const [o] = await db.select({ offer: offers, supplier: suppliers.name, facilityId: projects.facilityId }).from(offers)
     .innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).innerJoin(projects, eq(projects.id, offers.projectId)).where(eq(offers.id, offerId));
