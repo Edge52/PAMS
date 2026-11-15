@@ -141,6 +141,7 @@ export default async function DeviceTypePage({ params, searchParams }: { params:
               { label: "Indicative price", value: dt.priceMinUsd || dt.priceMaxUsd ? `${formatMoney(dt.priceMinUsd, "USD", { compact: true })} – ${formatMoney(dt.priceMaxUsd, "USD", { compact: true })}` : null },
               { label: "UMDNS", value: dt.umdnsCode },
               { label: "GMDN term", value: dt.gmdnTerm },
+              { label: "GMDN code", value: dt.gmdnCode },
             ]} />
           </Panel>
           <Panel title="Makes and models" padded={false} actions={can(me.role, "catalogue.edit") && <Link href={`/catalogue/models/new?deviceTypeId=${dt.id}&back=${encodeURIComponent(`/catalogue/${dt.code}`)}`} className="text-sm font-semibold text-primary hover:underline">Add a make and model</Link>}>

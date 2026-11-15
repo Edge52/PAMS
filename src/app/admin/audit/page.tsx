@@ -4,6 +4,7 @@ import { NativeSelect } from "@/components/assets/bits";
 import { requirePermission } from "@/lib/auth/session";
 import { auditCount, auditFilter, auditRows, auditTypes, recordHref } from "@/lib/audit";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import { fieldLabel, showValue } from "@/lib/audit-diff";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Audit log" };
@@ -22,7 +23,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   };
   return (
     <>
-      <PageHeader title="Audit log" description="Every change recorded in the system: who, what, which record and when."
+      <PageHeader title="Audit log" description="Every change recorded in the system: who, what, which record and when. Entries can't be edited or deleted."
         actions={<Link href={`/admin/audit/export${qs({ page: "" })}`} prefetch={false} className="text-sm font-semibold text-primary hover:underline">Export (CSV)</Link>} />
       <form className="mb-5 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <Field label="Person"><Input name="who" defaultValue={f.who ?? ""} placeholder="Name" /></Field>
@@ -35,12 +36,20 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
       </form>
       <Panel title={`${formatNumber(total)} entr${total === 1 ? "y" : "ies"}`} padded={false}>
         <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead className="bg-sunken text-left text-muted"><tr><th className="px-3 py-2">When</th><th className="px-3 py-2">Who</th><th className="px-3 py-2">Record</th><th className="px-3 py-2">What</th></tr></thead>
+          <thead className="bg-sunken text-left text-muted"><tr><th className="px-3 py-2">When</th><th className="px-3 py-2">Who</th><th className="px-3 py-2">Record</th><th className="px-3 py-2">What</th><th className="px-3 py-2">From address</th></tr></thead>
           <tbody>{rows.map((r) => { const h = recordHref(r.entityType, r.entityId); return (
             <tr key={r.id} className="border-t border-line align-top">
               <td className="whitespace-nowrap px-3 py-2">{formatDateTime(r.at)}</td><td className="px-3 py-2">{r.actor ?? "System"}</td>
               <td className="whitespace-nowrap px-3 py-2">{h ? <Link href={h} className="text-primary hover:underline">{r.entityType.replace(/_/g, " ")} {r.entityId}</Link> : `${r.entityType.replace(/_/g, " ")} ${r.entityId || ""}`}</td>
-              <td className="px-3 py-2"><span className="text-muted">{r.action.replace(/_/g, " ")}:</span> {r.summary}</td>
+              <td className="px-3 py-2"><span className="text-muted">{r.action.replace(/_/g, " ")}:</span> {r.summary}
+                {r.changes && (
+                  <details className="mt-1 text-xs"><summary className="cursor-pointer text-primary">Before and after ({Object.keys(r.changes).length})</summary>
+                    <table className="mt-1"><tbody>{Object.entries(r.changes).map(([k, c]) => (
+                      <tr key={k} className="align-top"><th scope="row" className="pr-3 text-left font-medium text-muted">{fieldLabel(k)}</th><td className="pr-2 text-muted line-through">{showValue(c.from)}</td><td>{showValue(c.to)}</td></tr>
+                    ))}</tbody></table>
+                  </details>
+                )}</td>
+              <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-muted">{r.ip ?? ""}</td>
             </tr>); })}</tbody>
         </table></div>
         <div className="flex justify-between border-t border-line px-3 py-2 text-sm">

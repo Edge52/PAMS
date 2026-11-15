@@ -430,3 +430,14 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   analyser calibration). Change a limit there, with its test, never in a page.
 - An incident's or a safety test's device must be in a hospital the user can see (`requireFacilityAccess`).
 - Asset history is kept: `incidents` and `safety_tests` reference assets with `onDelete: "restrict"`.
+
+## Audit trail and data rules (wave 24)
+
+- `logActivity(entity, id, action, summary, actor?, tx?, changes?)`: for an edit, read the row first and pass
+  `diff(before, next)` from `@/lib/audit-diff`; put `changeSummary(changes)` in the summary. The account and the
+  address are added for you.
+- `activity_log` is insert-only (a database trigger). Never update or delete it, in code or in a seed.
+- Nothing may cascade-delete from `assets`: use `onDelete: "restrict"`. Retire master data with its `active` switch.
+- New money, quantity or date-range columns get a `check(...)` in `schema.ts`. `src/db/rules.test.ts` builds a
+  scratch database from the migrations and checks these rules; add to it.
+- An editable table has `updatedAt: updatedAt()`.

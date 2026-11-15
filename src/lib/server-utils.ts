@@ -4,15 +4,30 @@ import { activityLog, exchangeRates } from "@/db/schema";
 import { and, desc, eq, lte, sql } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { num, todayISO } from "./format";
+import { headers } from "next/headers";
 import { getCurrentUser } from "./auth/session";
+import type { Changes } from "./audit-diff";
 
 /** Record a human-readable event against any entity. Call from server actions after a change. */
 export async function logActivity(
   entityType: string, entityId: number, action: string, summary: string, actor?: string,
   x: Pick<typeof db, "insert"> = db, // pass a transaction to log inside it
+  /** Wave 24: for an edit, what changed (`diff(before, after)` from `@/lib/audit-diff`). */
+  changes?: Changes | null,
 ) {
-  const who = actor ?? (await getCurrentUser())?.name ?? null; // signed-in user by default
-  await x.insert(activityLog).values({ entityType, entityId, action, summary, actor: who });
+  // Wave 24: every entry carries the account and the address it came from, not just a name.
+  const me = await getCurrentUser().catch(() => null);
+  const who = actor ?? me?.name ?? null; // signed-in user by default
+  await x.insert(activityLog).values({ entityType, entityId, action, summary, actor: who, actorId: me?.id ?? null, ip: await clientIp(), changes: changes ?? null });
+}
+
+/** The address the request came from, behind a proxy or not. Null outside a request (seeds, scheduled jobs). */
+async function clientIp(): Promise<string | null> {
+  try {
+    const h = await headers();
+    const ip = (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "").trim();
+    return ip ? ip.slice(0, 64) : null;
+  } catch { return null; }
 }
 
 export async function getActivity(entityType: string, entityId: number, limit = 20) {

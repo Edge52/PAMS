@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth/session";
-import { backupNow, checkBackup, removeBackup, SAFE_NAME } from "@/lib/backups";
+import { db } from "@/db";
+import { backupChecks } from "@/db/schema";
+import { backupNow, checkBackup, removeBackup, restoreTest, SAFE_NAME } from "@/lib/backups";
 import { logActivity } from "@/lib/server-utils";
 
 const back = (kind: "notice" | "error", text: string) => redirect(`/admin/backups?${kind}=${encodeURIComponent(text)}`);
@@ -37,4 +39,15 @@ export async function removeBackupAction(fd: FormData) {
   if (ok) await logActivity("backup", me.id, "deleted", `Backup file removed: ${n.data}`, me.name);
   revalidatePath("/admin/backups");
   back(ok ? "notice" : "error", ok ? `${n.data} removed.` : `${n.data} couldn't be removed.`);
+}
+
+/** Wave 24: restore the backup into a scratch database and keep the result, pass or fail. */
+export async function restoreTestAction(fd: FormData) {
+  const me = await requirePermission("users.manage");
+  const n = nameOf(fd); if (!n.success) { back("error", "That isn't a backup file."); return; }
+  const r = await restoreTest(n.data);
+  await db.insert(backupChecks).values({ fileName: n.data, ok: r.ok, detail: r.detail, byName: me.name });
+  await logActivity("backup", me.id, r.ok ? "restore_tested" : "restore_failed", `Restore test of ${n.data}: ${r.detail}`, me.name);
+  revalidatePath("/admin/backups");
+  back(r.ok ? "notice" : "error", `${n.data}: ${r.detail}`);
 }

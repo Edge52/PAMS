@@ -152,3 +152,44 @@ export function ageOf(at: Date, now = new Date()): string {
 export function backupIsStale(at: Date | undefined, now = new Date()): boolean {
   return !at || now.getTime() - at.getTime() > 2 * 86_400_000;
 }
+
+
+/**
+ * Restore test (wave 24): prove a database backup can be used, not just that the file opens.
+ * Built-in database: the copy is loaded into a scratch database in memory and its tables are counted.
+ * PostgreSQL: `pg_restore --list` reads the whole dump's contents list (a full restore needs a spare database:
+ * the steps are in docs/deploy.md).
+ */
+export async function restoreTest(name: string): Promise<{ ok: boolean; detail: string }> {
+  if (!SAFE_NAME.test(name)) return { ok: false, detail: "Not a backup file name." };
+  const file = path.join(/* turbopackIgnore: true */ BACKUP_DIR, name);
+  try {
+    if (name.endsWith(".tar.gz") || name.endsWith(".tgz")) {
+      const buf = await fs.readFile(file);
+      const { PGlite } = await import("@electric-sql/pglite");
+      const scratch = new PGlite({ loadDataDir: new Blob([new Uint8Array(buf)]) });
+      try {
+        const t = await scratch.query<{ n: number }>("select count(*)::int as n from information_schema.tables where table_schema = 'public'");
+        const a = await scratch.query<{ n: number }>("select count(*)::int as n from assets");
+        const l = await scratch.query<{ n: number }>("select count(*)::int as n from activity_log");
+        return t.rows[0].n > 0
+          ? { ok: true, detail: `Restored into a scratch database: ${t.rows[0].n} tables, ${a.rows[0].n} devices, ${l.rows[0].n} audit entries.` }
+          : { ok: false, detail: "The backup restored but holds no tables." };
+      } finally { await scratch.close().catch(() => {}); }
+    }
+    if (name.endsWith(".dump")) {
+      const { stdout } = await execFileP(process.env.PG_RESTORE_PATH || "pg_restore", ["--list", file], { timeout: 5 * 60_000, maxBuffer: 64 * 1024 * 1024 });
+      const tables = stdout.split("\n").filter((l) => / TABLE DATA /.test(l)).length;
+      return tables ? { ok: true, detail: `pg_restore reads the dump: data for ${tables} tables. For a full test, restore it into a spare database (docs/deploy.md).` } : { ok: false, detail: "The dump holds no table data." };
+    }
+    return { ok: false, detail: "Only database backups can be restore-tested." };
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    return { ok: false, detail: err.code === "ENOENT" ? "pg_restore wasn't found. Install the PostgreSQL client tools, or set PG_RESTORE_PATH." : `The backup didn't restore: ${String(err.message).slice(0, 200)}` };
+  }
+}
+
+/** A restore test is due once a month. */
+export function restoreTestDue(last: Date | undefined, now = new Date()): boolean {
+  return !last || now.getTime() - last.getTime() > 31 * 864e5;
+}

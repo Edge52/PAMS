@@ -185,6 +185,8 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                   <Field label="Model"><Input name="model" defaultValue={x.model ?? ""} list="dl-models" autoComplete="off" /></Field>
                   <ModelDatalists {...await modelSuggestions()} />
                   <Field label="Serial number"><Input name="serialNumber" defaultValue={x.serialNumber ?? ""} /></Field>
+                  <Field label="UDI" hint="From the label: the 14 digits after (01), or the whole code."><Input name="udi" defaultValue={x.udiDi ? (x.udiPi ? `(01)${x.udiDi}${x.udiPi}` : x.udiDi) : ""} className="font-mono" /></Field>
+                  <Field label="Software version"><Input name="softwareVersion" defaultValue={x.softwareVersion ?? ""} /></Field>
                   <Field label="Purchase date"><Input type="date" name="purchaseDate" defaultValue={x.purchaseDate ?? ""} /></Field>
                   <Field label="Install date"><Input type="date" name="installDate" defaultValue={x.installDate ?? ""} /></Field>
                   <Field label="Warranty end"><Input type="date" name="warrantyEnd" defaultValue={x.warrantyEnd ?? ""} /></Field>
@@ -204,6 +206,8 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                 { label: "Manufacturer", value: x.manufacturer },
                 { label: "Model", value: x.model ? (catModel ? <><Link href={`/catalogue/models/${catModel.id}`} className="text-primary hover:underline">{x.model}</Link>{catSupport && catSupport !== "supported" && <> <Badge tone={SUPPORT_TONE[catSupport]}>{SUPPORT_LABELS[catSupport]}</Badge></>}</> : x.model) : null },
                 { label: "Serial number", value: x.serialNumber ? <span className="font-mono">{x.serialNumber}</span> : null },
+                { label: "UDI", value: x.udiDi ? <span className="break-all font-mono text-xs">(01){x.udiDi}{x.udiPi ?? ""}</span> : null },
+                { label: "Software version", value: x.softwareVersion },
                 { label: "Size (L × W × H)", value: size ? <>{formatDims(size.dims)} <span className="text-xs text-muted">({DIMS_SOURCE_LABELS[size.source]})</span>{x.status !== "DISPOSED" && <> · <Link href={`/assets/3d?facilityId=${x.facilityId}&place=${x.id}`} className="text-primary hover:underline">{x.roomId ? "Move in 3D" : "Place in 3D"}</Link></>}</> : null },
                 { label: "Tags", value: x.tags.length ? <span className="flex flex-wrap gap-1">{x.tags.map((t) => <Link key={t} href={`/assets?tag=${encodeURIComponent(t)}`}><Badge tone="info">{t}</Badge></Link>)}</span> : null },
                 { label: "Risk class", value: a.riskClass ? `Class ${a.riskClass}` : null },

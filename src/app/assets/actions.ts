@@ -20,6 +20,8 @@ import { moveAsset } from "@/lib/assets/mutations";
 import { planPpmEvents, maintenanceTypeLabel } from "@/lib/assets/maintenance";
 import { todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
+import { changeSummary, diff } from "@/lib/audit-diff";
+import { parseUdi, udiDiProblem } from "@/lib/assets/udi";
 
 /** Redirects to /forbidden unless the asset's facility is in the user's scope. */
 async function requireAssetAccess(assetId: number, me: CurrentUser) {
@@ -96,7 +98,7 @@ export async function createAssetAction(_: FormState, fd: FormData): Promise<For
 }
 
 const EditSchema = AssetSchema.omit({ deviceTypeId: true, facilityId: true, departmentId: true, roomId: true, status: true, condition: true, parentTag: true })
-  .extend({ assetId: reqId("Asset"), tags: text(1000) });
+  .extend({ assetId: reqId("Asset"), tags: text(1000), udi: text(200), softwareVersion: text(80) });
 
 export async function updateAssetAction(_: FormState, fd: FormData): Promise<FormState> {
   const me = await requirePermission("assets.edit");
@@ -108,14 +110,24 @@ export async function updateAssetAction(_: FormState, fd: FormData): Promise<For
   if (dup) return { error: `Serial ${d.serialNumber} is already registered as ${dup}.` };
   const size = sizeOf(d);
   if (size.error) return { error: size.error };
-  await db.update(assets).set({
+  // Wave 24: the UDI from the label. A full UDI may be pasted: its (01) part is the device identifier, the rest is kept as typed.
+  const udiError = udiDiProblem(d.udi);
+  if (udiError) return { error: udiError };
+  const udi = d.udi ? (/^\d+$/.test(d.udi) ? { di: d.udi, pi: null } : { di: parseUdi(d.udi).di, pi: d.udi.replace(/^\(01\)\d{14}/, "") || null }) : { di: null, pi: null };
+  const next = {
     lengthM: size.lengthM, widthM: size.widthM, heightM: size.heightM,
     manufacturer: d.manufacturer ?? null, model: d.model ?? null, serialNumber: d.serialNumber ?? null,
     purchaseDate: d.purchaseDate ?? null, installDate: d.installDate ?? null, warrantyEnd: d.warrantyEnd ?? null,
     purchaseCost: d.purchaseCost != null ? String(d.purchaseCost) : null, currency: d.purchaseCost != null ? (d.currency ?? "USD").toUpperCase() : null,
     notes: d.notes ?? null, tags: parseTags(d.tags),
-  }).where(eq(assets.id, d.assetId));
-  await logActivity("asset", d.assetId, "updated", "Identity and purchase details updated");
+    udiDi: udi.di, udiPi: udi.pi, softwareVersion: d.softwareVersion ?? null,
+  };
+  const [before] = await db.select().from(assets).where(eq(assets.id, d.assetId));
+  if (!before) return { error: "That asset no longer exists." };
+  const changes = diff(before, next);
+  if (!changes) redirect(`/assets/${d.assetId}?notice=${encodeURIComponent("Nothing changed.")}`);
+  await db.update(assets).set(next).where(eq(assets.id, d.assetId));
+  await logActivity("asset", d.assetId, "updated", `Details updated. ${changeSummary(changes)}`, undefined, db, changes);
   revalidatePath(`/assets/${d.assetId}`);
   redirect(`/assets/${d.assetId}?notice=${encodeURIComponent("Details saved.")}`);
 }
@@ -152,7 +164,8 @@ export async function changeStatusAction(_: FormState, fd: FormData): Promise<Fo
   await db.update(assets).set({ status, condition }).where(eq(assets.id, p.data.assetId));
   const parts = [status !== a.status && `status ${humanize(a.status).toLowerCase()} → ${humanize(status).toLowerCase()}`,
     condition !== a.condition && `condition ${humanize(a.condition).toLowerCase()} → ${humanize(condition).toLowerCase()}`].filter(Boolean);
-  await logActivity("asset", p.data.assetId, "status_changed", `${parts.join(", ")}${p.data.note ? ` — ${p.data.note}` : ""}`.replace(/^./, (c) => c.toUpperCase()));
+  await logActivity("asset", p.data.assetId, "status_changed", `${parts.join(", ")}${p.data.note ? ` — ${p.data.note}` : ""}`.replace(/^./, (c) => c.toUpperCase()),
+    undefined, db, diff(a, { status, condition }));
   revalidatePath(`/assets/${p.data.assetId}`);
   revalidatePath("/assets/map");
   redirect(`/assets/${p.data.assetId}?notice=${encodeURIComponent("Status updated.")}`);

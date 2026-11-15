@@ -1,5 +1,28 @@
 # Changelog
 
+## Wave 24 — on branch `wave-24` (not merged yet)
+
+Audit trail and data rules. Migration `0040_audit_and_data_rules.sql`.
+
+- **Audit trail**: every entry now keeps the user's account, the address the request came from, and for an edit the
+  values **before and after**. Admin › Audit log shows them (*Before and after*), and the CSV has them too.
+  Editing a device's details and changing its status record their changes; other actions still record a summary
+  line only (pass `diff(before, after)` to `logActivity` to add more).
+- **The log can't be edited**: the database refuses to change or delete an activity entry.
+- **A device's history is kept**: movements, maintenance, work orders, contracts, recalls, disposals and the rest no
+  longer disappear with a device. The database refuses to delete a device that has history.
+- **UDI and software version** on a device (Identity › Edit details). Paste the whole code from the label or the
+  14 digits after (01); a wrong check digit is refused. Device types have a GMDN code column (shown in the
+  catalogue; no edit screen yet).
+- **Data checks in the database**: order and offer quantities above zero, prices not negative, discount 0–100 %,
+  received quantity not negative, contract and framework end date not before the start, ceiling not negative.
+- **Last-changed time** on 14 more tables (users, RFQs, deliveries, bonds, committees, requests and others).
+- **Restore test** (Admin › Backups): loads a database backup into a scratch copy and counts what is in it, keeps
+  the result, and warns when no test has passed in the last month. On PostgreSQL it reads the dump with
+  `pg_restore --list`; a full restore into a spare database is still a manual step (docs/deploy.md).
+- Not done: `archived_at`. Users, device types, models, suppliers, spare parts and approval rules already have an
+  *active* switch that does the same job, so a second flag would only confuse.
+
 ## Wave 22b — on branch `wave-22b` (not merged yet)
 
 The rest of the 3D view work from wave 22.

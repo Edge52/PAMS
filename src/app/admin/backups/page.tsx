@@ -3,9 +3,12 @@ import { SubmitButton } from "@/components/ui/action-form";
 import { Notice } from "@/components/assets/bits";
 import { isPglite } from "@/db";
 import { requirePermission } from "@/lib/auth/session";
-import { ageOf, BACKUP_DIR, backupIsStale, listBackups, pgDumpVersion } from "@/lib/backups";
+import { ageOf, BACKUP_DIR, backupIsStale, listBackups, pgDumpVersion, restoreTestDue } from "@/lib/backups";
 import { formatDateTime } from "@/lib/format";
-import { backupNowAction, checkBackupAction, removeBackupAction } from "./actions";
+import { backupNowAction, checkBackupAction, removeBackupAction, restoreTestAction } from "./actions";
+import { desc } from "drizzle-orm";
+import { db } from "@/db";
+import { backupChecks } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Backups" };
@@ -17,7 +20,9 @@ const KIND = { database: "Database", uploads: "Uploaded files", other: "Other" }
 export default async function BackupsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requirePermission("users.manage");
   const sp = await searchParams;
-  const [files, dump] = await Promise.all([listBackups(), pgDumpVersion()]);
+  const [files, dump, checks] = await Promise.all([listBackups(), pgDumpVersion(), db.select().from(backupChecks).orderBy(desc(backupChecks.at)).limit(6)]);
+  const lastPass = checks.find((c) => c.ok);
+  const testDue = restoreTestDue(lastPass?.at);
   const lastDb = files.find((f) => f.kind === "database");
   const stale = backupIsStale(lastDb?.at);
 
@@ -42,6 +47,26 @@ export default async function BackupsPage({ searchParams }: { searchParams: Prom
           <p className="text-xs text-muted">Folder: <code className="break-all">{BACKUP_DIR}</code>. A backup on the same disk doesn&apos;t survive losing that disk: copy the files somewhere else as well.</p>
         </div>
       </Panel>
+      <Panel title="Restore test" className="mb-5">
+        <div className="space-y-2 text-sm">
+          <p className={testDue ? "font-semibold text-warn" : "text-muted"}>
+            {lastPass ? `Last restore test that passed: ${formatDateTime(lastPass.at)} (${ageOf(lastPass.at)}), ${lastPass.fileName}.` : "No restore test has passed yet."}
+            {testDue ? " Test a database backup now: do it once a month." : ""}
+          </p>
+          <p className="text-muted">A backup is only worth having if it restores. Press <strong>Restore test</strong> on a database backup below: it is loaded into a scratch copy, never over the live data.</p>
+          {checks.length > 0 && (
+            <ul className="divide-y divide-line border-t border-line">
+              {checks.map((c) => (
+                <li key={c.id} className="flex flex-wrap items-baseline gap-x-3 py-1.5">
+                  <Badge tone={c.ok ? "ok" : "danger"}>{c.ok ? "Passed" : "Failed"}</Badge>
+                  <span className="text-xs text-muted">{formatDateTime(c.at)} · {c.byName ?? "System"}</span>
+                  <span className="min-w-0 break-words">{c.fileName}: {c.detail}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Panel>
       {files.length === 0 ? (
         <EmptyState title="No backup files yet">Press Back up now, or set up the nightly backup (see docs/deploy.md).</EmptyState>
       ) : (
@@ -57,6 +82,7 @@ export default async function BackupsPage({ searchParams }: { searchParams: Prom
                   <Td align="right">{size(f.bytes)}</Td>
                   <Td>
                     <div className="flex items-center justify-end gap-3 text-sm">
+                      {f.kind === "database" && <form action={restoreTestAction}><input type="hidden" name="name" value={f.name} /><button className="text-primary hover:underline">Restore test</button></form>}
                       <form action={checkBackupAction}><input type="hidden" name="name" value={f.name} /><button className="text-primary hover:underline">Check it opens</button></form>
                       <form action={removeBackupAction}><input type="hidden" name="name" value={f.name} /><button className="text-danger hover:underline">Remove</button></form>
                     </div>

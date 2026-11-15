@@ -11,7 +11,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   pgTable, pgEnum, serial, integer, text, varchar, boolean, numeric, real,
-  date, timestamp, jsonb, uniqueIndex, index, pgSequence, doublePrecision, primaryKey, type AnyPgColumn,
+  date, timestamp, jsonb, uniqueIndex, index, pgSequence, doublePrecision, primaryKey, check, type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -117,6 +117,7 @@ export const users = pgTable("users", {
   allFacilities: boolean("all_facilities").notNull().default(true),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 /** Signed-in browser sessions. The cookie holds a random token; only its SHA-256 is stored. */
@@ -296,7 +297,8 @@ export const deviceTypes = pgTable("device_types", {
   nameAr: text("name_ar"),
   description: text("description"),
   umdnsCode: varchar("umdns_code", { length: 16 }),            // optional cross-reference
-  gmdnTerm: text("gmdn_term"),                                  // optional cross-reference
+  gmdnTerm: text("gmdn_term"),
+  gmdnCode: varchar("gmdn_code", { length: 8 }),                // wave 24: the 5-digit GMDN code, when known                                  // optional cross-reference
   riskClass: riskClass("risk_class"),
   criticality: criticality("criticality"),
   lifeExpectancyYears: integer("life_expectancy_years"),
@@ -365,6 +367,7 @@ export const standardSets = pgTable("standard_sets", {
   sources: jsonb("sources").$type<{ id: string; title: string; url?: string; publisher?: string; year?: number }[]>(),
   isDefault: boolean("is_default").notNull().default(false),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 export const boqRules = pgTable("boq_rules", {
@@ -497,6 +500,7 @@ export const techSpecs = pgTable("tech_specs", {
   version: integer("version").notNull().default(1),
   notes: text("notes"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 export const specItems = pgTable("spec_items", {
@@ -524,6 +528,7 @@ export const rfqs = pgTable("rfqs", {
   boqId: integer("boq_id").references(() => boqs.id, { onDelete: "set null" }),
   notes: text("notes"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 export const rfqSuppliers = pgTable("rfq_suppliers", {
@@ -596,7 +601,10 @@ export const offerLines = pgTable("offer_lines", {
   unitPrice: money("unit_price").notNull(),
   discountPct: real("discount_pct").notNull().default(0),
   isOptional: boolean("is_optional").notNull().default(false),
-});
+}, (t) => [
+  check("offer_lines_quantity_check", sql`${t.quantity} > 0`), check("offer_lines_price_check", sql`${t.unitPrice} >= 0`),
+  check("offer_lines_discount_check", sql`${t.discountPct} >= 0 and ${t.discountPct} <= 100`),
+]);
 
 export const offerCompliance = pgTable("offer_compliance", {
   id: serial("id").primaryKey(),
@@ -646,7 +654,10 @@ export const poLines = pgTable("po_lines", {
   receivedQty: integer("received_qty").notNull().default(0),
   /** Where these units are destined (used to pre-fill asset location on receipt). */
   destinationDepartmentId: integer("destination_department_id").references(() => departments.id, { onDelete: "set null" }),
-});
+}, (t) => [
+  check("po_lines_quantity_check", sql`${t.quantity} > 0`), check("po_lines_price_check", sql`${t.unitPrice} >= 0`),
+  check("po_lines_received_check", sql`${t.receivedQty} >= 0`),
+]);
 
 export const deliveries = pgTable("deliveries", {
   id: serial("id").primaryKey(),
@@ -656,6 +667,7 @@ export const deliveries = pgTable("deliveries", {
   receivedBy: text("received_by"),
   notes: text("notes"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 export const deliveryLines = pgTable("delivery_lines", {
@@ -704,6 +716,11 @@ export const assets = pgTable("assets", {
   warrantyEnd: date("warranty_end"),
   lifeExpectancyYears: integer("life_expectancy_years"),
   notes: text("notes"),
+  /** Wave 24: the device identifier from the UDI on the label (GS1 GTIN, 14 digits), the rest of the UDI as scanned
+   *  (lot, expiry, manufacture date), and the software or firmware version on the device. */
+  udiDi: varchar("udi_di", { length: 32 }),
+  udiPi: text("udi_pi"),
+  softwareVersion: text("software_version"),
   /** Wave 23: a tester or analyser used to check other devices. Its calibration must be in date when it is used. */
   isTestEquipment: boolean("is_test_equipment").notNull().default(false),
   calibrationDue: date("calibration_due"),
@@ -721,7 +738,7 @@ export const assets = pgTable("assets", {
 
 export const assetMovements = pgTable("asset_movements", {
   id: serial("id").primaryKey(),
-  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
   fromRoomId: integer("from_room_id").references(() => rooms.id, { onDelete: "set null" }),
   toRoomId: integer("to_room_id").references(() => rooms.id, { onDelete: "set null" }),
   fromDepartmentId: integer("from_department_id").references(() => departments.id, { onDelete: "set null" }),
@@ -733,7 +750,7 @@ export const assetMovements = pgTable("asset_movements", {
 
 export const maintenanceEvents = pgTable("maintenance_events", {
   id: serial("id").primaryKey(),
-  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
   type: maintenanceType("type").notNull(),
   status: maintenanceStatus("status").notNull().default("SCHEDULED"),
   scheduledDate: date("scheduled_date"),
@@ -755,7 +772,7 @@ export const maintenanceEvents = pgTable("maintenance_events", {
 export const workOrders = pgTable("work_orders", {
   id: serial("id").primaryKey(),
   number: varchar("number", { length: 24 }).notNull().unique(),       // WO-2026-0001
-  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
   facilityId: integer("facility_id").notNull().references(() => facilities.id),
   type: maintenanceType("type").notNull().default("CORRECTIVE"),
   priority: workOrderPriority("priority").notNull().default("NORMAL"),
@@ -831,11 +848,12 @@ export const serviceContracts = pgTable("service_contracts", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [index("service_contracts_facility_idx").on(t.facilityId), index("service_contracts_end_idx").on(t.endDate)]);
+}, (t) => [index("service_contracts_facility_idx").on(t.facilityId), index("service_contracts_end_idx").on(t.endDate),
+  check("service_contracts_dates_check", sql`${t.endDate} >= ${t.startDate}`)]);
 
 export const serviceContractAssets = pgTable("service_contract_assets", {
   contractId: integer("contract_id").notNull().references(() => serviceContracts.id, { onDelete: "cascade" }),
-  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
 }, (t) => [primaryKey({ columns: [t.contractId, t.assetId] }), index("service_contract_assets_asset_idx").on(t.assetId)]);
 
 /** Spare part held in a hospital's biomedical store (wave 3). Stock moves only through part_transactions. */
@@ -897,7 +915,7 @@ export const recalls = pgTable("recalls", {
 
 export const recallAssets = pgTable("recall_assets", {
   recallId: integer("recall_id").notNull().references(() => recalls.id, { onDelete: "cascade" }),
-  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
   status: recallAssetStatus("status").notNull().default("PENDING"),
   workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "set null" }),
   actionedAt: timestamp("actioned_at", { withTimezone: true }),
@@ -911,7 +929,7 @@ export const recallAssets = pgTable("recall_assets", {
 export const disposals = pgTable("disposals", {
   id: serial("id").primaryKey(),
   number: varchar("number", { length: 24 }).notNull().unique(),          // DSP-2026-0001
-  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
   facilityId: integer("facility_id").notNull().references(() => facilities.id),
   reason: disposalReason("reason").notNull(),
   method: disposalMethod("method").notNull().default("SCRAP"),
@@ -951,6 +969,7 @@ export const deviceModels = pgTable("device_models", {
   notes: text("notes"),
   active: boolean("active").notNull().default(true),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (t) => [
   uniqueIndex("device_models_unique").on(t.deviceTypeId, sql`lower(${t.manufacturer})`, sql`lower(${t.model})`),
   index("device_models_type_idx").on(t.deviceTypeId),
@@ -994,7 +1013,7 @@ export const siteRequirements = pgTable("site_requirements", {
 /** Imaging use per scanner per month (wave 9, D3): exams done and the hours it was scheduled to run. */
 export const imagingUsage = pgTable("imaging_usage", {
   id: serial("id").primaryKey(),
-  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
   /** First day of the month. */
   month: date("month").notNull(),
   exams: integer("exams").notNull(),
@@ -1043,6 +1062,7 @@ export const twinViews = pgTable("twin_views", {
   createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdByName: text("created_by_name"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (t) => [index("twin_views_facility_idx").on(t.facilityId)]);
 
 /** Manual fixes to the walking network (wave 7, step 7a): open a gap the drawing closes, or close one it leaves open. Plan units. */
@@ -1055,6 +1075,7 @@ export const routeFixes = pgTable("route_fixes", {
   note: text("note"),
   createdByName: text("created_by_name"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (t) => [index("route_fixes_floor_idx").on(t.floorId)]);
 
 /** Room kits for presentation renders (wave 7, part F): editable copy of seed-data/room-kits.json. Empty = the built-in kits. */
@@ -1106,6 +1127,7 @@ export const twinNotes = pgTable("twin_notes", {
   createdByName: text("created_by_name"),
   workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "set null" }),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   closedByName: text("closed_by_name"),
 }, (t) => [index("twin_notes_facility_idx").on(t.facilityId, t.status)]);
@@ -1231,8 +1253,13 @@ export const activityLog = pgTable("activity_log", {
   action: varchar("action", { length: 48 }).notNull(),   // "created" | "status_changed" | "moved" | ...
   summary: text("summary").notNull(),
   actor: text("actor"),
+  /** Wave 24: the account that did it (the name above is kept as it was at the time), where from, and what changed. */
+  actorId: integer("actor_id").references(() => users.id, { onDelete: "set null" }),
+  ip: varchar("ip", { length: 64 }),
+  /** Changed fields: `{ status: { from: "IN_SERVICE", to: "OUT_OF_SERVICE" } }`. Null when the entry is not an edit. */
+  changes: jsonb("changes").$type<Record<string, { from: unknown; to: unknown }>>(),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("activity_entity_idx").on(t.entityType, t.entityId)]);
+}, (t) => [index("activity_entity_idx").on(t.entityType, t.entityId), index("activity_at_idx").on(t.at)]);
 
 
 /* ─────────────────────── Release 2.1: access, approvals, alerts ─────────────────────── */
@@ -1282,6 +1309,7 @@ export const approvalPolicies = pgTable("approval_policies", {
   facilityId: integer("facility_id").references(() => facilities.id, { onDelete: "cascade" }),  // null = all
   active: boolean("active").notNull().default(true),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 /** One approval run for one record. A new run replaces a rejected or cancelled one. */
@@ -1347,6 +1375,7 @@ export const committees = pgTable("committees", {
   dueBy: date("due_by"),
   notes: text("notes"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (t) => [uniqueIndex("committees_project_kind_uq").on(t.projectId, t.kind)]);
 
 export const committeeMembers = pgTable("committee_members", {
@@ -1425,7 +1454,7 @@ export const frameworks = pgTable("frameworks", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (t) => [check("frameworks_dates_check", sql`${t.endDate} >= ${t.startDate}`), check("frameworks_ceiling_check", sql`${t.ceiling} >= 0`)]);
 
 export const frameworkItems = pgTable("framework_items", {
   id: serial("id").primaryKey(),
@@ -1441,7 +1470,7 @@ export const frameworkItems = pgTable("framework_items", {
 
 /** Delivery, installation and acceptance of one device: checks, then two signatures; acceptance starts the warranty. */
 export const acceptances = pgTable("acceptances", {
-  assetId: integer("asset_id").primaryKey().references(() => assets.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").primaryKey().references(() => assets.id, { onDelete: "restrict" }),
   status: acceptanceStatus("status").notNull().default("PENDING"),
   results: jsonb("results").$type<ChecklistResult[]>(),
   deliveredOn: date("delivered_on"),
@@ -1473,6 +1502,7 @@ export const bonds = pgTable("bonds", {
   releasedOn: date("released_on"),
   notes: text("notes"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (t) => [index("bonds_project_idx").on(t.projectId)]);
 
 /* ───────────────────────── Operations (wave 12) ───────────────────────── */
@@ -1512,6 +1542,7 @@ export const equipmentRequests = pgTable("equipment_requests", {
   planYear: integer("plan_year"),
   boqId: integer("boq_id").references(() => boqs.id, { onDelete: "set null" }),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (t) => [index("equipment_requests_facility_idx").on(t.facilityId)]);
 
 /** A walking round or stock-take of a ward (wave 12): devices confirmed, found faulty, moved or missing. */
@@ -1529,7 +1560,7 @@ export const rounds = pgTable("rounds", {
 export const roundItems = pgTable("round_items", {
   id: serial("id").primaryKey(),
   roundId: integer("round_id").notNull().references(() => rounds.id, { onDelete: "cascade" }),
-  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
   result: roundResult("result").notNull(),
   roomId: integer("room_id").references(() => rooms.id, { onDelete: "set null" }),
   note: text("note"),
@@ -1648,13 +1679,14 @@ export const simScenarios = pgTable("sim_scenarios", {
   createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdByName: text("created_by_name"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (t) => [index("sim_scenarios_facility_idx").on(t.facilityId)]);
 
 /** Device status by day (wave 16), changes only: a row on the day a device's status differed from its last row. The
  *  hourly background job adds today's changes; the first run rebuilds the past year from work orders' downtime
  *  (source "reconstructed"). The 3D view's History panel replays statuses from it. */
 export const assetStatusDays = pgTable("asset_status_days", {
-  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
   day: date("day").notNull(),
   status: assetStatus("status").notNull(),
   source: varchar("source", { length: 16 }).notNull().default("snapshot"),
@@ -1897,3 +1929,16 @@ export const safetyTests = pgTable("safety_tests", {
   notes: text("notes"),
   createdAt: createdAt(),
 }, (t) => [index("safety_tests_asset_idx").on(t.assetId, t.testedOn)]);
+
+
+/* ─────────────────────── Wave 24: restore tests ─────────────────────── */
+
+/** The result of restoring a backup into a scratch database (wave 24): proof that the backup can be used. */
+export const backupChecks = pgTable("backup_checks", {
+  id: serial("id").primaryKey(),
+  fileName: text("file_name").notNull(),
+  ok: boolean("ok").notNull(),
+  detail: text("detail").notNull(),
+  byName: text("by_name"),
+  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("backup_checks_at_idx").on(t.at)]);

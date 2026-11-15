@@ -360,3 +360,13 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - **Move a device by hand**: on a floor shown on its own, press and hold a device, then drag it to a room. *Undo*
   lasts 30 seconds.
 - Press **?** for all keyboard shortcuts.
+
+## Audit log, UDI and restore test (wave 24)
+
+- **Admin › Audit log** shows who changed what, when and from which address. For an edit, open *Before and after*
+  to see the old and new values. Entries can't be changed or deleted by anyone.
+- **UDI**: on a device, *Identity › Edit details*, type the code from the label: the 14 digits after (01), or the
+  whole code. The app refuses a code with a wrong check digit. *Software version* is next to it.
+- A device with history (moves, maintenance, work orders) can't be deleted. Dispose of it instead.
+- **Admin › Backups › Restore test**: press it on a database backup once a month. It loads the backup into a
+  scratch copy (never over the live data) and keeps the result. The page warns when a test is overdue.
