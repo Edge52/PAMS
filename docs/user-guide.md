@@ -323,6 +323,13 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - One panel is open on each side; click another panel's header to switch. **Hide panels** clears both sides and
   **Full screen** fills the screen (Esc to leave).
 - If the picture stops after the computer sleeps, press **Reload the 3D view**.
+- The tools are in two **rails**: Floors, Layers, View, Routes and the rest on the left; Find, Notes, Tours, Views
+  and Types on the right. Click a name to open its tool; click it again, or *Close*, to put it away.
+- A tall building opens on **one floor**, with the other floors as plain plates. *Floors › Whole building* shows
+  them all.
+- The **mini-map** (bottom left) shows the floor in plan. The dot is where you are looking; click the map to move
+  there. The bar under it gives the scale.
+- **Right-click** a device or a room for its actions.
 
 ## 3D view in two minutes
 

@@ -419,7 +419,8 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - `TwinScene` no longer draws every frame. Anything that animates on its own must keep the loop busy: set
   `this.flight`/`this.play`/`this.flashes`, or call `scene.wake(ms)` after a change that should show at once
   (a still view redraws within 100 ms anyway). Don't add a second `requestAnimationFrame` loop.
-- Panels: one open per side. A new panel goes in `PANEL_COLUMNS` in `hud-state.ts`.
+- Panels: one open per side, shown by `<HudRail>` (wave 22b). A new tool goes in `PANEL_COLUMNS` in `hud-state.ts`
+  and in the `tools` list of its rail in `twin-view.tsx`, with a one-word `label`.
 - `/assets/3d/geometry/[floorId]` answers with an ETag and gzip; keep it a plain GET so the browser can reuse it.
 
 ## Wave 23: safety records

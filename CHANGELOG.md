@@ -1,5 +1,23 @@
 # Changelog
 
+## Wave 22b — on branch `wave-22b` (not merged yet)
+
+The rest of the 3D view work from wave 22.
+
+- **Tool rails**: a narrow strip of tool names on each side (Floors, Layers, View, Routes … and Find, Notes, Tours
+  …) with the one open tool beside it, in place of the stacked panels. Each name shows its current state under it.
+- **Opens on one floor**: a building of four floors or more opens on the floor nearest the ground, with the other
+  floors as plain plates around it (filled below, outline above). *Whole building* is one click away. A link to a
+  view, room or device still opens where it points, and directors, finance and viewers keep the whole building.
+- **Mini-map and scale bar** (bottom left): the floor in plan with a dot where the view looks; click the map to
+  move there. The bar shows a round length in metres at the current zoom.
+- **Right-click** a device or a room for its actions: show details, fly to it, open the asset page, report a fault
+  or an incident, show its floor only, room data sheet. A right-button drag still pans.
+- Measured on La Plaza after waves 22 and 22b: tools on screen in 1.3 s, every floor loaded in 3.7 s (12.8 s before).
+- Left out on purpose: a north arrow (the app doesn't know which way a building faces; it needs a north angle per
+  building first). Labels already never overlap; the review was wrong to list that. Splitting `scene.ts` and
+  `twin-view.tsx` into smaller files is still to do.
+
 ## Wave 23 — on branch `wave-23` (not merged yet)
 
 Safety records (Claude doc "PAMS review and plan"). Migration `0039_safety_records`.

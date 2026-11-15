@@ -998,10 +998,62 @@ export class TwinScene {
       }
     }
     this.applyWallHeights();
+    this.drawContext();
     if (this.zonesOn) this.drawZones();
     if (this.markerSets.size) this.drawClashes();
     if (this.noteSpots.length) this.drawNotes(); // only on floors shown
     this.applyFurniture();
+  }
+
+  /* ── The rest of the building around one floor (wave 22b) ──
+   * With one floor shown on its own, the other floors appear as plain plates: filled below the floor, outline only
+   * above it (so they don't cover it). They cost a few triangles each and keep the floor's place in the building. */
+  private contextOn = true;
+  private contextGroup: THREE.Group | null = null;
+  setContext(on: boolean) { this.contextOn = on; this.drawContext(); }
+  private drawContext() {
+    if (this.contextGroup) {
+      this.contextGroup.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; m?.dispose(); }); // geometry is the floor's own: kept
+      this.scene.remove(this.contextGroup); this.contextGroup = null;
+    }
+    const here = this.isolated != null ? this.floorById.get(this.isolated) : null;
+    if (!here || !this.contextOn) return;
+    const P = PALETTE[this.style], g = new THREE.Group();
+    const aboveGround = this.data.floors.some((x) => x.level >= 0);
+    for (const [id, v] of this.floors) {
+      if (id === this.isolated) continue;
+      if (v.floor.level < 0 && here.level >= 0 && !this.showBasements && aboveGround) continue;
+      const y = this.floorY(v.floor), below = v.floor.elevation < here.elevation;
+      if (below) {
+        const plate = new THREE.Mesh(v.slab.geometry, new THREE.MeshBasicMaterial({ color: P.slab, transparent: true, opacity: this.style === "light" ? 0.55 : 0.35, depthWrite: false }));
+        plate.position.copy(v.slab.position); plate.rotation.copy(v.slab.rotation); plate.position.y += y;
+        g.add(plate);
+      }
+      const edge = new THREE.LineSegments(v.slabEdge.geometry, new THREE.LineBasicMaterial({ color: P.slabEdge, transparent: true, opacity: below ? 0.6 : 0.28 }));
+      edge.position.copy(v.slabEdge.position); edge.rotation.copy(v.slabEdge.rotation); edge.position.y += y;
+      g.add(edge);
+    }
+    this.contextGroup = g; this.scene.add(g);
+  }
+
+  /** What the HUD needs to draw a scale bar and a mini-map (wave 22b): metres per screen pixel at the point looked
+   *  at, and where the camera and that point are on the plan (metres). Cheap; call a few times a second. */
+  viewState(): { metresPerPixel: number; target: { x: number; z: number }; camera: { x: number; z: number }; floorId: number | null } {
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    const h = this.renderer.domElement.clientHeight || 1;
+    const perPixel = (2 * dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / h;
+    return { metresPerPixel: perPixel, target: { x: this.controls.target.x, z: this.controls.target.z }, camera: { x: this.camera.position.x, z: this.camera.position.z }, floorId: this.isolated };
+  }
+
+  /** What is under a point of the screen (wave 22b: the right-click menu). Null over empty space. */
+  pickAt(clientX: number, clientY: number): PickResult {
+    return this.pick({ clientX, clientY } as PointerEvent);
+  }
+
+  /** Move the point looked at to a place on the plan (metres), keeping the viewing angle and distance: the mini-map's click. */
+  lookAt(x: number, z: number) {
+    const d = new THREE.Vector3(x - this.controls.target.x, 0, z - this.controls.target.z);
+    this.controls.target.add(d); this.camera.position.add(d); this.userMoved = true; this.wake(600);
   }
 
   /** Furniture shows on the floor shown on its own, when switched on (built the first time it's needed). */

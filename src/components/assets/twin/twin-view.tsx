@@ -6,13 +6,14 @@ import { startTransition, useActionState, useCallback, useEffect, useMemo, useRe
 import { addNotePhotoAction, addRouteFixAction, deleteRouteFixAction, setRoomZoneAction, setWorkshopAction, addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
 import { formatDims } from "@/lib/assets/dimensions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
-import { HudPanel, useHudMode, usePanelPrefs } from "./hud";
+import { HudRail, useHudMode, usePanelPrefs } from "./hud";
+import { HudMap } from "./hud-map";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { DropResult, PickResult, TwinScene, TwinStyle } from "./scene";
 import { CLASH_LABELS } from "@/lib/assets/clash";
 import { CONN_COLORS, CONN_KINDS, CONN_LABELS, ZONE_COLORS, ZONE_KINDS, ZONE_LABELS } from "@/lib/assets/equipment-library";
 import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinAsset, type TwinData, type TwinFix, type TwinRoom } from "./types";
-import { CORE_LABELS, coreKind, deviceKind, interiorPoint, polygonArea, type Pt } from "./geometry";
+import { CORE_LABELS, coreKind, deviceKind, floorLoadOrder, interiorPoint, polygonArea, type Pt } from "./geometry";
 import { AVAILABLE, rankNearest, type Ranked } from "./nearest";
 import { PLAN_BANDS, planBand, spreadGhosts } from "@/lib/assets/plan-installed";
 import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server";
@@ -110,6 +111,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const presentation = style === "light" && solidFloors;
   const setLook = (look: "presentation" | "technical") => { setStyle(look === "presentation" ? "light" : "dark"); setSolidFloors(look === "presentation"); setBloom(look === "technical"); };
   const [panelsHidden, setPanelsHidden] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number; title: string; items: { label: string; href?: string; run?: () => void }[] } | null>(null);
   const [isFull, setIsFull] = useState(false);
   useEffect(() => {
     const on = () => setIsFull(document.fullscreenElement === root.current);
@@ -305,11 +307,19 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
           return res.ok ? ((await res.json()) as FloorGeometry) : null;
         }, first);
         if (!cancelled) { setReady(true); setCoreCounts(scene.coreCounts()); }
+        // Wave 22b: a building of four floors or more opens on one floor, with the others as plain plates around it.
+        // A link to a view, room or device decides for itself, and managers keep the whole building.
+        if (!cancelled && first == null && !sp.get("v") && data.floors.length >= 4 && !PRESENTATION_ROLES.includes(me.role ?? "")) {
+          const start = floorLoadOrder(data.floors, null)[0];
+          if (start) { setFloorId(start.id); scene.isolateFloor(start.id, true); }
+        }
       } catch (e) {
         if (!cancelled) setError((e as Error).message === "no-webgl" ? "This browser can't show 3D graphics (WebGL is off). Use the 2D floor map instead." : "The 3D view couldn't start. Reload the page to try again.");
       }
     })();
     return () => { cancelled = true; scene?.dispose(); sceneRef.current = null; };
+  // The scene is built once per hospital; the viewer's role doesn't change while the page is open.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   // Filters → visible devices; search → highlight.
@@ -534,7 +544,7 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   useEffect(() => {
     if (!ready) return;
     sceneRef.current?.setLabelInsets(mode === "phone" ? { top: 150, right: 8, bottom: 120, left: 8 }
-      : mode === "compact" ? { top: 120, right: 290, bottom: 8, left: 230 } : { top: 120, right: 345, bottom: 8, left: 265 });
+      : mode === "compact" ? { top: 120, right: 370, bottom: 8, left: 320 } : { top: 120, right: 440, bottom: 8, left: 355 });
   }, [mode, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setBloom(bloom); }, [bloom, ready]);
   useEffect(() => { if (ready) sceneRef.current?.setStyle(style); }, [style, ready]);
@@ -1309,6 +1319,48 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
   const hasSelection = !!(selAsset || selRoom);
   const sheetTab = visibleSheetTab(sheetTabRaw, hasSelection);
   const closeDetails = () => { setSelected(null); sceneRef.current?.select(null, false); };
+
+  // Wave 22b: right-click a device or room for its actions. A right-button drag still pans the view (no menu then).
+  const menuFor = useRef<(p: PickResult) => { title: string; items: { label: string; href?: string; run?: () => void }[] } | null>(() => null);
+  menuFor.current = (p) => {
+    const show = (fly: boolean) => () => { setSelected(p); setSheetTab("details"); sceneRef.current?.select(p, fly); };
+    if (p?.kind === "asset") {
+      const a = assetById.get(p.id); if (!a) return null;
+      return { title: `${a.tag} · ${a.deviceType}`, items: [
+        { label: "Show details", run: show(false) }, { label: "Fly to it", run: show(true) }, { label: "Open the asset page", href: `/assets/${a.id}` },
+        ...(data.can.report ? [{ label: "Report a fault", href: `/assets/work-orders/new?assetId=${a.id}` }, { label: "Report an incident", href: `/assets/incidents/new?assetId=${a.id}` }] : []),
+      ] };
+    }
+    if (p?.kind === "room") {
+      const r = roomById.get(p.id); if (!r) return null;
+      return { title: `${r.code} · ${r.name}`, items: [
+        { label: "Show details", run: show(false) }, { label: "Fly to it", run: show(true) },
+        { label: "Show this floor only", run: () => chooseFloor(r.floorId) }, { label: "Room data sheet", href: `/facilities/${data.facility.id}/rooms/${r.id}/sheet` },
+      ] };
+    }
+    return null;
+  };
+  useEffect(() => {
+    const el = host.current; if (!el || !ready) return;
+    let down: { x: number; y: number } | null = null;
+    const onDown = (e: PointerEvent) => { if (e.button === 2) down = { x: e.clientX, y: e.clientY }; };
+    const onMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      const dragged = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5;
+      down = null;
+      const found = dragged ? null : menuFor.current(sceneRef.current?.pickAt(e.clientX, e.clientY) ?? null);
+      const box = root.current?.getBoundingClientRect();
+      setMenu(found && box ? { x: e.clientX - box.left, y: e.clientY - box.top, ...found } : null);
+    };
+    const onAway = (e: Event) => { if (!(e.target as HTMLElement | null)?.closest?.("[role=menu]")) setMenu(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(null); };
+    el.addEventListener("pointerdown", onDown); el.addEventListener("contextmenu", onMenu);
+    window.addEventListener("pointerdown", onAway); window.addEventListener("wheel", onAway, { passive: true }); window.addEventListener("keydown", onKey);
+    return () => {
+      el.removeEventListener("pointerdown", onDown); el.removeEventListener("contextmenu", onMenu);
+      window.removeEventListener("pointerdown", onAway); window.removeEventListener("wheel", onAway); window.removeEventListener("keydown", onKey);
+    };
+  }, [ready]);
   const visibleStatuses = Object.keys(STATUS_COLORS).filter((s) => statusCounts.has(s));
   const filterCount = statuses.size + cats.size;
 
@@ -2318,62 +2370,31 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
 
       {!phone && !panelsHidden && (
         <>
-          {/* Left: floors + view + status. The column itself lets clicks through to the model. */}
-          <div className={`pointer-events-none absolute bottom-4 left-4 flex flex-col gap-2 overflow-y-auto ${compact ? "top-32 w-52" : "top-28 w-60"}`}>
-            <HudPanel title="Floors" summary={floorName} open={panels.isOpen("floors")} onToggle={() => panels.toggle("floors")} bodyClassName="max-h-[45vh] overflow-y-auto">
-              {floorList}
-            </HudPanel>
-            <HudPanel title="Problem layer" summary={LAYER_INFO[layer].label} open={panels.isOpen("layers")} onToggle={() => panels.toggle("layers")} bodyClassName="max-h-[50vh] overflow-y-auto">
-              {layerPanel}
-            </HudPanel>
-            {plans.length > 0 && (
-              <HudPanel title="Plan vs installed" summary={plan ? `${Math.round((planSummary!.installed / Math.max(1, planSummary!.planned)) * 100)} %` : "Off"} open={panels.isOpen("plan")} onToggle={() => panels.toggle("plan")} bodyClassName="max-h-[50vh] overflow-y-auto">
-                {planPanel}
-              </HudPanel>
-            )}
-            {(commissioning?.plans.length ?? 0) > 0 && (
-              <HudPanel title="Commissioning" summary={comm.summary} open={panels.isOpen("commissioning") || comm.on} onToggle={() => panels.toggle("commissioning")} bodyClassName="max-h-[50vh] overflow-y-auto">
-                {comm.panel}
-              </HudPanel>
-            )}
-            <HudPanel title="View" summary={`${style === "dark" ? "Digital twin" : "Architectural"} · ${explode.toFixed(1)}×`} open={panels.isOpen("view")} onToggle={() => panels.toggle("view")}>
-              {viewControls}
-            </HudPanel>
-            <HudPanel title="Routes" summary={navOn ? "Network on" : trauma?.total ? "Trauma route" : undefined} open={panels.isOpen("routes")} onToggle={() => panels.toggle("routes")} bodyClassName="max-h-[45vh] overflow-y-auto">
-              {routesPanel}
-            </HudPanel>
-            <HudPanel title="Pathways" summary={flowSel.length ? `${flowSel.length} shown${playing ? " · playing" : ""}` : flows.length ? `${flows.length}` : "None"} open={panels.isOpen("pathways")} onToggle={() => panels.toggle("pathways")} bodyClassName="max-h-[50vh] overflow-y-auto">
-              {pathwaysPanel}
-            </HudPanel>
-            <HudPanel title="History" summary={history ? `${shownEvents.length} shown` : "Off"} open={panels.isOpen("history")} onToggle={() => panels.toggle("history")} bodyClassName="max-h-[50vh] overflow-y-auto">
-              {timePanel}
-            </HudPanel>
-            <HudPanel title="Status" summary={statuses.size ? `${statuses.size} of ${visibleStatuses.length}` : "All"} open={panels.isOpen("status")} onToggle={() => panels.toggle("status")}>
-              {statusList}
-            </HudPanel>
-          </div>
+          {/* Wave 22b: a tool rail on each side with one tool open at a time. The columns let clicks through to the model. */}
+          <HudRail side="left" isOpen={panels.isOpen} onToggle={panels.toggle} panelWidth={compact ? "13rem" : "15rem"} className={`bottom-40 left-4 ${compact ? "top-32" : "top-28"}`}
+            tools={[
+              { id: "floors", label: "Floors", title: "Floors", summary: floorName, body: floorList },
+              { id: "layers", label: "Layers", title: "Problem layer", summary: LAYER_INFO[layer].label, body: layerPanel },
+              ...(plans.length > 0 ? [{ id: "plan" as const, label: "Plan", title: "Plan vs installed", summary: plan ? `${Math.round((planSummary!.installed / Math.max(1, planSummary!.planned)) * 100)} %` : "Off", body: planPanel }] : []),
+              ...((commissioning?.plans.length ?? 0) > 0 ? [{ id: "commissioning" as const, label: "Opening", title: "Commissioning", summary: comm.summary, body: comm.panel, forceOpen: comm.on }] : []),
+              { id: "view", label: "View", title: "View", summary: `${style === "dark" ? "Technical" : "Light"} · ${explode.toFixed(1)}×`, body: viewControls },
+              { id: "routes", label: "Routes", title: "Routes", summary: navOn ? "Network on" : trauma?.total ? "Trauma route" : undefined, body: routesPanel },
+              { id: "pathways", label: "Pathways", title: "Pathways", summary: flowSel.length ? `${flowSel.length} shown${playing ? " · playing" : ""}` : flows.length ? `${flows.length}` : "None", body: pathwaysPanel },
+              { id: "history", label: "History", title: "History", summary: history ? `${shownEvents.length} shown` : "Off", body: timePanel },
+              { id: "status", label: "Status", title: "Status", summary: statuses.size ? `${statuses.size} of ${visibleStatuses.length}` : "All", body: statusList },
+            ]} />
+          <div className="pointer-events-none absolute bottom-4 left-4"><HudMap scene={sceneRef} ready={ready} floors={data.floors} rooms={data.rooms} light={style === "light"} /></div>
 
-          {/* Right: find, then details of the selection or the equipment types */}
-          <div className={`pointer-events-none absolute bottom-4 right-4 flex flex-col gap-2 ${compact ? "top-32 w-64" : "top-28 w-80"}`}>
-            {unplaced.length > 0 && (
-              <HudPanel title="To place" summary={`${unplaced.length}`} open={panels.isOpen("place")} onToggle={() => panels.toggle("place")} bodyClassName="max-h-[32vh] overflow-y-auto">
-                {placeList}
-              </HudPanel>
-            )}
-            <HudPanel title="Find a device or room" summary={query.trim().length >= 2 ? `${matches.length === 200 ? "200+" : matches.length} found` : undefined}
-              open={panels.isOpen("find")} onToggle={() => panels.toggle("find")}>
-              {findBox}
-            </HudPanel>
-            <HudPanel title="Notes" summary={`${notes.filter((n) => n.status === "OPEN").length} open`} open={panels.isOpen("notes")} onToggle={() => panels.toggle("notes")} bodyClassName="max-h-[35vh] overflow-y-auto">
-              {notesPanel}
-            </HudPanel>
-            <HudPanel title="Tours" summary={tours.length ? `${tours.length}` : undefined} open={panels.isOpen("tours")} onToggle={() => panels.toggle("tours")} bodyClassName="max-h-[40vh] overflow-y-auto">
-              {toursPanel}
-            </HudPanel>
-            <HudPanel title="Views" summary={views.length ? `${views.length} saved` : undefined} open={panels.isOpen("views")} onToggle={() => panels.toggle("views")} bodyClassName="max-h-[35vh] overflow-y-auto">
-              {viewsPanel}
-            </HudPanel>
-            {hasSelection ? (
+          <HudRail side="right" isOpen={panels.isOpen} onToggle={panels.toggle} panelWidth={compact ? "16rem" : "20rem"} className={`bottom-4 right-4 ${compact ? "top-32" : "top-28"}`}
+            tools={[
+              ...(unplaced.length > 0 ? [{ id: "place" as const, label: "To place", title: "To place", summary: `${unplaced.length}`, body: placeList }] : []),
+              { id: "find", label: "Find", title: "Find a device or room", summary: query.trim().length >= 2 ? `${matches.length === 200 ? "200+" : matches.length} found` : undefined, body: findBox },
+              { id: "notes", label: "Notes", title: "Notes", summary: `${notes.filter((n) => n.status === "OPEN").length} open`, body: notesPanel },
+              { id: "tours", label: "Tours", title: "Tours", summary: tours.length ? `${tours.length}` : undefined, body: toursPanel },
+              { id: "views", label: "Views", title: "Views", summary: views.length ? `${views.length} saved` : undefined, body: viewsPanel },
+              { id: "types", label: "Types", title: "Equipment types", summary: cats.size ? `${cats.size} of ${categories.length}` : `${categories.length}`, body: typeList },
+            ]}>
+            {hasSelection && (
               <section className="twin-card pointer-events-auto min-h-0 shrink overflow-y-auto" aria-label={selAsset ? "Selected device" : "Selected room"}>
                 <div className="flex items-start justify-between gap-2">
                   <h2 className="twin-h">{selAsset ? "Device" : "Room"}</h2>
@@ -2381,14 +2402,20 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
                 </div>
                 {detailsBody}
               </section>
-            ) : (
-              <HudPanel title="Equipment types" summary={cats.size ? `${cats.size} of ${categories.length}` : `${categories.length}`}
-                open={panels.isOpen("types")} onToggle={() => panels.toggle("types")} className="flex min-h-0 flex-col" bodyClassName="min-h-0 overflow-y-auto">
-                {typeList}
-              </HudPanel>
             )}
-          </div>
+          </HudRail>
         </>
+      )}
+
+      {menu && (
+        /* Wave 22b: right-click on a device or room. The same actions as the selection card, where the pointer is. */
+        <div role="menu" aria-label={menu.title} className="twin-card absolute z-30 w-56 p-1.5!" style={{ left: Math.min(menu.x, (root.current?.clientWidth ?? 9999) - 236), top: Math.min(menu.y, (root.current?.clientHeight ?? 9999) - 250) }}
+          onKeyDown={(e) => { if (e.key === "Escape") setMenu(null); }}>
+          <p className="truncate px-2 pb-1 pt-0.5 text-[11px] text-[#8fb6cc]">{menu.title}</p>
+          {menu.items.map((it) => it.href
+            ? <Link key={it.label} role="menuitem" href={it.href} className="flex min-h-9 items-center rounded-[8px] px-2 text-sm text-white hover:bg-[#0c2a40]">{it.label}</Link>
+            : <button key={it.label} role="menuitem" type="button" onClick={() => { it.run?.(); setMenu(null); }} className="flex min-h-9 w-full items-center rounded-[8px] px-2 text-left text-sm text-white hover:bg-[#0c2a40]">{it.label}</button>)}
+        </div>
       )}
 
       {phone && (
