@@ -82,11 +82,11 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 19. `wave-20` (quick fixes and automatic checks) is pushed and waits for Hisham's OK to merge. `wave-21` (new look, nine modules, shared UI parts) is pushed on top of it and also waits. `wave-22` (3D view: draws less, compressed linework, two looks, more room) is pushed on top of that. `wave-23` (safety records: incidents, risk and strategy, electrical safety tests, test equipment calibration) is pushed on top of that. `wave-22b` (3D tool rails, one-floor opening, mini-map, right-click) is pushed on top of that. `wave-24` (audit trail and data rules, migration 0040) is pushed on top. Next is `wave-25` (security). The plan for waves 20–28 is the Claude doc "PAMS review and plan"; the agreed new look and the nine modules are in the Claude design "PAMS modern luxury look" (both go in wave 21). A GitHub workflow (`.github/workflows/ci.yml`) runs the checks on every push.
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 24 (merged 16 Nov 2026). Next work goes on `wave-25` (security).
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
-- Old branches: `wave-13` to `wave-19` are merged and can be deleted from GitHub's branch page (the session's
+- Old branches: `wave-13` to `wave-24` (and `wave-22b`) are merged and can be deleted from GitHub's branch page (the session's
   connection can't delete branches). The Mac still has two old local branches (`claude/vigilant-noether-2l33kc`,
   `fix/demo-restart`); `git branch -D` them when convenient.
 

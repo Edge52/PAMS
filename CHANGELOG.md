@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 24 — on branch `wave-24` (not merged yet)
+## Wave 24 — merged 16 Nov 2026
 
 Audit trail and data rules. Migration `0040_audit_and_data_rules.sql`.
 
@@ -23,7 +23,7 @@ Audit trail and data rules. Migration `0040_audit_and_data_rules.sql`.
 - Not done: `archived_at`. Users, device types, models, suppliers, spare parts and approval rules already have an
   *active* switch that does the same job, so a second flag would only confuse.
 
-## Wave 22b — on branch `wave-22b` (not merged yet)
+## Wave 22b — merged 16 Nov 2026
 
 The rest of the 3D view work from wave 22.
 
@@ -41,7 +41,7 @@ The rest of the 3D view work from wave 22.
   building first). Labels already never overlap; the review was wrong to list that. Splitting `scene.ts` and
   `twin-view.tsx` into smaller files is still to do.
 
-## Wave 23 — on branch `wave-23` (not merged yet)
+## Wave 23 — merged 16 Nov 2026
 
 Safety records (Claude doc "PAMS review and plan"). Migration `0039_safety_records`.
 
@@ -69,7 +69,7 @@ Safety records (Claude doc "PAMS review and plan"). Migration `0039_safety_recor
 - Not done: the calibration check applies to safety tests only, not yet to signing off a planned maintenance job.
   The limits are the usual IEC 62353 figures and should be checked against the hospital's copy of the standard.
 
-## Wave 22 — on branch `wave-22` (not merged yet)
+## Wave 22 — merged 16 Nov 2026
 
 3D view: lighter to run and easier to see (Claude doc "PAMS review and plan").
 
@@ -88,7 +88,7 @@ Safety records (Claude doc "PAMS review and plan"). Migration `0039_safety_recor
   the panels, the selection card with right-click actions, a mini-map with north arrow and scale bar, labels that
   never overlap, and splitting the two large 3D files.
 
-## Wave 21 — on branch `wave-21` (not merged yet)
+## Wave 21 — merged 16 Nov 2026
 
 New look, modules and shared UI parts (Claude doc "PAMS review and plan"; Claude design "PAMS modern luxury look").
 
@@ -113,7 +113,7 @@ New look, modules and shared UI parts (Claude doc "PAMS review and plan"; Claude
 - **BOQ standards**: a standard set's rules fold by department (a set of 851 rules opened as one very long page).
 - Not done: the commissioning plan page still has all its inputs on one page.
 
-## Wave 20 — on branch `wave-20` (not merged yet)
+## Wave 20 — merged 16 Nov 2026
 
 First wave of the Nov 2026 plan (Claude doc "PAMS review and plan"): quick fixes and automatic checks.
 
