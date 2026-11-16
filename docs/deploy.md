@@ -81,6 +81,10 @@ npm run db:seed -- --only=none && npm start`, behind a reverse proxy that provid
 `SETUP_CODE`, and `TRUST_PROXY=1` when the proxy sets X-Forwarded-For. Run it as a
 service (systemd, PM2 or NSSM on Windows) and schedule `npm run backup`.
 
+After the first sign-in, set *Admin › Settings › Sign-in* to require two-step sign-in at least for administrators.
+The app sends its own security headers (content policy, no framing, HSTS when `APP_URL` is https); don't add a
+second `Content-Security-Policy` at the proxy.
+
 ### On Supabase (database and Microsoft / Google sign-in)
 
 PAMS can use a Supabase project as its database, and Supabase Auth for "Sign in with Microsoft / Google". Supabase only

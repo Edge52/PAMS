@@ -1,4 +1,5 @@
 "use server";
+import { clearTwoStep } from "@/lib/auth/two-step";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq, ne, sql } from "drizzle-orm";
@@ -103,6 +104,20 @@ export async function resetPassword(_prev: ActionState, fd: FormData): Promise<A
   await destroyAllSessions(id);
   await logActivity("user", id, "password_reset", "Password reset by an administrator");
   return { message: "Password reset. Give it to them in person; they're signed out everywhere and can change it under Your account." };
+}
+
+/** Lost phone: switch a user's two-step sign-in off so they can set it up again (wave 25). Signs them out everywhere. */
+export async function resetTwoStep(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const me = await requirePermission("users.manage");
+  const id = Number(fd.get("id"));
+  const [u] = await db.select({ id: users.id, on: users.totpEnabledAt }).from(users).where(eq(users.id, id));
+  if (!u) return { errors: ["That user no longer exists."] };
+  if (!u.on) return { errors: ["Two-step sign-in is already off for this user."] };
+  await clearTwoStep(id);
+  await destroyAllSessions(id, id === me.id);
+  await logActivity("user", id, "two_step_reset", "Two-step sign-in reset by an administrator");
+  revalidatePath(`/admin/users/${id}`);
+  return { message: "Two-step sign-in is off for this user. If it is required, they set it up again when they next sign in." };
 }
 
 /** The departments a department head looks after (wave 13): they may edit pathways and room zones there. */

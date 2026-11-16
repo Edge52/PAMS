@@ -55,6 +55,7 @@ export const MODULES: AppModule[] = [
     { href: "/assets/recalls", label: "Recalls", need: "assets.view" },
     { href: "/assets/incidents", label: "Incidents", need: "assets.view" },
     { href: "/assets/safety-tests", label: "Safety tests", need: "assets.view" },
+    { href: "/assets/security", label: "Device security", need: "assets.view" },
     { href: "/assets/maintenance/strategy", label: "Risk and strategy", need: "assets.view" },
   ] },
   { id: "buildings", name: "Buildings & 3D", description: "Hospitals, floors and rooms, the floor map and the 3D view.", links: [

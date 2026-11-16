@@ -288,6 +288,13 @@
       "when": 1794784243287,
       "tag": "0040_audit_and_data_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794815751958,
+      "tag": "0041_security",
+      "breakpoints": true
     }
   ]
 }

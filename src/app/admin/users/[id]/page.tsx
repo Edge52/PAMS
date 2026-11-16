@@ -5,7 +5,7 @@ import { departments, facilities, userDepartments, userFacilities, users } from 
 import { Field, Input, PageHeader, Panel } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { requirePermission } from "@/lib/auth/session";
-import { resetPassword, setUserDepartments, updateUser } from "../actions";
+import { resetPassword, resetTwoStep, setUserDepartments, updateUser } from "../actions";
 import { UserForm } from "../user-form";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,15 @@ export default async function UserPage({ params, searchParams }: { params: Promi
             <Field label="New temporary password" hint="Signs them out everywhere"><Input type="text" name="password" required autoComplete="off" /></Field>
             <SubmitButton variant="secondary">Reset password</SubmitButton>
           </ActionForm>
+          <div className="mt-5 border-t border-line pt-4">
+            <p className="mb-2 text-sm font-semibold">Two-step sign-in: {u.totpEnabledAt ? "on" : "off"}</p>
+            {u.totpEnabledAt ? (
+              <ActionForm action={resetTwoStep} confirm={`Switch off two-step sign-in for ${u.name}? Do this only when you are sure it is them asking (a lost or new phone).`}>
+                <input type="hidden" name="id" value={u.id} />
+                <SubmitButton variant="secondary">Reset two-step sign-in</SubmitButton>
+              </ActionForm>
+            ) : <p className="text-xs text-muted">They can switch it on under Your account.</p>}
+          </div>
         </Panel>
         {u.role === "DEPARTMENT_HEAD" && (
           <Panel title="Departments they look after" className="lg:col-span-3">

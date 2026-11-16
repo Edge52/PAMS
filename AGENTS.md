@@ -441,3 +441,19 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - New money, quantity or date-range columns get a `check(...)` in `schema.ts`. `src/db/rules.test.ts` builds a
   scratch database from the migrations and checks these rules; add to it.
 - An editable table has `updatedAt: updatedAt()`.
+
+## Security (wave 25)
+
+- **Two-step sign-in**: codes are in `lib/auth/totp.ts` (pure, RFC 6238 test values in the test), the half-signed-in
+  state in `lib/auth/two-step.ts` (table `login_challenges`, cookie `hpams_login_step`, path `/login`). `signIn`
+  creates a session only when no code is needed; otherwise `/login/code` (has two-step) or `/login/two-step` (must
+  set it up, setting `twoStepRequired`). Never call `createSession` after a password check without going through
+  that branch. Don't select `users.totpSecret` or `backupCodeHashes` into anything sent to a client component.
+- **Showing backup codes**: they exist in clear only in the action's return value. A server action that sets a
+  cookie re-renders the page, so the page must keep `CodeForm` in the same place afterwards or the codes vanish.
+- **Content policy**: `lib/security-headers.ts`, applied in `src/proxy.ts` with a nonce per request. No inline
+  `<script>` without the nonce (`headers().get("x-nonce")`), no scripts, styles, images or requests from other
+  sites. If a new feature needs an outside address, add it there with a comment and extend the test.
+- **Device security**: `lib/assets/device-security.ts` (`concerns`, pure), table `asset_security` (one row per
+  device), panel `components/assets/security-panel.tsx`, page `/assets/security`.
+

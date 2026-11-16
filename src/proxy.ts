@@ -1,19 +1,38 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { contentPolicy, fixedHeaders } from "@/lib/security-headers";
 
 /**
- * Optimistic sign-in check: no session cookie → the sign-in page. The real check (is the session valid, may this
- * user do this?) happens in pages and server actions via lib/auth/session.
+ * Two jobs on every request:
+ * - Optimistic sign-in check: no session cookie → the sign-in page. The real check (is the session valid, may this
+ *   user do this?) happens in pages and server actions via lib/auth/session.
+ * - Security headers (wave 25): a content policy with a one-time nonce, and the fixed headers.
  */
 const PUBLIC = ["/login", "/setup", "/auth/sso", "/auth/callback"];
+const HTTPS = (process.env.APP_URL ?? "").startsWith("https://");
+const DEV = process.env.NODE_ENV !== "production";
+
+function secure(res: NextResponse, policy: string): NextResponse {
+  res.headers.set("Content-Security-Policy", policy);
+  for (const [k, v] of fixedHeaders(HTTPS)) res.headers.set(k, v);
+  return res;
+}
 
 export function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
-  if (PUBLIC.some((p) => pathname === p || pathname.startsWith(p + "/"))) return NextResponse.next();
-  if (req.cookies.has("hpams_session")) return NextResponse.next();
-  const url = req.nextUrl.clone();
-  url.pathname = "/login";
-  url.search = pathname === "/" ? "" : `?next=${encodeURIComponent(pathname + search)}`;
-  return NextResponse.redirect(url);
+  const nonce = btoa(crypto.randomUUID());
+  const policy = contentPolicy(nonce, DEV);
+  const isPublic = PUBLIC.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  if (!isPublic && !req.cookies.has("hpams_session")) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = pathname === "/" ? "" : `?next=${encodeURIComponent(pathname + search)}`;
+    return secure(NextResponse.redirect(url), policy);
+  }
+  // Next.js reads the policy from the request to put the nonce on its own script tags.
+  const headers = new Headers(req.headers);
+  headers.set("x-nonce", nonce);
+  headers.set("Content-Security-Policy", policy);
+  return secure(NextResponse.next({ request: { headers } }), policy);
 }
 
 export const config = {

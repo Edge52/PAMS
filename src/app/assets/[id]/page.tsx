@@ -18,6 +18,7 @@ import { Badge, Button, Details, Field, FormGrid, Input, LinkButton, PageHeader,
 import { DocumentsPanel } from "@/components/documents-panel";
 import { AcceptancePanel } from "@/components/assets/acceptance-panel";
 import { SafetyPanel, TestEquipmentForm } from "@/components/assets/safety-panel";
+import { SecurityPanel } from "@/components/assets/security-panel";
 import { ActionForm } from "@/components/assets/action-form";
 import { Crumbs, enumOptions, Meter, NativeSelect, Notice, RoomSelect } from "@/components/assets/bits";
 import { MiniMap } from "@/components/assets/mini-map";
@@ -265,6 +266,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
           </Panel>
 
           <SafetyPanel assetId={x.id} canTest={canMaint} canReport={canReport} disposed={x.status === "DISPOSED"} />
+          <SecurityPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />
           <Panel title="Movement history" padded={false}>
             {moves.length === 0 ? <p className="p-4 text-sm text-muted">Never moved since it was registered.</p> : (
               <ol className="divide-y divide-line">

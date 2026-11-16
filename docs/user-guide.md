@@ -370,3 +370,18 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - A device with history (moves, maintenance, work orders) can't be deleted. Dispose of it instead.
 - **Admin › Backups › Restore test**: press it on a database backup once a month. It loads the backup into a
   scratch copy (never over the live data) and keeps the result. The page warns when a test is overdue.
+
+## Two-step sign-in and device security (wave 25)
+
+**Two-step sign-in.** Open *Your account* (your name, top right) and press *Set up two-step sign-in*. Scan the
+square with an authenticator app on your phone, type the 6-digit code it shows, and keep the ten backup codes
+somewhere safe. From then on, signing in asks for your password and then a code from the app. Lost your phone? Use a
+backup code (each works once), or ask an administrator to reset two-step sign-in for you.
+
+Administrators: *Admin › Settings › Sign-in* sets who must use it. *Admin › Users* shows who has it on; open a user
+to reset it when they have a new phone.
+
+**Device security.** On a device's page, *Network and security* records how it connects, its operating system,
+whether it holds patient data and when it was last updated. *Maintenance › Device security* lists the recorded
+devices and what to check on each, the serious ones first. Start with imaging systems, monitors and analysers.
+

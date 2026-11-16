@@ -116,8 +116,32 @@ export const users = pgTable("users", {
   /** true = sees every facility; false = only those in user_facilities. Admins always see all. */
   allFacilities: boolean("all_facilities").notNull().default(true),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  /** Two-step sign-in (wave 25): the authenticator secret (base32), set once the user has proved a first code. */
+  totpSecret: text("totp_secret"),
+  totpEnabledAt: timestamp("totp_enabled_at", { withTimezone: true }),
+  /** The 30-second step of the last code used, so a code can't be used twice. */
+  totpLastStep: integer("totp_last_step"),
+  /** SHA-256 of each unused backup code. */
+  backupCodeHashes: text("backup_code_hashes").array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
+});
+
+/**
+ * Half-way through signing in (wave 25): the password was right and a code is still needed (VERIFY), or two-step
+ * sign-in is required and has to be set up first (ENROL). Short-lived; the cookie
+ * holds a random token and only its SHA-256 is stored.
+ */
+export const loginStep = pgEnum("login_step", ["VERIFY", "ENROL"]);
+export const loginChallenges = pgTable("login_challenges", {
+  id: serial("id").primaryKey(),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  step: loginStep("step").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  next: text("next"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
 });
 
 /** Signed-in browser sessions. The cookie holds a random token; only its SHA-256 is stored. */
@@ -1942,3 +1966,40 @@ export const backupChecks = pgTable("backup_checks", {
   byName: text("by_name"),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("backup_checks_at_idx").on(t.at)]);
+
+
+/* ─────────────────────── Wave 25: device network and security details ─────────────────────── */
+
+export const netConnection = pgEnum("net_connection", ["NONE", "WIRED", "WIRELESS", "BOTH"]);
+export const triState = pgEnum("tri_state", ["YES", "NO", "UNKNOWN"]);
+export const remoteAccess = pgEnum("remote_access", ["NONE", "SUPPLIER", "HOSPITAL", "BOTH"]);
+
+/**
+ * What IT and biomedical engineering need to know about a device on the network: the short form of the
+ * manufacturer's security statement (MDS2). One row per device.
+ */
+export const assetSecurity = pgTable("asset_security", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().unique().references(() => assets.id, { onDelete: "restrict" }),
+  connection: netConnection("connection").notNull().default("NONE"),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  macAddress: varchar("mac_address", { length: 17 }),
+  hostname: varchar("hostname", { length: 120 }),
+  networkZone: varchar("network_zone", { length: 80 }),
+  operatingSystem: varchar("operating_system", { length: 120 }),
+  osSupportEnds: date("os_support_ends"),
+  storesPatientData: triState("stores_patient_data").notNull().default("UNKNOWN"),
+  sendsPatientData: triState("sends_patient_data").notNull().default("UNKNOWN"),
+  encrypted: triState("encrypted").notNull().default("UNKNOWN"),
+  antiMalware: triState("anti_malware").notNull().default("UNKNOWN"),
+  defaultPasswordsChanged: triState("default_passwords_changed").notNull().default("UNKNOWN"),
+  remoteAccess: remoteAccess("remote_access").notNull().default("NONE"),
+  lastPatchedOn: date("last_patched_on"),
+  mds2OnFile: boolean("mds2_on_file").notNull().default(false),
+  mds2Ref: text("mds2_ref"),
+  reviewedOn: date("reviewed_on"),
+  reviewedByName: text("reviewed_by_name"),
+  notes: text("notes"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});

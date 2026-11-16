@@ -1,5 +1,33 @@
 # Changelog
 
+## Wave 25 — on branch `wave-25` (not merged yet)
+
+Security. Migration `0041_security.sql`.
+
+- **Two-step sign-in**: after the password, a 6-digit code from an authenticator app on the phone (Google
+  Authenticator, Microsoft Authenticator or any other; the standard TOTP kind). Anyone can switch it on under
+  *Your account*: scan the square, type the first code, keep the ten backup codes. A code works once; five wrong
+  codes send you back to the password.
+- **Who must use it** (Admin › Settings › Sign-in): each person chooses, required for administrators, or required
+  for everyone. Someone who must use it and hasn't set it up does so the next time they sign in, before they get
+  in.
+- **Lost phone**: a backup code signs you in once. Without one, an administrator resets two-step sign-in on the
+  user's page (Admin › Users); the Users list shows who has it on.
+- **Security headers** on every page: a content policy that runs only the app's own scripts (a one-time value per
+  page), no framing by other sites, no content-type guessing, a short referrer, camera only for tag scanning, and
+  HSTS when `APP_URL` is https. The only outside addresses allowed are the two Google font addresses.
+- **Device network and security details** (the short form of the manufacturer's MDS2 statement) on each device's
+  page: connection, IP and MAC address, network zone, operating system and until when it gets fixes, patient data
+  stored or sent, encryption, malware protection, factory passwords changed, remote access, last security update,
+  MDS2 on file. Saving counts as a review.
+- **Device security** page (Maintenance): the recorded devices with what needs attention on each: operating
+  system out of support, factory passwords, unencrypted patient data, no update in a year, no MDS2, not reviewed
+  in a year.
+- Not covered: sign-in through Microsoft or Google (Supabase) skips the PAMS code, because those accounts have
+  their own second step. The two-step secret is stored in the database as it is, like any authenticator secret
+  the server must read; protect the database and its backups. Fonts still load from Google; hosting them in the
+  app would remove the last outside address.
+
 ## Wave 24 — merged 16 Nov 2026
 
 Audit trail and data rules. Migration `0040_audit_and_data_rules.sql`.

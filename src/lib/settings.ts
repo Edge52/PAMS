@@ -25,6 +25,8 @@ export type Settings = {
   /** In-app assistant (wave 13): off until an administrator switches it on; needs ANTHROPIC_API_KEY. */
   assistantEnabled: boolean;
   assistantModel: string;
+  /** Two-step sign-in (wave 25): who must use it. Anyone may switch it on for themselves. */
+  twoStepRequired: "off" | "admins" | "all";
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -41,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   emailEnabled: false,
   assistantEnabled: false,
   assistantModel: "claude-sonnet-5-5",
+  twoStepRequired: "off",
 };
 
 export async function getSettings(): Promise<Settings> {

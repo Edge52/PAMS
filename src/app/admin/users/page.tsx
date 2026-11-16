@@ -18,7 +18,7 @@ export default async function UsersPage() {
       <PageHeader title="Users" description="Who can sign in, and what their role lets them change."
         actions={<LinkButton href="/admin/users/new" variant="primary">Add user</LinkButton>} />
       <Table>
-        <THead><tr><Th>Name</Th><Th>Email</Th><Th>Role</Th><Th>Facilities</Th><Th>Last sign-in</Th><Th>Status</Th></tr></THead>
+        <THead><tr><Th>Name</Th><Th>Email</Th><Th>Role</Th><Th>Facilities</Th><Th>Last sign-in</Th><Th>Two-step</Th><Th>Status</Th></tr></THead>
         <tbody>
           {rows.map((u) => (
             <tr key={u.id} className="border-t border-line">
@@ -27,6 +27,7 @@ export default async function UsersPage() {
               <Td>{ROLE_LABELS[u.role as Role] ?? u.role}</Td>
               <Td>{u.role === "ADMIN" || u.allFacilities ? "All" : "Selected"}</Td>
               <Td>{u.lastLoginAt ? formatDate(u.lastLoginAt) : "Never"}</Td>
+              <Td>{u.totpEnabledAt ? "On" : "Off"}</Td>
               <Td>{!u.active ? <Badge tone="danger">Switched off</Badge> : !u.passwordHash ? <Badge tone="warn">No password</Badge> : <Badge tone="ok">Active</Badge>}</Td>
             </tr>
           ))}
