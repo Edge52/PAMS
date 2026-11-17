@@ -7,6 +7,8 @@ import { users } from "@/db/schema";
 import { createSession } from "@/lib/auth/session";
 import { exchangeCode, supabaseConfig } from "@/lib/auth/supabase";
 import { logActivity } from "@/lib/server-utils";
+import { permissionsOf } from "@/lib/auth/permissions";
+import { landingPage } from "@/lib/modules";
 
 export async function GET(req: Request) {
   const base = process.env.APP_URL?.replace(/\/+$/, "") || new URL(req.url).origin;
@@ -28,5 +30,5 @@ export async function GET(req: Request) {
   if (!user.active) return fail("This account is switched off. Ask an administrator.");
   await createSession(user.id);
   await logActivity("user", user.id, "signed_in", "Signed in with Microsoft or Google (Supabase)", user.name);
-  return NextResponse.redirect(`${base}${state.n ?? "/"}`);
+  return NextResponse.redirect(`${base}${landingPage(state.n, user.startPage, user.role, permissionsOf(user.role))}`);
 }

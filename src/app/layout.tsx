@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { SideNav } from "@/components/side-nav";
 import { TopBar } from "@/components/shell/top-bar";
@@ -9,7 +9,11 @@ import { getSetting } from "@/lib/settings";
 export const metadata: Metadata = {
   title: { default: "Hospital PAMS", template: "%s · Hospital PAMS" },
   description: "Hospital procurement, BOQ and medical asset management",
+  appleWebApp: { capable: true, title: "PAMS", statusBarStyle: "black-translucent" },
 };
+
+/** Phone browser bar in the menu colour (wave 26). */
+export const viewport: Viewport = { themeColor: "#0c1f1a", width: "device-width", initialScale: 1 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();

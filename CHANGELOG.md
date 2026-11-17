@@ -1,5 +1,28 @@
 # Changelog
 
+## Wave 26 — on branch `wave-26` (not merged yet; built on `wave-25`)
+
+Screens for each role. Migration `0042_start_page.sql`.
+
+- **Start page per role**: after signing in, each role opens its own page: technicians the work orders, biomedical
+  engineers planned maintenance, department heads their department, procurement the projects, finance the
+  invoices, planners the BOQs, directors the executive summary. Administrators and viewers keep the dashboard.
+  A link to a page (for example from an email) still opens that page. Anyone can choose a different start page
+  under *Your account*.
+- **Dashboard trends**: a *Last 12 months* panel with work orders opened and closed each month (and whether the
+  backlog grew) and the share of planned maintenance done within 7 days of the date planned.
+- **Report library**: the reports page is grouped (Summary, Maintenance, Assets, Safety and security,
+  Procurement) with each role's group first, and a search box. Three new reports, each printable and exported to
+  Excel: *Work orders and response times* (by priority and department: still open, answered within the target,
+  typical times to answer and to fix), *Device incidents* (harm, and whether the maker and the authority were
+  told), and *Device security*.
+- **On a phone**: *Scan a label* (Assets) opens a device's page from its QR label with the camera, or from a typed
+  or hand-scanned tag. PAMS can be added to the home screen and opens full screen, with shortcuts to scan, report
+  a fault and run a round. *Your account* explains how.
+- **Next.js 16.4.3 → 16.4.6**: the build refused to run on 16.4.3 because of a moderate advisory
+  (GHSA-mfr8-8qww-v76h, a feature PAMS doesn't use). A patch release, no other change. Two moderate notices remain
+  in `exceljs` (through `uuid`); npm's only offered fix is an old major version, so it's left as is.
+
 ## Wave 25 — on branch `wave-25` (not merged yet)
 
 Security. Migration `0041_security.sql`.

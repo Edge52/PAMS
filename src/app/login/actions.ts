@@ -9,6 +9,8 @@ import { users } from "@/db/schema";
 import { hashPassword, passwordProblem, verifyPassword } from "@/lib/auth/password";
 import { createSession, destroyAllSessions, destroySession, getCurrentUser } from "@/lib/auth/session";
 import { newSecret, verifyCode } from "@/lib/auth/totp";
+import { landingPage, startPageOptions } from "@/lib/modules";
+import { permissionsOf } from "@/lib/auth/permissions";
 import { clearTwoStep, currentChallenge, enableTwoStep, endChallenge, freshBackupCodes, markProved, PROVED, startChallenge, twoStepRequiredFor, spendCode, wrongTry } from "@/lib/auth/two-step";
 import { logActivity } from "@/lib/server-utils";
 import type { ActionState } from "@/lib/procurement/forms";
@@ -73,7 +75,8 @@ export async function signIn(_prev: ActionState, fd: FormData): Promise<ActionSt
   keys.forEach((k) => fails.delete(k));
   // Wave 25: with two-step on, the session starts only after the code; when it's required and not set up yet,
   // only after setting it up.
-  const next = safeNext(fd.get("next"));
+  // Wave 26: the page asked for, else the person's chosen start page, else their role's.
+  const next = landingPage(safeNext(fd.get("next")), u.startPage, u.role, permissionsOf(u.role));
   if (u.totpEnabledAt && u.totpSecret) { await startChallenge(u.id, "VERIFY", next); redirect("/login/code"); }
   if (await twoStepRequiredFor(u.role)) {
     if (!u.totpSecret) await db.update(users).set({ totpSecret: newSecret() }).where(eq(users.id, u.id));
@@ -237,3 +240,14 @@ export async function changeOwnPassword(_prev: ActionState, fd: FormData): Promi
   await logActivity("user", me.id, "password_changed", "Changed their password");
   return { message: "Password changed. You've been signed out on other devices." };
 }
+
+/** Wave 26: the page to open after signing in. Empty = the usual page for your role. */
+export async function setStartPage(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  const want = String(fd.get("startPage") ?? "");
+  if (want && !startPageOptions(permissionsOf(me.role), me.role).some((o) => o.href === want)) return { errors: ["Choose a page from the list."] };
+  await db.update(users).set({ startPage: want || null }).where(eq(users.id, me.id));
+  return { message: want ? "Saved. You'll start there next time you sign in." : "Saved. You'll start on the usual page for your role." };
+}
+

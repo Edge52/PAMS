@@ -11,6 +11,9 @@ import {
 } from "@/db/schema";
 import { EmptyState, Panel, PageHeader, LinkButton, Stat, StatusBadge, Table, THead, Th, Td } from "@/components/ui";
 import { pathwayRisks } from "@/lib/flows/analysis-server";
+import { Columns, PairColumns } from "@/components/ui/charts";
+import { direction, monthKeys, monthLabel, onMonths, onTimeShare } from "@/lib/trends";
+import { DEFAULT_PPM_GRACE_DAYS } from "@/lib/reports/calc";
 import { addDaysISO, addMonthsISO, daysUntil, formatDate, formatMoney, formatNumber, num, todayISO } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -96,6 +99,30 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   // Wave 7: published patient pathways whose steps lack working equipment right now.
   const risks = can(me.role, "assets.view") ? await pathwayRisks(scope) : [];
+
+  // Wave 26: the last twelve months, for people who look after equipment.
+  const showTrends = can(me.role, "assets.view");
+  const months = monthKeys(today);
+  const since = `${months[0]}-01`;
+  const monthOf = (col: PgColumn | SQL) => sql<string>`to_char(${col}, 'YYYY-MM')`;
+  const doneAt = sql`coalesce(${workOrders.closedAt}, ${workOrders.completedAt})`;
+  const [woOpened, woClosed, ppmDone] = showTrends ? await Promise.all([
+    db.select({ month: monthOf(workOrders.reportedAt), n: count() }).from(workOrders)
+      .where(and(gte(workOrders.reportedAt, new Date(`${since}T00:00:00Z`)), own(workOrders.facilityId), sql`${workOrders.status} <> 'CANCELLED'`)).groupBy(sql`1`),
+    db.select({ month: monthOf(doneAt), n: count() }).from(workOrders)
+      .where(and(sql`${doneAt} >= ${`${since}T00:00:00Z`}`, own(workOrders.facilityId))).groupBy(sql`1`),
+    db.select({
+      month: monthOf(maintenanceEvents.completedDate), n: count(),
+      onTime: sql<number>`count(*) filter (where ${maintenanceEvents.scheduledDate} is null or ${maintenanceEvents.completedDate} <= ${maintenanceEvents.scheduledDate} + ${DEFAULT_PPM_GRACE_DAYS}::int)::int`,
+    }).from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId))
+      .where(and(eq(maintenanceEvents.type, "PPM"), eq(maintenanceEvents.status, "COMPLETED"), gte(maintenanceEvents.completedDate, since), own(assets.facilityId))).groupBy(sql`1`),
+  ]) : [[], [], []];
+  const opened = onMonths(months, woOpened), closed = onMonths(months, woClosed);
+  const ppmN = onMonths(months, ppmDone), ppmOk = onMonths(months, ppmDone.map((r) => ({ month: r.month, n: r.onTime })));
+  const ppmShare = onTimeShare(ppmN, ppmOk);
+  const ppmYear = ppmN.reduce((a, b) => a + b, 0), ppmYearOk = ppmOk.reduce((a, b) => a + b, 0);
+  const faultTrend = direction(opened);
+  const hasTrends = showTrends && (opened.some(Boolean) || closed.some(Boolean) || ppmYear > 0);
   const total = assetTotals[0]?.n ?? 0;
   const byStatus = Object.fromEntries(statusRows.map((r) => [r.status, r.n]));
   const inService = (byStatus.IN_SERVICE ?? 0) + (byStatus.INSTALLED ?? 0);
@@ -185,6 +212,25 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <Stat label="Open projects" value={formatNumber(openProjects[0]?.n ?? 0)}
           hint={`${formatNumber(expiringOffers[0]?.n ?? 0)} offers expire within 14 days`} href="/procurement" />
       </div>
+
+      {hasTrends && (
+        <Panel title="Last 12 months" className="mb-6" actions={<Link href="/reports" className="text-sm text-primary hover:underline">All reports</Link>}>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold">Work orders opened and closed</h3>
+              <p className="mb-2 text-xs text-muted">Opened: {faultTrend.text}. {opened.reduce((a, b) => a + b, 0) > closed.reduce((a, b) => a + b, 0) ? "More were opened than closed this year, so the backlog grew." : "As many were closed as opened, or more."}</p>
+              <PairColumns labels={months.map(monthLabel)} a={opened} b={closed} names={["Opened", "Closed"]} label="Work orders opened and closed each month" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold">Planned maintenance done on time</h3>
+              <p className="mb-2 text-xs text-muted">{ppmYear ? `${Math.round((ppmYearOk / ppmYear) * 100)}% of ${formatNumber(ppmYear)} jobs this year were done within ${DEFAULT_PPM_GRACE_DAYS} days of the date planned.` : "No planned maintenance recorded as done this year."}</p>
+              <Columns height={160} bar={26} label="Share of planned maintenance done on time, by month"
+                data={months.map((m, i) => ({ label: monthLabel(m), value: ppmShare[i] ?? 0, tone: ppmShare[i] == null ? "muted" : ppmShare[i]! >= 90 ? "ok" : ppmShare[i]! >= 75 ? "warn" : "danger" }))} />
+              <p className="mt-1 text-xs text-muted">Percent. Green 90% or more, amber 75–89%, red below. A grey bar is a month with none done.</p>
+            </div>
+          </div>
+        </Panel>
+      )}
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
         <div className="space-y-5 xl:col-span-3">

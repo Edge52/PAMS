@@ -93,7 +93,7 @@ export function LinkButton({ variant = "secondary", className, ...p }: Component
 
 /* ── Form controls ── */
 
-const control =
+export const control =
   "w-full rounded-[var(--radius-control)] border border-line bg-surface px-2.5 py-1.5 text-[14px] text-ink placeholder:text-faint focus:border-primary focus:outline-none";
 
 export function Field({ label, hint, error, children, className }: {

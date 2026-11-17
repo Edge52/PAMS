@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "start_page" varchar(200);

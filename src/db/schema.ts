@@ -123,6 +123,8 @@ export const users = pgTable("users", {
   totpLastStep: integer("totp_last_step"),
   /** SHA-256 of each unused backup code. */
   backupCodeHashes: text("backup_code_hashes").array().notNull().default(sql`'{}'::text[]`),
+  /** Wave 26: the page to open after signing in; null = the role's usual page (ROLE_HOME in lib/modules). */
+  startPage: varchar("start_page", { length: 200 }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

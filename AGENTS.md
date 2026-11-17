@@ -457,3 +457,16 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - **Device security**: `lib/assets/device-security.ts` (`concerns`, pure), table `asset_security` (one row per
   device), panel `components/assets/security-panel.tsx`, page `/assets/security`.
 
+## Screens for each role (wave 26)
+
+- **Start page**: `ROLE_HOME`, `startPageOptions` and `landingPage` in `lib/modules.ts`; `users.start_page`. Every
+  sign-in path (password, two-step code, two-step setup, Supabase callback) must send the person to
+  `landingPage(next, user.startPage, user.role, permissionsOf(user.role))`. A role home must be a page that role
+  can open (a test checks it).
+- **Trends**: `lib/trends.ts` (months, labels, direction in words) and `PairColumns` in `components/ui/charts.tsx`.
+- **Reports**: add a report to `lib/reports/registry.ts` and to a group in `app/reports/page.tsx`. Pure timing for
+  work orders is in `lib/reports/work-calc.ts`.
+- **Phone**: `/scan` uses `parseScan` from `lib/assets/rounds.ts` (same labels as rounds). `app/manifest.ts`,
+  `public/icons/*`, `app/apple-icon.png`; these paths are excluded from the sign-in check in `src/proxy.ts` so a
+  phone can read them before signing in.
+

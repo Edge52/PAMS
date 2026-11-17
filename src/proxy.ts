@@ -36,6 +36,7 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Everything except Next's own assets and the favicon.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Everything except Next's own assets, the favicon and the install files.
+  // Wave 26: the install files (manifest, icons) are public too, so a phone can read them before signing in.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon.png|icons/).*)"],
 };

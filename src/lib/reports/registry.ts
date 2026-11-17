@@ -7,6 +7,9 @@ import { openPurchaseOrdersReport } from "./purchase-orders";
 import { tenderStatusReport } from "./tenders";
 import type { FilterKind, ReportContext, ReportFilters, ReportResult } from "./types";
 import { warrantyExpiryReport } from "./warranty";
+import { workOrdersReport } from "./work-orders";
+import { incidentsReport } from "./incidents";
+import { deviceSecurityReport } from "./device-security";
 
 export type ReportDef = {
   slug: string;
@@ -50,6 +53,26 @@ export const REPORTS: ReportDef[] = [
     filters: ["facility", "dateRange", "grace"], dateLabel: "Scheduled",
     defaults: (today) => ({ from: today.slice(0, 4) + "-01-01", to: today, grace: DEFAULT_PPM_GRACE_DAYS }),
     load: ppmComplianceReport,
+  },
+  {
+    slug: "work-orders", title: "Work orders and response times",
+    description: "Jobs reported in the period by priority and by department: still open, answered within the target, and typical times to answer and to fix.",
+    filters: ["facility", "dateRange"], dateLabel: "Reported",
+    defaults: (today) => ({ from: today.slice(0, 4) + "-01-01", to: today }),
+    load: workOrdersReport,
+  },
+  {
+    slug: "incidents", title: "Device incidents",
+    description: "Incidents in the period with the harm done, and whether the maker and the Egyptian Drug Authority were told in time.",
+    filters: ["facility", "dateRange"], dateLabel: "Happened",
+    defaults: (today) => ({ from: today.slice(0, 4) + "-01-01", to: today }),
+    load: incidentsReport,
+  },
+  {
+    slug: "device-security", title: "Device security",
+    description: "Devices on the network or holding patient data, with what needs attention: operating system out of support, factory passwords, no recent update.",
+    filters: ["facility"],
+    load: deviceSecurityReport,
   },
 ];
 

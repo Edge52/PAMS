@@ -1,21 +1,26 @@
+import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { Badge, Details, Field, Input, PageHeader, Panel } from "@/components/ui";
+import { Badge, control, Details, Field, Input, PageHeader, Panel } from "@/components/ui";
 import { formatDate } from "@/lib/format";
 import { twoStepRequiredFor } from "@/lib/auth/two-step";
 import { NewBackupCodesForm } from "@/components/two-step-forms";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
 import { requireUser } from "@/lib/auth/session";
-import { changeOwnPassword, newBackupCodeSet, startTwoStep, turnOffTwoStep } from "../login/actions";
+import { changeOwnPassword, newBackupCodeSet, setStartPage, startTwoStep, turnOffTwoStep } from "../login/actions";
+import { ROLE_HOME, startPageOptions } from "@/lib/modules";
+import { permissionsOf } from "@/lib/auth/permissions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Your account" };
 
 export default async function AccountPage() {
   const me = await requireUser();
-  const [two] = await db.select({ on: users.totpEnabledAt, left: users.backupCodeHashes, hasPassword: users.passwordHash }).from(users).where(eq(users.id, me.id));
+  const [two] = await db.select({ on: users.totpEnabledAt, left: users.backupCodeHashes, hasPassword: users.passwordHash, startPage: users.startPage }).from(users).where(eq(users.id, me.id));
+  const pages = startPageOptions(permissionsOf(me.role), me.role);
+  const usual = pages.find((p) => p.href === (ROLE_HOME[me.role] ?? "/")) ?? pages[0];
   const required = await twoStepRequiredFor(me.role);
   return (
     <>
@@ -35,6 +40,23 @@ export default async function AccountPage() {
             <Field label="New password again"><Input type="password" name="confirm" required autoComplete="new-password" /></Field>
             <SubmitButton>Change password</SubmitButton>
           </ActionForm>
+        </Panel>
+        <Panel title="Start page" className="lg:col-span-2">
+          <ActionForm action={setStartPage} className="flex flex-wrap items-end gap-3">
+            <Field label="After signing in, open" hint={`The usual page for your role is ${usual.label}.`} className="min-w-64 flex-1 sm:max-w-md">
+              <select name="startPage" defaultValue={two?.startPage ?? ""} className={`${control} pr-8`}>
+                <option value="">The usual page ({usual.label})</option>
+                {[...new Set(pages.map((p) => p.group))].map((g) => (
+                  <optgroup key={g} label={g}>{pages.filter((p) => p.group === g).map((p) => <option key={p.href} value={p.href}>{p.label}</option>)}</optgroup>
+                ))}
+              </select>
+            </Field>
+            <SubmitButton variant="secondary">Save</SubmitButton>
+          </ActionForm>
+        </Panel>
+        <Panel title="On your phone" className="lg:col-span-2">
+          <p className="text-sm">Open PAMS in your phone&apos;s browser and add it to the home screen: on Android, Chrome menu › <em>Add to home screen</em> (or <em>Install app</em>); on iPhone, Safari&apos;s share button › <em>Add to Home Screen</em>. It then opens full screen, with shortcuts to scan a label and report a fault.</p>
+          <p className="mt-2 text-sm"><Link href="/scan" className="font-semibold text-primary underline">Scan a label</Link> opens a device&apos;s page from its QR label.</p>
         </Panel>
         <Panel title="Two-step sign-in" className="lg:col-span-2">
           {two?.on ? (

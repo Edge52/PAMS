@@ -385,3 +385,18 @@ to reset it when they have a new phone.
 whether it holds patient data and when it was last updated. *Maintenance › Device security* lists the recorded
 devices and what to check on each, the serious ones first. Start with imaging systems, monitors and analysers.
 
+## Your start page, trends, reports and the phone (wave 26)
+
+**Start page.** After signing in you open the page you use most for your role (for a technician, the work
+orders). To change it, open *Your account* and choose under *Start page*. The dashboard is always in the menu.
+
+**Trends.** The dashboard's *Last 12 months* panel shows work orders opened and closed each month, and how much
+planned maintenance was done on time.
+
+**Reports.** *Reports* is grouped by subject, with a search box. New: *Work orders and response times*, *Device
+incidents* and *Device security*. Each one prints, saves as PDF and exports to Excel.
+
+**On your phone.** Open PAMS in the phone's browser and add it to the home screen (Android: Chrome menu › *Add to
+home screen*; iPhone: Safari's share button › *Add to Home Screen*). *Assets › Scan a label* opens a device's page
+from its QR label: on Android Chrome with the camera; on other phones type the tag or use a hand scanner.
+

@@ -70,9 +70,9 @@ export function Sparkline({ values, label, tone = "primary", width = 120, height
 }
 
 /** Upright bars over time (months, weeks), with the value above each bar and its label below. Up to about 12 bars. */
-export function Columns({ data, label, height = 150 }: { data: Datum[]; label: string; height?: number }) {
+export function Columns({ data, label, height = 150, bar = 44 }: { data: Datum[]; label: string; height?: number; /** bar width, px */ bar?: number }) {
   const max = Math.max(1, ...data.map((d) => d.value));
-  const W = 44, G = 14, top = 18, base = height - 22, width = data.length * (W + G) + G;
+  const W = bar, G = 14, top = 18, base = height - 22, width = data.length * (W + G) + G;
   return (
     <div className="overflow-x-auto" tabIndex={0} role="group" aria-label={`${label}, scrolls sideways when wide`}>
       <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={`${label}. ${summary(data)}`}>
@@ -91,3 +91,48 @@ export function Columns({ data, label, height = 150 }: { data: Datum[]; label: s
     </div>
   );
 }
+
+/**
+ * Two figures per period side by side (wave 26: work orders opened and closed each month). A legend names both;
+ * the colour is never the only cue, because the figures are written above the bars.
+ */
+export function PairColumns({ labels, a, b, names, label, height = 160 }: {
+  labels: string[]; a: number[]; b: number[]; names: [string, string]; label: string; height?: number;
+}) {
+  const max = Math.max(1, ...a, ...b);
+  const W = 14, IN = 2, G = 12, top = 18, base = height - 22, group = 2 * W + IN, width = labels.length * (group + G) + G;
+  const said = labels.map((l, i) => `${l}: ${names[0]} ${fmt(a[i])}, ${names[1]} ${fmt(b[i])}`).join("; ");
+  const bar = (v: number, x: number, tone: keyof typeof COLOR) => {
+    const h = v ? Math.max(2, (v / max) * (base - top)) : 0;
+    return (
+      <>
+        {h > 0 && <rect x={x} y={base - h} width={W} height={h} rx="3" fill={COLOR[tone]} />}
+        <text x={x + W / 2} y={base - h - 4} textAnchor="middle" fontSize="9.5" fill="var(--color-ink)">{fmt(v)}</text>
+      </>
+    );
+  };
+  return (
+    <div>
+      <div className="mb-1 flex gap-4 text-xs text-muted" aria-hidden>
+        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: COLOR.primary }} />{names[0]}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: COLOR.gold }} />{names[1]}</span>
+      </div>
+      <div className="overflow-x-auto" tabIndex={0} role="group" aria-label={`${label}, scrolls sideways when wide`}>
+        <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={`${label}. ${said}`}>
+          <line x1="0" x2={width} y1={base} y2={base} stroke="var(--color-line)" />
+          {labels.map((l, i) => {
+            const x0 = G + i * (group + G);
+            return (
+              <g key={l}>
+                {bar(a[i], x0, "primary")}
+                {bar(b[i], x0 + W + IN, "gold")}
+                <text x={x0 + group / 2} y={height - 6} textAnchor="middle" fontSize="10.5" fill="var(--color-muted)">{l}</text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+

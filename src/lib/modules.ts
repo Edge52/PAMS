@@ -40,6 +40,7 @@ export const MODULES: AppModule[] = [
   { id: "assets", name: "Assets", description: "The equipment register, labels, requests, rounds and disposals.", links: [
     { href: "/assets", label: "Asset register", need: "assets.view" },
     { href: "/assets/department", label: "My department", need: "assets.view" },
+    { href: "/scan", label: "Scan a label", need: "assets.view" },
     { href: "/assets/requests", label: "Equipment requests", need: "assets.view" },
     { href: "/assets/rounds", label: "Rounds and stock-take", need: "assets.view" },
     { href: "/assets/fleet", label: "Fleet & standardisation", need: "assets.view" },
@@ -136,3 +137,37 @@ export function pathOf(pathname: string): { label: string; href?: string }[] {
   const link = m.links.find((l) => l.href === href);
   return [{ label: "Modules", href: "/modules" }, { label: m.name, href: m.links[0]?.href }, ...(link ? [{ label: link.label, href: pathname === link.href ? undefined : link.href }] : [])];
 }
+
+/* ── Start page (wave 26): where each person lands after signing in ── */
+
+/** Each role's usual first page. Roles not listed start on the dashboard. */
+export const ROLE_HOME: Record<string, string> = {
+  TECHNICIAN: "/assets/work-orders",
+  BIOMEDICAL: "/assets/maintenance",
+  DEPARTMENT_HEAD: "/assets/department",
+  PROCUREMENT: "/procurement",
+  FINANCE: "/procurement/invoices",
+  PLANNER: "/boq",
+  DIRECTOR: "/reports/executive",
+};
+
+/** The pages a person may choose as their start page: the dashboard and every menu page they can open. */
+export function startPageOptions(perms: Permission[], role?: string | null): { href: string; label: string; group: string }[] {
+  return [
+    { href: "/", label: "Dashboard", group: "Overview" },
+    ...orderModules(modulesFor(perms), role).flatMap((m) => m.links.filter((l) => !l.flag).map((l) => ({ href: l.href, label: l.label, group: m.name }))),
+  ];
+}
+
+/**
+ * Where to land after signing in. A page the person asked for (`next`, other than the bare dashboard) wins; then
+ * their own choice; then their role's usual page. Anything they can no longer open falls back to the dashboard.
+ */
+export function landingPage(next: string | null | undefined, chosen: string | null | undefined, role: string | null | undefined, perms: Permission[]): string {
+  if (next && next !== "/" && next.startsWith("/") && !next.startsWith("//")) return next;
+  const allowed = new Set(startPageOptions(perms, role).map((o) => o.href));
+  if (chosen && allowed.has(chosen)) return chosen;
+  const home = ROLE_HOME[role ?? ""];
+  return home && allowed.has(home) ? home : "/";
+}
+

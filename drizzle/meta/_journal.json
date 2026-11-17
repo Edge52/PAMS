@@ -295,6 +295,13 @@
       "when": 1794815751958,
       "tag": "0041_security",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1794874701365,
+      "tag": "0042_start_page",
+      "breakpoints": true
     }
   ]
 }

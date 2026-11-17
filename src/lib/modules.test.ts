@@ -31,3 +31,34 @@ describe("modules (wave 21)", () => {
     expect(pathOf("/")).toEqual([]);
   });
 });
+
+describe("start page (wave 26)", () => {
+  it("sends each role to its usual page", async () => {
+    const { landingPage } = await import("./modules");
+    const { permissionsOf } = await import("./auth/permissions");
+    expect(landingPage("/", null, "TECHNICIAN", permissionsOf("TECHNICIAN"))).toBe("/assets/work-orders");
+    expect(landingPage(null, null, "FINANCE", permissionsOf("FINANCE"))).toBe("/procurement/invoices");
+    expect(landingPage(null, null, "DIRECTOR", permissionsOf("DIRECTOR"))).toBe("/reports/executive");
+    expect(landingPage(null, null, "ADMIN", permissionsOf("ADMIN"))).toBe("/");
+    expect(landingPage(null, null, "VIEWER", permissionsOf("VIEWER"))).toBe("/");
+  });
+  it("keeps the page the person asked for, then their own choice", async () => {
+    const { landingPage } = await import("./modules");
+    const { permissionsOf } = await import("./auth/permissions");
+    expect(landingPage("/assets/42", "/boq", "PLANNER", permissionsOf("PLANNER"))).toBe("/assets/42");
+    expect(landingPage("/", "/flows", "PLANNER", permissionsOf("PLANNER"))).toBe("/flows");
+    expect(landingPage("//evil.example", null, "ADMIN", permissionsOf("ADMIN"))).toBe("/");
+  });
+  it("ignores a chosen page the person can no longer open", async () => {
+    const { landingPage, startPageOptions } = await import("./modules");
+    const { permissionsOf } = await import("./auth/permissions");
+    expect(landingPage(null, "/admin/users", "TECHNICIAN", permissionsOf("TECHNICIAN"))).toBe("/assets/work-orders");
+    expect(startPageOptions(permissionsOf("TECHNICIAN")).some((o) => o.href === "/admin/users")).toBe(false);
+    expect(startPageOptions(permissionsOf("ADMIN"))[0]).toEqual({ href: "/", label: "Dashboard", group: "Overview" });
+  });
+  it("every role home is a page that role can open", async () => {
+    const { ROLE_HOME, startPageOptions } = await import("./modules");
+    const { permissionsOf } = await import("./auth/permissions");
+    for (const [role, href] of Object.entries(ROLE_HOME)) expect(startPageOptions(permissionsOf(role)).map((o) => o.href), role).toContain(href);
+  });
+});
