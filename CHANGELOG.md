@@ -1,5 +1,19 @@
 # Changelog
 
+## Wave 30 — on branch `wave-30` (not merged yet)
+
+The 3D view split into smaller files. No change in what you see or do; no migration.
+
+- `twin-view.tsx` (about 2,550 lines) is now 300 lines: the page layout only. Its state and behaviour moved,
+  unchanged, into `use-twin-view.tsx` (a hook that returns everything the view and its panels use), and the 18 blocks
+  of panel markup became components in `twin/panels/` (floors, statuses and types; view settings; layers; plan;
+  tours; history; saved views; routes; pathways; find; notes; the selection card).
+- The split was generated from the parsed file, not retyped. Checked by clicking through every tool, a floor, a
+  search and the right-click menu on the old and the new build with the same database: every panel showed the same
+  text, and the new build had no browser errors.
+- Not split: `scene.ts` (about 2,600 lines) is one three.js class; splitting it means moving groups of methods out to
+  helpers that take the scene, which is a separate job.
+
 ## Wave 29 — merged 17 Nov 2026
 
 The "set aside, or built only in part" list. Migration `0045_wave29.sql` (a new device status *On loan*, and the

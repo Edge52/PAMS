@@ -579,3 +579,13 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - **Simulation**: `whatIf.shifts/closed/leaveAfter` (missing = as the baseline) and `leaveAny`; `buildRuns` applies them.
 - **Breached passwords**: `breachedProblem` (`lib/auth/breached.ts`) after `passwordProblem`; fails open.
 - **3D files**: state-free pieces live in `twin/scene-parts.ts` and `twin/twin-view-parts.tsx`; add new constants there.
+
+## Wave 30: the 3D view's files
+
+- `twin/twin-view.tsx` is the layout only. State and behaviour live in `twin/use-twin-view.tsx` (`useTwinView(props)`
+  returns everything; `TwinCtx` is its type). Panels are components in `twin/panels/` taking `{ t }: { t: TwinCtx }`
+  and destructuring what they use.
+- Adding state: declare it in the hook and add the name to the object it returns (the return lists every name).
+  Adding a panel: a component in `panels/`, then `const myPanel = <MyPanel t={t} />` in `twin-view.tsx`.
+- Two reads of refs during render (`root.current` for the right-click menu's position, `sceneRef.current` for the render
+  panel's camera) carry an `eslint-disable-next-line react-hooks/refs`: unchanged behaviour from before the split.
