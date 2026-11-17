@@ -8,14 +8,13 @@ import { compassTurn, compassWords, nearestTurn, northLabel, viewBearing } from 
 
 type ViewLike = { viewState(): { target: { x: number; z: number }; camera: { x: number; z: number }; floorId: number | null } };
 
-/** A needle with an N, pointing up when not turned. */
+/** A needle with an N above its tip, pointing up when not turned (drawn on a 40 × 40 grid, scaled to `size`). */
 function Needle({ size, light }: { size: number; light: boolean }) {
-  const c = size / 2, r = size / 2 - 1;
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
-      <path d={`M ${c} ${c - r * 0.78} L ${c + r * 0.26} ${c + r * 0.2} L ${c} ${c + r * 0.05} L ${c - r * 0.26} ${c + r * 0.2} Z`} fill={light ? "#b4233a" : "#ff6b7d"} />
-      <path d={`M ${c} ${c + r * 0.62} L ${c + r * 0.2} ${c + r * 0.2} L ${c} ${c + r * 0.05} L ${c - r * 0.2} ${c + r * 0.2} Z`} fill={light ? "#7d8c98" : "#5d7f94"} />
-      <text x={c} y={c - r * 0.82 + 1} fontSize={size * 0.24} fontWeight={700} textAnchor="middle" dominantBaseline="hanging" fill={light ? "#0b2533" : "#e6f6ff"} transform={`translate(0 ${-size * 0.27})`}>N</text>
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden>
+      <text x={20} y={1.5} fontSize={10} fontWeight={700} textAnchor="middle" dominantBaseline="hanging" fill={light ? "#0b2533" : "#e6f6ff"}>N</text>
+      <path d="M 20 12 L 25.5 26 L 20 23 L 14.5 26 Z" fill={light ? "#b4233a" : "#ff6b7d"} />
+      <path d="M 20 37 L 24 26 L 20 23 L 16 26 Z" fill={light ? "#7d8c98" : "#5d7f94"} />
     </svg>
   );
 }
@@ -23,7 +22,7 @@ function Needle({ size, light }: { size: number; light: boolean }) {
 /** The mini-map's north arrow: the plan's top is up, so it turns by the north angle only. */
 export function MapNorth({ northDeg, light }: { northDeg: number; light: boolean }) {
   return (
-    <span role="img" aria-label={northLabel(northDeg)} title={northLabel(northDeg)} className="absolute right-1 top-1 block h-7 w-7">
+    <span role="img" aria-label={northLabel(northDeg)} title={northLabel(northDeg)} className={`absolute right-1 top-1 block h-7 w-7 rounded-full ${light ? "bg-white/70" : "bg-[#04121f]/70"}`}>
       <span className="block h-7 w-7" style={{ transform: `rotate(${northDeg}deg)` }}><Needle size={28} light={light} /></span>
     </span>
   );
@@ -48,7 +47,7 @@ export function HudCompass({ scene, ready, northDeg, light }: { scene: RefObject
   if (northDeg == null || turn == null) return null;
   const words = compassWords(turn);
   return (
-    <div role="img" aria-label={`Compass. ${words}.`} title={words} className="twin-card pointer-events-none flex h-12 w-12 items-center justify-center rounded-full p-0!">
+    <div role="img" aria-label={`Compass. ${words}.`} title={words} className="twin-card pointer-events-none flex h-12 w-12 items-center justify-center rounded-full! p-0!">
       <span className="block h-10 w-10 transition-transform duration-150 ease-linear motion-reduce:transition-none" style={{ transform: `rotate(${turn}deg)` }}><Needle size={40} light={light} /></span>
     </div>
   );
