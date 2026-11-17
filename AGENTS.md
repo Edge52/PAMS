@@ -470,3 +470,70 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   `public/icons/*`, `app/apple-icon.png`; these paths are excluded from the sign-in check in `src/proxy.ts` so a
   phone can read them before signing in.
 
+
+
+## Wave 27
+
+### Maintenance
+
+- Usage rules are pure in `src/lib/assets/meters.ts` (`readingProblem`, `usagePoints`, `averageDailyUse`,
+  `usagePpmDue`, `readingsFromMonthlyCounts`); DB side `meters-server.ts` (`usageDueMap(today, { ids })`).
+  `nextPpmDue` takes an optional `usageDue` and returns the earlier date with `basis: "usage"`. **Any new place that
+  computes a PPM due date must pass `usageDue` from `usageDueMap`**, or it will disagree with the maintenance page.
+- Tables (migration `wave27_maintenance`): `meter_readings`, `maintenance_test_equipment`, `equipment_loans`,
+  `training_sessions`, `training_attendees`; columns `device_types.usage_interval`, `usage_unit`; enums
+  `meter_reading_kind`, `loan_direction`, `training_kind`.
+- Test equipment on a visit: every code path that completes a maintenance visit calls `checkInstruments(fd,
+  facilityId, date)` before writing and `saveInstruments(tx, eventId, list)` after
+  (`src/lib/assets/test-equipment-server.ts`; pure rule `instrumentsProblem` reuses `analyserProblem`). Today those
+  are `logMaintenanceAction`, `completeEventAction` (`src/app/assets/actions.ts`) and `completeWorkOrderAction`
+  (`src/app/assets/work-orders/actions.ts`); add any new one. The form part is `<TestEquipmentField options={…} />`.
+- The assets `ActionForm` (`components/assets/action-form.tsx`) now shows `FormState.fields` beside the input of
+  that name, like the shared one. A field without a single input (a checkbox list) can carry an
+  `<output name="…">` as the anchor.
+- Loans: pure `src/lib/assets/loans.ts`, DB `loans-server.ts`; `notifyOverdueLoans` runs from
+  `src/lib/notifications/alerts.ts`. Numbers `LN-YYYY-NNNN`. Activity entity `loan`.
+- Training: pure `src/lib/assets/training.ts`, DB `training-server.ts`. Setting `trainingValidMonths`
+  (`lib/settings.ts`). Documents entity type `training` (edit needs `maintenance.edit`), kind `sign_in_sheet`.
+  An attendee counts for `coalesce(attendee.department_id, session.department_id)`. Inside a transaction,
+  `addAttendees` must get the transaction (PGlite has one connection).
+- Permissions (no new ones): meter readings, test equipment, loan checks and training need `maintenance.edit`;
+  recording and returning loans `assets.edit`; usage intervals `catalogue.edit`.
+
+### Finance
+
+- Pure rules: `src/lib/assets/depreciation.ts` (`depreciation`, `depreciationTerms`, `inServiceDate`),
+  `src/lib/reports/service-cost-calc.ts` (`contractShare`, `rollUp`, `cosrPct`, `yearlyCosr`, guide constants),
+  `src/lib/procurement/supplier-docs.ts` (`docExpiry`, `expiringList`, `expiredWarning`, reminder key). Change a
+  rule there with its test.
+- DB side: `src/lib/assets/depreciation-server.ts` (`bookValues(where, onDate)` — EGP through `ratesFor` like the
+  reports), `src/lib/procurement/supplier-docs-server.ts` (`supplierExpiryWarning` for any new place a PO or
+  award is made).
+- Migration `0043_finance` (renumber on merge): `device_types.residual_pct`, `assets.residual_pct` (checks 0–100,
+  in `rules.test.ts`), `documents.expires_on` (indexed).
+- `uploadDocument` reads an optional `expiresOn`; `DocumentUploadForm` takes `withExpiry`. The supplier page
+  uses `SupplierDocumentsPanel` instead of `DocumentsPanel`.
+- Alert `supplier_doc_expiring` (role PROCUREMENT, no facility), dedupe key
+  `supplier_doc_expiring:<documentId>:<expiresOn>` — a renewed date gets one new reminder.
+- Actions: `src/app/assets/depreciation-actions.ts` (type: `catalogue.edit`; device: `assets.edit` + facility),
+  `src/app/procurement/suppliers/documents/actions.ts` (`suppliers.edit`). No new permissions.
+- Reports group "Money" in `app/reports/page.tsx`; Finance sees it first.
+
+### Fixes
+
+- Password rule: `src/lib/auth/password-policy.ts` (`passwordProblem`, `PASSWORD_RULE`, `MIN_PASSWORD_LENGTH`; pure,
+  tested). `lib/auth/password.ts` re-exports them. Call it only where a password is set or changed, never at
+  sign-in. Return `{ errors: [p], fields: { password: p } }` so the message shows beside the field.
+- Sessions: `listSessions(userId)` and `endSession(userId, sessionId)` in `lib/auth/session.ts` (never return
+  `tokenHash`). `endSession` never ends the current session. `browserLabel(ua)` in `lib/auth/user-agent.ts` (pure).
+  `createSession` stores the label and the address; keep it to that.
+- Audit: `diff()` now also skips `totpSecret`, `totpLastStep` and `backupCodeHashes`, even when asked for them by name.
+  For users, pass the field list explicitly. Read the row before the update, diff against the values you write, and
+  pass `changes` as the 7th argument of `logActivity`.
+- GMDN: `gmdnCodeProblem` / `cleanGmdnCode` in `lib/assets/device-type-codes.ts`; action
+  `saveDeviceTypeCodesAction` in `app/catalogue/actions.ts`; form `components/assets/device-type-codes-form.tsx`.
+- Long pages: `UnsavedGuard` (`components/ui/unsaved-guard.tsx`) once per page, and `data-unsaved-guard` on the form
+  (or a wrapper around an `ActionForm`). Commissioning tabs and paging: `lib/assets/commissioning-view.ts`
+  (`PLAN_TABS`, `pageOf`, `ROOMS_PER_PAGE`). `saveRoomsAction` saves only the rooms posted, so paging is safe.
+- Worktrees: Turbopack can't build when `node_modules` is a symlink to a folder outside the project ("Could not find
+  the Next.js package"). A hard-linked copy (`cp -al <repo>/node_modules node_modules`) works.

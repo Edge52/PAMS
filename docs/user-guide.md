@@ -400,3 +400,44 @@ incidents* and *Device security*. Each one prints, saves as PDF and exports to E
 home screen*; iPhone: Safari's share button › *Add to Home Screen*). *Assets › Scan a label* opens a device's page
 from its QR label: on Android Chrome with the camera; on other phones type the tag or use a hand scanner.
 
+
+
+## Wave 27: lifecycle records
+
+### Maintenance
+
+- **Usage-based PPM.** In the catalogue, open the device type and fill in "Planned maintenance by use" (for example
+  every 5000 hours). On each device's page, add meter readings in the Usage panel, ideally at each planned visit.
+  If a meter was replaced, tick "The meter was reset or replaced" for the new meter's first reading. The next PPM
+  date is the earlier of the months and the usage estimate; "by use" shows beside it on the maintenance list.
+- **Test equipment when signing off PPM.** When completing a visit or a work order, tick the analyser or tester you
+  used. If its calibration has run out, the visit can't be completed with it: use another one or have it recalibrated
+  and update its date on its asset page.
+- **Loans.** Assets › Loans and rentals › Record a loan. For a borrowed device, check its maintenance and safety test
+  labels before use and record the check on the loan's page. Record the return when it goes back. Overdue loans are
+  listed under Overdue and the biomedical engineers get a notification.
+- **Training.** Maintenance › User training › Record training: choose the device type, date, trainer and kind, tick
+  the people with an account or type the others, save, then attach the signed sheet. The department page shows who
+  is trained on each kind of device and who needs a refresher.
+
+### Finance
+
+- **Book value of a device**: open the device; the Book value panel is on the right. To change its life or
+  residual value, open "Change life or residual value for this device"; leave a field empty to use the device
+  type's figure. Set the type's figures on its catalogue page (Depreciation).
+- **Book value and COSR reports**: Reports › Money. Choose the hospital (and the period for COSR), then print or
+  export to Excel. COSR per year under about 5–6 % is usually good value; it is a guide, not a rule.
+- **Budgets in EGP**: Procurement › Budgets shows the year's total in EGP first, then each currency.
+- **Supplier documents**: on the supplier page, attach the document, choose its type and the "Valid until"
+  date. Use "Change type or date" to fix an existing one. Procurement › Supplier documents lists what has
+  expired or expires soon. Procurement is notified 30 days before a document expires.
+
+### Fixes
+
+- **Change your password:** Your account › Change password. Use at least 12 characters; a few unrelated words work well.
+- **See where you're signed in:** Your account › Your sessions. Sign out of a browser you don't recognise, or use
+  "Sign out everywhere else", then change your password.
+- **Set a GMDN code:** Catalogue › open the device type › Edit codes and classification › GMDN code (5 digits) › Save
+  codes. The change is in the audit log with the old and new value.
+- **Commissioning plan:** open the plan; Progress shows the curve and Gantt; Rooms lets you pick a floor, a department
+  and a page of rooms, set dates and save ("Save these 25 rooms"). Save before moving to another page.

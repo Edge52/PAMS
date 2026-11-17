@@ -39,7 +39,7 @@ Demo figures (site planning values, imaging volumes, budgets) are labelled as de
 
 - **Stack**: Next.js 16 App Router (server components and server actions), React 19, TypeScript strict, Tailwind 4,
   Drizzle ORM, PostgreSQL 16 or embedded PGlite, three.js, ExcelJS, zod 4, Vitest, Playwright.
-- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0042`, about 129 pages, 659 unit tests.
+- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0043`, about 135 pages, 724 unit tests.
 - **Database**: `npm run demo` and `npm run local` use embedded PGlite (`.pglite` for the demo, `.pglite-data` for
   your own data). A server uses PostgreSQL via `DATABASE_URL`; Supabase works too (`DATABASE_SSL`, see deploy guide).
 - **Layout** (more in `docs/system-documentation.md` › Codebase map):
@@ -82,7 +82,7 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 24 (merged 16 Nov 2026). `wave-25` (security: two-step sign-in, security headers, device security details) and `wave-26` (screens for each role: start pages, trends, report library, phone scan and install; built on `wave-25`) are pushed and wait for Hisham's OK to merge. Next is `wave-27` (lifecycle data).
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 24 (merged 16 Nov 2026). `wave-25` (security: two-step sign-in, security headers, device security details) and `wave-26` (screens for each role: start pages, trends, report library, phone scan and install; built on `wave-25`) and `wave-27` (lifecycle data: usage meters, test equipment on PPM sign-off, loans, training, book value, service cost, supplier document expiry, password rule, sessions; built on `wave-26`) are pushed and wait for Hisham's OK to merge. `wave-28` (3D north arrow, own model files, simulation shifts) is built on `wave-27`.
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).

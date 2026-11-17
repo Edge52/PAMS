@@ -1,5 +1,125 @@
 # Changelog
 
+## Wave 27 — on branch `wave-27` (not merged yet; built on `wave-26`)
+
+Lifecycle data and leftovers. Migration `0043_wave27.sql`. Built by three agents in parallel and merged.
+
+### Maintenance: usage meters, test equipment on planned maintenance, loans and rentals, user training
+
+- **Usage meters and usage-based planned maintenance.** A device type can carry a usage interval and unit
+  ("every 5,000 hours", "every 10,000 scans", "every 1,000 cycles") on its catalogue page. Each device gets meter
+  readings (date, reading, unit, who, note). Readings can't go backwards, except a reading marked "the meter was reset
+  or replaced". Planned maintenance is now due on whichever comes first: the months interval or the date the usage
+  interval runs out, estimated from the average use per day. The asset page has a **Usage** panel (last reading,
+  average use a day, use since the last PPM, when usage-based PPM falls due, a form to add a reading). The
+  maintenance due lists, the register's "Next PPM", the register export, the PPM compliance report and "Generate
+  scheduled PPM visits" all use the earlier date. Scanners already recording monthly exam counts (Imaging use) count
+  them as their meter, for types measured in scans, until the device has its own readings.
+- **Calibration check on planned maintenance sign-off.** Completing a scheduled visit (Maintenance › Schedule ›
+  Complete), recording completed maintenance on the asset page, and completing a work order (with or without a
+  checklist) now offer "Test equipment used (optional)": the hospital's devices marked as test equipment, with their
+  calibration dates. Completion is refused when a chosen instrument's calibration ran out before the day of the work;
+  the message shows under the list. The instruments and their calibration dates on the day are kept with the visit
+  and shown in the asset's maintenance history and on the work order. Reopening a work order clears them.
+- **Loans and rentals** (Assets › Loans and rentals, `/assets/loans`). A loan: borrowed from or lent to, the other
+  party (a listed supplier or any name), the device (a registered one by tag, or a description for a borrowed device
+  not in the register), department, why, dates out / due back / returned, condition out and back, rental cost. A
+  borrowed device has a **check before use**: planned maintenance and electrical safety test in date, with who checked
+  and when (the page suggests the answer from the register when the device is in it). Tabs: open, overdue, returned,
+  all. Loans also show on the asset page. An overdue loan notifies the hospital's biomedical engineers once (hourly
+  alert job, key `loan_overdue:<id>`).
+- **User training** (Maintenance › User training, `/assets/training`). A session per device type: date, trainer,
+  kind (initial, refresher, by the supplier), department, notes, attendees (PAMS accounts and/or typed
+  "Name, Department" lines) and the signed sign-in sheet as an attached document. The department page shows, for each
+  device type in the department, who is trained and whose training is older than the set period (Administration ›
+  Settings › "User training valid for", default 24 months), and "Nobody trained" where nobody is.
+- Demo data (`scripts/seed/maintenance.ts`): usage intervals on ICU ventilators, CT scanners and dialysis machines
+  (demo figures, not the makers'), meter readings on ventilators and dialysis machines (one meter replaced), test
+  equipment on recent PPM visits, three loans (one overdue), four ICU training sessions (one older than two years).
+
+Not covered:
+- No meter reading is asked for when a PPM is completed; record one on the asset page on the day of the visit for an
+  exact count (otherwise use is interpolated between readings, or counted from the first reading).
+- A reading entered by mistake can't be deleted or edited from the screen.
+- Lending a device out doesn't change its status in the register; there is no loan agreement document or approval.
+- Training sessions can't be edited or deleted after saving (attendees can be added and removed).
+- The usage intervals in the demo are placeholders: set the makers' values per device type.
+
+### Finance: book value, service cost and COSR, budget totals in EGP, supplier document expiry
+
+- **Depreciation and book value.** Device types and single devices have a useful life (the existing life
+  expectancy) and a residual value % (new; a device's own figures win over its type's). Straight-line
+  depreciation from the in-service date: the signed acceptance date, else the install date, else the purchase
+  date, counted by the day. The asset page has a **Book value** panel (cost, depreciation so far, book value
+  today, years left, in the asset's currency and in EGP) beside Performance and cost, with a small form to set
+  the device's own life and residual value. The catalogue page has a **Depreciation** panel for the type's
+  defaults.
+- **Book value report** (Reports › Money): cost, depreciation so far and book value by facility, department and
+  device type, with totals, print and Excel.
+- **Capital plan**: a "Book value now" column for the year's devices and a "Book value left" figure (what is
+  still on the books on 1 January of the chosen year, written off if the devices are replaced).
+- **Service cost and COSR report** (Reports › Money): service cost in the period (completed maintenance and
+  repairs, which carry each work order's cost with parts, plus each service contract's share for the period
+  split over its devices) against the devices' purchase cost, by device type, department and the supplier who
+  supplied the device, split in-house vs contract and vendor. COSR in the period and per year, with the guide
+  that under about 5–6 % a year is usually good value, stated as a guide, not a rule.
+- **Budgets**: one EGP total at the stored exchange rates (with the share committed or spent and the amount
+  spent), the per-currency figures kept, each non-EGP line shows its EGP amount, and the usual "no exchange
+  rate stored" note.
+- **Supplier documents**: attachments have an expiry date; supplier documents have their own types (EDA
+  registration, ISO 13485, agency letter, commercial register, tax card, licence, certificate, other). The
+  supplier page shows each document as valid, expiring (60 days) or expired, with a form to change its type or
+  date. New page **Procurement › Supplier documents** lists documents expired or expiring in 30/60/90/180 days.
+  A warning (never a block) shows on the offer page (award), the new purchase order page and a framework
+  agreement (call-offs) when the supplier has an expired document. Procurement gets one notification per
+  document 30 days before it expires.
+- Demo data (`scripts/seed/finance.ts`): 10 % residual value on imaging types; 15 supplier documents with
+  expiry dates (one expired, some expiring within 30 and 60 days). Text placeholders, not real files.
+
+Not covered:
+- No declining-balance or other depreciation method; no depreciation journal or ERP export.
+- Spare parts used are counted only through the work order's cost (the cost field is pre-filled with the parts
+  booked); parts issued without a cost on the job are not counted separately.
+- Service cost by supplier means the supplier of the device, not the company that did the service.
+- No reminder for documents that are already expired when they are added (they show on the pages instead).
+- The demo's COSR is low (well under 1 %): the demo has few repair costs against expensive equipment.
+
+### Fixes: password rule, your sessions, more before-and-after audit values, GMDN code, commissioning plan in tabs
+
+- **Password rule.** New passwords need at least 12 characters, may not be one of the most common passwords (also with
+  digits or symbols around them, e.g. `Password123!`), may not repeat one character or a short pattern, and may not
+  contain the person's email name. The rule is shown beside the field at setup, in Your account (change password) and
+  in Administration › Users (new user, reset password). It applies only when a password is set or changed: people with
+  older, shorter passwords still sign in, and the demo accounts keep `demo1234` (the seed hashes it directly).
+- **Your sessions.** Your account lists where you are signed in: browser ("Chrome on Windows"), when signed in, last
+  used and the address. This browser is marked. "Sign out" ends one session; "Sign out everywhere else" ends all but
+  this one. Sessions now store only a short browser label (not the whole user-agent string) and the address
+  (`sessions.ip`, migration `session_details`).
+- **Before-and-after values in the audit trail** for: suppliers (details and active switch), purchase order header
+  (dates, terms, notes; changed lines are counted), device types (risk and strategy, codes and classification), users
+  (administrator edits, including the hospitals they may see), rooms (room form and room site survey; new rooms are
+  now logged too), service contracts, budget lines. Saving a contract, budget line or device type with nothing changed
+  says "Nothing changed" and logs nothing.
+- **Budget lines:** editing an existing line now also checks access to the line's own hospital (before, only the
+  hospital chosen in the form was checked).
+- **GMDN code.** Catalogue › a device type › "Edit codes and classification" (needs `catalogue.edit`): GMDN code
+  (5 digits, checked), GMDN term, UMDNS code, risk class, criticality, life expectancy, needs calibration. New
+  equipment takes the new criticality and life; equipment already registered keeps its own.
+- **Commissioning plan split up.** Tabs: Progress (curve and Gantt), Rooms, Dates for a group, Plan settings. The room
+  table shows one floor, optionally one department, 25 rooms a page (about 130 fields instead of about 650). Saving
+  returns to the same floor, department and page. Changing a field and then following a link asks "Leave without
+  saving?"; closing or reloading the tab gets the browser's question. Gantt rows link to their floor and department.
+- **Small click targets.** See the agent report: axe-core's WCAG 2.5.8 rule finds none on the pages checked; the
+  commissioning check boxes were enlarged to 24 px.
+
+Not covered:
+- The common-password list is short (about 120 entries), built in; there is no check against breach databases.
+- Older sessions keep their full user-agent string until they expire (at most 7 days); the page shows a label for both.
+- The address is the first `X-Forwarded-For` hop, as in the audit log; behind no proxy it is empty.
+- Audit diffs are not added to checklists, room zones/workshop flags, drawing verification or the BOQ, which were not
+  in scope. The plan settings form of a commissioning plan is still logged without a diff.
+- The leave warning clears when a form is submitted, even if the server then refuses it.
+
 ## Wave 26 — on branch `wave-26` (not merged yet; built on `wave-25`)
 
 Screens for each role. Migration `0042_start_page.sql`.
