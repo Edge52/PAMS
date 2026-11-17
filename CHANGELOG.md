@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 30 — on branch `wave-30` (not merged yet)
+## Wave 30 — merged 17 Nov 2026
 
 The 3D view split into smaller files. No change in what you see or do; no migration.
 
