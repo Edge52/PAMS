@@ -140,7 +140,7 @@ export default async function CommissioningPlanPage({ params, searchParams }: { 
                 </tr></thead>
                 <tbody>{shown.map((s) => { const r = s.room, n = r.devices.length; return (
                   <tr key={r.roomId} className="border-t border-line align-top">
-                    <td className="px-2 py-1.5"><Link href={`/facilities/${plan.facilityId}/rooms/${r.roomId}/sheet`} className="text-primary hover:underline">{r.name}</Link><span className="block font-mono text-xs text-muted">{r.code}{r.department ? ` · ${r.department}` : ""}</span></td>
+                    <td className="min-w-40 px-2 py-1.5"><Link href={`/facilities/${plan.facilityId}/rooms/${r.roomId}/sheet`} className="text-primary hover:underline">{r.name}</Link><span className="block font-mono text-xs text-muted">{r.code}{r.department ? ` · ${r.department}` : ""}</span></td>
                     <td className="px-2 text-xs">{n ? <Link href={`/assets?roomId=${r.roomId}`} className="hover:underline">{r.devices.filter((d) => d.installedOn).length}/{n} installed<br />{r.devices.filter((d) => d.acceptedOn).length}/{n} accepted</Link> : <span className="text-muted">none registered</span>}</td>
                     <td className="px-2">{mayEdit ? <><input type="hidden" name="roomId" value={r.roomId} /><Input type="date" name={`h_${r.roomId}`} defaultValue={r.handoverPlanned ?? ""} aria-label={`Planned handover, ${r.name}`} className="w-36" /></> : r.handoverPlanned ? formatDate(r.handoverPlanned) : "—"}</td>
                     <td className="px-2">{mayEdit ? <Input type="date" name={`o_${r.roomId}`} defaultValue={r.handoverOn ?? ""} aria-label={`Handed over, ${r.name}`} className="w-36" /> : r.handoverOn ? formatDate(r.handoverOn) : "—"}</td>
