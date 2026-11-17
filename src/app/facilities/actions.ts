@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { assets, buildings, departments, facilities, floors, liftCores, rooms, userFacilities, type LiftStop } from "@/db/schema";
 import { logActivity } from "@/lib/server-utils";
+import { changeSummary, diff } from "@/lib/audit-diff";
 import { FACILITY_TYPES, ROOM_TYPES } from "@/lib/assets/filters";
 import { code, dbError, firstError, formObject, id, int, num, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
 import { imageSize, planSizeFor } from "@/lib/assets/image-size";
@@ -243,12 +244,18 @@ export async function saveRoom(_: FormState, fd: FormData): Promise<FormState> {
   if (roomId && !(await roomInFacility(roomId, facilityId))) return { error: "That room belongs to another facility." };
   const v = { floorId, departmentId: r.departmentId ?? null, code: r.code, name: r.name, type: r.type ?? "OTHER", beds: r.beds ?? 0,
     x: r.x ?? 20, y: r.y ?? 20, w: r.w ?? 100, h: r.h ?? 80 };
+  const [before] = roomId ? await db.select().from(rooms).where(eq(rooms.id, roomId)) : [];
+  const changes = before ? diff(before, v) : null;
   try {
     if (roomId) {
       await db.update(rooms).set(v).where(eq(rooms.id, roomId));
       // Equipment follows its room's department.
       if (v.departmentId) await db.update(assets).set({ departmentId: v.departmentId }).where(eq(assets.roomId, roomId));
-    } else await db.insert(rooms).values({ ...v, outlineSource: "drawn" });
+      if (changes) await logActivity("room", roomId, "updated", `Room ${v.code} updated. ${changeSummary(changes)}`, undefined, db, changes);
+    } else {
+      const [made] = await db.insert(rooms).values({ ...v, outlineSource: "drawn" }).returning({ id: rooms.id });
+      await logActivity("room", made.id, "created", `Room ${v.code} added`);
+    }
   } catch (e) { return { error: dbError(e).replace("code is", "room code is") }; }
   revalidatePath(`/facilities/${facilityId}`);
   revalidatePath("/assets/map");

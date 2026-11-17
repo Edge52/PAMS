@@ -15,6 +15,7 @@ import { budgetCrossing, matchInvoice } from "@/lib/procurement/money";
 import { budgetRows, matchLinesFor, poValues } from "@/lib/procurement/money-server";
 import { fxFactors } from "@/lib/procurement/server";
 import { logActivity, nextNumber } from "@/lib/server-utils";
+import { changeSummary, diff } from "@/lib/audit-diff";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const go = (path: string, msg: string): never => redirect(`${path}${path.includes("?") ? "&" : "?"}notice=${encodeURIComponent(msg)}`);
@@ -35,9 +36,16 @@ export async function saveBudgetLineAction(_: FormState, fd: FormData): Promise<
   if (!(amount >= 0 && amount < 1e13)) return { error: "Enter the amount." };
   const kind = fd.get("kind") === "MAINTENANCE" ? "MAINTENANCE" as const : "CAPITAL" as const;
   const v = { facilityId, year, name, kind, amount: amount.toFixed(2), currency, departmentId: Number(fd.get("departmentId")) || null, projectId: Number(fd.get("projectId")) || null, notes: str(fd, "notes", 1000) || null };
-  if (id) await db.update(budgetLines).set(v).where(eq(budgetLines.id, id));
-  else await db.insert(budgetLines).values(v);
-  await logActivity("facility", facilityId, "budget line", `${year} ${name}: ${currency} ${amount.toLocaleString("en")}`, me.name);
+  let changes = null;
+  if (id) {
+    const [before] = await db.select().from(budgetLines).where(eq(budgetLines.id, id));
+    if (!before) return { error: "That budget line no longer exists." };
+    await requireFacilityAccess(before.facilityId, me); // the line's own hospital, not only the one chosen in the form
+    changes = diff(before, v);
+    if (!changes) return { ok: "Nothing changed." };
+    await db.update(budgetLines).set(v).where(eq(budgetLines.id, id));
+  } else await db.insert(budgetLines).values(v);
+  await logActivity("facility", facilityId, "budget line", `${year} ${name}: ${currency} ${amount.toLocaleString("en")}${changes ? `. ${changeSummary(changes)}` : ""}`, me.name, db, changes);
   revalidatePath("/procurement/budgets");
   return { ok: id ? "Budget line saved." : `${name} added.` };
 }

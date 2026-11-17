@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PASSWORD_RULE } from "@/lib/auth/password-policy";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
@@ -36,7 +37,7 @@ export default async function AccountPage() {
         <Panel title="Change password">
           <ActionForm action={changeOwnPassword} className="space-y-4">
             <Field label="Current password"><Input type="password" name="current" required autoComplete="current-password" /></Field>
-            <Field label="New password" hint="At least 8 characters"><Input type="password" name="password" required autoComplete="new-password" /></Field>
+            <Field label="New password" hint={PASSWORD_RULE}><Input type="password" name="password" required autoComplete="new-password" /></Field>
             <Field label="New password again"><Input type="password" name="confirm" required autoComplete="new-password" /></Field>
             <SubmitButton>Change password</SubmitButton>
           </ActionForm>

@@ -14,6 +14,9 @@ describe("audit trail (wave 24)", () => {
   it("never records secrets or the database's own times", () => {
     expect(diff({ passwordHash: "a", updatedAt: 1, name: "A" }, { passwordHash: "b", updatedAt: 2, name: "B" })).toEqual({ name: { from: "A", to: "B" } });
   });
+  it("never records two-step secrets or backup codes, even when asked for (wave 27)", () => {
+    expect(diff({ totpSecret: "A", backupCodeHashes: ["x"], totpLastStep: 1 }, { totpSecret: "B", backupCodeHashes: ["y"], totpLastStep: 2 }, ["totpSecret", "backupCodeHashes", "totpLastStep"])).toBeNull();
+  });
   it("compares only the fields asked for", () => {
     expect(diff({ a: 1, b: 1 }, { a: 2, b: 2 }, ["b"])).toEqual({ b: { from: 1, to: 2 } });
   });

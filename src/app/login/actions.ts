@@ -210,7 +210,7 @@ export async function createFirstAdmin(_prev: ActionState, fd: FormData): Promis
   if (!p.success) return { errors: [...new Set(p.error.issues.map((i) => i.message))] };
   const { name, email, password, confirm } = p.data;
   const problem = passwordProblem(password, email);
-  if (problem) return { errors: [problem] };
+  if (problem) return { errors: [problem], fields: { password: problem } };
   if (password !== confirm) return { errors: ["The two passwords don't match."] };
   const passwordHash = await hashPassword(password);
   const [existing] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${email}`);
@@ -233,7 +233,7 @@ export async function changeOwnPassword(_prev: ActionState, fd: FormData): Promi
   const [u] = await db.select().from(users).where(eq(users.id, me.id));
   if (!(await verifyPassword(current, u?.passwordHash))) return { errors: ["Your current password isn't right."] };
   const problem = passwordProblem(next, me.email);
-  if (problem) return { errors: [problem] };
+  if (problem) return { errors: [problem], fields: { password: problem } };
   if (next !== confirm) return { errors: ["The two new passwords don't match."] };
   await db.update(users).set({ passwordHash: await hashPassword(next) }).where(eq(users.id, me.id));
   await destroyAllSessions(me.id, true);

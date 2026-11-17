@@ -7,6 +7,7 @@ import { SUPPORT_LABELS, SUPPORT_TONE, supportState } from "@/lib/assets/models"
 import { Badge, Details, EmptyState, LinkButton, PageHeader, Panel, Stat, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
 import { Ar, Crumbs, Notice } from "@/components/assets/bits";
 import { ChecklistPanel } from "@/components/assets/checklist-panel";
+import { DeviceTypeCodesForm } from "@/components/assets/device-type-codes-form";
 import { defaultChecklist, effectiveChecklist } from "@/lib/assets/checklists";
 import { DEFAULT_ACCEPTANCE } from "@/lib/procurement/money";
 import { DEFAULT_PPM_INTERVAL_MONTHS } from "@/lib/assets/maintenance";
@@ -144,6 +145,7 @@ export default async function DeviceTypePage({ params, searchParams }: { params:
               { label: "GMDN code", value: dt.gmdnCode },
             ]} />
           </Panel>
+          {can(me.role, "catalogue.edit") && <DeviceTypeCodesForm dt={dt} />}
           <Panel title="Makes and models" padded={false} actions={can(me.role, "catalogue.edit") && <Link href={`/catalogue/models/new?deviceTypeId=${dt.id}&back=${encodeURIComponent(`/catalogue/${dt.code}`)}`} className="text-sm font-semibold text-primary hover:underline">Add a make and model</Link>}>
             {models.length === 0 ? <p className="p-4 text-sm text-muted">No make or model recorded for this type yet. Add the ones you buy, so equipment is always registered with the same names.</p> : (
               <ul className="divide-y divide-line">

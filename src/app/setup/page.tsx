@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { PASSWORD_RULE } from "@/lib/auth/password-policy";
 import { Field, Input } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { AuthCard } from "../login/auth-card";
@@ -17,7 +18,7 @@ export default async function SetupPage() {
         {askCode && <Field label="Setup code" hint="The SETUP_CODE set in the server's .env file"><Input name="setupCode" required autoComplete="off" /></Field>}
         <Field label="Your name"><Input name="name" required autoComplete="name" /></Field>
         <Field label="Email"><Input type="email" name="email" required autoComplete="username" /></Field>
-        <Field label="Password" hint="At least 8 characters"><Input type="password" name="password" required autoComplete="new-password" /></Field>
+        <Field label="Password" hint={PASSWORD_RULE}><Input type="password" name="password" required autoComplete="new-password" /></Field>
         <Field label="Password again"><Input type="password" name="confirm" required autoComplete="new-password" /></Field>
         <SubmitButton className="w-full" pendingLabel="Creating…">Create administrator</SubmitButton>
       </ActionForm>

@@ -8,6 +8,7 @@ import { requirePermission } from "@/lib/auth/session";
 import { db } from "@/db";
 import { suppliers } from "@/db/schema";
 import { logActivity } from "@/lib/server-utils";
+import { changeSummary, diff } from "@/lib/audit-diff";
 import { fail, formObject, optNum, optStr, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { SUPPLIER_TYPES } from "@/lib/procurement/labels";
 
@@ -53,8 +54,10 @@ export async function updateSupplier(id: number, _prev: ActionState, fd: FormDat
   if (!parsed.success) return zodFail(parsed.error);
   const [before] = await db.select().from(suppliers).where(eq(suppliers.id, id));
   if (!before) return fail("This supplier no longer exists.");
-  await db.update(suppliers).set(values(parsed.data)).where(eq(suppliers.id, id));
-  await logActivity("supplier", id, "updated", `Supplier details updated${before.rating !== (parsed.data.rating ?? null) ? `, rating ${parsed.data.rating ?? "cleared"}` : ""}`);
+  const next = values(parsed.data);
+  const changes = diff(before, next);
+  await db.update(suppliers).set(next).where(eq(suppliers.id, id));
+  if (changes) await logActivity("supplier", id, "updated", `Supplier details updated. ${changeSummary(changes)}`, undefined, db, changes);
   revalidatePath(`/procurement/suppliers/${id}`);
   redirect(`/procurement/suppliers/${id}`);
 }
@@ -65,7 +68,7 @@ export async function toggleSupplierActive(_prev: ActionState, fd: FormData): Pr
   const [s] = await db.select().from(suppliers).where(eq(suppliers.id, id));
   if (!s) return fail("This supplier no longer exists.");
   await db.update(suppliers).set({ active: !s.active }).where(eq(suppliers.id, id));
-  await logActivity("supplier", id, "status_changed", s.active ? "Supplier deactivated (hidden from new RFQs)" : "Supplier reactivated");
+  await logActivity("supplier", id, "status_changed", s.active ? "Supplier deactivated (hidden from new RFQs)" : "Supplier reactivated", undefined, db, diff(s, { active: !s.active }));
   revalidatePath(`/procurement/suppliers/${id}`);
   revalidatePath("/procurement/suppliers");
   return { message: s.active ? "Supplier deactivated." : "Supplier reactivated." };

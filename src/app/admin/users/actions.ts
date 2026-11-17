@@ -10,6 +10,7 @@ import { ROLES } from "@/lib/auth/permissions";
 import { hashPassword, passwordProblem } from "@/lib/auth/password";
 import { destroyAllSessions, requirePermission } from "@/lib/auth/session";
 import { logActivity } from "@/lib/server-utils";
+import { changeSummary, diff } from "@/lib/audit-diff";
 import type { ActionState } from "@/lib/procurement/forms";
 
 const base = z.object({
@@ -44,7 +45,7 @@ export async function createUser(_prev: ActionState, fd: FormData): Promise<Acti
   const d = p.data;
   const password = String(fd.get("password") ?? "");
   const problem = passwordProblem(password, d.email);
-  if (problem) return { errors: [`Temporary password: ${problem}`] };
+  if (problem) return { errors: [`Temporary password: ${problem}`], fields: { password: problem } };
   if (await emailTaken(d.email)) return { errors: ["Someone already uses that email address."] };
   const all = d.allFacilities === "on" || d.role === "ADMIN";
   const fac = facilityIds(fd);
@@ -78,15 +79,18 @@ export async function updateUser(_prev: ActionState, fd: FormData): Promise<Acti
   const all = d.allFacilities === "on" || d.role === "ADMIN";
   const fac = facilityIds(fd);
   if (!all && fac.length === 0) return { errors: ["Choose at least one facility, or tick “All facilities”."] };
+  const next = { name: d.name, email: d.email, role: d.role, jobTitle: d.jobTitle || null, phone: d.phone || null, allFacilities: all, active };
+  // Wave 27: before and after values. Only these fields are compared: never the password hash, two-step secret or backup codes.
+  const hadFac = (await db.select({ f: userFacilities.facilityId }).from(userFacilities).where(eq(userFacilities.userId, id))).map((r) => r.f).sort((a, b) => a - b);
+  const changes = diff({ ...cur, facilityIds: hadFac }, { ...next, facilityIds: all ? [] : [...fac].sort((a, b) => a - b) }, [...Object.keys(next), "facilityIds"]);
   await db.transaction(async (tx) => {
-    await tx.update(users).set({ name: d.name, email: d.email, role: d.role, jobTitle: d.jobTitle || null, phone: d.phone || null, allFacilities: all, active })
+    await tx.update(users).set(next)
       .where(eq(users.id, id));
     await tx.delete(userFacilities).where(eq(userFacilities.userId, id));
     if (!all) await tx.insert(userFacilities).values(fac.map((facilityId) => ({ userId: id, facilityId })));
   });
   if (!active) await destroyAllSessions(id);
-  const changes = [cur.role !== d.role && `role ${cur.role} → ${d.role}`, cur.active !== active && (active ? "switched on" : "switched off")].filter(Boolean);
-  await logActivity("user", id, "updated", `User details updated${changes.length ? ` (${changes.join(", ")})` : ""}`);
+  if (changes) await logActivity("user", id, "updated", `User details updated. ${changeSummary(changes)}`, undefined, db, changes);
   revalidatePath("/admin/users");
   revalidatePath(`/admin/users/${id}`);
   return { message: "Saved." };
@@ -99,7 +103,7 @@ export async function resetPassword(_prev: ActionState, fd: FormData): Promise<A
   const [u] = await db.select().from(users).where(eq(users.id, id));
   if (!u) return { errors: ["That user no longer exists."] };
   const problem = passwordProblem(password, u.email);
-  if (problem) return { errors: [problem] };
+  if (problem) return { errors: [problem], fields: { password: problem } };
   await db.update(users).set({ passwordHash: await hashPassword(password) }).where(eq(users.id, id));
   await destroyAllSessions(id);
   await logActivity("user", id, "password_reset", "Password reset by an administrator");

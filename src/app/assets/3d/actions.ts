@@ -7,6 +7,8 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
+import { logActivity } from "@/lib/server-utils";
+import { changeSummary, diff } from "@/lib/audit-diff";
 import { assets, buildings, documents, floors, rooms, routeFixes, twinNotes, twinTours, twinViews, users, type RoomServices, type TourStop } from "@/db/schema";
 import type { TwinFix, TwinRoom } from "@/components/assets/twin/types";
 import { can } from "@/lib/auth/permissions";
@@ -378,7 +380,7 @@ export type RoomSite = { ceilingM: number | null; doorWidthM: number | null; doo
 export async function setRoomSiteAction(_: unknown, fd: FormData): Promise<{ ok?: string; error?: string; roomId?: number; site?: RoomSite } | null> {
   const me = await requirePermission("facilities.edit");
   const roomId = Number(fd.get("roomId"));
-  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name }).from(rooms).where(eq(rooms.id, roomId)) : [];
+  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name, ceilingM: rooms.ceilingM, doorWidthM: rooms.doorWidthM, doorHeightM: rooms.doorHeightM, floorLoadKgM2: rooms.floorLoadKgM2, services: rooms.services }).from(rooms).where(eq(rooms.id, roomId)) : [];
   if (!r) return { error: "That room no longer exists." };
   const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
   const vals = { ceilingM: siteNum(fd, "ceilingM", 1, 15), doorWidthM: siteNum(fd, "doorWidthM", 0.3, 6), doorHeightM: siteNum(fd, "doorHeightM", 1, 6), floorLoadKgM2: siteNum(fd, "floorLoadKgM2", 50, 20000), powerKva: siteNum(fd, "powerKva", 0, 5000) };
@@ -397,5 +399,7 @@ export async function setRoomSiteAction(_: unknown, fd: FormData): Promise<{ ok?
   if (Object.keys(gases).length) services.gases = gases;
   const site: RoomSite = { ceilingM: vals.ceilingM as number | null, doorWidthM: vals.doorWidthM as number | null, doorHeightM: vals.doorHeightM as number | null, floorLoadKgM2: vals.floorLoadKgM2 as number | null, services: Object.keys(services).length ? services : null };
   await db.update(rooms).set(site).where(eq(rooms.id, r.id));
+  const changes = diff(r, site);
+  if (changes) await logActivity("room", r.id, "site_data", `${r.name}: site data saved. ${changeSummary(changes)}`, me.name, db, changes);
   return { ok: `${r.name}: site data saved.`, roomId: r.id, site };
 }
