@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TypeDepreciationForm } from "@/components/assets/book-value-panel";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
@@ -146,6 +147,10 @@ export default async function DeviceTypePage({ params, searchParams }: { params:
             ]} />
           </Panel>
           <UsageIntervalPanel code={dt.code} interval={dt.usageInterval} unit={dt.usageUnit} canEdit={can(me.role, "catalogue.edit")} />
+          <Panel title="Depreciation">
+            <p className="mb-3 text-sm text-muted">Straight-line book value for devices of this type: useful life {dt.lifeExpectancyYears ? `${dt.lifeExpectancyYears} years` : "not set"}, residual value {dt.residualPct ?? 0} % of the cost. A device can have its own figures on its page.</p>
+            {can(me.role, "catalogue.edit") && <TypeDepreciationForm typeId={dt.id} lifeYears={dt.lifeExpectancyYears} residualPct={dt.residualPct} />}
+          </Panel>
           <Panel title="Makes and models" padded={false} actions={can(me.role, "catalogue.edit") && <Link href={`/catalogue/models/new?deviceTypeId=${dt.id}&back=${encodeURIComponent(`/catalogue/${dt.code}`)}`} className="text-sm font-semibold text-primary hover:underline">Add a make and model</Link>}>
             {models.length === 0 ? <p className="p-4 text-sm text-muted">No make or model recorded for this type yet. Add the ones you buy, so equipment is always registered with the same names.</p> : (
               <ul className="divide-y divide-line">

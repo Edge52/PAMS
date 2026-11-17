@@ -10,6 +10,8 @@ import { warrantyExpiryReport } from "./warranty";
 import { workOrdersReport } from "./work-orders";
 import { incidentsReport } from "./incidents";
 import { deviceSecurityReport } from "./device-security";
+import { bookValueReport } from "./book-value";
+import { serviceCostReport } from "./service-cost";
 
 export type ReportDef = {
   slug: string;
@@ -73,6 +75,19 @@ export const REPORTS: ReportDef[] = [
     description: "Devices on the network or holding patient data, with what needs attention: operating system out of support, factory passwords, no recent update.",
     filters: ["facility"],
     load: deviceSecurityReport,
+  },
+  {
+    slug: "book-value", title: "Book value",
+    description: "What the equipment cost, how much has been written off (straight line) and its book value today, by facility, department and device type.",
+    filters: ["facility"],
+    load: bookValueReport,
+  },
+  {
+    slug: "service-cost", title: "Service cost and COSR",
+    description: "Maintenance, repair and contract cost in the period against what the devices cost to buy (COSR), by device type, department and supplier, in-house and contract.",
+    filters: ["facility", "dateRange"], dateLabel: "Period",
+    defaults: (today) => ({ from: today.slice(0, 4) + "-01-01", to: today }),
+    load: serviceCostReport,
   },
 ];
 

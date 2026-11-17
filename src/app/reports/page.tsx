@@ -18,9 +18,10 @@ const GROUPS: { id: string; title: string; slugs: string[] }[] = [
   { id: "assets", title: "Assets", slugs: ["assets-by-department", "warranty-expiries"] },
   { id: "safety", title: "Safety and security", slugs: ["incidents", "device-security"] },
   { id: "procurement", title: "Procurement", slugs: ["tender-status", "open-purchase-orders"] },
+  { id: "money", title: "Money", slugs: ["book-value", "service-cost"] },
 ];
 const ROLE_FIRST: Record<string, string> = {
-  TECHNICIAN: "maintenance", BIOMEDICAL: "maintenance", DEPARTMENT_HEAD: "assets", PROCUREMENT: "procurement", FINANCE: "procurement", DIRECTOR: "summary",
+  TECHNICIAN: "maintenance", BIOMEDICAL: "maintenance", DEPARTMENT_HEAD: "assets", PROCUREMENT: "procurement", FINANCE: "money", DIRECTOR: "summary",
 };
 
 export default async function ReportsIndex({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
