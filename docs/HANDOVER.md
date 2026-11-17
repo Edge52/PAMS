@@ -82,11 +82,11 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 24 (merged 16 Nov 2026). `wave-25` (security: two-step sign-in, security headers, device security details) and `wave-26` (screens for each role: start pages, trends, report library, phone scan and install; built on `wave-25`) and `wave-27` (lifecycle data: usage meters, test equipment on PPM sign-off, loans, training, book value, service cost, supplier document expiry, password rule, sessions; built on `wave-26`) are pushed and wait for Hisham's OK to merge. `wave-28` (3D north arrow, own model files, simulation shifts) is built on `wave-27`. With wave 28 the nine-wave plan of Nov 2026 is built; what's left waits on Hisham (real data, go-live, keys) or was set aside (splitting the two large 3D files).
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 28 (merged 17 Nov 2026): the nine-wave plan of Nov 2026 is built. What's left waits on Hisham (real data, go-live, keys) or was set aside (splitting the two large 3D files).
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
-- Old branches: `wave-13` to `wave-24` (and `wave-22b`) are merged and can be deleted from GitHub's branch page (the session's
+- Old branches: `wave-13` to `wave-28` (and `wave-22b`) are merged and can be deleted from GitHub's branch page (the session's
   connection can't delete branches). The Mac still has two old local branches (`claude/vigilant-noether-2l33kc`,
   `fix/demo-restart`); `git branch -D` them when convenient.
 

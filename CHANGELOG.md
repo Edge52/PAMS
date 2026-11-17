@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 28 — on branch `wave-28` (not merged yet; built on `wave-27`)
+## Wave 28 — merged 17 Nov 2026
 
 3D view and simulation. Migration `0044_wave28.sql`.
 
@@ -31,7 +31,7 @@ porter); the compass isn't clickable (it doesn't turn the camera to north); the 
 hospital only when every building with a north agrees. Splitting `twin-view.tsx` and `scene.ts` into smaller files was not done: it is a large change with no visible
 benefit, and it was left rather than rushed.
 
-## Wave 27 — on branch `wave-27` (not merged yet; built on `wave-26`)
+## Wave 27 — merged 17 Nov 2026
 
 Lifecycle data and leftovers. Migration `0043_wave27.sql`. Built by three agents in parallel and merged.
 
@@ -151,7 +151,7 @@ Not covered:
   in scope. The plan settings form of a commissioning plan is still logged without a diff.
 - The leave warning clears when a form is submitted, even if the server then refuses it.
 
-## Wave 26 — on branch `wave-26` (not merged yet; built on `wave-25`)
+## Wave 26 — merged 17 Nov 2026
 
 Screens for each role. Migration `0042_start_page.sql`.
 
@@ -174,7 +174,7 @@ Screens for each role. Migration `0042_start_page.sql`.
   (GHSA-mfr8-8qww-v76h, a feature PAMS doesn't use). A patch release, no other change. Two moderate notices remain
   in `exceljs` (through `uuid`); npm's only offered fix is an old major version, so it's left as is.
 
-## Wave 25 — on branch `wave-25` (not merged yet)
+## Wave 25 — merged 17 Nov 2026
 
 Security. Migration `0041_security.sql`.
 
