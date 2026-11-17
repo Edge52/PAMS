@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { departments, deliveries, offerLines, offers, poLines, projects, purchaseOrders, suppliers } from "@/db/schema";
 import { formatDate, formatMoney, round2, todayISO } from "@/lib/format";
 import { convert, logActivity, nextNumber } from "@/lib/server-utils";
+import { changeSummary, diff } from "@/lib/audit-diff";
 import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { cancelApproval, startApproval } from "@/lib/approvals/server";
 import { fail, formObject, idParam, isUniqueViolation, optDate, optInt, optStr, reqDate, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
@@ -238,14 +239,18 @@ export async function updatePurchaseOrder(poId: number, _prev: ActionState, fd: 
     updates.push({ id: l.id, quantity, dept: deptIds.has(dept) ? dept : null });
   }
   if (errors.length) return fail(...errors);
+  const header = {
+    expectedDelivery: h.expectedDelivery ?? null, notes: h.notes ?? null,
+    // Commercial terms are part of what was approved: only drafts can change them.
+    ...(draft ? { issueDate: h.issueDate ?? null, incoterm: h.incoterm ?? null, warrantyMonths: h.warrantyMonths ?? null, paymentTerms: h.paymentTerms ?? null } : {}),
+  };
+  // Wave 27: before and after values of the header (lines are summarised by count).
+  const changes = diff(po, header);
+  const lineChanges = updates.filter((u) => { const l = lines.find((x) => x.id === u.id); return l && (l.quantity !== u.quantity || l.destinationDepartmentId !== u.dept); }).length;
   const RACED = "Someone submitted this purchase order for approval a moment ago, so your changes weren't saved. Reload the page.";
   try {
     await db.transaction(async (tx) => {
-      const saved = await tx.update(purchaseOrders).set({
-        expectedDelivery: h.expectedDelivery ?? null, notes: h.notes ?? null,
-        // Commercial terms are part of what was approved: only drafts can change them.
-        ...(draft ? { issueDate: h.issueDate ?? null, incoterm: h.incoterm ?? null, warrantyMonths: h.warrantyMonths ?? null, paymentTerms: h.paymentTerms ?? null } : {}),
-      }).where(draft ? and(eq(purchaseOrders.id, poId), eq(purchaseOrders.status, "DRAFT")) : eq(purchaseOrders.id, poId))
+      const saved = await tx.update(purchaseOrders).set(header).where(draft ? and(eq(purchaseOrders.id, poId), eq(purchaseOrders.status, "DRAFT")) : eq(purchaseOrders.id, poId))
         .returning({ id: purchaseOrders.id });
       // A submit that slipped in between our read and this write: roll back rather than change what's being approved.
       if (!saved.length) throw new Error(RACED);
@@ -255,7 +260,10 @@ export async function updatePurchaseOrder(poId: number, _prev: ActionState, fd: 
     if (e instanceof Error && e.message === RACED) return fail(RACED);
     throw e;
   }
-  await logActivity("po", poId, "updated", `${po.number} details updated`);
+  if (changes || lineChanges) {
+    const parts = [changeSummary(changes), lineChanges ? `${lineChanges} line${lineChanges === 1 ? "" : "s"} changed` : ""].filter(Boolean).join("; ");
+    await logActivity("po", poId, "updated", `${po.number} details updated. ${parts}`, undefined, db, changes);
+  }
   revalidatePath(`/procurement/purchase-orders/${poId}`);
   return { message: "Saved." };
 }

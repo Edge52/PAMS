@@ -11,6 +11,9 @@ import { parseChecklist } from "@/lib/assets/checklists";
 import { firstError, formObject, id as idField, isoDate, num as numField, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
 import { cleanName, nameKey, registerCandidates } from "@/lib/assets/models";
 import { logActivity } from "@/lib/server-utils";
+import { changeSummary, diff } from "@/lib/audit-diff";
+import { cleanGmdnCode, gmdnCodeProblem } from "@/lib/assets/device-type-codes";
+import { fail, zodFail, type ActionState } from "@/lib/procurement/forms";
 
 const Schema = z.object({ code: z.string().min(1).max(48), checklist: text(20000), mode: z.enum(["save", "inherit"]), kind: z.enum(["ppm", "acceptance"]).default("ppm") });
 
@@ -161,4 +164,37 @@ export async function saveSiteRequirementsAction(_: FormState, fd: FormData): Pr
   await logActivity("device_model", d.modelId, "site data saved", `${m.name}${typical ? " (typical values)" : values.verified ? " (verified)" : ""}`, me.name);
   revalidatePath(`/catalogue/models/${d.modelId}`);
   return { ok: typical ? "Saved. These are typical values: replace them from the manufacturer's site planning guide." : "Site data saved." };
+}
+
+/* ── Device type codes and classification (wave 27) ── */
+
+const CodesSchema = z.object({
+  code: z.string().min(1).max(48), gmdnCode: text(20), gmdnTerm: text(300), umdnsCode: text(16),
+  riskClass: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["I", "IIa", "IIb", "III"], { error: "Choose a risk class." }).optional()),
+  criticality: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["LIFE_SUPPORT", "HIGH", "MEDIUM", "LOW"], { error: "Choose a criticality." }).optional()),
+  lifeExpectancyYears: numField("Life expectancy", 1, 50),
+});
+
+/** Edit a device type's codes (GMDN, UMDNS) and classification. The catalogue is shared by every hospital. */
+export async function saveDeviceTypeCodesAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  const me = await requirePermission("catalogue.edit");
+  const p = CodesSchema.safeParse(formObject(fd));
+  if (!p.success) return zodFail(p.error);
+  const d = p.data;
+  const problem = gmdnCodeProblem(d.gmdnCode);
+  if (problem) return { errors: [problem], fields: { gmdnCode: problem } };
+  if (d.lifeExpectancyYears != null && !Number.isInteger(d.lifeExpectancyYears)) return { errors: ["Life expectancy is a whole number of years."], fields: { lifeExpectancyYears: "Whole years." } };
+  const [dt] = await db.select().from(deviceTypes).where(eq(deviceTypes.code, d.code.toUpperCase()));
+  if (!dt) return fail("That device type no longer exists.");
+  const next = {
+    gmdnCode: cleanGmdnCode(d.gmdnCode), gmdnTerm: d.gmdnTerm ?? null, umdnsCode: d.umdnsCode ?? null,
+    riskClass: d.riskClass ?? null, criticality: d.criticality ?? null, lifeExpectancyYears: d.lifeExpectancyYears ?? null,
+    requiresCalibration: fd.get("requiresCalibration") === "on",
+  };
+  const changes = diff(dt, next);
+  if (!changes) return { message: "Nothing changed." };
+  await db.update(deviceTypes).set(next).where(eq(deviceTypes.id, dt.id));
+  await logActivity("device_type", dt.id, "updated", `${dt.name}: ${changeSummary(changes)}`, me.name, db, changes);
+  revalidatePath(`/catalogue/${dt.code}`);
+  return { message: "Saved. New equipment of this type takes the new criticality and life; equipment already registered keeps its own." };
 }

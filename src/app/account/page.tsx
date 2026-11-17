@@ -1,15 +1,16 @@
 import Link from "next/link";
+import { PASSWORD_RULE } from "@/lib/auth/password-policy";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { Badge, control, Details, Field, Input, PageHeader, Panel } from "@/components/ui";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { twoStepRequiredFor } from "@/lib/auth/two-step";
 import { NewBackupCodesForm } from "@/components/two-step-forms";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
-import { requireUser } from "@/lib/auth/session";
-import { changeOwnPassword, newBackupCodeSet, setStartPage, startTwoStep, turnOffTwoStep } from "../login/actions";
+import { listSessions, requireUser } from "@/lib/auth/session";
+import { changeOwnPassword, newBackupCodeSet, setStartPage, signOutEverywhereElse, signOutSession, startTwoStep, turnOffTwoStep } from "../login/actions";
 import { ROLE_HOME, startPageOptions } from "@/lib/modules";
 import { permissionsOf } from "@/lib/auth/permissions";
 
@@ -22,6 +23,8 @@ export default async function AccountPage() {
   const pages = startPageOptions(permissionsOf(me.role), me.role);
   const usual = pages.find((p) => p.href === (ROLE_HOME[me.role] ?? "/")) ?? pages[0];
   const required = await twoStepRequiredFor(me.role);
+  const sessions = await listSessions(me.id);
+  const others = sessions.filter((x) => !x.current).length;
   return (
     <>
       <PageHeader title="Your account" />
@@ -36,7 +39,7 @@ export default async function AccountPage() {
         <Panel title="Change password">
           <ActionForm action={changeOwnPassword} className="space-y-4">
             <Field label="Current password"><Input type="password" name="current" required autoComplete="current-password" /></Field>
-            <Field label="New password" hint="At least 8 characters"><Input type="password" name="password" required autoComplete="new-password" /></Field>
+            <Field label="New password" hint={PASSWORD_RULE}><Input type="password" name="password" required autoComplete="new-password" /></Field>
             <Field label="New password again"><Input type="password" name="confirm" required autoComplete="new-password" /></Field>
             <SubmitButton>Change password</SubmitButton>
           </ActionForm>
@@ -57,6 +60,31 @@ export default async function AccountPage() {
         <Panel title="On your phone" className="lg:col-span-2">
           <p className="text-sm">Open PAMS in your phone&apos;s browser and add it to the home screen: on Android, Chrome menu › <em>Add to home screen</em> (or <em>Install app</em>); on iPhone, Safari&apos;s share button › <em>Add to Home Screen</em>. It then opens full screen, with shortcuts to scan a label and report a fault.</p>
           <p className="mt-2 text-sm"><Link href="/scan" className="font-semibold text-primary underline">Scan a label</Link> opens a device&apos;s page from its QR label.</p>
+        </Panel>
+        <Panel title="Your sessions" className="lg:col-span-2" padded={false}
+          actions={others > 0 && (
+            <ActionForm action={signOutEverywhereElse} confirm={`Sign out of the ${others} other session${others === 1 ? "" : "s"}? This browser stays signed in.`}>
+              <SubmitButton variant="secondary">Sign out everywhere else</SubmitButton>
+            </ActionForm>
+          )}>
+          <p className="px-5 pt-4 text-sm text-muted">Where you are signed in now. Sign out of anything you don&apos;t recognise, then change your password.</p>
+          <ul className="divide-y divide-line">
+            {sessions.map((x) => (
+              <li key={x.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{x.browser ?? "Unknown browser"}{x.current && <> <Badge tone="ok">This browser</Badge></>}</p>
+                  <p className="text-muted">Signed in {formatDateTime(x.startedAt)} · last used {formatDateTime(x.lastSeenAt)}{x.ip && <> · from {x.ip}</>}</p>
+                </div>
+                {!x.current && (
+                  <ActionForm action={signOutSession}>
+                    <input type="hidden" name="sessionId" value={x.id} />
+                    <SubmitButton variant="secondary">Sign out</SubmitButton>
+                  </ActionForm>
+                )}
+              </li>
+            ))}
+          </ul>
+          {others === 0 && <p className="px-5 pb-4 text-sm text-muted">You aren&apos;t signed in anywhere else.</p>}
         </Panel>
         <Panel title="Two-step sign-in" className="lg:col-span-2">
           {two?.on ? (

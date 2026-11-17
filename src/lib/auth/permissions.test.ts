@@ -66,7 +66,7 @@ describe("passwords", () => {
   });
   it("checks new passwords", () => {
     expect(passwordProblem("short")).toMatch(/at least/);
-    expect(passwordProblem("aaaaaaaaaa")).toMatch(/repeated/);
+    expect(passwordProblem("aaaaaaaaaaaa")).toMatch(/repeated/);
     expect(passwordProblem("me@x.com", "me@x.com")).toBeTruthy();
     expect(passwordProblem("a good passphrase")).toBeNull();
   });

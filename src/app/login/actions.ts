@@ -7,7 +7,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { hashPassword, passwordProblem, verifyPassword } from "@/lib/auth/password";
-import { createSession, destroyAllSessions, destroySession, getCurrentUser } from "@/lib/auth/session";
+import { createSession, destroyAllSessions, destroySession, endSession, getCurrentUser } from "@/lib/auth/session";
+import { revalidatePath } from "next/cache";
 import { newSecret, verifyCode } from "@/lib/auth/totp";
 import { landingPage, startPageOptions } from "@/lib/modules";
 import { permissionsOf } from "@/lib/auth/permissions";
@@ -210,7 +211,7 @@ export async function createFirstAdmin(_prev: ActionState, fd: FormData): Promis
   if (!p.success) return { errors: [...new Set(p.error.issues.map((i) => i.message))] };
   const { name, email, password, confirm } = p.data;
   const problem = passwordProblem(password, email);
-  if (problem) return { errors: [problem] };
+  if (problem) return { errors: [problem], fields: { password: problem } };
   if (password !== confirm) return { errors: ["The two passwords don't match."] };
   const passwordHash = await hashPassword(password);
   const [existing] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${email}`);
@@ -233,7 +234,7 @@ export async function changeOwnPassword(_prev: ActionState, fd: FormData): Promi
   const [u] = await db.select().from(users).where(eq(users.id, me.id));
   if (!(await verifyPassword(current, u?.passwordHash))) return { errors: ["Your current password isn't right."] };
   const problem = passwordProblem(next, me.email);
-  if (problem) return { errors: [problem] };
+  if (problem) return { errors: [problem], fields: { password: problem } };
   if (next !== confirm) return { errors: ["The two new passwords don't match."] };
   await db.update(users).set({ passwordHash: await hashPassword(next) }).where(eq(users.id, me.id));
   await destroyAllSessions(me.id, true);
@@ -251,3 +252,26 @@ export async function setStartPage(_prev: ActionState, fd: FormData): Promise<Ac
   return { message: want ? "Saved. You'll start there next time you sign in." : "Saved. You'll start on the usual page for your role." };
 }
 
+
+/* ── Your sessions (wave 27) ── */
+
+/** Sign out one of your other sessions (a browser you no longer use, a shared PC). */
+export async function signOutSession(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  const id = Number(fd.get("sessionId"));
+  if (!Number.isInteger(id) || id <= 0 || !(await endSession(me.id, id))) return { errors: ["That session has already ended."] };
+  await logActivity("user", me.id, "signed_out_session", "Signed out one of their other sessions");
+  revalidatePath("/account");
+  return { message: "Signed out there." };
+}
+
+/** Sign out every session but this one. */
+export async function signOutEverywhereElse(): Promise<ActionState> {
+  const me = await getCurrentUser();
+  if (!me) redirect("/login");
+  await destroyAllSessions(me.id, true);
+  await logActivity("user", me.id, "signed_out_elsewhere", "Signed out everywhere else");
+  revalidatePath("/account");
+  return { message: "Signed out everywhere else." };
+}

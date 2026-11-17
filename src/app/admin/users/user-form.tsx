@@ -1,4 +1,5 @@
 import { Field, FormGrid, Input, Select } from "@/components/ui";
+import { PASSWORD_RULE } from "@/lib/auth/password-policy";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { ROLES, ROLE_LABELS } from "@/lib/auth/permissions";
 import type { ActionState } from "@/lib/procurement/forms";
@@ -20,7 +21,7 @@ export function UserForm({ action, user, facilities, selected, submitLabel }: {
         </Field>
         <Field label="Job title"><Input name="jobTitle" defaultValue={user?.jobTitle ?? ""} placeholder="Head of biomedical engineering" /></Field>
         <Field label="Phone"><Input type="tel" name="phone" defaultValue={user?.phone ?? ""} /></Field>
-        {!user && <Field label="Temporary password" hint="At least 8 characters; they can change it after signing in"><Input type="text" name="password" required autoComplete="off" /></Field>}
+        {!user && <Field label="Temporary password" hint={`${PASSWORD_RULE} They can change it after signing in.`}><Input type="text" name="password" required autoComplete="off" /></Field>}
       </FormGrid>
       <fieldset className="rounded-[var(--radius-control)] border border-line p-3">
         <legend className="px-1 text-sm font-semibold">Facilities</legend>

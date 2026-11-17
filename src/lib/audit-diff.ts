@@ -2,7 +2,7 @@
 export type Changes = Record<string, { from: unknown; to: unknown }>;
 
 /** Fields that never belong in an audit entry: secrets, and times the database keeps by itself. */
-const SKIP = new Set(["updatedAt", "createdAt", "passwordHash", "password", "token", "tokenHash", "secret"]);
+const SKIP = new Set(["updatedAt", "createdAt", "passwordHash", "password", "token", "tokenHash", "secret", "totpSecret", "totpLastStep", "backupCodeHashes"]);
 
 const plain = (v: unknown): unknown => {
   if (v === undefined || v === "") return null;
@@ -26,7 +26,7 @@ export function diff(before: Record<string, unknown>, after: Record<string, unkn
 }
 
 /** `purchaseCost` → "Purchase cost", for showing a change to a person. */
-const LABELS: Record<string, string> = { udiDi: "UDI device identifier", udiPi: "UDI lot, dates and serial", lengthM: "Length (m)", widthM: "Width (m)", heightM: "Height (m)" };
+const LABELS: Record<string, string> = { udiDi: "UDI device identifier", udiPi: "UDI lot, dates and serial", lengthM: "Length (m)", widthM: "Width (m)", heightM: "Height (m)", facilityIds: "Hospitals", gmdnCode: "GMDN code", gmdnTerm: "GMDN term", umdnsCode: "UMDNS code" };
 export function fieldLabel(key: string): string {
   if (LABELS[key]) return LABELS[key];
   const words = key.replace(/Id$/, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();

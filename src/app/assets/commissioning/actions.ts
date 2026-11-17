@@ -73,7 +73,7 @@ export async function updatePlanAction(_: FormState, fd: FormData): Promise<Form
   await db.update(commissioningPlans).set({ ...parsed.data, notes: parsed.data.notes || null }).where(eq(commissioningPlans.id, p.id));
   await logActivity("commissioning", p.id, "updated", `Commissioning plan “${parsed.data.name}” changed`, me.name);
   revalidatePath(`/assets/commissioning/${id}`);
-  back(id, "notice", "Plan saved.");
+  back(id, "notice", "Plan saved.", "&tab=settings");
   return null;
 }
 
@@ -84,18 +84,18 @@ export async function bulkDatesAction(fd: FormData) {
   const id = Number(fd.get("planId"));
   const { me, p } = await planFor(id);
   const field = String(fd.get("field")) as keyof typeof FIELDS;
-  if (!(field in FIELDS)) back(id, "error", "Choose which date to set.");
+  if (!(field in FIELDS)) back(id, "error", "Choose which date to set.", "&tab=dates");
   const date = optDay.safeParse(String(fd.get("date") ?? ""));
-  if (!date.success) { back(id, "error", "Give a date, or leave it empty to clear it."); return; }
+  if (!date.success) { back(id, "error", "Give a date, or leave it empty to clear it.", "&tab=dates"); return; }
   const scope = String(fd.get("scope") ?? "all");
   const [kind, raw] = scope.split(":"); const sid = Number(raw);
   const roomIds = (await db.select({ id: commissioningRooms.roomId }).from(commissioningRooms).innerJoin(rooms, eq(rooms.id, commissioningRooms.roomId))
     .where(and(eq(commissioningRooms.planId, p.id), kind === "floor" ? eq(rooms.floorId, sid) : kind === "dept" ? eq(rooms.departmentId, sid) : undefined))).map((r) => r.id);
-  if (!roomIds.length) { back(id, "error", "No rooms of the plan in that group."); return; }
+  if (!roomIds.length) { back(id, "error", "No rooms of the plan in that group.", "&tab=dates"); return; }
   await db.update(commissioningRooms).set({ [field]: date.data }).where(and(eq(commissioningRooms.planId, p.id), inArray(commissioningRooms.roomId, roomIds)));
   await logActivity("commissioning", p.id, "updated", `${FIELDS[field]} ${date.data ?? "cleared"} for ${roomIds.length} rooms`, me.name);
   revalidatePath(`/assets/commissioning/${id}`);
-  back(id, "notice", `${FIELDS[field].charAt(0).toUpperCase()}${FIELDS[field].slice(1)} ${date.data ? `set to ${date.data}` : "cleared"} for ${roomIds.length} room${roomIds.length === 1 ? "" : "s"}.`, kind === "floor" ? `&floorId=${sid}` : "");
+  back(id, "notice", `${FIELDS[field].charAt(0).toUpperCase()}${FIELDS[field].slice(1)} ${date.data ? `set to ${date.data}` : "cleared"} for ${roomIds.length} room${roomIds.length === 1 ? "" : "s"}.`, kind === "floor" ? `&tab=rooms&floorId=${sid}` : "&tab=dates");
 }
 
 /** The room table: planned and actual handover, no-equipment, leave out. Fields are named <what>_<roomId>. */
@@ -118,8 +118,10 @@ export async function saveRoomsAction(fd: FormData) {
     if (changed || removed) await logActivity("commissioning", p.id, "updated", `Rooms: ${changed} changed, ${removed} left out`, me.name, tx);
   });
   revalidatePath(`/assets/commissioning/${id}`);
-  const floor = Number(fd.get("floorId"));
-  back(id, bad ? "error" : "notice", `${changed} room${changed === 1 ? "" : "s"} changed${removed ? `, ${removed} left out of the plan` : ""}.${bad ? ` ${bad} had a date that couldn't be read.` : ""}`, Number.isInteger(floor) && floor > 0 ? `&floorId=${floor}#rooms` : "#rooms");
+  // Wave 27: back to the same floor, department and page of the room table.
+  const floor = Number(fd.get("floorId")), dept = Number(fd.get("dept")), page = Number(fd.get("page"));
+  const where = `&tab=rooms${Number.isInteger(floor) && floor > 0 ? `&floorId=${floor}` : ""}${fd.has("dept") && Number.isInteger(dept) && dept >= 0 ? `&dept=${dept}` : ""}${Number.isInteger(page) && page > 1 ? `&page=${page}` : ""}#rooms`;
+  back(id, bad ? "error" : "notice", `${changed} room${changed === 1 ? "" : "s"} changed${removed ? `, ${removed} left out of the plan` : ""}.${bad ? ` ${bad} had a date that couldn't be read.` : ""}`, where);
 }
 
 export async function deletePlanAction(fd: FormData) {

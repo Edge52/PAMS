@@ -153,7 +153,8 @@ export const sessions = pgTable("sessions", {
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
-  userAgent: text("user_agent"),
+  userAgent: text("user_agent"),                                 // wave 27: a short label ("Chrome on Windows"), no longer the whole string
+  ip: varchar("ip", { length: 64 }),                             // wave 27: the address it was started from, when known
   createdAt: createdAt(),
 }, (t) => [index("sessions_user_idx").on(t.userId)]);
 
@@ -2123,3 +2124,5 @@ export const trainingAttendees = pgTable("training_attendees", {
 // No new tables. Columns added in place: device_types.residual_pct and assets.residual_pct (depreciation),
 // documents.expires_on (supplier document expiry). Logic: src/lib/assets/depreciation.ts,
 // src/lib/reports/service-cost-calc.ts, src/lib/procurement/supplier-docs.ts.
+/* ── Wave 27: fixes ── */
+// sessions.ip (above) and the short browser label in sessions.user_agent; no new tables.

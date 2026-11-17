@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PASSWORD_RULE } from "@/lib/auth/password-policy";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { departments, facilities, userDepartments, userFacilities, users } from "@/db/schema";
@@ -36,7 +37,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
         <Panel title="Reset password">
           <ActionForm action={resetPassword} className="space-y-4">
             <input type="hidden" name="id" value={u.id} />
-            <Field label="New temporary password" hint="Signs them out everywhere"><Input type="text" name="password" required autoComplete="off" /></Field>
+            <Field label="New temporary password" hint={`${PASSWORD_RULE} Signs them out everywhere.`}><Input type="text" name="password" required autoComplete="off" /></Field>
             <SubmitButton variant="secondary">Reset password</SubmitButton>
           </ActionForm>
           <div className="mt-5 border-t border-line pt-4">

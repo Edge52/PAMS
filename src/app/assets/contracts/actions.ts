@@ -10,6 +10,7 @@ import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { CONTRACT_TYPES } from "@/lib/assets/contracts";
 import { firstError, formObject, id, int, isoDate, num, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
 import { logActivity, nextNumber } from "@/lib/server-utils";
+import { changeSummary, diff } from "@/lib/audit-diff";
 
 const path = (id: number) => `/assets/contracts/${id}`;
 const go = (id: number, msg: string): never => redirect(`${path(id)}?notice=${encodeURIComponent(msg)}`);
@@ -68,8 +69,11 @@ export async function updateContractAction(_: FormState, fd: FormData): Promise<
   if (!p.success) return { error: firstError(p.error) };
   const problem = await check(p.data);
   if (problem) return { error: problem };
-  await db.update(serviceContracts).set(values(p.data)).where(eq(serviceContracts.id, c.id));
-  await logActivity("contract", c.id, "updated", "Contract details updated", me.name);
+  const next = values(p.data);
+  const changes = diff(c, next);
+  if (!changes) return go(c.id, "Nothing changed.");
+  await db.update(serviceContracts).set(next).where(eq(serviceContracts.id, c.id));
+  await logActivity("contract", c.id, "updated", `Contract details updated. ${changeSummary(changes)}`, me.name, db, changes);
   revalidatePath(path(c.id));
   revalidatePath("/assets/contracts");
   return go(c.id, "Contract saved.");
