@@ -10,6 +10,7 @@ import { SortTh } from "@/components/ui/sort-th";
 import { SavedFilters } from "@/components/saved-filters";
 import { activeFilterCount, ASSET_STATUSES, CRITICALITIES, filterToQuery, parseAssetFilter } from "@/lib/assets/filters";
 import { dueState, nextPpmDue, warrantyState } from "@/lib/assets/maintenance";
+import { usageDueMap } from "@/lib/assets/meters-server";
 import { categoryOptions, deviceTypeOptions, listFacilities, locationTree, PAGE_SIZE, ppmInfo, searchAssets } from "@/lib/assets/queries";
 import { formatDate, formatNumber, todayISO } from "@/lib/format";
 import { can } from "@/lib/auth/permissions";
@@ -38,7 +39,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
     categoryOptions(),
     f.poId ? db.select({ number: purchaseOrders.number }).from(purchaseOrders).where(eq(purchaseOrders.id, f.poId)).orderBy(asc(purchaseOrders.id)) : Promise.resolve([]),
   ]);
-  const ppm = await ppmInfo(rows.map((r) => r.id));
+  const [ppm, usage] = await Promise.all([ppmInfo(rows.map((r) => r.id)), usageDueMap(todayISO(), { ids: rows.map((r) => r.id) })]);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const qs = (over: Parameters<typeof filterToQuery>[1] = {}) => { const s = filterToQuery(f, over); return s ? `?${s}` : ""; };
   const filtered = activeFilterCount(f) > 0;
@@ -147,7 +148,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
               {rows.map((a) => {
                 const w = warrantyState(a.warrantyEnd, today);
                 const info = ppm.get(a.id);
-                const computed = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: info?.lastPpm });
+                const computed = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: info?.lastPpm, usageDue: usage.get(a.id)?.due });
                 const next = info?.nextScheduled && (!computed.due || info.nextScheduled <= computed.due) ? info.nextScheduled : computed.due;
                 const ds = a.status === "IN_STOCK" ? "NONE" : dueState(next, today);
                 return (

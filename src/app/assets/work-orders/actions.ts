@@ -21,6 +21,7 @@ import {
   type WorkOrderAction, type WorkOrderPriority,
 } from "@/lib/assets/work-orders";
 import { notifyUsers } from "@/lib/notifications";
+import { checkInstruments, saveInstruments } from "@/lib/assets/test-equipment-server";
 import { logActivity, nextNumber } from "@/lib/server-utils";
 import { todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
@@ -226,6 +227,9 @@ export async function completeWorkOrderAction(_: FormState, fd: FormData): Promi
   const resolution = d.resolution ?? (checklist?.length ? `Checklist done: ${sum.pass} passed, ${sum.fail} failed${sum.na ? `, ${sum.na} not applicable` : ""}.` : undefined);
   if (!resolution) return { error: "Say what was done." };
   const now = new Date();
+  // Wave 27: test equipment used must be in calibration today.
+  const used = await checkInstruments(fd, wo.facilityId, todayISO(now));
+  if ("problem" in used) return { error: used.problem, fields: { testEquipment: used.problem } };
   const [assignee] = wo.assignedToId ? await db.select({ name: users.name }).from(users).where(eq(users.id, wo.assignedToId)) : [];
   const currency = d.cost != null ? (d.currency ?? "EGP").toUpperCase() : null;
   const ok = await db.transaction(async (tx) => {
@@ -246,6 +250,7 @@ export async function completeWorkOrderAction(_: FormState, fd: FormData): Promi
     else eventId = (await tx.insert(maintenanceEvents).values({ ...event, assetId: wo.assetId, type: wo.type, scheduledDate: todayISO(wo.reportedAt) })
       .returning({ id: maintenanceEvents.id }))[0].id;
     await tx.update(workOrders).set({ maintenanceEventId: eventId }).where(eq(workOrders.id, wo.id));
+    await saveInstruments(tx, eventId, used.ok);
     // A recall job done = that device is actioned for the recall.
     await tx.update(recallAssets).set({ status: "ACTIONED", actionedAt: now, note: `Done under ${wo.number}` })
       .where(and(eq(recallAssets.workOrderId, wo.id), eq(recallAssets.status, "PENDING")));
@@ -291,6 +296,7 @@ export async function signOffWorkOrderAction(_: FormState, fd: FormData): Promis
     if (step === "reopen" && wo.maintenanceEventId) {
       if (wo.maintenanceEventId === wo.plannedEventId) {
         await tx.update(maintenanceEvents).set({ status: "SCHEDULED", completedDate: null }).where(eq(maintenanceEvents.id, wo.maintenanceEventId));
+        await saveInstruments(tx, wo.maintenanceEventId, []); // recorded again when the job is completed again
       } else await tx.delete(maintenanceEvents).where(eq(maintenanceEvents.id, wo.maintenanceEventId));
     }
     await logActivity("work_order", wo.id, step === "close" ? "closed" : "reopened",

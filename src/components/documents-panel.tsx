@@ -9,7 +9,7 @@ const KINDS = [
   { value: "compliance", label: "Compliance statement" }, { value: "certificate", label: "Certificate (CE/FDA/ISO)" },
   { value: "po_scan", label: "Signed PO" }, { value: "delivery_note", label: "Delivery note" },
   { value: "invoice", label: "Invoice" }, { value: "manual", label: "Manual" }, { value: "photo", label: "Photo" },
-  { value: "service_report", label: "Service report" },
+  { value: "service_report", label: "Service report" }, { value: "sign_in_sheet", label: "Sign-in sheet" },
   { value: "other", label: "Other" },
 ];
 const byValue = (vs: string[]) => vs.map((v) => KINDS.find((k) => k.value === v)!).filter(Boolean);

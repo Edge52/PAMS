@@ -19,6 +19,12 @@ import { DocumentsPanel } from "@/components/documents-panel";
 import { AcceptancePanel } from "@/components/assets/acceptance-panel";
 import { SafetyPanel, TestEquipmentForm } from "@/components/assets/safety-panel";
 import { SecurityPanel } from "@/components/assets/security-panel";
+import { UsagePanel } from "@/components/assets/usage-panel";
+import { LoansPanel } from "@/components/assets/loans-panel";
+import { usageDueMap } from "@/lib/assets/meters-server";
+import { instrumentOptions, instrumentsByEvent } from "@/lib/assets/test-equipment-server";
+import { TestEquipmentField } from "@/components/assets/test-equipment-field";
+import { usageIntervalLabel } from "@/lib/assets/meters";
 import { ActionForm } from "@/components/assets/action-form";
 import { Crumbs, enumOptions, Meter, NativeSelect, Notice, RoomSelect } from "@/components/assets/bits";
 import { MiniMap } from "@/components/assets/mini-map";
@@ -129,7 +135,9 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   const w = warrantyState(x.warrantyEnd, today);
   const life = lifecycle(x.installDate ?? x.purchaseDate, x.lifeExpectancyYears, today);
   const lastPpm = events.find((e) => e.e.type === "PPM" && e.e.status === "COMPLETED")?.e.completedDate ?? null;
-  const next = nextPpmDue({ id: x.id, status: x.status, installDate: x.installDate, purchaseDate: x.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: lastPpm });
+  const usage = (await usageDueMap(today, { ids: [x.id] })).get(x.id) ?? null;
+  const [instruments, usedOn] = await Promise.all([canMaint ? instrumentOptions(x.facilityId) : Promise.resolve([]), instrumentsByEvent(events.map((e) => e.e.id))]);
+  const next = nextPpmDue({ id: x.id, status: x.status, installDate: x.installDate, purchaseDate: x.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: lastPpm, usageDue: usage?.due });
   const ppmState = x.status === "IN_STOCK" ? "NONE" : dueState(next.due, today);
   const edit = sp.edit === "1" && canEdit;
   const path = `/assets/${x.id}`;
@@ -257,7 +265,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                       <td className="px-4 py-2">{vendor ?? e.performedBy ?? <span className="text-faint">—</span>}</td>
                       <td className="px-4 py-2 text-right">{e.cost ? formatMoney(e.cost, e.currency ?? "USD") : "—"}</td>
                       <td className="px-4 py-2 text-right">{e.downtimeHours != null ? `${formatNumber(e.downtimeHours, 1)} h` : "—"}</td>
-                      <td className="max-w-xs px-4 py-2 text-muted">{e.findings ?? ""}</td>
+                      <td className="max-w-xs px-4 py-2 text-muted">{e.findings ?? ""}{usedOn.get(e.id)?.map((t) => <span key={t.label} className="block text-xs">Test equipment: {t.label}{t.calibrationDue ? `, calibrated to ${formatDate(t.calibrationDue)}` : ""}</span>)}</td>
                     </tr>
                   );
                 })}</tbody>
@@ -265,7 +273,9 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
             )}
           </Panel>
 
+          {usage && <UsagePanel assetId={x.id} typeCode={a.typeCode} usage={usage} canRecord={canMaint} disposed={x.status === "DISPOSED"} />}
           <SafetyPanel assetId={x.id} canTest={canMaint} canReport={canReport} disposed={x.status === "DISPOSED"} />
+          <LoansPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />
           <SecurityPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />
           <Panel title="Movement history" padded={false}>
             {moves.length === 0 ? <p className="p-4 text-sm text-muted">Never moved since it was registered.</p> : (
@@ -367,7 +377,8 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                 <dd className="mt-0.5">
                   {ppmState === "NONE" ? <span className="text-muted">Starts when the asset is installed</span> : <>
                     Next {formatDate(next.due)} {ppmState === "OVERDUE" && <Badge tone="danger">Overdue</Badge>}{ppmState === "DUE_SOON" && <Badge tone="warn">Due soon</Badge>}
-                    <span className="block text-xs text-muted">Every {next.intervalMonths} months{next.isDefaultInterval ? " (default)" : ""} · last {lastPpm ? formatDate(lastPpm) : "never"}{a.requiresCalibration ? " · calibration required" : ""}</span>
+                    <span className="block text-xs text-muted">Every {next.intervalMonths} months{next.isDefaultInterval ? " (default)" : ""}{usage ? ` or ${usageIntervalLabel(usage.interval, usage.unit)}` : ""} · last {lastPpm ? formatDate(lastPpm) : "never"}{a.requiresCalibration ? " · calibration required" : ""}</span>
+                    {next.basis === "usage" && <span className="block text-xs text-muted">Due by use, before the months interval.</span>}
                   </>}
                 </dd>
               </div>
@@ -428,6 +439,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                 <Field label="Downtime (hours)"><Input type="number" name="downtimeHours" min={0} step="0.5" /></Field>
               </div>
               <Field label="Findings"><Textarea name="findings" rows={2} placeholder="Checks done, parts replaced, test results" /></Field>
+              <TestEquipmentField options={instruments} />
               <Field label="Then set the asset to"><NativeSelect name="setStatus" options={enumOptions(["IN_SERVICE", "UNDER_MAINTENANCE", "OUT_OF_SERVICE"])} placeholder="Leave as is" /></Field>
               <Button variant="secondary">Record maintenance</Button>
             </ActionForm>

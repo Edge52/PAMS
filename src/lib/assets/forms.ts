@@ -1,7 +1,8 @@
 /** zod helpers for FormData-based server actions (blank → undefined, numbers from strings, readable messages). Pure. */
 import { z } from "zod";
 
-export type FormState = { error?: string; ok?: string } | null;
+/** `fields` (wave 27): a message to show beside the input of that name, as the shared ActionForm does. */
+export type FormState = { error?: string; ok?: string; fields?: Record<string, string> } | null;
 
 const blank = (v: unknown) => {
   if (typeof v !== "string") return v ?? undefined;

@@ -329,6 +329,9 @@ export const deviceTypes = pgTable("device_types", {
   criticality: criticality("criticality"),
   lifeExpectancyYears: integer("life_expectancy_years"),
   ppmIntervalMonths: integer("ppm_interval_months"),
+  /** Wave 27: planned maintenance by use as well, e.g. every 50,000 scans or 5,000 hours. Null = by months only. */
+  usageInterval: integer("usage_interval"),
+  usageUnit: varchar("usage_unit", { length: 16 }),
   requiresCalibration: boolean("requires_calibration").notNull().default(false),
   /** Risk score (wave 23, after Fennigkoh and Smith): equipment function 2–10, physical risk 1–5, maintenance need 1–5.
    *  Their sum is the equipment management number; 12 or more belongs in the planned maintenance programme. */
@@ -2005,3 +2008,106 @@ export const assetSecurity = pgTable("asset_security", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+
+/* ── Wave 27: maintenance (usage meters, test equipment on planned maintenance, loans, user training) ── */
+
+export const meterReadingKind = pgEnum("meter_reading_kind", ["READING", "RESET"]);
+
+/** A reading of a device's usage meter (hours run, scans, cycles). A RESET row is the first reading of a new or reset
+ *  meter: readings may go down only there. Rules in src/lib/assets/meters.ts. */
+export const meterReadings = pgTable("meter_readings", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
+  readOn: date("read_on").notNull(),
+  reading: doublePrecision("reading").notNull(),
+  unit: varchar("unit", { length: 16 }).notNull(),
+  kind: meterReadingKind("kind").notNull().default("READING"),
+  note: text("note"),
+  enteredById: integer("entered_by_id").references(() => users.id, { onDelete: "set null" }),
+  enteredByName: text("entered_by_name"),
+  createdAt: createdAt(),
+}, (t) => [index("meter_readings_asset_idx").on(t.assetId, t.readOn), check("meter_readings_reading_check", sql`${t.reading} >= 0`)]);
+
+/** The test equipment used on a maintenance visit, with its calibration date on the day (kept even after recalibration). */
+export const maintenanceTestEquipment = pgTable("maintenance_test_equipment", {
+  id: serial("id").primaryKey(),
+  eventId: integer("event_id").notNull().references(() => maintenanceEvents.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").references(() => assets.id, { onDelete: "set null" }),
+  label: text("label").notNull(),
+  calibrationDue: date("calibration_due"),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex("maintenance_test_equipment_uq").on(t.eventId, t.assetId), index("maintenance_test_equipment_asset_idx").on(t.assetId)]);
+
+export const loanDirection = pgEnum("loan_direction", ["BORROWED", "LENT"]);
+
+/** A device borrowed from, or lent to, a supplier or another hospital, or rented (wave 27). LN-YYYY-NNNN. */
+export const equipmentLoans = pgTable("equipment_loans", {
+  id: serial("id").primaryKey(),
+  number: varchar("number", { length: 24 }).notNull().unique(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id),
+  direction: loanDirection("direction").notNull(),
+  isRental: boolean("is_rental").notNull().default(false),
+  otherParty: text("other_party").notNull(),
+  supplierId: integer("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+  /** A device in the register, or (borrowed only) a description of one that is not. */
+  assetId: integer("asset_id").references(() => assets.id, { onDelete: "restrict" }),
+  deviceDescription: text("device_description"),
+  serialNumber: varchar("serial_number", { length: 128 }),
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  purpose: text("purpose"),
+  outOn: date("out_on").notNull(),
+  dueBackOn: date("due_back_on"),
+  returnedOn: date("returned_on"),
+  conditionOut: text("condition_out"),
+  conditionIn: text("condition_in"),
+  cost: money("cost"),
+  currency: varchar("currency", { length: 3 }),
+  /** Check before use (borrowed devices): planned maintenance and electrical safety test in date. */
+  checkPpmOk: boolean("check_ppm_ok"),
+  checkSafetyOk: boolean("check_safety_ok"),
+  checkNote: text("check_note"),
+  checkedOn: date("checked_on"),
+  checkedById: integer("checked_by_id").references(() => users.id, { onDelete: "set null" }),
+  checkedByName: text("checked_by_name"),
+  notes: text("notes"),
+  createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index("equipment_loans_facility_idx").on(t.facilityId, t.returnedOn),
+  index("equipment_loans_asset_idx").on(t.assetId),
+  check("equipment_loans_dates_check", sql`(${t.dueBackOn} is null or ${t.dueBackOn} >= ${t.outOn}) and (${t.returnedOn} is null or ${t.returnedOn} >= ${t.outOn})`),
+  check("equipment_loans_cost_check", sql`${t.cost} is null or ${t.cost} >= 0`),
+  check("equipment_loans_device_check", sql`${t.assetId} is not null or ${t.deviceDescription} is not null`),
+]);
+
+export const trainingKind = pgEnum("training_kind", ["INITIAL", "REFRESHER", "SUPPLIER"]);
+
+/** A user training session on one device type (wave 27). The sign-in sheet is a document of entity type "training". */
+export const trainingSessions = pgTable("training_sessions", {
+  id: serial("id").primaryKey(),
+  facilityId: integer("facility_id").notNull().references(() => facilities.id),
+  deviceTypeId: integer("device_type_id").notNull().references(() => deviceTypes.id),
+  heldOn: date("held_on").notNull(),
+  trainer: text("trainer").notNull(),
+  kind: trainingKind("kind").notNull().default("INITIAL"),
+  /** The department the session was held for (attendees without their own department count there). */
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  notes: text("notes"),
+  createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdByName: text("created_by_name"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index("training_sessions_type_idx").on(t.facilityId, t.deviceTypeId, t.heldOn)]);
+
+/** Who attended: a PAMS user, or a typed name, with their department. */
+export const trainingAttendees = pgTable("training_attendees", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").notNull().references(() => trainingSessions.id, { onDelete: "cascade" }),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  departmentText: text("department_text"),
+}, (t) => [index("training_attendees_session_idx").on(t.sessionId), index("training_attendees_user_idx").on(t.userId)]);

@@ -13,6 +13,7 @@ import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { addDaysISO, formatDate, formatNumber, todayISO } from "@/lib/format";
 import { createRequestAction } from "../requests/actions";
+import { departmentTraining } from "@/lib/assets/training-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Department" };
@@ -30,6 +31,7 @@ export default async function DepartmentPage({ searchParams }: { searchParams: P
   const dept = depts.find((d) => d.id === deptId) ?? null;
   const today = todayISO();
   const canRequest = me.role === "DEPARTMENT_HEAD" || can(me.role, "assets.edit") || can(me.role, "boq.edit");
+  const canTrain = can(me.role, "maintenance.edit");
   const header = (
     <>
       <PageHeader title={dept ? dept.name : "Department"} description="Your department's equipment, open jobs, maintenance coming up, devices past their service life, and equipment requests." />
@@ -43,7 +45,7 @@ export default async function DepartmentPage({ searchParams }: { searchParams: P
   );
   if (!dept) return <>{header}<EmptyState title="Choose your department">Pick it above to see its equipment and requests.</EmptyState></>;
 
-  const kit = await db.select({ id: assets.id, tag: assets.assetTag, status: assets.status, typeName: deviceTypes.name, room: rooms.name, installDate: sql<string | null>`coalesce(${assets.installDate}, ${assets.purchaseDate})`, life: sql<number | null>`coalesce(${assets.lifeExpectancyYears}, ${deviceTypes.lifeExpectancyYears})` })
+  const kit = await db.select({ id: assets.id, tag: assets.assetTag, status: assets.status, typeId: deviceTypes.id, typeName: deviceTypes.name, room: rooms.name, installDate: sql<string | null>`coalesce(${assets.installDate}, ${assets.purchaseDate})`, life: sql<number | null>`coalesce(${assets.lifeExpectancyYears}, ${deviceTypes.lifeExpectancyYears})` })
     .from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).leftJoin(rooms, eq(rooms.id, assets.roomId))
     .where(and(eq(assets.facilityId, facilityId), eq(assets.departmentId, dept.id), sql`${assets.status} <> 'DISPOSED'`)).orderBy(asc(deviceTypes.name));
   const ids = kit.map((k) => k.id);
@@ -55,6 +57,10 @@ export default async function DepartmentPage({ searchParams }: { searchParams: P
     db.select({ r: equipmentRequests, typeName: deviceTypes.name }).from(equipmentRequests).innerJoin(deviceTypes, eq(deviceTypes.id, equipmentRequests.deviceTypeId))
       .where(eq(equipmentRequests.departmentId, dept.id)).orderBy(desc(equipmentRequests.id)).limit(20),
   ]);
+  // Wave 27: who is trained on each kind of device here, and whose training is older than the set period.
+  const typeNames = new Map(kit.map((k) => [k.typeId, k.typeName]));
+  const training = await departmentTraining(facilityId, dept.id, [...typeNames.keys()], today);
+  const trainingDue = training.byType.reduce((n, t) => n + t.due, 0);
   const tagOf = new Map(kit.map((k) => [k.id, k]));
   const old = kit.map((k) => ({ ...k, l: lifecycle(k.installDate, k.life, today) })).filter((k) => k.l.pctUsed != null && k.l.pctUsed >= 100).sort((a, b) => (b.l.pctUsed ?? 0) - (a.l.pctUsed ?? 0));
   const down = kit.filter((k) => k.status === "OUT_OF_SERVICE" || k.status === "UNDER_MAINTENANCE").length;
@@ -78,6 +84,29 @@ export default async function DepartmentPage({ searchParams }: { searchParams: P
         </Panel>
         <Panel title="Past service life">
           {old.length === 0 ? <p className="text-sm text-muted">None.</p> : <ul className="space-y-1 text-sm">{old.slice(0, 15).map((k) => <li key={k.id}><Link href={`/assets/${k.id}`} className="font-mono text-primary hover:underline">{k.tag}</Link> {k.typeName} <Badge tone="warn">{Math.round(k.l.pctUsed!)} % of life</Badge></li>)}</ul>}
+        </Panel>
+        <Panel title={<span id="training">Who is trained</span>} className="lg:col-span-2" padded={false}
+          actions={<span className="flex flex-wrap items-center gap-2">{trainingDue > 0 && <Badge tone="warn">{trainingDue} refresher{trainingDue === 1 ? "" : "s"} due</Badge>}
+            {canTrain && <Link href={`/assets/training/new?facilityId=${facilityId}&departmentId=${dept.id}`} className="inline-flex min-h-6 items-center text-sm text-primary hover:underline">Record training</Link>}</span>}>
+          {training.byType.length === 0 ? <p className="p-4 text-sm text-muted">No equipment in this department yet.</p> : (
+            <ul className="divide-y divide-line">
+              {training.byType.sort((a, b) => (typeNames.get(a.deviceTypeId) ?? "").localeCompare(typeNames.get(b.deviceTypeId) ?? "")).map((t) => (
+                <li key={t.deviceTypeId} className="px-4 py-2.5 text-sm">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <b className="min-w-0 flex-1">{typeNames.get(t.deviceTypeId)}</b>
+                    {t.people.length === 0 ? <Badge tone="danger">Nobody trained</Badge> : <span className="text-muted">{t.current} trained{t.due ? `, ${t.due} due again` : ""}</span>}
+                    {canTrain && <Link href={`/assets/training/new?facilityId=${facilityId}&departmentId=${dept.id}&deviceTypeId=${t.deviceTypeId}`} className="inline-flex min-h-6 items-center text-xs text-primary hover:underline">Add<span className="sr-only"> training on {typeNames.get(t.deviceTypeId)}</span></Link>}
+                  </div>
+                  {t.people.length > 0 && (
+                    <p className="mt-1 text-[13px]">
+                      {t.people.map((p, i) => <span key={p.key}>{i > 0 && ", "}{p.state === "due" ? <span className="text-warn"><b>{p.name}</b> (trained {formatDate(p.lastOn)}, due again)</span> : <span>{p.name} <span className="text-muted">({formatDate(p.lastOn)})</span></span>}</span>)}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="border-t border-line px-4 py-2 text-xs text-muted">Training counts for {training.months} months (Administration › Settings). <Link href="/assets/training" className="text-primary hover:underline">All training</Link></p>
         </Panel>
         <Panel title="Requests" actions={<Link href={`/assets/requests?facilityId=${facilityId}`} className="text-sm text-primary hover:underline">All requests</Link>}>
           {reqs.length === 0 ? <p className="mb-3 text-sm text-muted">No requests yet.</p> : <ul className="mb-3 space-y-1 text-sm">{reqs.map((x) => <li key={x.r.id}><b>{x.r.number}</b> {x.r.quantity} × {x.typeName} <StatusBadge value={x.r.status} />{x.r.planYear ? <span className="text-muted"> · {x.r.planYear}</span> : null}</li>)}</ul>}
