@@ -6,7 +6,7 @@ import { meterHistory, type UsageInfo } from "@/lib/assets/meters-server";
 import { USAGE_UNIT_LABELS, USAGE_UNITS, usageIntervalLabel, type UsageUnit } from "@/lib/assets/meters";
 import { dueState } from "@/lib/assets/maintenance";
 import { formatDate, formatNumber, todayISO } from "@/lib/format";
-import { addMeterReadingAction, setUsageIntervalAction } from "@/app/assets/meters/actions";
+import { addMeterReadingAction, correctMeterReadingAction, deleteMeterReadingAction, setUsageIntervalAction } from "@/app/assets/meters/actions";
 
 /** Usage meter of one device (wave 27): last reading, use per day, when usage-based PPM falls due, add a reading. */
 export async function UsagePanel({ assetId, typeCode, usage, canRecord, disposed }: {
@@ -41,6 +41,25 @@ export async function UsagePanel({ assetId, typeCode, usage, canRecord, disposed
                 <b>{formatNumber(h.reading)} {h.unit}</b>
                 {h.kind === "RESET" && <Badge tone="info">New or reset meter</Badge>}
                 <span className="text-muted">{h.enteredByName ?? ""}{h.note ? ` · ${h.note}` : ""}</span>
+                {canRecord && !disposed && (
+                  <details className="w-full">
+                    <summary className="min-h-6 cursor-pointer text-xs text-primary">Correct or delete</summary>
+                    <div className="mt-2 flex flex-wrap items-end gap-3">
+                      <ActionForm action={correctMeterReadingAction} className="flex flex-wrap items-end gap-2">
+                        <input type="hidden" name="id" value={h.id} />
+                        <Field label="Date"><Input type="date" name="readOn" defaultValue={h.readOn} required className="w-40" /></Field>
+                        <Field label={`Reading (${h.unit})`}><Input type="number" name="reading" min={0} step="any" defaultValue={h.reading} required className="w-32" /></Field>
+                        <Field label="Note"><Input name="note" defaultValue={h.note ?? ""} className="w-48" /></Field>
+                        <label className="flex min-h-9 items-center gap-2 text-xs"><input type="checkbox" name="reset" defaultChecked={h.kind === "RESET"} className="size-4" /> New or reset meter</label>
+                        <SubmitButton variant="secondary">Save</SubmitButton>
+                      </ActionForm>
+                      <ActionForm action={deleteMeterReadingAction} confirm={`Delete the reading of ${formatDate(h.readOn)}? The deletion is kept in the device's history.`}>
+                        <input type="hidden" name="id" value={h.id} />
+                        <SubmitButton variant="danger">Delete</SubmitButton>
+                      </ActionForm>
+                    </div>
+                  </details>
+                )}
               </li>
             ))}
           </ul>

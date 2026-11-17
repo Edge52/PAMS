@@ -101,6 +101,7 @@ const settingsSchema = z.object({
   rfqClosingWarnDays: num("RFQ closing warning must be between 0 and 90 days", 0, 90).int(),
   trainingValidMonths: num("Training stays valid for 1 to 120 months", 1, 120).int("Training stays valid for a whole number of months"),
   twoStepRequired: z.enum(["off", "admins", "all"], { error: "Choose who must use two-step sign-in" }),
+  depreciationMethod: z.enum(["STRAIGHT", "DECLINING"], { error: "Choose how book value is written off" }),
   assistantModel: z.string().trim().regex(/^[a-z0-9][a-z0-9.\-]{2,63}$/, "Enter a model name such as claude-sonnet-5-5"),
 });
 
@@ -108,7 +109,7 @@ export async function saveSettings(_prev: ActionState, fd: FormData): Promise<Ac
   const me = await requirePermission("settings.manage");
   const p = settingsSchema.safeParse(formObject(fd));
   if (!p.success) return zodFail(p.error);
-  const next: Settings = { ...p.data, emailEnabled: fd.get("emailEnabled") === "on", assistantEnabled: fd.get("assistantEnabled") === "on", demoAccounts: fd.get("demoAccounts") === "on" };
+  const next: Settings = { ...p.data, emailEnabled: fd.get("emailEnabled") === "on", assistantEnabled: fd.get("assistantEnabled") === "on", demoAccounts: fd.get("demoAccounts") === "on", breachedPasswordCheck: fd.get("breachedPasswordCheck") === "on" };
   if (next.stateCouncilFromEgp < next.mofRepFromEgp) return fail("The State Council threshold is normally at or above the Ministry of Finance threshold. Check the amounts.");
   const before = await getSettings();
   const changed = (Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]).filter((k) => before[k] !== next[k]);

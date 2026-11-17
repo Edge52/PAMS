@@ -1,4 +1,5 @@
 "use server";
+import { breachedProblem } from "@/lib/auth/breached";
 import { clearTwoStep } from "@/lib/auth/two-step";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -44,7 +45,7 @@ export async function createUser(_prev: ActionState, fd: FormData): Promise<Acti
   if (!p.success) return { errors: [...new Set(p.error.issues.map((i) => i.message))] };
   const d = p.data;
   const password = String(fd.get("password") ?? "");
-  const problem = passwordProblem(password, d.email);
+  const problem = passwordProblem(password, d.email) ?? await breachedProblem(password);
   if (problem) return { errors: [`Temporary password: ${problem}`], fields: { password: problem } };
   if (await emailTaken(d.email)) return { errors: ["Someone already uses that email address."] };
   const all = d.allFacilities === "on" || d.role === "ADMIN";
@@ -102,7 +103,7 @@ export async function resetPassword(_prev: ActionState, fd: FormData): Promise<A
   const password = String(fd.get("password") ?? "");
   const [u] = await db.select().from(users).where(eq(users.id, id));
   if (!u) return { errors: ["That user no longer exists."] };
-  const problem = passwordProblem(password, u.email);
+  const problem = passwordProblem(password, u.email) ?? await breachedProblem(password);
   if (problem) return { errors: [problem], fields: { password: problem } };
   await db.update(users).set({ passwordHash: await hashPassword(password) }).where(eq(users.id, id));
   await destroyAllSessions(id);

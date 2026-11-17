@@ -34,7 +34,7 @@ export function BookValuePanel({ bv, own, canEdit }: {
         {d.state === "NO_COST" ? "Add the purchase cost to work out the book value. " : null}
         {d.state === "NO_DATE" ? "Add an install or purchase date to work out the book value. " : null}
         {d.state === "NO_LIFE" ? "Set a useful life below or on the device type. " : null}
-        Straight line from the {bv.basis ? START_BASIS_LABELS[bv.basis] : "in-service date"}{bv.inService ? ` (${formatDate(bv.inService)})` : ""} over {bv.lifeYears ?? "?"} years,
+        {bv.method === "DECLINING" ? "Double-declining balance" : "Straight line"} from the {bv.basis ? START_BASIS_LABELS[bv.basis] : "in-service date"}{bv.inService ? ` (${formatDate(bv.inService)})` : ""} over {bv.lifeYears ?? "?"} years,
         down to a residual value of {formatNumber(bv.residualPct)} %{d.residual != null ? ` (${money(d.residual)})` : ""}.
         {own.lifeYears == null && own.residualPct == null ? " Figures from the device type." : " This device has its own figures."}
       </p>

@@ -10,13 +10,16 @@ import { acceptances, assets, departments, deviceTypes, facilities } from "@/db/
 import { num, todayISO } from "@/lib/format";
 import { toEgp } from "@/lib/reports/calc";
 import { ratesFor } from "@/lib/reports/shared";
-import { depreciation, depreciationTerms, inServiceDate, type Depreciation, type StartBasis } from "./depreciation";
+import { getSetting } from "@/lib/settings";
+import { depreciation, depreciationTerms, inServiceDate, type Depreciation, type DepreciationMethod, type StartBasis } from "./depreciation";
 
 export type BookValueRow = {
   id: number; tag: string; status: string; facilityId: number; facility: string; departmentId: number | null; department: string | null;
   typeId: number; typeName: string; typeCode: string; currency: string;
   inService: string | null; basis: StartBasis | null; lifeYears: number | null; residualPct: number;
   dep: Depreciation;
+  /** Wave 29: the hospital's method (Administration › Settings). */
+  method: DepreciationMethod;
   /** EGP figures; null when the currency has no stored rate (or there is no cost). */
   costEgp: number | null; accumulatedEgp: number | null; bookValueEgp: number | null;
 };
@@ -37,12 +40,12 @@ export async function bookValues(where: SQL | undefined, onDate = todayISO(), in
     .innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).innerJoin(facilities, eq(facilities.id, assets.facilityId))
     .leftJoin(departments, eq(departments.id, assets.departmentId)).leftJoin(acceptances, eq(acceptances.assetId, assets.id))
     .where(and(includeDisposed ? undefined : sql`${assets.status} <> 'DISPOSED'`, where));
-  const rates = await ratesFor(list.map((r) => r.currency ?? "EGP"));
+  const [rates, method] = await Promise.all([ratesFor(list.map((r) => r.currency ?? "EGP")), getSetting("depreciationMethod")]);
   const missing = new Set<string>();
   const rows = list.map((r): BookValueRow => {
     const start = inServiceDate(r);
     const terms = depreciationTerms({ lifeYears: r.assetLife, residualPct: r.assetResidual }, { lifeYears: r.typeLife, residualPct: r.typeResidual });
-    const dep = depreciation({ cost: r.cost != null ? num(r.cost) : null, inService: start.date, ...terms }, onDate);
+    const dep = depreciation({ method, cost: r.cost != null ? num(r.cost) : null, inService: start.date, ...terms }, onDate);
     const currency = r.currency || "EGP";
     const egp = (v: number | null) => {
       if (v == null) return null;
@@ -53,7 +56,7 @@ export async function bookValues(where: SQL | undefined, onDate = todayISO(), in
     return {
       id: r.id, tag: r.tag, status: r.status, facilityId: r.facilityId, facility: r.facility, departmentId: r.departmentId, department: r.department,
       typeId: r.typeId, typeName: r.typeName, typeCode: r.typeCode, currency, inService: start.date, basis: start.basis,
-      lifeYears: terms.lifeYears, residualPct: terms.residualPct, dep,
+      lifeYears: terms.lifeYears, residualPct: terms.residualPct, dep, method,
       costEgp: egp(dep.cost), accumulatedEgp: egp(dep.accumulated), bookValueEgp: egp(dep.bookValue),
     };
   });

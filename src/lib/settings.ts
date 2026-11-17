@@ -29,6 +29,10 @@ export type Settings = {
   twoStepRequired: "off" | "admins" | "all";
   /** User training (wave 27): months after which a person's training on a device type is due again. */
   trainingValidMonths: number;
+  /** Wave 29: how book value is written off (lib/assets/depreciation). */
+  depreciationMethod: "STRAIGHT" | "DECLINING";
+  /** Wave 29: check new passwords against known data leaks (needs internet; off by default). */
+  breachedPasswordCheck: boolean;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -47,6 +51,8 @@ export const DEFAULT_SETTINGS: Settings = {
   assistantModel: "claude-sonnet-5-5",
   twoStepRequired: "off",
   trainingValidMonths: 24,
+  depreciationMethod: "STRAIGHT",
+  breachedPasswordCheck: false,
 };
 
 export async function getSettings(): Promise<Settings> {

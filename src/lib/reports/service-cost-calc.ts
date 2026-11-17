@@ -51,7 +51,34 @@ export function cosrTone(v: unknown): "ok" | "warn" | "danger" | null {
 }
 
 export type CostDevice = { id: number; acquisition: number | null };
-export type CostLine = { assetId: number; amount: number; source: CostSource };
+export type CostLine = {
+  assetId: number; amount: number; source: CostSource;
+  /** Wave 29: who did the work: the vendor on the job, the contract's company, or the hospital's own team. */
+  provider?: { key: string; label: string; supplierId: number | null };
+};
+
+export type ProviderRollup = { key: string; label: string; supplierId: number | null; devices: number; jobs: number; cost: number; acquisition: number; cosr: number | null; cosrYear: number | null };
+
+/**
+ * Service cost by the company that did the work (wave 29). Each provider's ratio is its cost against the purchase
+ * cost of the devices it served (each device counted once per provider). Lines without a provider are grouped as
+ * "Not recorded".
+ */
+export function byProvider(lines: CostLine[], acquisitionOf: (assetId: number) => number | null, days: number): ProviderRollup[] {
+  const groups = new Map<string, { key: string; label: string; supplierId: number | null; assets: Set<number>; jobs: number; cost: number }>();
+  for (const l of lines) {
+    if (!Number.isFinite(l.amount) || l.amount === 0) continue;
+    const p = l.provider ?? { key: "unknown", label: "Not recorded", supplierId: null };
+    const g = groups.get(p.key) ?? { ...p, assets: new Set<number>(), jobs: 0, cost: 0 };
+    g.assets.add(l.assetId); g.jobs += 1; g.cost += l.amount;
+    groups.set(p.key, g);
+  }
+  return [...groups.values()].map((g) => {
+    const acquisition = [...g.assets].reduce((a, id) => a + (acquisitionOf(id) ?? 0), 0);
+    const cosr = cosrPct(g.cost, acquisition);
+    return { key: g.key, label: g.label, supplierId: g.supplierId, devices: g.assets.size, jobs: g.jobs, cost: Math.round(g.cost * 100) / 100, acquisition, cosr, cosrYear: yearlyCosr(cosr, days) };
+  }).sort((a, b) => b.cost - a.cost);
+}
 
 export type CostRollup = {
   devices: number;

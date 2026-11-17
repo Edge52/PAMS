@@ -21,7 +21,8 @@ export async function saveChecklistAction(_: FormState, fd: FormData): Promise<F
   const me = await requirePermission("catalogue.edit");
   const p = Schema.safeParse(formObject(fd));
   if (!p.success) return { error: firstError(p.error) };
-  const [dt] = await db.select({ id: deviceTypes.id, code: deviceTypes.code }).from(deviceTypes).where(eq(deviceTypes.code, p.data.code.toUpperCase()));
+  const [dt] = await db.select({ id: deviceTypes.id, code: deviceTypes.code, ppmChecklist: deviceTypes.ppmChecklist, acceptanceChecklist: deviceTypes.acceptanceChecklist })
+    .from(deviceTypes).where(eq(deviceTypes.code, p.data.code.toUpperCase()));
   if (!dt) return { error: "That device type no longer exists." };
   let items = null;
   if (p.data.mode === "save") {
@@ -34,7 +35,9 @@ export async function saveChecklistAction(_: FormState, fd: FormData): Promise<F
   await db.update(deviceTypes).set(acc ? { acceptanceChecklist: items } : { ppmChecklist: items }).where(eq(deviceTypes.id, dt.id));
   // Device types have no facility; the catalogue is shared by every hospital.
   const what = acc ? "Acceptance checklist" : "PPM checklist";
-  await logActivity("device_type", dt.id, "checklist", items ? `${what} saved (${items.length} checks)` : `${what} reset to the inherited one`, me.name);
+  const key = acc ? "acceptanceChecklist" : "ppmChecklist";
+  await logActivity("device_type", dt.id, "checklist", items ? `${what} saved (${items.length} checks)` : `${what} reset to the inherited one`, me.name, db,
+    diff({ [key]: dt[key] }, { [key]: items }));
   revalidatePath(`/catalogue/${dt.code}`);
   redirect(`/catalogue/${dt.code}?notice=${encodeURIComponent(items ? (acc ? "Acceptance checklist saved." : "Checklist saved. New maintenance jobs use it.") : "Checklist reset.")}#${acc ? "acceptance" : "checklist"}`);
 }

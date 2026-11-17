@@ -1,4 +1,5 @@
 "use server";
+import { diff } from "@/lib/audit-diff";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -170,7 +171,8 @@ export async function updateBoqSettings(fd: FormData) {
   if (v.includeTiers.join() !== (boq.includeTiers as string[]).join()) changed.push(`tiers ${v.includeTiers.join(", ").toLowerCase()}`);
   const featuresChanged = [...v.features].sort().join() !== [...(boq.features ?? [])].sort().join();
   if (featuresChanged) changed.push(`features ${v.features.length ? v.features.map(featureLabel).join(", ").toLowerCase() : "none"}`);
-  await logActivity("boq", id, "updated", changed.length ? `Settings changed: ${changed.join("; ")}.` : "Settings saved.");
+  await logActivity("boq", id, "updated", changed.length ? `Settings changed: ${changed.join("; ")}.` : "Settings saved.", undefined, db,
+    diff(boq as unknown as Record<string, unknown>, v as unknown as Record<string, unknown>));
   revalidatePath(`/boq/${id}`);
   const needsRegen = v.totalHospitalBeds !== boq.totalHospitalBeds || v.includeTiers.join() !== (boq.includeTiers as string[]).join() || featuresChanged;
   redirect(`${back}&notice=${enc(needsRegen ? "Settings saved. Regenerate from the standard to apply the new beds or tiers." : "Settings saved.")}`);
@@ -337,7 +339,8 @@ export async function updateLine(_prev: FormState, fd: FormData): Promise<FormSt
   if (quantity !== line.quantity) bits.push(`qty ${line.quantity} → ${quantity}${reset ? " (reset to standard)" : ""}`);
   if (num(line.unitPriceEstimate) !== (v.unitPrice ?? 0)) bits.push(`unit price ${num(line.unitPriceEstimate)} → ${v.unitPrice ?? "none"}`);
   if ((line.notes ?? null) !== v.notes) bits.push("notes");
-  if (bits.length) await logActivity("boq", line.boqId, "line_updated", `${dev?.name ?? "Line"}: ${bits.join(", ")}`);
+  if (bits.length) await logActivity("boq", line.boqId, "line_updated", `${dev?.name ?? "Line"}: ${bits.join(", ")}`, undefined, db,
+    diff({ line: lineId, quantity: line.quantity, unitPriceEstimate: line.unitPriceEstimate, notes: line.notes }, { line: lineId, quantity, unitPriceEstimate: newPrice, notes: v.notes }));
   revalidatePath(`/boq/${line.boqId}`);
   return { ok: bits.length ? "Saved" : "No changes" };
 }
@@ -407,8 +410,10 @@ export async function saveDepartment(fd: FormData) {
   if (!parsed.success) fail(back, parsed.error.issues[0]?.message ?? "Check the department");
   const v = parsed.data;
   if (id) {
+    const [before] = await db.select().from(boqDepartments).where(and(eq(boqDepartments.id, id), eq(boqDepartments.boqId, boqId)));
     await db.update(boqDepartments).set(v).where(and(eq(boqDepartments.id, id), eq(boqDepartments.boqId, boqId)));
-    await logActivity("boq", boqId, "scope_changed", `Department "${v.label}" updated (${v.beds} beds, ${v.rooms} rooms, ×${v.instances}).`);
+    await logActivity("boq", boqId, "scope_changed", `Department "${v.label}" updated (${v.beds} beds, ${v.rooms} rooms, ×${v.instances}).`, undefined, db,
+      before ? diff(before as unknown as Record<string, unknown>, v as unknown as Record<string, unknown>) : null);
   } else {
     await db.insert(boqDepartments).values({ ...v, boqId });
     await logActivity("boq", boqId, "scope_changed", `Department "${v.label}" added.`);

@@ -1,3 +1,4 @@
+import { DEPRECIATION_METHOD_LABELS, DEPRECIATION_METHODS } from "@/lib/assets/depreciation";
 import { asc } from "drizzle-orm";
 import { db } from "@/db";
 import { approvalPolicies, facilities } from "@/db/schema";
@@ -138,12 +139,27 @@ export default async function SettingsPage() {
             </fieldset>
 
             <fieldset className="space-y-2">
+              <legend className="mb-2 text-sm font-bold">Book value</legend>
+              <FormGrid cols={3}>
+                <Field label="Depreciation method" hint="Used on asset pages, the book value report and the depreciation journal. Ask finance which one the hospital uses.">
+                  <Select name="depreciationMethod" defaultValue={s.depreciationMethod} options={DEPRECIATION_METHODS.map((m) => ({ value: m, label: DEPRECIATION_METHOD_LABELS[m] }))} />
+                </Field>
+              </FormGrid>
+            </fieldset>
+
+            <fieldset className="space-y-2">
               <legend className="mb-2 text-sm font-bold">Sign-in</legend>
               <FormGrid cols={3}>
                 <Field label="Two-step sign-in" hint="A code from a phone app after the password. Those who must use it set it up the next time they sign in. Anyone may switch it on for themselves.">
                   <Select name="twoStepRequired" defaultValue={s.twoStepRequired} options={[{ value: "off", label: "Each person chooses" }, { value: "admins", label: "Required for administrators" }, { value: "all", label: "Required for everyone" }]} />
                 </Field>
               </FormGrid>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" name="breachedPasswordCheck" defaultChecked={s.breachedPasswordCheck} className="mt-0.5 size-4 accent-[var(--color-primary)]" />
+                <span>Refuse new passwords found in known data leaks
+                  <span className="block text-xs text-muted">Asks the Have I Been Pwned service; only the first 5 characters of a scrambled form of the password leave the server, never the password. Needs internet: if the service can&apos;t be reached, the password is accepted.</span>
+                </span>
+              </label>
             </fieldset>
 
             <fieldset className="space-y-2">

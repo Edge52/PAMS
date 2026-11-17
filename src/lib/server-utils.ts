@@ -5,7 +5,7 @@ import { and, desc, eq, lte, sql } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { num, todayISO } from "./format";
 import { headers } from "next/headers";
-import { getCurrentUser } from "./auth/session";
+import { currentUserVia, getCurrentUser } from "./auth/session";
 import type { Changes } from "./audit-diff";
 
 /** Record a human-readable event against any entity. Call from server actions after a change. */
@@ -16,7 +16,8 @@ export async function logActivity(
   changes?: Changes | null,
 ) {
   // Wave 24: every entry carries the account and the address it came from, not just a name.
-  const me = await getCurrentUser().catch(() => null);
+  // Inside a transaction, ask through it: a query outside would wait for the transaction with the built-in database.
+  const me = x === db || !("select" in x) ? await getCurrentUser().catch(() => null) : await currentUserVia(x as Pick<typeof db, "select">).catch(() => null);
   const who = actor ?? me?.name ?? null; // signed-in user by default
   await x.insert(activityLog).values({ entityType, entityId, action, summary, actor: who, actorId: me?.id ?? null, ip: await clientIp(), changes: changes ?? null });
 }

@@ -122,3 +122,40 @@ describe("simulation shifts (wave 28)", () => {
     expect(staff.utilisation.mean).toBeGreaterThan(0.7);
   });
 });
+
+describe("leaving later queues and what-if shifts (wave 29)", () => {
+  // Two steps: a quick first room, then a slow single room where a queue builds.
+  const twoStep: SimModel = {
+    flows: [{ id: 1, name: "A", kind: "PATIENT", perDay: 60, profile: even,
+      steps: [{ key: "s", label: "In", kind: "START", minutes: 0, resource: null, level: 0 }, { key: "a", label: "Desk", kind: "STEP", minutes: 2, resource: "desk", level: 0 },
+        { key: "b", label: "Scan", kind: "STEP", minutes: 40, resource: "scan", level: 0 }, { key: "e", label: "Out", kind: "END", minutes: 0, resource: null, level: 0 }],
+      links: [{ from: "s", to: "a", share: 100, transport: "FOOT", urgent: false }, { from: "a", to: "b", share: 100, transport: "FOOT", urgent: false }, { from: "b", to: "e", share: 100, transport: "FOOT", urgent: false }] }],
+    resources: [{ key: "desk", label: "Desk", kind: "room", capacity: 5 }, { key: "scan", label: "Scan", kind: "scanner", capacity: 1 }], liftForBeds: null, liftForAll: null, porter: null,
+  };
+  it("counts nobody as left when only the first queue counts and it never builds up", () => {
+    const r = simulate(twoStep, { runs: 5, seed: 3, leaveAfter: { 1: 30 } });
+    expect(r.flows[0].left.mean).toBe(0);
+  });
+  it("lets patients give up in the slow later queue when asked", () => {
+    const r = simulate(twoStep, { runs: 5, seed: 3, leaveAfter: { 1: 30 }, leaveAny: true });
+    expect(r.flows[0].left.mean).toBeGreaterThan(0);
+  });
+  it("gives the what-if its own leave limits and shifts, and names them", async () => {
+    const { buildRuns, defaultScenario, whatIfChanges } = await import("./scenarios");
+    const s = { ...defaultScenario(0), leaveAfter: { "1": 30 }, whatIf: { capacity: {}, volume: null, hours: {}, moves: {}, leaveAfter: { "1": 90 }, shifts: { scan: Array(24).fill(2) } } };
+    expect(whatIfChanges(twoStep, s)).toEqual(["other staff shifts", "other leave-unseen limits"]);
+    const runs = buildRuns(twoStep, s);
+    expect(runs.base.leaveAfter).toEqual({ 1: 30 });
+    expect(runs.whatIf?.leaveAfter).toEqual({ 1: 90 });
+    expect(runs.whatIf?.shifts).toEqual({ scan: Array(24).fill(2) });
+    expect(runs.base.shifts).toBeUndefined();
+  });
+  it("reads the what-if overrides back from saved settings", async () => {
+    const { cleanScenario } = await import("./scenarios");
+    const c = cleanScenario({ leaveAny: true, whatIf: { leaveAfter: { "1": "45", x: 3 }, closed: { bed: [0, 1, 99] } } }, 2);
+    expect(c.leaveAny).toBe(true);
+    expect(c.whatIf.leaveAfter).toEqual({ "1": 45 });
+    expect(c.whatIf.closed).toEqual({ bed: [0, 1] });
+    expect(c.whatIf.shifts).toBeUndefined();
+  });
+});

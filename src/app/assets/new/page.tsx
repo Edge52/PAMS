@@ -5,7 +5,7 @@ import { buildings, floors, rooms } from "@/db/schema";
 import { Button, EmptyState, Field, FormGrid, Input, LinkButton, PageHeader, Panel, Textarea } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { DeviceTypeSelect, enumOptions, NativeSelect, RoomSelect, SubmitRow } from "@/components/assets/bits";
-import { ASSET_CONDITIONS, ASSET_STATUSES } from "@/lib/assets/filters";
+import { ASSET_CONDITIONS, MANUAL_ASSET_STATUSES } from "@/lib/assets/filters";
 import { deviceTypeOptions, listFacilities, locationTree } from "@/lib/assets/queries";
 import { CURRENCIES, todayISO } from "@/lib/format";
 import { createAssetAction } from "../actions";
@@ -64,7 +64,7 @@ export default async function NewAssetPage({ searchParams }: { searchParams: Pro
         </Panel>
         <Panel title="Status, dates and cost">
           <FormGrid cols={4}>
-            <Field label="Status" hint="Blank: in service with a room, else in stock"><NativeSelect name="status" options={enumOptions(ASSET_STATUSES)} placeholder="Automatic" /></Field>
+            <Field label="Status" hint="Blank: in service with a room, else in stock"><NativeSelect name="status" options={enumOptions(MANUAL_ASSET_STATUSES)} placeholder="Automatic" /></Field>
             <Field label="Condition"><NativeSelect name="condition" options={enumOptions(ASSET_CONDITIONS)} value="NEW" /></Field>
             <Field label="Purchase date"><Input type="date" name="purchaseDate" max={todayISO()} /></Field>
             <Field label="Install date"><Input type="date" name="installDate" defaultValue={todayISO()} /></Field>

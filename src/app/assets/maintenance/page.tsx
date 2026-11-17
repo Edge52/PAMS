@@ -21,6 +21,7 @@ import { scopeWhere, type Scope } from "@/lib/assets/access";
 import { usageDueMap } from "@/lib/assets/meters-server";
 import { instrumentOptions } from "@/lib/assets/test-equipment-server";
 import { TestEquipmentField } from "@/components/assets/test-equipment-field";
+import { MeterAtVisit } from "@/components/assets/meter-at-visit";
 import { usageIntervalLabel } from "@/lib/assets/meters";
 
 export const dynamic = "force-dynamic";
@@ -200,7 +201,7 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
         deptId ? eq(assets.departmentId, deptId) : undefined, q ? sql`${assets.assetTag} ilike ${"%" + q + "%"}` : undefined, scopeWhere(assets.facilityId, scope)))
       .orderBy(asc(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`), asc(assets.assetTag)).limit(3000),
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(eq(suppliers.active, true)).orderBy(asc(suppliers.name)),
-    completeId ? db.select({ id: maintenanceEvents.id, type: maintenanceEvents.type, status: maintenanceEvents.status, scheduledDate: maintenanceEvents.scheduledDate, tag: assets.assetTag, assetStatus: assets.status, typeName: deviceTypes.name, facilityId: assets.facilityId })
+    completeId ? db.select({ id: maintenanceEvents.id, type: maintenanceEvents.type, status: maintenanceEvents.status, scheduledDate: maintenanceEvents.scheduledDate, assetId: assets.id, tag: assets.assetTag, assetStatus: assets.status, typeName: deviceTypes.name, facilityId: assets.facilityId })
       .from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId)).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
       .where(and(eq(maintenanceEvents.id, completeId), scopeWhere(assets.facilityId, scope))) : Promise.resolve([]),
   ]);
@@ -228,6 +229,7 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
               <div className="flex items-end pb-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="returnToService" defaultChecked={c.assetStatus !== "IN_SERVICE"} /> Return the asset to service</label></div>
               <Field label="Findings" className="sm:col-span-2 lg:col-span-4"><Textarea name="findings" rows={2} placeholder="Checks performed, parts replaced, safety test result" /></Field>
               <div className="sm:col-span-2 lg:col-span-4"><TestEquipmentField options={instruments} /></div>
+              <div className="sm:col-span-2 lg:col-span-4"><MeterAtVisit assetId={c.assetId} /></div>
             </FormGrid>
             <div className="mt-4 flex gap-2"><Button>Mark complete</Button><LinkButton href={returnPath} variant="ghost">Cancel</LinkButton></div>
           </ActionForm>

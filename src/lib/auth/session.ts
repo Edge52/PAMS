@@ -109,6 +109,20 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   return { id: row.id, name: row.name, email: row.email, role: row.role as Role, jobTitle: row.jobTitle, allFacilities: row.allFacilities };
 });
 
+/**
+ * The signed-in user, read through `x` (a transaction) without touching the session (wave 29). The audit log needs
+ * the user while a transaction is open; with the built-in database (one connection) a query outside the
+ * transaction would wait for it forever.
+ */
+export async function currentUserVia(x: Pick<typeof db, "select">): Promise<{ id: number; name: string } | null> {
+  let token: string | undefined;
+  try { token = (await cookies()).get(SESSION_COOKIE)?.value; } catch { return null; }
+  if (!token) return null;
+  const [row] = await x.select({ id: users.id, name: users.name, active: users.active }).from(sessions).innerJoin(users, eq(users.id, sessions.userId))
+    .where(and(eq(sessions.tokenHash, sha256(token)), gt(sessions.expiresAt, new Date()))).limit(1);
+  return row?.active ? { id: row.id, name: row.name } : null;
+}
+
 /** Signed-in user or a redirect to the sign-in page. */
 export async function requireUser(): Promise<CurrentUser> {
   const u = await getCurrentUser();

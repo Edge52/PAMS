@@ -26,11 +26,12 @@ import { LoansPanel } from "@/components/assets/loans-panel";
 import { usageDueMap } from "@/lib/assets/meters-server";
 import { instrumentOptions, instrumentsByEvent } from "@/lib/assets/test-equipment-server";
 import { TestEquipmentField } from "@/components/assets/test-equipment-field";
+import { MeterAtVisit } from "@/components/assets/meter-at-visit";
 import { usageIntervalLabel } from "@/lib/assets/meters";
 import { ActionForm } from "@/components/assets/action-form";
 import { Crumbs, enumOptions, Meter, NativeSelect, Notice, RoomSelect } from "@/components/assets/bits";
 import { MiniMap } from "@/components/assets/mini-map";
-import { ASSET_CONDITIONS, ASSET_STATUSES, MAINTENANCE_TYPES } from "@/lib/assets/filters";
+import { ASSET_CONDITIONS, MANUAL_ASSET_STATUSES, MAINTENANCE_TYPES } from "@/lib/assets/filters";
 import { displayEventStatus, dueState, lifecycle, nextPpmDue, warrantyState, maintenanceTypeLabel } from "@/lib/assets/maintenance";
 import { cat, grp, locationTree, miniMapData } from "@/lib/assets/queries";
 import { isActive, isLate } from "@/lib/assets/work-orders";
@@ -420,7 +421,9 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
             <ActionForm action={changeStatusAction} className="space-y-3">
               <input type="hidden" name="assetId" value={x.id} />
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Status"><NativeSelect name="status" options={enumOptions(ASSET_STATUSES)} value={x.status} /></Field>
+                {x.status === "ON_LOAN"
+                  ? <p className="self-end text-sm text-muted">On loan: its status comes back when the loan is returned.</p>
+                  : <Field label="Status"><NativeSelect name="status" options={enumOptions(MANUAL_ASSET_STATUSES)} value={x.status} /></Field>}
                 <Field label="Condition"><NativeSelect name="condition" options={enumOptions(ASSET_CONDITIONS)} value={x.condition} /></Field>
               </div>
               <Field label="Note"><Input name="note" placeholder="e.g. Screen flickers, tagged out" /></Field>
@@ -445,6 +448,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
               </div>
               <Field label="Findings"><Textarea name="findings" rows={2} placeholder="Checks done, parts replaced, test results" /></Field>
               <TestEquipmentField options={instruments} />
+              <MeterAtVisit assetId={x.id} />
               <Field label="Then set the asset to"><NativeSelect name="setStatus" options={enumOptions(["IN_SERVICE", "UNDER_MAINTENANCE", "OUT_OF_SERVICE"])} placeholder="Leave as is" /></Field>
               <Button variant="secondary">Record maintenance</Button>
             </ActionForm>

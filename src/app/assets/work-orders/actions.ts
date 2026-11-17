@@ -22,6 +22,7 @@ import {
 } from "@/lib/assets/work-orders";
 import { notifyUsers } from "@/lib/notifications";
 import { checkInstruments, saveInstruments } from "@/lib/assets/test-equipment-server";
+import { readingAtVisit } from "@/lib/assets/meters-server";
 import { logActivity, nextNumber } from "@/lib/server-utils";
 import { todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
@@ -230,6 +231,8 @@ export async function completeWorkOrderAction(_: FormState, fd: FormData): Promi
   // Wave 27: test equipment used must be in calibration today.
   const used = await checkInstruments(fd, wo.facilityId, todayISO(now));
   if ("problem" in used) return { error: used.problem, fields: { testEquipment: used.problem } };
+  const meter = await readingAtVisit(fd, wo.assetId, todayISO(now), me);
+  if ("problem" in meter) return { error: meter.problem, fields: { meterReading: meter.problem } };
   const [assignee] = wo.assignedToId ? await db.select({ name: users.name }).from(users).where(eq(users.id, wo.assignedToId)) : [];
   const currency = d.cost != null ? (d.currency ?? "EGP").toUpperCase() : null;
   const ok = await db.transaction(async (tx) => {
@@ -251,6 +254,7 @@ export async function completeWorkOrderAction(_: FormState, fd: FormData): Promi
       .returning({ id: maintenanceEvents.id }))[0].id;
     await tx.update(workOrders).set({ maintenanceEventId: eventId }).where(eq(workOrders.id, wo.id));
     await saveInstruments(tx, eventId, used.ok);
+    await meter.save(tx);
     // A recall job done = that device is actioned for the recall.
     await tx.update(recallAssets).set({ status: "ACTIONED", actionedAt: now, note: `Done under ${wo.number}` })
       .where(and(eq(recallAssets.workOrderId, wo.id), eq(recallAssets.status, "PENDING")));

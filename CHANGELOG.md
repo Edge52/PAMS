@@ -1,5 +1,44 @@
 # Changelog
 
+## Wave 29 — on branch `wave-29` (not merged yet)
+
+The "set aside, or built only in part" list. Migration `0045_wave29.sql` (a new device status *On loan*, and the
+loan's status before).
+
+- **Fix: actions that hung on the demo and laptop installs.** Since wave 24 the audit trail looked up the signed-in
+  user outside an open database transaction; the built-in database has one connection, so any action that logs
+  inside a transaction (lending or returning a device, completing a work order, recording training, and others)
+  waited forever and the app stopped answering. The lookup now goes through the transaction. A full PostgreSQL
+  server was not affected.
+- **Meter readings**: a mistaken reading can be corrected or deleted on the device page (kept in its history; a
+  deletion that would leave the others going backwards is refused). Signing off planned maintenance, a work order or
+  a maintenance visit asks for the meter reading when the device has a usage meter (optional; it makes the next
+  due date exact).
+- **Training sessions** can be corrected or deleted (delete the attached sign-in sheet first).
+- **Lending a device out** sets it to *On loan* in the register; returning it puts back the status it had. A device
+  on loan can't be lent again, and its status can only change through the loan.
+- **Depreciation**: double-declining balance as well as straight line (Administration › Settings › Book value), used
+  on device pages and in the reports; a new **Depreciation journal** report gives each device's charge for a period
+  as journal lines for the finance system (Excel export).
+- **Service cost and COSR**: a new table *By who did the work*: the company on the job, the contract's company, or
+  the hospital's own team, each against the purchase cost of the devices it served.
+- **Simulation**: the what-if can have its own staff shifts, closed hours and leave-unseen limits (switch *The
+  what-if* above those three settings); patients can also give up in later queues (*Also in later queues*).
+- **Audit trail**: before and after values for PPM and acceptance checklists, room zones and workshops (now logged
+  at all), drawing revisions and on-site room checks, BOQ settings, BOQ lines and BOQ departments.
+- **Passwords**: optional check against known data leaks (Administration › Settings › Sign-in), through the Have I
+  Been Pwned service; only the first 5 characters of the password's SHA-1 hash leave the server. Off by default;
+  needs internet; if the service can't be reached the password is accepted.
+- **3D code**: the pieces that need no state moved out of `scene.ts` (to `scene-parts.ts`) and `twin-view.tsx` (to
+  `twin-view-parts.tsx`). No change in behaviour (checked by screenshot). The panels still share the view's state, so
+  a fuller split needs a store first.
+- **Docs**: `docs/system-documentation.md` has a *Since release 3.0* section and current limitations and backlog; the
+  handover's open items are current.
+- Not done: **camera scanning on every phone** needs a small QR-reading library (`jsqr`) and adding a package
+  needs Hisham's OK; **deleting old branches on GitHub** was refused by this session's permissions (wave-15 to
+  wave-28 are fully in `main`; wave-13 and wave-14 hold commits that main reached another way). The breached-password
+  check was not tried against the live service from here.
+
 ## Wave 28 — merged 17 Nov 2026
 
 3D view and simulation. Migration `0044_wave28.sql`.

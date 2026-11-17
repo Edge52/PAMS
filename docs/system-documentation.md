@@ -1,6 +1,8 @@
-# Hospital PAMS — System Documentation (release 3.0)
+# Hospital PAMS — System Documentation (release 3.0, brought up to date 17 Nov 2026)
 
-1 Nov 2026 · supersedes the release 2.1 document of 30 Oct 2026
+1 Nov 2026 · supersedes the release 2.1 document of 30 Oct 2026. The *Since release 3.0* section, *Known limitations*
+and *Backlog* were rewritten on 17 Nov 2026 (wave 29); the module descriptions below still describe release 3.0, and
+`CHANGELOG.md` has the full detail of every wave since.
 
 ## Summary
 
@@ -22,6 +24,22 @@ tests and a browser test per feature. Migrations `0000`–`0015`.
 
 How to read this document: *Modules* says what works today; *Roles* who may do what; *Running* how to install and update;
 *Codebase* where things live; *Known limitations* and *Backlog* what is left and what only you can decide.
+
+## Since release 3.0 (waves 7 to 29)
+
+Today: about 73,000 lines of TypeScript, 99 database tables, 137 screens and 23 download/data routes, about 760
+automated unit tests and a page check that opens every kind of page (`npm run check:pages`, also run on GitHub for
+every branch). Migrations `0000`–`0045`.
+
+| Area | Added since 3.0 |
+| --- | --- |
+| Plan | Lift cores and vertical transport; room data sheets and BOQ scope from drawings; room standards in BOQ checks; patient pathways with a queue simulation (staff by hour, beds closing at night, patients leaving unseen, a what-if with its own shifts); capital and replacement plans; commissioning plans with a 3D week-by-week view |
+| Procure | Budgets, invoices and three-way match; framework agreements; supplier documents with expiry dates and reminders; EGP totals on budgets |
+| Track | Modules menu, Ctrl+K jump, start page per role; dashboard trends; a report library (12 reports); phone scanning of QR labels and installing on the home screen; UDI, GMDN and software version on devices; usage meters; loans and rentals (a device lent out shows as *On loan*) |
+| Maintain | Incidents (EDA reporting), electrical safety tests (IEC 62353), maintenance strategy by risk (AAMI EQ89); test equipment and calibration checked at sign-off; meter reading at sign-off; user training records |
+| Money | Book value (straight line or double-declining balance, set in Administration › Settings) and a depreciation journal for the finance system; service cost and COSR by device type, department, device supplier and the company that did the work |
+| 3D | Equipment 3D library and own model files with licence and credit; tool rails, mini-map, scale bar, north arrow and compass; right-click actions; opens on one floor with the others as plates |
+| Govern | Audit trail with before and after values that can't be edited or deleted; database rules on dates and amounts; monthly restore test; two-step sign-in, password rules (with an optional breached-password check), your sessions, security headers; device network and security details (MDS2) |
 
 ## Architecture
 
@@ -265,32 +283,28 @@ of the 10 demo accounts at phone width finds no errors or horizontal scrolling; 
 
 ## Known limitations
 
-> Out of date since release 3.0: the current state and to-do list are in `docs/HANDOVER.md`.
+As of wave 29 (17 Nov 2026). `docs/HANDOVER.md` › *What's left* is the working list.
 
 | Area | Limitation |
 | --- | --- |
-| Data | La Plaza's equipment and fit-out plan are demo data; the real register is to be entered after launch. Planning figures marked *judgement* in the reference sheet await your team's confirmation. |
-| Money | No budgets, commitments, invoices, payments or three-way match; maintenance costs are totalled per device and job but there is no maintenance budget view. |
-| BOQ scope | Beds and rooms are entered by hand (or by the quick start), not counted from CAD; no room data sheets. |
-| Language | English interface; Arabic names stored and shown, no right-to-left interface. |
-| Tender law | Two-envelope opening, bid and performance bonds and the e-procurement portal are not modelled. |
-| Suppliers | One contact per supplier. |
-| 3D | Distances for "nearest device" are straight lines plus a fixed cost per storey; lifts and stairs are found from room names; no MEP layers, BIM import or real-time location. |
-| Hand-drawn rooms | Rectangles only (CAD rooms keep real outlines). |
-| Integrations | No ERP, finance, HIS or Microsoft/Google sign-in. |
-| Not yet tried for real | A full Docker build on a server, email through the hospital's mail server. |
+| Data | La Plaza's equipment register and fit-out are demo data; makers' site figures and the reference figures await your teams' review; La Plaza has no north angle set |
+| Language | English interface; Arabic names stored and shown, no right-to-left interface |
+| Sign-in | Microsoft or Google sign-in is built but not tried with real accounts (needs a Supabase project) |
+| Assistant | Built, needs an Anthropic API key; only tried against a stand-in |
+| Phones | Scanning a QR label with the camera works in Chrome on Android; other phones type the tag or use a hand scanner |
+| 3D | No building services (MEP) layers, BIM import or real-time location; `twin-view.tsx` and `scene.ts` are still large (about 2,500 lines each) |
+| Integrations | No live link to ERP, HIS, RIS or e-procurement (Excel exports cover finance for now) |
+| Not yet tried for real | A full Docker build on a server; email through the hospital's mail server; a load test |
 
 ## Backlog
 
-> Out of date: see `docs/HANDOVER.md` › What's left.
-
 | Package | Contents | Size |
 | --- | --- | --- |
-| Procurement and BOQ depth (2.3) | BOQ scope counted from CAD rooms; room data sheets; budgets and commitments; framework agreements and call-off POs; invoices and three-way match; supplier scorecards; delivery, installation and acceptance checklists | L |
-| Tender law depth | Two-envelope opening (art. 23), bid bond 1.5 % and performance bond 5 % (art. 16, 40), validity extension letters (art. 27), committee minutes printed from the system | M |
 | Arabic interface | Right-to-left screens, Arabic labels, bilingual printouts | L |
-| Platform | Microsoft or Google sign-in; ERP/finance export; audit log viewer; several contacts per supplier; polygon rooms | M each |
-| 3D extras | Commissioning timeline; building services (MEP) layers; IFC/BIM import and campus view; real-time location of mobile equipment | M–L each |
+| Pilots with partners | MEP layers from drawings, HIS volumes, automatic imaging volumes (RIS/MPPS), real-time location, IFC/BIM import | M–L each |
+| Exports | ERP and e-procurement file formats, when the hospital has them | S each |
+| 3D code | Split the view further into one file per panel, with picture tests of saved views | M |
+| Outside API | A read-only HL7 FHIR Device API, when a hospital system needs to read the register | M |
 
 ## Decisions and inputs needed
 

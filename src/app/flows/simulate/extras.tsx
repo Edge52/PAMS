@@ -328,6 +328,12 @@ export function LeaveEditor({ model, s, set }: { model: SimModel; s: SimScenario
           <Button type="button" variant="secondary" disabled={!adding} onClick={() => { edit(adding, 240); setAdding(""); }}>Set a limit</Button>
         </div>
       )}
+      {rows.length > 0 && (
+        <label className="flex min-h-6 items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5 size-4" checked={!!s.leaveAny} onChange={(e) => set((x) => ({ ...x, leaveAny: e.target.checked || undefined }))} />
+          <span>Also in later queues <span className="block text-xs text-muted">A patient already seen may give up while waiting this long for a later step (a scan, a bed). Counted as left.</span></span>
+        </label>
+      )}
     </Box>
   );
 }

@@ -22,7 +22,13 @@ export type SimScenario = {
   closed: Record<string, number[]>;
   /** Minutes by pathway id after which a patient not yet seen leaves (wave 28). */
   leaveAfter: Record<string, number>;
+  /** Wave 29: patients may also give up in a later queue, not only before their first step. */
+  leaveAny?: boolean;
   whatIf: {
+    /** Wave 29: the what-if's own staff shifts, closed hours and leave-unseen limits; missing = as the baseline. */
+    shifts?: Record<string, number[]>;
+    closed?: Record<string, number[]>;
+    leaveAfter?: Record<string, number>;
     /** New capacities by resource key (staff included). */
     capacity: Record<string, number>;
     /** Patients, % of set; null = as the baseline. */
@@ -79,6 +85,17 @@ export function cleanScenario(raw: unknown, porters: number): SimScenario {
   for (const [k, v] of Object.entries(obj(w.capacity))) { if (KEY.test(k) && Number.isFinite(Number(v))) out.whatIf.capacity[k] = Math.round(n(v, 0, 1000, 0)); }
   if (w.volume != null && Number.isFinite(Number(w.volume))) out.whatIf.volume = n(w.volume, 1, 1000, 100);
   for (const [k, v] of Object.entries(obj(w.hours))) { if (!KEY.test(k)) continue; out.whatIf.hours[k] = v === null ? null : cleanHours(obj(v)); }
+  if (s.leaveAny === true) out.leaveAny = true;
+  const part = <T,>(src: unknown, clean: (k: string, v: unknown) => T | null): Record<string, T> | undefined => {
+    if (src == null || typeof src !== "object") return undefined;
+    const o: Record<string, T> = {};
+    for (const [k, v] of Object.entries(obj(src))) { const x = clean(k, v); if (x != null) o[k] = x; }
+    return o;
+  };
+  out.whatIf.shifts = part(w.shifts, (k, v) => (KEY.test(k) ? cleanShift(v) : null));
+  out.whatIf.closed = part(w.closed, (k, v) => (KEY.test(k) ? cleanClosed(v) : null));
+  out.whatIf.leaveAfter = part(w.leaveAfter, (k, v) => { const m = Math.round(Number(v)); return /^\d{1,9}$/.test(k) && Number.isFinite(m) && m >= 1 ? Math.min(24 * 60, m) : null; });
+  for (const k of ["shifts", "closed", "leaveAfter"] as const) if (out.whatIf[k] === undefined) delete out.whatIf[k];
   for (const [k, v] of Object.entries(obj(w.moves))) { if (/^\d{1,9}:[\w.\-]{1,80}$/.test(k) && Number.isInteger(Number(v)) && Math.abs(Number(v)) <= 200) out.whatIf.moves[k] = Number(v); }
   return out;
 }
@@ -100,6 +117,10 @@ export function whatIfChanges(model: SimModel, s: SimScenario, floorName: (level
     const f = m.flows.find((x) => x.id === fid), st = f?.steps.find((x) => x.key === step);
     if (st && st.level !== lv) out.push(`${st.label} (${f!.name}) to ${floorName(lv)}`);
   }
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+  if (s.whatIf.shifts && !same(s.whatIf.shifts, s.shifts)) out.push("other staff shifts");
+  if (s.whatIf.closed && !same(s.whatIf.closed, s.closed)) out.push("other closed hours");
+  if (s.whatIf.leaveAfter && !same(s.whatIf.leaveAfter, s.leaveAfter)) out.push("other leave-unseen limits");
   return out;
 }
 
@@ -112,13 +133,17 @@ export function buildRuns(model: SimModel, s: SimScenario): { model: SimModel; b
   const books = Object.fromEntries(Object.entries(s.books).filter(([k]) => ids.has(Number(k))).map(([k, b]) => [Number(k), b]));
   const shifts = Object.fromEntries(Object.entries(s.shifts ?? {}).filter(([k]) => keys.has(k)));
   const closed = Object.fromEntries(Object.entries(s.closed ?? {}).filter(([k, v]) => keys.has(k) && v.length));
-  const leaveAfter = Object.fromEntries(Object.entries(s.leaveAfter ?? {}).filter(([k, v]) => ids.has(Number(k)) && v > 0).map(([k, v]) => [Number(k), v]));
+  const shiftsOf = (x: Record<string, number[]>) => Object.fromEntries(Object.entries(x).filter(([k]) => keys.has(k)));
+  const closedOf = (x: Record<string, number[]>) => Object.fromEntries(Object.entries(x).filter(([k, v]) => keys.has(k) && v.length));
+  const leaveOf = (x: Record<string, number>) => Object.fromEntries(Object.entries(x).filter(([k, v]) => ids.has(Number(k)) && v > 0).map(([k, v]) => [Number(k), v]));
+  const leaveAfter = leaveOf(s.leaveAfter ?? {});
   const base: Partial<SimOptions> = {
     days: s.days, runs: s.runs, variability: s.variability, weekendShare: s.weekend / 100, walkMinutes: s.walk, volumeFactor: s.volume / 100, seed: 1,
     ...(m.porter ? { capacity: { porter: s.porters } } : {}),
     ...(Object.keys(hours).length ? { hours } : {}), ...(Object.keys(books).length ? { books } : {}),
     // Wave 28: only when set, so an older scenario runs exactly as before.
     ...(Object.keys(shifts).length ? { shifts } : {}), ...(Object.keys(closed).length ? { closed } : {}), ...(Object.keys(leaveAfter).length ? { leaveAfter } : {}),
+    ...(s.leaveAny ? { leaveAny: true } : {}),
   };
   if (!whatIfChanges(model, s).length) return { model: m, base, whatIf: null };
   const wHours: Record<string, OpeningHours> = { ...hours };
@@ -126,7 +151,13 @@ export function buildRuns(model: SimModel, s: SimScenario): { model: SimModel; b
   const capacity = { ...base.capacity, ...Object.fromEntries(Object.entries(s.whatIf.capacity).filter(([k]) => keys.has(k))) };
   return {
     model: m, base,
-    whatIf: { ...base, volumeFactor: (s.whatIf.volume ?? s.volume) / 100, capacity, hours: wHours, ...(Object.keys(s.whatIf.moves).length ? { levels: s.whatIf.moves } : {}) },
+    whatIf: {
+      ...base, volumeFactor: (s.whatIf.volume ?? s.volume) / 100, capacity, hours: wHours, ...(Object.keys(s.whatIf.moves).length ? { levels: s.whatIf.moves } : {}),
+      // Wave 29: the what-if's own shifts, closed hours and limits replace the baseline's when set.
+      ...(s.whatIf.shifts ? { shifts: shiftsOf(s.whatIf.shifts) } : {}),
+      ...(s.whatIf.closed ? { closed: closedOf(s.whatIf.closed) } : {}),
+      ...(s.whatIf.leaveAfter ? { leaveAfter: leaveOf(s.whatIf.leaveAfter) } : {}),
+    },
   };
 }
 

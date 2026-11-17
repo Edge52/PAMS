@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
+import { MANUAL_ASSET_STATUSES } from "@/lib/assets/filters";
 import { assets, departments, equipmentLoans, suppliers } from "@/db/schema";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formObject, id, isoDate, num, reqId, text } from "@/lib/assets/forms";
@@ -32,10 +33,15 @@ export async function createLoanAction(_: ActionState, fd: FormData): Promise<Ac
   const p = LoanSchema.safeParse(formObject(fd));
   if (!p.success) return zodFail(p.error);
   const d = p.data;
-  let asset: { id: number; tag: string; facilityId: number; serial: string | null } | undefined;
+  let asset: { id: number; tag: string; facilityId: number; serial: string | null; status: string } | undefined;
   if (d.assetTag) {
-    [asset] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, serial: assets.serialNumber }).from(assets).where(eq(assets.assetTag, d.assetTag.toUpperCase()));
+    [asset] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, serial: assets.serialNumber, status: assets.status }).from(assets).where(eq(assets.assetTag, d.assetTag.toUpperCase()));
     if (!asset) return { errors: [`No device has the tag ${d.assetTag.toUpperCase()}.`], fields: { assetTag: "No device has this tag." } };
+    // Wave 29: a device lent out becomes "On loan" in the register, so it can't be lent twice or lent once disposed.
+    if (d.direction === "LENT" && (asset.status === "ON_LOAN" || asset.status === "DISPOSED")) {
+      const why = asset.status === "ON_LOAN" ? "This device is already on loan." : "This device has been disposed of.";
+      return { errors: [why], fields: { assetTag: why } };
+    }
   }
   const [supplier] = d.supplierId ? await db.select({ name: suppliers.name }).from(suppliers).where(eq(suppliers.id, d.supplierId)) : [];
   const otherParty = d.otherParty ?? supplier?.name ?? null;
@@ -50,6 +56,7 @@ export async function createLoanAction(_: ActionState, fd: FormData): Promise<Ac
     const [dep] = await db.select({ f: departments.facilityId }).from(departments).where(eq(departments.id, d.departmentId));
     if (!dep || dep.f !== facilityId) return { errors: ["Choose a department of this hospital."], fields: { departmentId: "Not in this hospital." } };
   }
+  const lendingOut = d.direction === "LENT" && !!asset && d.outOn! <= today;
   const row = await db.transaction(async (tx) => {
     const number = await nextNumber("LN", equipmentLoans, equipmentLoans.number, tx);
     const [r] = await tx.insert(equipmentLoans).values({
@@ -57,8 +64,9 @@ export async function createLoanAction(_: ActionState, fd: FormData): Promise<Ac
       assetId: asset?.id ?? null, deviceDescription: d.deviceDescription ?? null, serialNumber: d.serialNumber ?? asset?.serial ?? null,
       departmentId: d.departmentId ?? null, purpose: d.purpose ?? null, outOn: d.outOn!, dueBackOn: d.dueBackOn ?? null, conditionOut: d.conditionOut ?? null,
       cost: d.cost != null ? String(d.cost) : null, currency: d.cost != null ? (d.currency ?? "EGP").toUpperCase() : null, notes: d.notes ?? null,
-      createdById: me.id, createdByName: me.name,
+      createdById: me.id, createdByName: me.name, statusBefore: lendingOut ? asset!.status : null,
     }).returning({ id: equipmentLoans.id, number: equipmentLoans.number });
+    if (lendingOut) await tx.update(assets).set({ status: "ON_LOAN" }).where(eq(assets.id, asset!.id));
     const what = `${d.direction === "BORROWED" ? "Borrowed from" : "Lent to"} ${otherParty}${d.dueBackOn ? `, due back ${d.dueBackOn}` : ""}`;
     await logActivity("loan", r.id, "created", `${r.number}: ${what}`.slice(0, 300), me.name, tx);
     if (asset) await logActivity("asset", asset.id, "loan", `${r.number}: ${what}`.slice(0, 300), me.name, tx);
@@ -109,7 +117,18 @@ export async function returnLoanAction(_: ActionState, fd: FormData): Promise<Ac
   const returnedOn = d.returnedOn ?? todayISO();
   const problems = loanProblems({ direction: l.direction, otherParty: l.otherParty, assetId: l.assetId, deviceDescription: l.deviceDescription, outOn: l.outOn, dueBackOn: l.dueBackOn, returnedOn }, todayISO());
   if (problems.returnedOn) return { errors: [problems.returnedOn], fields: { returnedOn: problems.returnedOn } };
-  await db.update(equipmentLoans).set({ returnedOn, conditionIn: d.conditionIn ?? null }).where(eq(equipmentLoans.id, l.id));
+  await db.transaction(async (tx) => {
+    await tx.update(equipmentLoans).set({ returnedOn, conditionIn: d.conditionIn ?? null }).where(eq(equipmentLoans.id, l.id));
+    // Wave 29: a device lent out goes back to the status it had before.
+    if (l.direction === "LENT" && l.assetId) {
+      const [a] = await tx.select({ status: assets.status }).from(assets).where(eq(assets.id, l.assetId));
+      if (a?.status === "ON_LOAN") {
+        const back = (MANUAL_ASSET_STATUSES as readonly string[]).includes(l.statusBefore ?? "") ? l.statusBefore as (typeof MANUAL_ASSET_STATUSES)[number] : "IN_SERVICE";
+        await tx.update(assets).set({ status: back }).where(eq(assets.id, l.assetId));
+        await logActivity("asset", l.assetId, "status_changed", `Back from loan: on loan → ${back.toLowerCase().replace(/_/g, " ")}`, me.name, tx, { status: { from: "ON_LOAN", to: back } });
+      }
+    }
+  });
   await logActivity("loan", l.id, "returned", `Returned ${returnedOn}${d.conditionIn ? ` — ${d.conditionIn}` : ""}`.slice(0, 300), me.name);
   if (l.assetId) await logActivity("asset", l.assetId, "loan", `${l.number} returned ${returnedOn}`, me.name);
   revalidatePath("/assets/loans"); if (l.assetId) revalidatePath(`/assets/${l.assetId}`);

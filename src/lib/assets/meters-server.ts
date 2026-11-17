@@ -6,7 +6,7 @@ import "server-only";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, deviceTypes, imagingUsage, meterReadings } from "@/db/schema";
-import { IMAGING_UNIT, readingsFromMonthlyCounts, usagePpmDue, type MeterReading, type UsageDue } from "./meters";
+import { IMAGING_UNIT, readingProblem, readingsFromMonthlyCounts, usagePpmDue, type MeterReading, type UsageDue } from "./meters";
 import type { Scope } from "./access";
 import { scopeWhere } from "./access";
 
@@ -60,4 +60,37 @@ export async function usageDueMap(today: string, opts: { ids?: number[]; scope?:
 export async function meterHistory(assetId: number, limit = 12) {
   return db.select().from(meterReadings).where(eq(meterReadings.assetId, assetId))
     .orderBy(sql`${meterReadings.readOn} desc`, sql`${meterReadings.id} desc`).limit(limit);
+}
+
+/* ── Wave 29: a meter reading taken at a maintenance visit ── */
+
+type ReadingTx = Pick<typeof db, "insert">;
+
+/** The device's usage unit and its last reading, or null when its type has no usage meter. */
+export async function meterOf(assetId: number): Promise<{ unit: string; last: { readOn: string; reading: number } | null } | null> {
+  const [t] = await db.select({ unit: deviceTypes.usageUnit }).from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).where(eq(assets.id, assetId));
+  if (!t?.unit) return null;
+  const [last] = await db.select({ readOn: meterReadings.readOn, reading: meterReadings.reading }).from(meterReadings)
+    .where(eq(meterReadings.assetId, assetId)).orderBy(sql`${meterReadings.readOn} desc`, sql`${meterReadings.id} desc`).limit(1);
+  return { unit: t.unit, last: last ?? null };
+}
+
+/**
+ * Check the optional meter reading typed when a visit is signed off (`meterReading` in the form). Returns the save
+ * step to run with the visit's own writes, or the problem to show beside the field. Blank, or a device without a
+ * usage meter: nothing to save.
+ */
+export async function readingAtVisit(fd: FormData, assetId: number, on: string, who: { id: number; name: string }):
+  Promise<{ save: (tx: ReadingTx) => Promise<void> } | { problem: string }> {
+  const raw = String(fd.get("meterReading") ?? "").trim();
+  const none = { save: async () => {} };
+  if (!raw) return none;
+  const meter = await meterOf(assetId);
+  if (!meter) return none;
+  const reading = Number(raw);
+  const existing = await db.select({ id: meterReadings.id, readOn: meterReadings.readOn, reading: meterReadings.reading, kind: meterReadings.kind })
+    .from(meterReadings).where(eq(meterReadings.assetId, assetId)).orderBy(asc(meterReadings.readOn), asc(meterReadings.id));
+  const problem = readingProblem(existing, { readOn: on, reading, kind: "READING" });
+  if (problem) return { problem };
+  return { save: async (tx) => { await tx.insert(meterReadings).values({ assetId, readOn: on, reading, unit: meter.unit, kind: "READING", note: "At the maintenance visit", enteredById: who.id, enteredByName: who.name }); } };
 }

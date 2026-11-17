@@ -4,17 +4,18 @@ import { alias } from "drizzle-orm/pg-core";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { departments, deviceTypes, facilities, trainingAttendees, trainingSessions } from "@/db/schema";
-import { Badge, Details, Field, PageHeader, Panel, Textarea } from "@/components/ui";
+import { Badge, Details, Field, FormGrid, Input, PageHeader, Panel, Select, Textarea } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { DocumentsPanel } from "@/components/documents-panel";
-import { Notice } from "@/components/assets/bits";
-import { refreshDue, TRAINING_KIND_LABELS } from "@/lib/assets/training";
+import { DeviceTypeSelect, Notice } from "@/components/assets/bits";
+import { deviceTypeOptions } from "@/lib/assets/queries";
+import { refreshDue, TRAINING_KIND_LABELS, TRAINING_KINDS } from "@/lib/assets/training";
 import { trainingValidMonths, usersOfFacility } from "@/lib/assets/training-server";
 import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate, todayISO } from "@/lib/format";
 import { getActivity } from "@/lib/server-utils";
-import { addAttendeesAction, removeAttendeeAction } from "../actions";
+import { addAttendeesAction, deleteTrainingAction, removeAttendeeAction, updateTrainingAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Training session" };
@@ -38,6 +39,10 @@ export default async function TrainingSessionPage({ params, searchParams }: { pa
     trainingValidMonths(),
     getActivity("training", s.id, 20),
   ]);
+  const [types, depts] = canEdit ? await Promise.all([
+    deviceTypeOptions(),
+    db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.facilityId, s.facilityId)).orderBy(asc(departments.name)),
+  ]) : [[], []];
   const accounts = canEdit ? (await usersOfFacility(s.facilityId)).filter((u) => !people.some((p) => p.a.userId === u.id)) : [];
   const due = refreshDue(s.heldOn, months);
   const path = `/assets/training/${s.id}`;
@@ -59,6 +64,27 @@ export default async function TrainingSessionPage({ params, searchParams }: { pa
               { label: "Notes", value: s.notes },
               { label: "Recorded by", value: s.createdByName },
             ]} />
+            {canEdit && (
+              <details className="mt-4 border-t border-line pt-3">
+                <summary className="min-h-6 cursor-pointer text-sm font-semibold text-primary">Correct or delete this session</summary>
+                <ActionForm action={updateTrainingAction} className="mt-3 space-y-3">
+                  <input type="hidden" name="sessionId" value={s.id} />
+                  <FormGrid cols={2}>
+                    <Field label="Device type"><DeviceTypeSelect types={types} value={s.deviceTypeId} required /></Field>
+                    <Field label="Kind"><Select name="kind" defaultValue={s.kind} options={TRAINING_KINDS.map((k) => ({ value: k, label: TRAINING_KIND_LABELS[k] }))} /></Field>
+                    <Field label="Date"><Input type="date" name="heldOn" defaultValue={s.heldOn} max={todayISO()} required /></Field>
+                    <Field label="Trainer"><Input name="trainer" defaultValue={s.trainer} required /></Field>
+                    <Field label="For department"><Select name="departmentId" defaultValue={s.departmentId ? String(s.departmentId) : ""} placeholder="—" options={depts.map((d) => ({ value: String(d.id), label: d.name }))} /></Field>
+                  </FormGrid>
+                  <Field label="Notes"><Textarea name="notes" rows={2} defaultValue={s.notes ?? ""} /></Field>
+                  <SubmitButton>Save</SubmitButton>
+                </ActionForm>
+                <ActionForm action={deleteTrainingAction} className="mt-4 border-t border-line pt-3" confirm={`Delete this training session and its ${people.length} attendee record${people.length === 1 ? "" : "s"}? The deletion is kept in the history.`}>
+                  <input type="hidden" name="sessionId" value={s.id} />
+                  <SubmitButton variant="danger">Delete the session</SubmitButton>
+                </ActionForm>
+              </details>
+            )}
           </Panel>
           <Panel title={`Attended (${people.length})`} padded={false}>
             {people.length === 0 ? <p className="p-5 text-sm text-muted">Nobody on the list yet.</p> : (

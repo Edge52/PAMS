@@ -562,3 +562,20 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   non-empty. Helpers `capacityByHour`, `cleanShift`, `cleanClosed`, `hourRange`, `closedLabel` in `simulate.ts`.
 - Seed `scripts/seed/north.ts` (after `security`): sets the demo building's north only when it is blank and the
   building has no activity entry, so a cleared value stays cleared.
+
+## Wave 29
+
+- **Logging inside a transaction**: pass the transaction to `logActivity(…, tx)`. It reads the signed-in user
+  through that transaction (`currentUserVia`). Never call anything that queries with `db` (getCurrentUser,
+  requirePermission, facilityScope, getSetting…) inside `db.transaction`: with PGlite (one connection) it waits forever.
+  Do those lookups before the transaction starts.
+- **On loan**: `ON_LOAN` is in `ASSET_STATUSES` but not in `MANUAL_ASSET_STATUSES`; only loans set and clear it
+  (`equipment_loans.status_before`). Status pickers and manual-change schemas use the manual list.
+- **Meter at sign-off**: `readingAtVisit(fd, assetId, date, who)` in `lib/assets/meters-server.ts` checks the optional
+  `meterReading` field and returns a `save(tx)` step; the field is `<MeterAtVisit assetId>`.
+- **Depreciation method**: `getSetting("depreciationMethod")`, passed to `depreciation({ method, … })`; `bookValues`
+  does it for you. `decliningWrittenOff` is the double-declining maths (tested against a worked example).
+- **Who did the work**: `byProvider` in `lib/reports/service-cost-calc.ts`; cost lines carry `provider`.
+- **Simulation**: `whatIf.shifts/closed/leaveAfter` (missing = as the baseline) and `leaveAny`; `buildRuns` applies them.
+- **Breached passwords**: `breachedProblem` (`lib/auth/breached.ts`) after `passwordProblem`; fails open.
+- **3D files**: state-free pieces live in `twin/scene-parts.ts` and `twin/twin-view-parts.tsx`; add new constants there.

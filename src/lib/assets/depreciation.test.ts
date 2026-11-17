@@ -69,3 +69,27 @@ describe("terms and start date", () => {
     expect(inServiceDate({})).toEqual({ date: null, basis: null });
   });
 });
+
+describe("declining balance (wave 29)", () => {
+  it("writes off 2 ÷ life of what is left, then switches to straight line, and ends at the residual", async () => {
+    const { decliningWrittenOff } = await import("./depreciation");
+    // 10,000 over 5 years, no residual: 4,000, 2,400, 1,440, then straight line 1,080 and 1,080.
+    expect(decliningWrittenOff(10_000, 0, 5, 1)).toBeCloseTo(4000);
+    expect(decliningWrittenOff(10_000, 0, 5, 2)).toBeCloseTo(6400);
+    expect(decliningWrittenOff(10_000, 0, 5, 3)).toBeCloseTo(7840);
+    expect(decliningWrittenOff(10_000, 0, 5, 4)).toBeCloseTo(8920);
+    expect(decliningWrittenOff(10_000, 0, 5, 5)).toBeCloseTo(10_000);
+    expect(decliningWrittenOff(10_000, 0, 5, 9)).toBeCloseTo(10_000);
+    expect(decliningWrittenOff(10_000, 0, 5, 0.5)).toBeCloseTo(2000);
+    expect(decliningWrittenOff(10_000, 1_000, 5, 5)).toBeCloseTo(9_000);
+  });
+  it("is used by depreciation() when asked, and writes off more early than straight line", async () => {
+    const { depreciation } = await import("./depreciation");
+    const base = { cost: 10_000, inService: "2024-01-01", lifeYears: 5, residualPct: 0 };
+    const sl = depreciation(base, "2025-01-01"), db = depreciation({ ...base, method: "DECLINING" }, "2025-01-01");
+    expect(sl.bookValue).toBeCloseTo(8000, -1);
+    expect(db.bookValue).toBeCloseTo(6000, -1);
+    expect(db.state).toBe("DEPRECIATING");
+    expect(depreciation({ ...base, method: "DECLINING" }, "2030-01-01").bookValue).toBe(0);
+  });
+});

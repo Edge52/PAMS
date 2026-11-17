@@ -150,6 +150,15 @@ export function Simulator({ model, porterDefault, facilityId, floors, scenarios:
   const setCap = (k: string, v: string) => set((x) => { const c = { ...x.whatIf.capacity }; const d = v.replace(/[^\d]/g, ""); if (d === "") delete c[k]; else c[k] = Math.min(1000, Number(d)); return { ...x, whatIf: { ...x.whatIf, capacity: c } }; });
   const input = "h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 text-sm";
   const b = result?.base, w = result?.whatIf;
+  // The three editors below work on the baseline, or on the what-if's own copy (started from the baseline's).
+  const [side, setSide] = useState<"base" | "whatIf">("base");
+  const view: SimScenario = side === "base" ? s
+    : { ...s, shifts: s.whatIf.shifts ?? s.shifts, closed: s.whatIf.closed ?? s.closed, leaveAfter: s.whatIf.leaveAfter ?? s.leaveAfter };
+  const setView = side === "base" ? set : (f: (x: SimScenario) => SimScenario) => set((x) => {
+    const cur = { ...x, shifts: x.whatIf.shifts ?? x.shifts, closed: x.whatIf.closed ?? x.closed, leaveAfter: x.whatIf.leaveAfter ?? x.leaveAfter };
+    const next = f(cur);
+    return { ...x, leaveAny: next.leaveAny, whatIf: { ...x.whatIf, shifts: next.shifts, closed: next.closed, leaveAfter: next.leaveAfter } };
+  });
   const flagged = b?.resources.filter((r) => r.flag) ?? [];
   const sorted = b ? [...effective.resources].sort((x, y) => {
     const rx = b.resources.find((r) => r.key === x.key), ry = b.resources.find((r) => r.key === y.key);
@@ -179,9 +188,24 @@ export function Simulator({ model, porterDefault, facilityId, floors, scenarios:
           <HoursEditor model={effective} s={s} set={set} />
           <BooksEditor model={model} s={s} set={set} />
           <MovesEditor model={model} s={s} set={set} floors={floors} />
-          <ShiftsEditor model={effective} s={s} set={set} />
-          <ClosedEditor model={effective} s={s} set={set} />
-          <LeaveEditor model={model} s={s} set={set} />
+        </div>
+        {/* Wave 29: shifts, closed hours and leave-unseen limits can differ in the what-if. */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm" role="radiogroup" aria-label="Which run the next three settings change">
+          <span className="text-muted">Shifts, closed hours and leaving apply to:</span>
+          {(["base", "whatIf"] as const).map((k) => (
+            <button key={k} type="button" role="radio" aria-checked={side === k} onClick={() => setSide(k)}
+              className={`min-h-8 rounded-full border px-3 ${side === k ? "border-primary bg-primary text-white" : "border-line bg-surface"}`}>
+              {k === "base" ? "The baseline" : "The what-if"}
+            </button>
+          ))}
+          {side === "whatIf" && (s.whatIf.shifts || s.whatIf.closed || s.whatIf.leaveAfter) && (
+            <button type="button" className="min-h-8 text-primary underline" onClick={() => set((x) => { const w = { ...x.whatIf }; delete w.shifts; delete w.closed; delete w.leaveAfter; return { ...x, whatIf: w }; })}>Same as the baseline again</button>
+          )}
+        </div>
+        <div className="mt-2 grid gap-2 lg:grid-cols-2">
+          <ShiftsEditor model={effective} s={view} set={setView} />
+          <ClosedEditor model={effective} s={view} set={setView} />
+          <LeaveEditor model={model} s={view} set={setView} />
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <Button type="button" onClick={run} disabled={!!busy}>{busy ? `Running ${busy.done} of ${busy.of}…` : result ? "Run again" : "Run the simulation"}</Button>

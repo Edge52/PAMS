@@ -463,3 +463,16 @@ credits under the preview, in the title block and in the floor book.
   leaving.
 Run the simulation. The pathways table shows how many left unseen; press Waits by hour for the average wait by the
 hour patients arrived.
+
+## Wave 29: corrections and extras
+
+- **A wrong meter reading**: on the device page, *Usage* › *Recent readings* › *Correct or delete*. When you sign off
+  planned maintenance on a device with a meter, type the reading in *Meter reading now*.
+- **A wrong training record**: open the session › *Correct or delete this session*.
+- **Lending a device out**: record the loan (Assets › Loans and rentals); the device shows *On loan* until you record
+  its return.
+- **Depreciation**: choose the method in Administration › Settings › Book value. *Reports › Depreciation journal* gives
+  the charge for a period, ready to import into the finance system from Excel.
+- **Service cost by company**: *Reports › Service cost and COSR* › *By who did the work*.
+- **Simulation**: above *Shifts*, *Closed hours* and *Leaving*, choose *The what-if* to set them differently for the
+  what-if run. *Also in later queues* lets patients give up while waiting for a later step.

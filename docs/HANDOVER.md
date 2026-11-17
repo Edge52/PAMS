@@ -39,7 +39,7 @@ Demo figures (site planning values, imaging volumes, budgets) are labelled as de
 
 - **Stack**: Next.js 16 App Router (server components and server actions), React 19, TypeScript strict, Tailwind 4,
   Drizzle ORM, PostgreSQL 16 or embedded PGlite, three.js, ExcelJS, zod 4, Vitest, Playwright.
-- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0044`, about 135 pages, 751 unit tests.
+- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0045`, about 137 pages, 760 unit tests.
 - **Database**: `npm run demo` and `npm run local` use embedded PGlite (`.pglite` for the demo, `.pglite-data` for
   your own data). A server uses PostgreSQL via `DATABASE_URL`; Supabase works too (`DATABASE_SSL`, see deploy guide).
 - **Layout** (more in `docs/system-documentation.md` › Codebase map):
@@ -82,7 +82,7 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 28 (merged 17 Nov 2026): the nine-wave plan of Nov 2026 is built. What's left waits on Hisham (real data, go-live, keys) or was set aside (splitting the two large 3D files).
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 28 (merged 17 Nov 2026): the nine-wave plan of Nov 2026 is built. `wave-29` (the leftovers list) is pushed and waits for Hisham's OK.
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
@@ -146,8 +146,8 @@ no finance export or e-procurement portal yet.
 
 | Item | Notes | Size |
 | --- | --- | --- |
-| Own model files for renders (optional) | Wave 15 made the built-in models detailed. If Hisham wants licensed models (e.g. a maker's bed or CT), add a drop-in: `.glb` files listed with their licence and credit, baked to vertex colours and scaled to the footprint. Openly licensed hospital models are rare (most are commercial), and Kenney's site isn't reachable from the session. | M |
-| Simulation: shifts and breaks | Staff numbers by hour of the day; beds closing at night; patients leaving without being seen. | M |
+| Camera scanning on every phone | Needs a small QR-reading library in the browser (for example `jsqr`); waits on Hisham's OK to add a package. Chrome on Android already scans. | S |
+| Split the 3D view further | Wave 29 moved the pieces that need no state out of `twin-view.tsx` and `scene.ts`; the panels still share the view's state, so splitting them needs a store first. Add picture tests of saved views before. | M |
 
 ### To check with Hisham (wave 16)
 

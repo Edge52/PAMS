@@ -315,12 +315,14 @@ export async function setRoomZoneAction(_: FixActionState, fd: FormData): Promis
   const roomId = Number(fd.get("roomId")); const raw = String(fd.get("zone") ?? "");
   const zone = (ZONES as readonly string[]).includes(raw) ? (raw as (typeof ZONES)[number]) : null;
   if (raw && !zone) return { error: "Choose a zone from the list." };
-  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name, departmentId: rooms.departmentId }).from(rooms).where(eq(rooms.id, roomId)) : [];
+  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name, departmentId: rooms.departmentId, zone: rooms.zone }).from(rooms).where(eq(rooms.id, roomId)) : [];
   if (!r) return { error: "That room no longer exists." };
   // Wave 13: department heads may set the zones of their own rooms.
   if (!(await canEditRoomZone(me, r.departmentId))) return { error: "Only facilities staff, or the department's head, can change a room's zone." };
   const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
   await db.update(rooms).set({ zone }).where(eq(rooms.id, r.id));
+  // Wave 29: room edits are in the audit trail with before and after.
+  await logActivity("room", r.id, "zone", `${r.name}: access zone ${zone ? zone.toLowerCase() : "read from its name"}`, me.name, db, diff({ zone: r.zone }, { zone }));
   return { ok: zone ? `${r.name}: ${zone.toLowerCase()} zone.` : `${r.name}: zone read from its name again.`, roomId: r.id, zone };
 }
 
@@ -328,10 +330,11 @@ export async function setRoomZoneAction(_: FixActionState, fd: FormData): Promis
 export async function setWorkshopAction(_: FixActionState, fd: FormData): Promise<FixActionState> {
   const me = await requirePermission("facilities.edit");
   const roomId = Number(fd.get("roomId")); const on = fd.get("on") === "1";
-  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name }).from(rooms).where(eq(rooms.id, roomId)) : [];
+  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, floorId: rooms.floorId, name: rooms.name, workshop: rooms.workshop }).from(rooms).where(eq(rooms.id, roomId)) : [];
   if (!r) return { error: "That room no longer exists." };
   const fac = await floorFacility(r.floorId); if (fac != null) await requireFacilityAccess(fac, me);
   await db.update(rooms).set({ workshop: on }).where(eq(rooms.id, r.id));
+  await logActivity("room", r.id, "workshop", `${r.name}: ${on ? "marked as a biomedical workshop" : "no longer a workshop"}`, me.name, db, diff({ workshop: r.workshop }, { workshop: on }));
   return { ok: on ? `${r.name} is marked as a workshop: work orders show the route from it.` : `${r.name} is no longer a workshop.`, roomId: r.id };
 }
 

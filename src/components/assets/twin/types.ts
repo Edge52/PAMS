@@ -131,10 +131,11 @@ export const STATUS_COLORS: Record<string, string> = {
   UNDER_MAINTENANCE: "#ffb534",
   OUT_OF_SERVICE: "#ff4f62",
   DISPOSED: "#5d6b78",
+  ON_LOAN: "#c79bff",
 };
 export const STATUS_LABELS: Record<string, string> = {
   IN_SERVICE: "In service", INSTALLED: "Installed", IN_STOCK: "In stock",
-  UNDER_MAINTENANCE: "Under maintenance", OUT_OF_SERVICE: "Out of service", DISPOSED: "Disposed",
+  UNDER_MAINTENANCE: "Under maintenance", OUT_OF_SERVICE: "Out of service", DISPOSED: "Disposed", ON_LOAN: "On loan",
 };
 
 /**

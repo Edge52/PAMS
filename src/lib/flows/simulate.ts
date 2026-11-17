@@ -58,6 +58,8 @@ export type SimOptions = {
   closed?: Record<string, number[]>;
   /** Minutes by pathway id (wave 28): a patient still waiting for a first step after this long leaves without being seen. */
   leaveAfter?: Record<number, number>;
+  /** Wave 29: the limit applies to the wait in every queue, not only before the first step. */
+  leaveAny?: boolean;
 };
 /** Open from `open` to `close` o'clock (0–24, open before close) every day, or on weekdays only. */
 export type OpeningHours = { open: number; close: number; weekends: boolean };
@@ -330,8 +332,9 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
         });
       });
       // Not seen yet and still waiting (wave 28): leave unseen when the wait runs past the pathway's limit.
-      if (leaveAfter != null && !pt.seen && state.v !== "started") {
-        at(asked + Math.max(0, leaveAfter - pt.waited), () => {
+      if (leaveAfter != null && (opt.leaveAny || !pt.seen) && state.v !== "started") {
+        // Before the first step the wait so far counts; in a later queue (leaveAny) only the wait in this queue.
+        at(asked + Math.max(0, pt.seen ? leaveAfter : leaveAfter - pt.waited), () => {
           if (state.v === "started" || state.v === "gone") return;
           if (state.v === "room") cancel(s.resource, wRoom); else { cancel(s.staff, wStaff); release(s.resource); }
           state.v = "gone";

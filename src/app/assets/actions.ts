@@ -12,7 +12,7 @@ import { logActivity } from "@/lib/server-utils";
 import { facilityScope, requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { facilityOfAsset, facilityOfEvent, scopeWhere } from "@/lib/assets/access";
 import { distribute, expandAllocations, parseSerials, type DistMode } from "@/lib/assets/distribution";
-import { ASSET_CONDITIONS, ASSET_STATUSES, MAINTENANCE_STATUSES, MAINTENANCE_TYPES } from "@/lib/assets/filters";
+import { ASSET_CONDITIONS, ASSET_STATUSES, MANUAL_ASSET_STATUSES, MAINTENANCE_STATUSES, MAINTENANCE_TYPES } from "@/lib/assets/filters";
 import { firstError, formObject, id, int, isoDate, num, oneOf, reqId, text, type FormState } from "@/lib/assets/forms";
 import { DIM_MAX, DIM_MIN } from "@/lib/assets/dimensions";
 import { MAX_IMPORT_ROWS, mapHeaders, validateRows, type ImportKey, type Lookups, type RowResult, type ValidRow } from "@/lib/assets/import";
@@ -20,6 +20,7 @@ import { moveAsset } from "@/lib/assets/mutations";
 import { planPpmEvents, maintenanceTypeLabel } from "@/lib/assets/maintenance";
 import { usageDueMap } from "@/lib/assets/meters-server";
 import { checkInstruments, saveInstruments } from "@/lib/assets/test-equipment-server";
+import { readingAtVisit } from "@/lib/assets/meters-server";
 import { todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
 import { changeSummary, diff } from "@/lib/audit-diff";
@@ -35,7 +36,7 @@ async function requireAssetAccess(assetId: number, me: CurrentUser) {
 const AssetSchema = z.object({
   deviceTypeId: reqId("Device type"), facilityId: reqId("Facility"), departmentId: id(), roomId: id(),
   manufacturer: text(120), model: text(120), serialNumber: text(128),
-  status: oneOf("Status", ASSET_STATUSES), condition: oneOf("Condition", ASSET_CONDITIONS),
+  status: oneOf("Status", MANUAL_ASSET_STATUSES), condition: oneOf("Condition", ASSET_CONDITIONS),
   purchaseDate: isoDate("Purchase date"), installDate: isoDate("Install date"),
   warrantyMonths: int("Warranty months", 0, 240), warrantyEnd: isoDate("Warranty end"),
   purchaseCost: num("Purchase cost", 0, 1e11), currency: text(3), parentTag: text(48), notes: text(2000),
@@ -152,7 +153,7 @@ export async function moveAssetAction(_: FormState, fd: FormData): Promise<FormS
   redirect(`/assets/${p.data.assetId}?notice=${encodeURIComponent(res.summary)}`);
 }
 
-const StatusSchema = z.object({ assetId: reqId("Asset"), status: oneOf("Status", ASSET_STATUSES), condition: oneOf("Condition", ASSET_CONDITIONS), note: text(500) });
+const StatusSchema = z.object({ assetId: reqId("Asset"), status: oneOf("Status", MANUAL_ASSET_STATUSES), condition: oneOf("Condition", ASSET_CONDITIONS), note: text(500) });
 
 export async function changeStatusAction(_: FormState, fd: FormData): Promise<FormState> {
   const me = await requirePermission("assets.edit");
@@ -161,7 +162,8 @@ export async function changeStatusAction(_: FormState, fd: FormData): Promise<Fo
   await requireAssetAccess(p.data.assetId, me);
   const [a] = await db.select({ status: assets.status, condition: assets.condition }).from(assets).where(eq(assets.id, p.data.assetId));
   if (!a) return { error: "That asset no longer exists." };
-  const status = p.data.status ?? a.status, condition = p.data.condition ?? a.condition;
+  if (a.status === "ON_LOAN" && p.data.status) return { error: "This device is on loan. Record its return on the loan; that sets its status back." };
+  const status = a.status === "ON_LOAN" ? a.status : p.data.status ?? a.status, condition = p.data.condition ?? a.condition;
   if (status === a.status && condition === a.condition) return { error: "Nothing changed — pick a different status or condition." };
   await db.update(assets).set({ status, condition }).where(eq(assets.id, p.data.assetId));
   const parts = [status !== a.status && `status ${humanize(a.status).toLowerCase()} → ${humanize(status).toLowerCase()}`,
@@ -218,7 +220,7 @@ const MaintSchema = z.object({
   assetId: reqId("Asset"), type: oneOf("Type", MAINTENANCE_TYPES), status: oneOf("Status", MAINTENANCE_STATUSES),
   scheduledDate: isoDate("Scheduled date"), completedDate: isoDate("Completed date"), performedBy: text(120), vendorId: id(),
   cost: num("Cost", 0, 1e9), currency: text(3), downtimeHours: num("Downtime", 0, 100000), findings: text(4000),
-  setStatus: oneOf("Asset status", ASSET_STATUSES), returnPath: text(200),
+  setStatus: oneOf("Asset status", MANUAL_ASSET_STATUSES), returnPath: text(200),
 });
 
 export async function logMaintenanceAction(_: FormState, fd: FormData): Promise<FormState> {
@@ -233,6 +235,9 @@ export async function logMaintenanceAction(_: FormState, fd: FormData): Promise<
   // Wave 27: test equipment used on completed work must be in calibration on the day.
   const used = status === "COMPLETED" ? await checkInstruments(fd, (await facilityOfAsset(d.assetId))!, d.completedDate!) : { ok: [] };
   if ("problem" in used) return { error: used.problem, fields: { testEquipment: used.problem } };
+  const meter = status === "COMPLETED" ? await readingAtVisit(fd, d.assetId, d.completedDate!, me) : { save: async () => {} };
+  if ("problem" in meter) return { error: meter.problem, fields: { meterReading: meter.problem } };
+  await meter.save(db);
   const [ev] = await db.insert(maintenanceEvents).values({
     assetId: d.assetId, type: d.type ?? "PPM", status, scheduledDate: d.scheduledDate ?? d.completedDate ?? null, completedDate: d.completedDate ?? null,
     performedBy: d.performedBy ?? null, vendorId: d.vendorId ?? null, cost: d.cost != null ? String(d.cost) : null,
@@ -264,6 +269,9 @@ export async function completeEventAction(_: FormState, fd: FormData): Promise<F
   if (!e) return { error: "That work order no longer exists." };
   const used = await checkInstruments(fd, (await facilityOfAsset(e.assetId))!, d.completedDate);
   if ("problem" in used) return { error: used.problem, fields: { testEquipment: used.problem } };
+  const meter = await readingAtVisit(fd, e.assetId, d.completedDate, me);
+  if ("problem" in meter) return { error: meter.problem, fields: { meterReading: meter.problem } };
+  await meter.save(db);
   await db.update(maintenanceEvents).set({
     status: "COMPLETED", completedDate: d.completedDate, performedBy: d.performedBy ?? e.performedBy, vendorId: d.vendorId ?? null,
     cost: d.cost != null ? String(d.cost) : null, currency: d.cost != null ? (d.currency ?? "USD").toUpperCase() : null,
@@ -320,7 +328,7 @@ const BulkSchema = z.object({
   quantity: int("Quantity", 1, 500).refine((v) => v !== undefined, "Enter a quantity."),
   mode: z.enum(["PER_ROOM", "PER_BED", "ONE_ROOM", "MANUAL"], { error: "Choose how to distribute the units." }),
   targetRoomId: id(), manufacturer: text(120), model: text(120), serials: text(20000),
-  status: oneOf("Status", ASSET_STATUSES), installDate: isoDate("Install date"), purchaseDate: isoDate("Purchase date"),
+  status: oneOf("Status", MANUAL_ASSET_STATUSES), installDate: isoDate("Install date"), purchaseDate: isoDate("Purchase date"),
   warrantyMonths: int("Warranty months", 0, 240), unitCost: num("Unit cost", 0, 1e10), currency: text(3),
 });
 
@@ -435,7 +443,7 @@ export async function previewImportAction(_: ImportPreview, fd: FormData): Promi
 const ValidRowSchema = z.object({
   rowNumber: z.number().int(), deviceTypeId: z.number().int().positive(), deviceTypeCode: z.string(), roomId: z.number().int().positive().nullable(),
   departmentId: z.number().int().positive().nullable(), manufacturer: z.string().nullable(), model: z.string().nullable(), serialNumber: z.string().nullable(),
-  status: z.enum(ASSET_STATUSES).nullable(), condition: z.enum(ASSET_CONDITIONS).nullable(), purchaseDate: z.string().nullable(), installDate: z.string().nullable(),
+  status: z.enum(ASSET_STATUSES).refine((v) => v !== "ON_LOAN", "Only a loan record sets On loan.").nullable(), condition: z.enum(ASSET_CONDITIONS).nullable(), purchaseDate: z.string().nullable(), installDate: z.string().nullable(),
   warrantyMonths: z.number().int().nullable(), warrantyEnd: z.string().nullable(), purchaseCost: z.number().nullable(), currency: z.string().nullable(), notes: z.string().nullable(),
 });
 

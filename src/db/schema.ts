@@ -74,6 +74,8 @@ export const priceTier = pgEnum("price_tier", ["BASIC", "STANDARD", "PREMIUM"]);
 
 export const assetStatus = pgEnum("asset_status", [
   "IN_STOCK", "INSTALLED", "IN_SERVICE", "UNDER_MAINTENANCE", "OUT_OF_SERVICE", "DISPOSED",
+  /** Wave 29: lent to another hospital or a supplier; set and cleared by the loan record. */
+  "ON_LOAN",
 ]);
 export const assetCondition = pgEnum("asset_condition", ["NEW", "GOOD", "FAIR", "POOR", "CONDEMNED"]);
 export const criticality = pgEnum("criticality", ["LIFE_SUPPORT", "HIGH", "MEDIUM", "LOW"]);
@@ -2077,6 +2079,8 @@ export const equipmentLoans = pgTable("equipment_loans", {
   dueBackOn: date("due_back_on"),
   returnedOn: date("returned_on"),
   conditionOut: text("condition_out"),
+  /** Wave 29: a device lent out is ON_LOAN in the register; this is its status before, put back when it returns. */
+  statusBefore: varchar("status_before", { length: 24 }),
   conditionIn: text("condition_in"),
   cost: money("cost"),
   currency: varchar("currency", { length: 3 }),

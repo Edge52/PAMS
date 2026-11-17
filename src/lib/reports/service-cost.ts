@@ -5,11 +5,11 @@ import { assets, departments, deviceTypes, facilities, maintenanceEvents, servic
 import { addDays } from "@/lib/assets/dates";
 import { formatMoney, formatNumber, num } from "@/lib/format";
 import { toEgp } from "./calc";
-import { COSR_NOTE, contractShare, cosrTone, grandTotal, periodDays, rollUp, type CostLine, type CostRollup } from "./service-cost-calc";
+import { COSR_NOTE, contractShare, cosrTone, grandTotal, periodDays, rollUp, type CostLine, type CostRollup, byProvider } from "./service-cost-calc";
 import { EGP_NOTE, facilityCond, missingRatesNote, ratesFor } from "./shared";
 import type { Column, ReportContext, ReportResult, Row } from "./types";
 
-/** Service cost and COSR (wave 27) by device type, department and the supplier who supplied the device. */
+/** Service cost and COSR (wave 27) by device type, department, the supplier who supplied the device, and (wave 29) who did the work. */
 export async function serviceCostReport({ filters: f, scope, today }: ReportContext): Promise<ReportResult> {
   const to = f.to ?? today;
   const from = f.from ?? addDays(to, -364);
@@ -27,11 +27,12 @@ export async function serviceCostReport({ filters: f, scope, today }: ReportCont
       .where(and(fac, ne(assets.status, "IN_STOCK"))),
     // Completed maintenance and repairs in the period. A job's cost (parts included) is written to its maintenance record.
     db.select({ assetId: maintenanceEvents.assetId, cost: maintenanceEvents.cost, currency: maintenanceEvents.currency, vendorId: maintenanceEvents.vendorId,
-      coverage: workOrders.coverage })
+      vendor: suppliers.name, coverage: workOrders.coverage })
       .from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId))
-      .leftJoin(workOrders, eq(workOrders.maintenanceEventId, maintenanceEvents.id))
+      .leftJoin(workOrders, eq(workOrders.maintenanceEventId, maintenanceEvents.id)).leftJoin(suppliers, eq(suppliers.id, maintenanceEvents.vendorId))
       .where(and(fac, eq(maintenanceEvents.status, "COMPLETED"), isNotNull(maintenanceEvents.cost), gte(maintenanceEvents.completedDate, from), lte(maintenanceEvents.completedDate, to))),
     db.select({ id: serviceContracts.id, value: serviceContracts.value, currency: serviceContracts.currency, start: serviceContracts.startDate, end: serviceContracts.endDate,
+      supplierId: serviceContracts.supplierId, supplier: sql<string>`(select s.name from suppliers s where s.id = ${serviceContracts.supplierId})`,
       devices: sql<number>`(select count(*) from service_contract_assets x where x.contract_id = ${serviceContracts.id})::int` })
       .from(serviceContracts)
       .where(and(f.facilityId ? eq(serviceContracts.facilityId, f.facilityId) : scope === null ? undefined : scope.length ? inArray(serviceContracts.facilityId, scope) : sql`false`,
@@ -51,11 +52,16 @@ export async function serviceCostReport({ filters: f, scope, today }: ReportCont
   const lines: CostLine[] = [];
   for (const e of events) {
     const contract = e.vendorId != null || e.coverage === "CONTRACT" || e.coverage === "WARRANTY";
-    lines.push({ assetId: e.assetId, amount: egp(num(e.cost), e.currency), source: contract ? "CONTRACT" : "IN_HOUSE" });
+    const provider = e.vendorId != null ? { key: `s${e.vendorId}`, label: e.vendor ?? "Supplier", supplierId: e.vendorId }
+      : contract ? { key: "covered", label: "Under a contract or warranty (company not on the job)", supplierId: null }
+      : { key: "in-house", label: "The hospital's own team", supplierId: null };
+    lines.push({ assetId: e.assetId, amount: egp(num(e.cost), e.currency), source: contract ? "CONTRACT" : "IN_HOUSE", provider });
   }
   for (const c of contracts) {
     const share = contractShare({ value: num(c.value), start: c.start, end: c.end, devices: c.devices }, from, to);
-    for (const x of covered.filter((x) => x.contractId === c.id)) lines.push({ assetId: x.assetId, amount: egp(share, c.currency), source: "CONTRACT" });
+    for (const x of covered.filter((x) => x.contractId === c.id)) {
+      lines.push({ assetId: x.assetId, amount: egp(share, c.currency), source: "CONTRACT", provider: { key: `s${c.supplierId}`, label: c.supplier, supplierId: c.supplierId } });
+    }
   }
   // Disposed devices count only when they had service cost in the period.
   const withCost = new Set(lines.filter((l) => l.amount).map((l) => l.assetId));
@@ -88,6 +94,10 @@ export async function serviceCostReport({ filters: f, scope, today }: ReportCont
     .map((g) => { const [facility, department, id] = g.label.split("|"); return asRow(g, { facility, department, departmentId: id ? Number(id) : null }); });
   const bySupplier = rollUp(list, lines, (d) => ({ key: String(d.supplierId ?? "none"), label: d.supplier ?? "No supplier recorded" }), days)
     .map((g) => asRow(g, { supplier: g.label, supplierId: g.key === "none" ? null : Number(g.key) }));
+  const acquisitionOf = new Map(list.map((d) => [d.id, d.acquisition]));
+  const byCompany = byProvider(lines, (id) => acquisitionOf.get(id) ?? null, days).map((g): Row => ({
+    company: g.label, supplierId: g.supplierId, devices: g.devices, jobs: g.jobs, totalEgp: g.cost, acquisitionEgp: g.acquisition, cosr: g.cosr, cosrYear: g.cosrYear,
+  }));
   const unpriced = list.filter((d) => d.acquisition == null || !(d.acquisition > 0)).length;
   const pct = (v: number | null) => (v == null ? "—" : `${formatNumber(v, 1)} %`);
 
@@ -111,6 +121,15 @@ export async function serviceCostReport({ filters: f, scope, today }: ReportCont
       { key: "suppliers", title: "By supplier of the device", columns: cols([
         { key: "supplier", header: "Supplier", width: 30, href: (r) => (r.supplierId != null ? `/procurement/suppliers/${r.supplierId}` : null) }]),
         rows: bySupplier, totals: bySupplier.length ? totals({ supplier: "All suppliers" }) : undefined, empty: "No devices to group by supplier." },
+      { key: "companies", title: "By who did the work", columns: [
+        { key: "company", header: "Company or team", width: 36, href: (r) => (r.supplierId != null ? `/procurement/suppliers/${r.supplierId}` : null) },
+        { key: "devices", header: "Devices served", type: "int", width: 10 },
+        { key: "jobs", header: "Jobs and contract shares", type: "int", width: 12 },
+        { key: "totalEgp", header: "Service cost (EGP)", type: "egp", width: 16 },
+        { key: "acquisitionEgp", header: "Cost of those devices (EGP)", type: "egp", width: 18 },
+        { key: "cosr", header: "COSR in period", type: "pct", width: 11 },
+        { key: "cosrYear", header: "COSR per year", type: "pct", width: 11, tone: (r) => cosrTone(r.cosrYear) },
+      ], rows: byCompany, empty: "No service cost in this period." },
     ],
     notes: [
       "COSR (cost of service ratio) = service cost in the period ÷ acquisition cost of the same devices. COSR per year scales the period to 12 months.",

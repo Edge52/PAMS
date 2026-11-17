@@ -1,5 +1,6 @@
 "use server";
 /** Drawing quality (wave 16): a floor's drawing revision, and a room checked on site (verified) or not. */
+import { diff } from "@/lib/audit-diff";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -22,8 +23,10 @@ export async function setRevisionAction(fd: FormData) {
   const f = await facilityOfFloor(floorId); if (!f) redirect("/facilities");
   await requireFacilityAccess(f.facilityId, me);
   const rev = String(fd.get("revision") ?? "").trim().slice(0, 80) || null;
+  const [was] = await db.select({ revision: floorCad.revision }).from(floorCad).where(eq(floorCad.floorId, floorId));
   await db.update(floorCad).set({ revision: rev }).where(eq(floorCad.floorId, floorId));
-  await logActivity("facility", f.facilityId, "drawing_revision", `${f.name}: drawing revision ${rev ? `set to “${rev}”` : "cleared"}`);
+  await logActivity("facility", f.facilityId, "drawing_revision", `${f.name}: drawing revision ${rev ? `set to “${rev}”` : "cleared"}`, me.name, db,
+    diff({ floor: floorId, revision: was?.revision ?? null }, { floor: floorId, revision: rev }));
   revalidatePath(`/facilities/${f.facilityId}/drawing-quality`);
   redirect(`/facilities/${f.facilityId}/drawing-quality?notice=${encodeURIComponent(`${f.name}: revision saved.`)}#floor-${floorId}`);
 }
@@ -31,13 +34,14 @@ export async function setRevisionAction(fd: FormData) {
 export async function verifyRoomAction(fd: FormData) {
   const me = await requirePermission("facilities.edit");
   const roomId = Number(fd.get("roomId"));
-  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, name: rooms.name, code: rooms.code, floorId: rooms.floorId }).from(rooms).where(eq(rooms.id, roomId)) : [];
+  const [r] = Number.isInteger(roomId) ? await db.select({ id: rooms.id, name: rooms.name, code: rooms.code, floorId: rooms.floorId, verifiedAt: rooms.verifiedAt, verifiedByName: rooms.verifiedByName }).from(rooms).where(eq(rooms.id, roomId)) : [];
   if (!r) redirect("/facilities");
   const f = (await facilityOfFloor(r.floorId))!;
   await requireFacilityAccess(f.facilityId, me);
   const on = fd.get("verified") === "1";
   await db.update(rooms).set(on ? { verifiedAt: new Date(), verifiedByName: me.name } : { verifiedAt: null, verifiedByName: null }).where(eq(rooms.id, r.id));
-  await logActivity("facility", f.facilityId, on ? "room_verified" : "room_unverified", `${r.name} (${r.code}) ${on ? "checked on site: outline and size verified" : "no longer marked as verified"}`);
+  await logActivity("facility", f.facilityId, on ? "room_verified" : "room_unverified", `${r.name} (${r.code}) ${on ? "checked on site: outline and size verified" : "no longer marked as verified"}`, me.name, db,
+    diff({ room: r.id, verified: !!r.verifiedAt, verifiedBy: r.verifiedByName }, { room: r.id, verified: on, verifiedBy: on ? me.name : null }));
   const back = safeBack(fd.get("back"), `/facilities/${f.facilityId}/rooms/${r.id}/sheet`);
   revalidatePath(back.split("?")[0]);
   redirect(`${back}${back.includes("?") ? "&" : "?"}notice=${encodeURIComponent(on ? `${r.name} marked as verified on site.` : `${r.name}: verified mark cleared.`)}`);

@@ -3,12 +3,13 @@
  * User training actions (wave 27). Recording a session and its attendees needs `maintenance.edit` (biomedical
  * engineers and technicians run or arrange the training); the sign-in sheet is attached as a document.
  */
-import { eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
+import { diff } from "@/lib/audit-diff";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { departments, deviceTypes, trainingAttendees, trainingSessions } from "@/db/schema";
+import { departments, deviceTypes, documents, trainingAttendees, trainingSessions } from "@/db/schema";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formObject, id, reqId, reqText, text } from "@/lib/assets/forms";
 import { parseUserIds, TRAINING_KINDS, TRAINING_KIND_LABELS } from "@/lib/assets/training";
@@ -90,3 +91,51 @@ export async function removeAttendeeAction(_: ActionState, fd: FormData): Promis
   revalidatePath(path(a.sessionId)); revalidatePath("/assets/department");
   return { message: `${a.name} removed.` };
 }
+
+/* ── Wave 29: correct or delete a session ── */
+
+const EditSchema = z.object({
+  sessionId: reqId("Session"), deviceTypeId: reqId("Device type"), heldOn: reqDate("date of the training"), trainer: reqText("Trainer", 200),
+  kind: z.enum(TRAINING_KINDS, { error: "Choose the kind of training." }), departmentId: id(), notes: text(2000),
+});
+
+export async function updateTrainingAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  const me = await requirePermission("maintenance.edit");
+  const p = EditSchema.safeParse(formObject(fd));
+  if (!p.success) return zodFail(p.error);
+  const d = p.data;
+  const [before] = await db.select().from(trainingSessions).where(eq(trainingSessions.id, d.sessionId));
+  if (!before) return fail("That training session no longer exists.");
+  await requireFacilityAccess(before.facilityId, me);
+  if (d.heldOn > todayISO()) return { errors: ["Record training once it has taken place."], fields: { heldOn: "This date is in the future." } };
+  const [t] = await db.select({ id: deviceTypes.id, level: deviceTypes.level }).from(deviceTypes).where(eq(deviceTypes.id, d.deviceTypeId));
+  if (!t || t.level !== 3) return { errors: ["Choose a device type."], fields: { deviceTypeId: "Choose a device type." } };
+  if (d.departmentId) {
+    const [dep] = await db.select({ f: departments.facilityId }).from(departments).where(eq(departments.id, d.departmentId));
+    if (!dep || dep.f !== before.facilityId) return { errors: ["Choose a department of this hospital."], fields: { departmentId: "Not in this hospital." } };
+  }
+  const after = { deviceTypeId: t.id, heldOn: d.heldOn, trainer: d.trainer, kind: d.kind, departmentId: d.departmentId ?? null, notes: d.notes ?? null };
+  await db.update(trainingSessions).set(after).where(eq(trainingSessions.id, before.id));
+  await logActivity("training", before.id, "updated", "Session details corrected", me.name, db,
+    diff({ deviceTypeId: before.deviceTypeId, heldOn: before.heldOn, trainer: before.trainer, kind: before.kind, departmentId: before.departmentId, notes: before.notes }, after));
+  revalidatePath(path(before.id)); revalidatePath("/assets/training"); revalidatePath("/assets/department");
+  return { message: "Session saved." };
+}
+
+export async function deleteTrainingAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  const me = await requirePermission("maintenance.edit");
+  const sid = Number(fd.get("sessionId"));
+  const [s] = await db.select().from(trainingSessions).where(eq(trainingSessions.id, sid));
+  if (!s) return fail("That training session no longer exists.");
+  await requireFacilityAccess(s.facilityId, me);
+  const [doc] = await db.select({ id: documents.id }).from(documents).where(and(eq(documents.entityType, "training"), eq(documents.entityId, sid))).limit(1);
+  if (doc) return fail("Remove the attached sign-in sheet first, so no file is left without its session.");
+  const [n] = await db.select({ n: count() }).from(trainingAttendees).where(eq(trainingAttendees.sessionId, sid));
+  await db.transaction(async (tx) => {
+    await tx.delete(trainingSessions).where(eq(trainingSessions.id, sid)); // attendees go with it
+    await logActivity("training", sid, "deleted", `Training session of ${s.heldOn} by ${s.trainer} deleted (${n.n} attendee${n.n === 1 ? "" : "s"})`, me.name, tx);
+  });
+  revalidatePath("/assets/training"); revalidatePath("/assets/department");
+  redirect(`/assets/training?notice=${encodeURIComponent("Training session deleted.")}`);
+}
+

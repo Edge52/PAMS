@@ -1,5 +1,7 @@
 import "server-only";
 import { bookValues, type BookValueRow } from "@/lib/assets/depreciation-server";
+import { DEPRECIATION_METHOD_LABELS } from "@/lib/assets/depreciation";
+import { getSetting } from "@/lib/settings";
 import { formatMoney, formatNumber } from "@/lib/format";
 import { assets } from "@/db/schema";
 import { plural, sumKey } from "./calc";
@@ -49,7 +51,7 @@ const totalsOf = (rows: Row[], label: Row): Row | undefined => {
 
 /** Book value report (wave 27): cost, depreciation so far and book value today, by facility, department and type. */
 export async function bookValueReport({ filters: f, scope, today }: ReportContext): Promise<ReportResult> {
-  const { rows, missing } = await bookValues(facilityCond(assets.facilityId, f, scope), today);
+  const [{ rows, missing }, method] = await Promise.all([bookValues(facilityCond(assets.facilityId, f, scope), today), getSetting("depreciationMethod")]);
   const byFacility = group(rows, (r) => String(r.facilityId), (r) => ({ facility: r.facility })).sort((a, b) => String(a.facility).localeCompare(String(b.facility)));
   const byDept = group(rows, (r) => `${r.facilityId}:${r.departmentId ?? "none"}`, (r) => ({ facility: r.facility, department: r.department ?? "No department", departmentId: r.departmentId }))
     .sort((a, b) => String(a.facility).localeCompare(String(b.facility)) || (b.bookValueEgp as number) - (a.bookValueEgp as number));
@@ -79,7 +81,7 @@ export async function bookValueReport({ filters: f, scope, today }: ReportContex
         ...money], rows: byType, totals: totalsOf(byType, { type: "All types" }), empty: "No devices to group by type." },
     ],
     notes: [
-      "Straight-line depreciation from the in-service date (the signed acceptance, else the install date, else the purchase date) over the useful life, down to the residual value. The device's own life and residual value win over its type's.",
+      `${DEPRECIATION_METHOD_LABELS[method]} from the in-service date (the signed acceptance, else the install date, else the purchase date) over the useful life, down to the residual value. The device's own life and residual value win over its type's. The method is set in Administration › Settings.`,
       "Not worked out: devices without a purchase cost, an in-service date or a useful life. Their cost is in the cost total but not in the book value.",
       "Disposed devices are left out.",
       EGP_NOTE, missingRatesNote(missing),

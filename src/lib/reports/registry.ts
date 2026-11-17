@@ -10,6 +10,7 @@ import { warrantyExpiryReport } from "./warranty";
 import { workOrdersReport } from "./work-orders";
 import { incidentsReport } from "./incidents";
 import { deviceSecurityReport } from "./device-security";
+import { depreciationJournalReport } from "./depreciation-journal";
 import { bookValueReport } from "./book-value";
 import { serviceCostReport } from "./service-cost";
 
@@ -78,9 +79,16 @@ export const REPORTS: ReportDef[] = [
   },
   {
     slug: "book-value", title: "Book value",
-    description: "What the equipment cost, how much has been written off (straight line) and its book value today, by facility, department and device type.",
+    description: "What the equipment cost, how much has been written off and its book value today, by facility, department and device type.",
     filters: ["facility"],
     load: bookValueReport,
+  },
+  {
+    slug: "depreciation-journal", title: "Depreciation journal",
+    description: "Each device's depreciation charge for the period as journal lines (debit expense, credit accumulated depreciation), ready to import into the finance system from Excel.",
+    filters: ["facility", "dateRange"], dateLabel: "Period",
+    defaults: (today) => ({ from: `${today.slice(0, 7)}-01`, to: today }),
+    load: depreciationJournalReport,
   },
   {
     slug: "service-cost", title: "Service cost and COSR",

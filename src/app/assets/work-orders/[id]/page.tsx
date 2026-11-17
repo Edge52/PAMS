@@ -24,6 +24,7 @@ import { getActivity } from "@/lib/server-utils";
 import { workshopRoute } from "@/lib/flows/route-server";
 import { instrumentOptions, instrumentsByEvent } from "@/lib/assets/test-equipment-server";
 import { TestEquipmentField } from "@/components/assets/test-equipment-field";
+import { MeterAtVisit } from "@/components/assets/meter-at-visit";
 import type { Instrument } from "@/lib/assets/test-equipment";
 import { formatDuration } from "@/components/assets/twin/nav/route";
 import {
@@ -130,7 +131,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
                 <input type="hidden" name="workOrderId" value={wo.id} />
                 <ChecklistInputs items={wo.checklist!} />
                 <p className="text-xs text-muted">A reading outside its range is recorded as failed. The checklist comes from the device type in the catalogue.</p>
-                <CompletionFields deviceDown={wo.deviceDown} optionalResolution partsCost={used.total} instruments={instruments} />
+                <CompletionFields deviceDown={wo.deviceDown} optionalResolution partsCost={used.total} instruments={instruments} assetId={wo.assetId} />
               </ActionForm>
             </Panel>
           )}
@@ -281,7 +282,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
             <Panel title="Complete the job">
               <ActionForm action={completeWorkOrderAction} className="space-y-3">
                 <input type="hidden" name="workOrderId" value={wo.id} />
-                <CompletionFields deviceDown={wo.deviceDown} partsCost={used.total} instruments={instruments} />
+                <CompletionFields deviceDown={wo.deviceDown} partsCost={used.total} instruments={instruments} assetId={wo.assetId} />
               </ActionForm>
             </Panel>
           )}
@@ -349,7 +350,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
   );
 }
 
-function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instruments }: { deviceDown: boolean; optionalResolution?: boolean; partsCost?: number; instruments: Instrument[] }) {
+function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instruments, assetId }: { deviceDown: boolean; optionalResolution?: boolean; partsCost?: number; instruments: Instrument[]; assetId: number }) {
   return (
     <div className="space-y-3">
       <Field label={optionalResolution ? "What was done (optional)" : "What was done"} hint={optionalResolution ? "Left blank, the checklist result is recorded." : undefined}>
@@ -364,6 +365,7 @@ function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instr
         <Field label="Currency"><NativeSelect name="currency" value="EGP" options={CURRENCIES.map((c) => ({ value: c, label: c }))} /></Field>
       </FormGrid>
       <TestEquipmentField options={instruments} />
+      <MeterAtVisit assetId={assetId} />
       {deviceDown && (
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="returnToService" defaultChecked className="mt-1" />
           <span>Device is back in service</span></label>

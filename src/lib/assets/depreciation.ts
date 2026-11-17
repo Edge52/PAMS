@@ -40,7 +40,34 @@ export function depreciationTerms(asset: { lifeYears?: number | null; residualPc
   return { lifeYears, residualPct: Math.min(100, Math.max(0, Number.isFinite(r) ? r : 0)) };
 }
 
+/**
+ * Wave 29: how the value is written off. STRAIGHT: evenly over the life. DECLINING: double-declining balance (each
+ * year 2 ÷ life of what is left), switching to straight line over the remaining years once that writes off more, so
+ * the book value still reaches the residual value at the end of the life. Part years count pro rata.
+ */
+export const DEPRECIATION_METHODS = ["STRAIGHT", "DECLINING"] as const;
+export type DepreciationMethod = (typeof DEPRECIATION_METHODS)[number];
+export const DEPRECIATION_METHOD_LABELS: Record<DepreciationMethod, string> = {
+  STRAIGHT: "Straight line (the same each year)",
+  DECLINING: "Double-declining balance (more in the early years)",
+};
+
+/** Accumulated write-off after `years` (fractional) under double-declining balance with the switch to straight line. */
+export function decliningWrittenOff(cost: number, residual: number, lifeYears: number, years: number): number {
+  const rate = 2 / lifeYears;
+  let bv = cost, y = 0;
+  while (y < years && y < lifeYears && bv > residual) {
+    const left = lifeYears - y;
+    const yearDep = Math.min(bv - residual, Math.max(bv * rate, (bv - residual) / Math.max(left, 1e-9)));
+    const part = Math.min(1, years - y, left);
+    bv -= yearDep * part;
+    y += 1;
+  }
+  return cost - Math.max(bv, residual);
+}
+
 export type DepreciationInput = {
+  method?: DepreciationMethod;
   cost: number | null;
   inService: string | null;
   lifeYears: number | null;
@@ -52,7 +79,7 @@ export type Depreciation = {
   state: DepreciationState;
   cost: number | null;
   residual: number | null;
-  /** Written off each full year. */
+  /** Written off each full year (declining balance: in the current year of life). */
   perYear: number | null;
   accumulated: number | null;
   bookValue: number | null;
@@ -91,6 +118,14 @@ export function depreciation(i: DepreciationInput, onDate: string): Depreciation
     return { state: "FULLY_DEPRECIATED", cost, residual, perYear, accumulated: r2(depreciable), bookValue: residual, yearsUsed: r1(used / 365.25), yearsLeft: 0, pctWrittenOff: 100, endsOn };
   }
   const share = used / total;
+  if (i.method === "DECLINING") {
+    const accumulated = r2(decliningWrittenOff(cost, residual, i.lifeYears, i.lifeYears * share));
+    return {
+      state: "DEPRECIATING", cost, residual, perYear: r2(decliningWrittenOff(cost, residual, i.lifeYears, Math.min(i.lifeYears, Math.floor(i.lifeYears * share) + 1)) - decliningWrittenOff(cost, residual, i.lifeYears, Math.floor(i.lifeYears * share))),
+      accumulated, bookValue: r2(cost - accumulated),
+      yearsUsed: r1(i.lifeYears * share), yearsLeft: r1(i.lifeYears * (1 - share)), pctWrittenOff: depreciable ? r1((accumulated / depreciable) * 100) : 100, endsOn,
+    };
+  }
   const accumulated = r2(depreciable * share);
   return {
     state: "DEPRECIATING", cost, residual, perYear, accumulated, bookValue: r2(cost - accumulated),

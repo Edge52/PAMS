@@ -5,7 +5,9 @@ import { cleanTag } from "./tags";
  * Pure: shared by the register page, the CSV export route and the label sheet.
  */
 
-export const ASSET_STATUSES = ["IN_STOCK", "INSTALLED", "IN_SERVICE", "UNDER_MAINTENANCE", "OUT_OF_SERVICE", "DISPOSED"] as const;
+export const ASSET_STATUSES = ["IN_STOCK", "INSTALLED", "IN_SERVICE", "UNDER_MAINTENANCE", "OUT_OF_SERVICE", "DISPOSED", "ON_LOAN"] as const;
+/** Wave 29: the statuses a person may choose. ON_LOAN is set and cleared only by a loan record. */
+export const MANUAL_ASSET_STATUSES = ASSET_STATUSES.filter((s) => s !== "ON_LOAN");
 export const ASSET_CONDITIONS = ["NEW", "GOOD", "FAIR", "POOR", "CONDEMNED"] as const;
 export const CRITICALITIES = ["LIFE_SUPPORT", "HIGH", "MEDIUM", "LOW"] as const;
 export const MAINTENANCE_TYPES = ["PPM", "CORRECTIVE", "CALIBRATION", "INSPECTION", "SAFETY_TEST"] as const;

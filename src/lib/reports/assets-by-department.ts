@@ -11,10 +11,10 @@ import type { ReportContext, ReportResult, Row } from "./types";
 const grp = alias(deviceTypes, "rep_grp");
 const cat = alias(deviceTypes, "rep_cat");
 
-export const ASSET_STATUSES = ["IN_STOCK", "INSTALLED", "IN_SERVICE", "UNDER_MAINTENANCE", "OUT_OF_SERVICE", "DISPOSED"] as const;
+export const ASSET_STATUSES = ["IN_STOCK", "INSTALLED", "IN_SERVICE", "UNDER_MAINTENANCE", "OUT_OF_SERVICE", "ON_LOAN", "DISPOSED"] as const;
 const STATUS_HEADERS: Record<(typeof ASSET_STATUSES)[number], string> = {
   IN_STOCK: "In stock", INSTALLED: "Installed", IN_SERVICE: "In service", UNDER_MAINTENANCE: "Under maintenance",
-  OUT_OF_SERVICE: "Out of service", DISPOSED: "Disposed",
+  OUT_OF_SERVICE: "Out of service", ON_LOAN: "On loan", DISPOSED: "Disposed",
 };
 
 export async function assetsByDepartmentReport({ filters: f, scope }: ReportContext): Promise<ReportResult> {

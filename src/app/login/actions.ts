@@ -1,4 +1,5 @@
 "use server";
+import { breachedProblem } from "@/lib/auth/breached";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { timingSafeEqual } from "node:crypto";
@@ -210,7 +211,7 @@ export async function createFirstAdmin(_prev: ActionState, fd: FormData): Promis
   const p = setupSchema.safeParse(Object.fromEntries(fd));
   if (!p.success) return { errors: [...new Set(p.error.issues.map((i) => i.message))] };
   const { name, email, password, confirm } = p.data;
-  const problem = passwordProblem(password, email);
+  const problem = passwordProblem(password, email) ?? await breachedProblem(password);
   if (problem) return { errors: [problem], fields: { password: problem } };
   if (password !== confirm) return { errors: ["The two passwords don't match."] };
   const passwordHash = await hashPassword(password);
@@ -233,7 +234,7 @@ export async function changeOwnPassword(_prev: ActionState, fd: FormData): Promi
   const current = String(fd.get("current") ?? ""), next = String(fd.get("password") ?? ""), confirm = String(fd.get("confirm") ?? "");
   const [u] = await db.select().from(users).where(eq(users.id, me.id));
   if (!(await verifyPassword(current, u?.passwordHash))) return { errors: ["Your current password isn't right."] };
-  const problem = passwordProblem(next, me.email);
+  const problem = passwordProblem(next, me.email) ?? await breachedProblem(next);
   if (problem) return { errors: [problem], fields: { password: problem } };
   if (next !== confirm) return { errors: ["The two new passwords don't match."] };
   await db.update(users).set({ passwordHash: await hashPassword(next) }).where(eq(users.id, me.id));

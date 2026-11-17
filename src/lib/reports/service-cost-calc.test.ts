@@ -60,3 +60,22 @@ describe("roll-ups", () => {
     expect(grandTotal([], [], 365).cosr).toBeNull();
   });
 });
+
+describe("service cost by the company that did the work (wave 29)", () => {
+  it("groups lines by provider, counts each device once, and works out the ratio", async () => {
+    const { byProvider } = await import("./service-cost-calc");
+    const acme = { key: "s1", label: "Acme Service", supplierId: 1 }, own = { key: "in", label: "In-house team", supplierId: null };
+    const r = byProvider([
+      { assetId: 1, amount: 500, source: "CONTRACT", provider: acme },
+      { assetId: 1, amount: 300, source: "CONTRACT", provider: acme },
+      { assetId: 2, amount: 200, source: "CONTRACT", provider: acme },
+      { assetId: 2, amount: 100, source: "IN_HOUSE", provider: own },
+      { assetId: 3, amount: 50, source: "CONTRACT" },
+      { assetId: 3, amount: 0, source: "IN_HOUSE", provider: own },
+    ], (id) => ({ 1: 10_000, 2: 10_000, 3: null } as Record<number, number | null>)[id], 365.25);
+    expect(r.map((g) => g.label)).toEqual(["Acme Service", "In-house team", "Not recorded"]);
+    expect(r[0]).toMatchObject({ devices: 2, jobs: 3, cost: 1000, acquisition: 20_000, cosr: 5, cosrYear: 5 });
+    expect(r[1]).toMatchObject({ devices: 1, jobs: 1, cost: 100, cosr: 1 });
+    expect(r[2]).toMatchObject({ devices: 1, cost: 50, cosr: null });
+  });
+});
