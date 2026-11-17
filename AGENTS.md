@@ -509,7 +509,7 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - DB side: `src/lib/assets/depreciation-server.ts` (`bookValues(where, onDate)` — EGP through `ratesFor` like the
   reports), `src/lib/procurement/supplier-docs-server.ts` (`supplierExpiryWarning` for any new place a PO or
   award is made).
-- Migration `0043_finance` (renumber on merge): `device_types.residual_pct`, `assets.residual_pct` (checks 0–100,
+- Migration `0043_wave27`: `device_types.residual_pct`, `assets.residual_pct` (checks 0–100,
   in `rules.test.ts`), `documents.expires_on` (indexed).
 - `uploadDocument` reads an optional `expiresOn`; `DocumentUploadForm` takes `withExpiry`. The supplier page
   uses `SupplierDocumentsPanel` instead of `DocumentsPanel`.
@@ -537,3 +537,28 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   (`PLAN_TABS`, `pageOf`, `ROOMS_PER_PAGE`). `saveRoomsAction` saves only the rooms posted, so paging is safe.
 - Worktrees: Turbopack can't build when `node_modules` is a symlink to a folder outside the project ("Could not find
   the Next.js package"). A hard-linked copy (`cp -al <repo>/node_modules node_modules`) works.
+
+
+## Wave 28: 3D view and simulation
+
+- `buildings.north_deg` (real, check 0 ≤ x < 360) and `equipment_models.glb_licence/glb_credit/glb_source/glb_bytes`
+  (migration `0044_wave28`). Pure maths in `src/lib/assets/north.ts` (`cleanNorth`, `viewBearing`,
+  `compassTurn`, `nearestTurn`, `northFor`); plan x right, plan y down = scene z; bearing 0 = looking up the plan.
+  `TwinFloor.northDeg` carries the building's value. UI: `twin/hud-compass.tsx` (`HudCompass`, `MapNorth`).
+- Model files: `src/lib/assets/glb-file.ts` (`checkGlb`, `parseModelCredit`, `creditsShown`, `isAppModelUrl`,
+  `dropTextureRefs`). Upload and removal need `settings.manage` (administrators). All loading goes through
+  `loadGlb`/`glbGeometry` in `twin/render/glb.ts`: one cache shared by the live view and the studio, only URLs under
+  `/files/equipment_model/<id>/`, texture references removed before parsing (no image fetches; the content policy's
+  `connect-src 'self'` is unchanged and a test keeps it so). `TwinLibrary.credit`; render credits are
+  `twin/render/credits.ts` (`floorModelFiles`, `mergeCredits`, `creditsLine`). Shape key `g:<url>` uses vertex colours.
+- Files tested by Vitest can't import `@/…` (no alias in the Vitest config): use relative paths in pure files and
+  in client files a test imports (e.g. `hud-compass.tsx`, imported by `hud-map.tsx`).
+- Simulation: `SimOptions.shifts` (24 numbers per resource key), `closed` (hours 0–23), `leaveAfter` (minutes by
+  pathway id). Pools now have `capNow`/`capHour`/`limited`; capacity changes on the hour by events scheduled only when
+  set, so unset runs consume the random numbers and event sequence exactly as before. Keep
+  `simulate-shifts.test.ts`'s `WAVE_15` fingerprint passing when changing the engine (if a change is meant to alter
+  results, say so and update it). New result fields: resources `waitHourly`; flows `left`, `waitByHour`,
+  `patientsByHour`. `SimScenario.shifts/closed/leaveAfter`, read by `cleanScenario`, passed by `buildRuns` only when
+  non-empty. Helpers `capacityByHour`, `cleanShift`, `cleanClosed`, `hourRange`, `closedLabel` in `simulate.ts`.
+- Seed `scripts/seed/north.ts` (after `security`): sets the demo building's north only when it is blank and the
+  building has no activity entry, so a cleared value stays cleared.

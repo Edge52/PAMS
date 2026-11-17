@@ -4,7 +4,8 @@
  * a fixed arrow for the mini-map (the plan's top is up) and a compass whose needle turns with the camera.
  */
 import { useEffect, useState, type RefObject } from "react";
-import { compassTurn, compassWords, nearestTurn, northLabel, viewBearing } from "@/lib/assets/north";
+// Relative path: the unit tests load this file and have no "@/" alias.
+import { compassTurn, compassWords, nearestTurn, northLabel, viewBearing } from "../../../lib/assets/north";
 
 type ViewLike = { viewState(): { target: { x: number; z: number }; camera: { x: number; z: number }; floorId: number | null } };
 

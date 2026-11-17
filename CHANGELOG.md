@@ -1,5 +1,36 @@
 # Changelog
 
+## Wave 28 — on branch `wave-28` (not merged yet; built on `wave-27`)
+
+3D view and simulation. Migration `0044_wave28.sql`.
+
+- **North arrow.** Each building can store where north is (Facilities › hospital › Buildings › Edit, "North,
+  degrees", clockwise from the top of the plans; blank = not known). When it is set, the 3D view shows a north arrow
+  on the mini-map and a small compass above it whose needle turns with the camera. The render title block's north
+  arrow now turns to the building's north as well (it still points to the top of the plan when north isn't known).
+  The demo general hospital's main building is set to 20° (demo value); La Plaza is left blank for someone who knows.
+- **Own model files with licence and credit.** In Catalogue › 3D library an administrator can upload a `.glb` for a
+  catalogue model with a required licence, credit line and source address. The file is checked by its bytes: glTF
+  binary mark, version 2, length, chunks, readable description, at least one mesh, nothing linked outside the file,
+  no Draco/meshopt compression; up to 25 MB. The 3D view draws it in place of the built-in shape (now in both the
+  simple and detailed looks, in its own colours), scaled to the model's real size. Renders draw it too and list the
+  credits under the preview, in the title block and on the floor book cover. Files uploaded before this wave show
+  "Licence and credit not recorded" until uploaded again.
+- **Small targets.** Controls under 24 px in the 3D view were measured in the demo and enlarged (see the commit for
+  the list).
+- **Simulation shifts.** The patient pathway simulation now has: staff numbers by hour of the day for porters and
+  staff groups ("Staff by hour of the day"), beds and rooms closed for some hours ("Closed at night"), and patients
+  leaving unseen after waiting longer than a set time for their pathway's first step ("Leaving without being seen",
+  per pathway). Results show a "Left unseen" column and, per pathway, average waits by hour of arrival; each
+  resource's chart also shows its average wait by hour. Left empty, every result is exactly as before (a test
+  fingerprints the wave 15 output).
+
+Not covered: the what-if column doesn't have its own shifts, closed hours or limits (the what-if uses the same as
+the baseline); a patient can leave only before their first step (not from later queues or while waiting for a
+porter); the compass isn't clickable (it doesn't turn the camera to north); the 3D view uses one north for the whole
+hospital only when every building with a north agrees. Splitting `twin-view.tsx` and `scene.ts` into smaller files was not done: it is a large change with no visible
+benefit, and it was left rather than rushed.
+
 ## Wave 27 — on branch `wave-27` (not merged yet; built on `wave-26`)
 
 Lifecycle data and leftovers. Migration `0043_wave27.sql`. Built by three agents in parallel and merged.

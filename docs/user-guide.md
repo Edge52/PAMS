@@ -441,3 +441,25 @@ from its QR label: on Android Chrome with the camera; on other phones type the t
   codes. The change is in the audit log with the old and new value.
 - **Commissioning plan:** open the plan; Progress shows the curve and Gantt; Rooms lets you pick a floor, a department
   and a page of rooms, set dates and save ("Save these 25 rooms"). Save before moving to another page.
+
+
+## Wave 28: north arrow, own 3D models, simulation shifts
+
+**North arrow.** Facilities › hospital › Buildings › Edit. Type where north is, in degrees clockwise from the top of
+the plans (for example 30 if north points a little to the right), and save. Leave it blank if you don't know. The 3D
+view then shows a north arrow on the mini-map and a compass that turns as you move the camera.
+
+**Own 3D model files.** Catalogue › 3D library › Edit a model. An administrator chooses the `.glb` file, enters the
+licence (for example CC BY 4.0), the credit line the licence asks for and the address the file came from, then
+presses Upload. Use only files you have the right to use. Export a single `.glb` with everything inside it and no
+compression. The 3D view and renders then draw that model for every device of it, at its real size. Renders list the
+credits under the preview, in the title block and in the floor book.
+
+**Simulation shifts.** Pathways › Simulate. Under the settings:
+- *Staff by hour of the day*: choose porters or a staff group, set the day hours and how many are on duty by day and
+  at night, press Fill the hours, then change any hour.
+- *Closed at night*: choose beds or a room and the hours they are closed.
+- *Leaving without being seen*: choose a pathway and how many minutes a patient waits for the first step before
+  leaving.
+Run the simulation. The pathways table shows how many left unseen; press Waits by hour for the average wait by the
+hour patients arrived.
