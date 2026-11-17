@@ -20,6 +20,7 @@ import {
   suggestLiftsAction, updateFacility,
 } from "../actions";
 import { LIFT_KIND_HINTS, LIFT_KIND_LABELS, LIFT_KINDS, liveStops } from "@/lib/assets/lifts";
+import { northLabel } from "@/lib/assets/north";
 
 export const dynamic = "force-dynamic";
 
@@ -210,10 +211,11 @@ async function BuildingsTab({ facilityId, edit, canEdit }: { facilityId: number;
         const showFloorForm = editFloor?.buildingId === b.id || addFloorTo === b.id;
         return (
           <Panel key={b.id} padded={false}
-            title={<>{b.name} <span className="ml-1 font-mono text-xs font-normal text-muted">{b.code}</span></>}
+            title={<>{b.name} <span className="ml-1 font-mono text-xs font-normal text-muted">{b.code}</span>
+              {b.northDeg != null && <span className="ml-2 text-xs font-normal text-muted" title={northLabel(b.northDeg)}>North {b.northDeg}°</span>}</>}
             actions={canEdit && <>
               <LinkButton href={`${base}&edit=newfloor-${b.id}#floor-form`} variant="secondary">Add floor</LinkButton>
-              <LinkButton href={`${base}&edit=building-${b.id}`} variant="ghost">Rename</LinkButton>
+              <LinkButton href={`${base}&edit=building-${b.id}`} variant="ghost">Edit</LinkButton>
             </>}>
             {list.length === 0 ? (
               <div className="p-4 text-sm text-muted">No floors yet.{canEdit && <> <Link href={`${base}&edit=newfloor-${b.id}#floor-form`} className="text-primary hover:underline">Add the first floor</Link>.
@@ -291,12 +293,14 @@ async function BuildingsTab({ facilityId, edit, canEdit }: { facilityId: number;
           </Panel>
         );
       })}
-      {canEdit && <Panel title={editBuilding ? `Rename ${editBuilding.name}` : "Add a building"}>
+      {canEdit && <Panel title={editBuilding ? `Edit ${editBuilding.name}` : "Add a building"}>
         <ActionForm action={saveBuilding} className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="facilityId" value={facilityId} />
           {editBuilding && <input type="hidden" name="buildingId" value={editBuilding.id} />}
           <Field label="Code" className="w-28"><Input name="code" required defaultValue={editBuilding?.code ?? `B${bs.length + 1}`} className="uppercase" /></Field>
           <Field label="Name" className="min-w-[14rem] flex-1"><Input name="name" required defaultValue={editBuilding?.name ?? ""} placeholder="Outpatient tower" /></Field>
+          <Field label="North, degrees" className="w-48" hint="Clockwise from the top of the plans; blank if not known. Shows a north arrow in 3D.">
+            <Input name="northDeg" inputMode="decimal" defaultValue={editBuilding?.northDeg ?? ""} placeholder="e.g. 30" /></Field>
           <Button variant={editBuilding ? "primary" : "secondary"}>{editBuilding ? "Save building" : "Add building"}</Button>
           {editBuilding && <LinkButton href={base} variant="ghost">Cancel</LinkButton>}
         </ActionForm>

@@ -52,7 +52,8 @@ export function libraryEntry(typeCode: string, own: { zones?: Zone[] | null; con
 }
 export type LibraryEntry = NonNullable<ReturnType<typeof libraryEntry>>;
 /** What the 3D view gets per catalogue model or type: the entry, the model's GLB file (if any) and its name. */
-export type TwinLibrary = LibraryEntry & { glb: string | null; model: string | null };
+/** Wave 28: the model file's licence, credit and source, for the renders' credits (null = no file, or none recorded). */
+export type TwinLibrary = LibraryEntry & { glb: string | null; model: string | null; credit?: import("./glb-file").ModelCredit | null };
 
 type P = [number, number];
 /**

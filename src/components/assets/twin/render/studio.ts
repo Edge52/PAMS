@@ -22,6 +22,8 @@ import type { FloorGeometry, TwinAsset, TwinData, TwinFloor, TwinRoom } from "..
 import { BUILTIN_KITS, FINISH_COLORS, MODEL_SIZE, placeKit, roomLook, type KitRule, type Model, type Placement } from "./kits";
 import { deviceModel } from "./device-models";
 import { modelGeometry } from "./furniture";
+import { glbGeometry, loadGlb } from "./glb";
+import { creditsLine, floorModelFiles } from "./credits";
 import { layoutLabels, type LabelIn } from "./labels";
 import { wallMass } from "./walls";
 import { FINISH_ROUGHNESS, FINISH_TILE, finishTexture, fittingSpots } from "./finishes";
@@ -86,7 +88,8 @@ const LOOKS: Record<RenderLook, { sky: string; ground: string; hemi: number; sun
 };
 const WALL_SIDE = "#f2f0eb", WALL_TOP = "#878d93", GLASS = "#9cc8db", DOOR = "#a98258";
 
-type Built = { group: THREE.Group; bounds: { x0: number; x1: number; z0: number; z1: number }; rooms: { room: TwinRoom; poly: Pt[] }[]; kitCount: number; registered: number; planned: number };
+type Built = { group: THREE.Group; bounds: { x0: number; x1: number; z0: number; z1: number }; rooms: { room: TwinRoom; poly: Pt[] }[]; kitCount: number; registered: number; planned: number;
+  /** Credits of the own model files drawn (wave 28). */ credits: { model: string; line: string; source: string | null }[] };
 
 /** A device type code's kind for drawing ("MON-PAT-HIGH" → group MON-PAT, category MON). */
 const PLAN_ROOMS = new Set(["PATIENT_ROOM", "WARD", "ICU_BAY", "OPERATING_ROOM", "PROCEDURE_ROOM", "IMAGING_ROOM", "CONSULTATION", "LAB", "NURSE_STATION"]);
@@ -113,6 +116,9 @@ export class RenderStudio {
   async render(o: RenderOptions, progress: (msg: string) => void = () => {}): Promise<HTMLCanvasElement> {
     const floor = this.data.floors.find((f) => f.id === o.floorId);
     if (!floor) throw new Error("That floor isn't in this hospital.");
+    // Own model files of the devices on this floor (wave 28), loaded before the floor is built.
+    const files = (o.equipment ?? "installed") === "planned" ? [] : floorModelFiles(this.data, floor.id).urls;
+    if (files.length) { progress("Loading model files…"); await Promise.all(files.map(loadGlb)); }
     progress("Building the floor…");
     const b = await this.build(floor, o);
     const look = LOOKS[o.look];
@@ -165,7 +171,8 @@ export class RenderStudio {
   /** Build (or reuse) the furnished floor. */
   private async build(f: TwinFloor, o: RenderOptions): Promise<Built> {
     const eq = o.equipment ?? "installed";
-    const key = `${f.id}|${o.cutHeight}|${o.kits}|${o.people ? 1 : 0}|${o.textures === false ? 0 : 1}${o.lights === false ? 0 : 1}|${eq}|${eq === "installed" ? "" : JSON.stringify(o.planned ?? [])}`;
+    const glbs = floorModelFiles(this.data, f.id).urls.filter((u) => glbGeometry(u)).length;
+    const key = `${f.id}|g${glbs}|${o.cutHeight}|${o.kits}|${o.people ? 1 : 0}|${o.textures === false ? 0 : 1}${o.lights === false ? 0 : 1}|${eq}|${eq === "installed" ? "" : JSON.stringify(o.planned ?? [])}`;
     if (this.built?.key === key) return this.built.b;
     if (this.built) { this.scene.remove(this.built.b.group); disposeGroup(this.built.b.group); this.built = null; }
     const geo = await this.loadGeometry(f.id);
@@ -305,6 +312,8 @@ export class RenderStudio {
 
     // Equipment and furniture.
     const doorPts = clusterPoints(geo?.doors ?? [], s);
+    // A registered device's own model file (wave 28), when loaded.
+    const glbOf = (a: TwinAsset) => { const u = a.lib ? this.data.library?.[a.lib]?.glb : null; return u && glbGeometry(u) ? u : undefined; };
     const assetsByRoom = new Map<number, TwinAsset[]>();
     if (eq !== "planned") for (const a of this.data.assets) if (a.roomId != null) { const l = assetsByRoom.get(a.roomId) ?? []; l.push(a); assetsByRoom.set(a.roomId, l); }
     // Planned units: each department's units spread round its care rooms on this floor, biggest first, up to 6 a room.
@@ -335,7 +344,7 @@ export class RenderStudio {
           const [ix, iz] = interiorPoint(poly);
           const x = a.posX * s, z = a.posY * s;
           // Its saved turn (degrees clockwise), else facing the middle of the room.
-          exact.push({ model: m, x, z, rot: a.rot != null ? -a.rot * Math.PI / 180 : Math.atan2(ix - x, iz - z), registered: a.id, dims: a.dims });
+          exact.push({ model: m, x, z, rot: a.rot != null ? -a.rot * Math.PI / 180 : Math.atan2(ix - x, iz - z), registered: a.id, dims: a.dims, glb: glbOf(a) });
         } else { loose.push(m); looseAssets.push({ m, a }); }
       }
       // Registered equipment first: exact spots kept, the rest along the walls like a kit.
@@ -344,7 +353,7 @@ export class RenderStudio {
       const regPlaced = placeKit(poly, regLook, doorsHere, exact, 0.7).map((p) => {
         const i = looseAssets.findIndex((x) => x.m === p.model);
         const a = i >= 0 ? looseAssets.splice(i, 1)[0].a : null;
-        return { ...p, registered: a?.id ?? -1, dims: a?.dims };
+        return { ...p, registered: a?.id ?? -1, dims: a?.dims, glb: a ? glbOf(a) : undefined };
       });
       placements.push(...exact, ...regPlaced);
       registered += exact.length + regPlaced.length;
@@ -377,13 +386,17 @@ export class RenderStudio {
         }
       }
     }
-    const byModel = new Map<Model, Placement[]>();
-    for (const p of placements) { const l = byModel.get(p.model) ?? []; l.push(p); byModel.set(p.model, l); }
+    // Grouped by model, or by own model file (wave 28: key "g:<url>").
+    const byModel = new Map<string, Placement[]>();
+    for (const p of placements) { const k = p.glb ? `g:${p.glb}` : p.model; const l = byModel.get(k) ?? []; l.push(p); byModel.set(k, l); }
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.05 });
     const m4 = new THREE.Matrix4(), qn = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
-    for (const [model, list] of byModel) {
-      const inst = new THREE.InstancedMesh(modelGeometry(model), mat, list.length);
-      const size = modelGeometry(model).boundingBox ?? (modelGeometry(model).computeBoundingBox(), modelGeometry(model).boundingBox!);
+    let drewFiles = false;
+    for (const [k, list] of byModel) {
+      const model = list[0].model, geom = k.startsWith("g:") ? glbGeometry(k.slice(2))! : modelGeometry(model);
+      if (k.startsWith("g:")) drewFiles = true;
+      const inst = new THREE.InstancedMesh(geom, mat, list.length);
+      const size = geom.boundingBox ?? (geom.computeBoundingBox(), geom.boundingBox!);
       const n = size.getSize(new THREE.Vector3());
       list.forEach((p, i) => {
         qn.setFromAxisAngle(up, p.rot);
@@ -409,7 +422,7 @@ export class RenderStudio {
       }
     }
     this.scene.add(group);
-    const b = { group, bounds, rooms, kitCount, registered, planned: plannedPlacements.length };
+    const b = { group, bounds, rooms, kitCount, registered, planned: plannedPlacements.length, credits: drewFiles ? floorModelFiles(this.data, f.id).credits : [] };
     this.built = { key, b };
     return b;
   }
@@ -568,6 +581,7 @@ export class RenderStudio {
         : eqMode === "planned" ? `Equipment: planned, ${o.planName ?? "BOQ"} (${b.planned}, pale blue)`
         : `Equipment: installed (${b.registered}) and still to come from ${o.planName ?? "the BOQ"} (${b.planned}, pale blue)`,
       o.kits ? `Furniture: illustrative (${b.kitCount} items)` : "Furniture: not shown",
+      ...(b.credits.length ? [creditsLine(b.credits)] : []),
     ];
     let px10 = 0;
     if (o.view === "dollhouse" || o.view === "plan") {
@@ -576,16 +590,19 @@ export class RenderStudio {
       px10 = Math.abs(bx - ax);
     }
     ctx.textAlign = "right"; ctx.font = font(500, 14); ctx.fillStyle = "#5b6670";
-    notes.forEach((t, i) => ctx.fillText(t, w - (150 * k + px10 + 30 * k), y0 + band * (0.36 + i * 0.3)));
+    const gap = notes.length > 2 ? 0.22 : 0.3;
+    notes.forEach((t, i) => ctx.fillText(t, w - (150 * k + px10 + 30 * k), y0 + band * ((notes.length > 2 ? 0.3 : 0.36) + i * gap)));
     if (px10 > 0) {
       const x1 = w - 120 * k, yb = y0 + band * 0.62;
       ctx.fillStyle = "#1d252c"; ctx.fillRect(x1 - px10, yb, px10, Math.max(2, 3 * k));
       ctx.fillRect(x1 - px10, yb - 5 * k, Math.max(1, 2 * k), 8 * k); ctx.fillRect(x1 - Math.max(1, 2 * k), yb - 5 * k, Math.max(1, 2 * k), 8 * k);
       ctx.textAlign = "center"; ctx.font = font(600, 13); ctx.fillText("10 m", x1 - px10 / 2, yb - 12 * k);
-      // North arrow (plan north = up).
+      // North arrow: the building's north when set (wave 28; these views look up the plan), else the plan's top.
       const nx = w - 50 * k, ny = y0 + band * 0.55;
-      ctx.beginPath(); ctx.moveTo(nx, ny - 18 * k); ctx.lineTo(nx + 8 * k, ny + 8 * k); ctx.lineTo(nx, ny + 3 * k); ctx.lineTo(nx - 8 * k, ny + 8 * k); ctx.closePath(); ctx.fill();
-      ctx.font = font(700, 12); ctx.fillText("N", nx, ny - 27 * k);
+      ctx.save(); ctx.translate(nx, ny); ctx.rotate(((f.northDeg ?? 0) * Math.PI) / 180);
+      ctx.beginPath(); ctx.moveTo(0, -18 * k); ctx.lineTo(8 * k, 8 * k); ctx.lineTo(0, 3 * k); ctx.lineTo(-8 * k, 8 * k); ctx.closePath(); ctx.fill();
+      ctx.font = font(700, 12); ctx.fillText("N", 0, -27 * k);
+      ctx.restore();
     }
   }
 

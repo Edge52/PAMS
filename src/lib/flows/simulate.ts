@@ -11,6 +11,10 @@
  * Wave 15 extras, all optional: staff groups held with a step's room or scanner (see withStaff in simulate-model.ts),
  * opening hours per resource (patients who come when it is closed wait for it to open), appointment books per
  * pathway (patients come at booked times, some don't come) and moving a step to another floor (changes its lift trips).
+ *
+ * Wave 28 shifts, all optional: numbers on duty by hour of the day per resource (`shifts`), hours of the day a bed
+ * pool or room is closed (`closed`), and patients who leave unseen after waiting longer than a set time before their
+ * first step (`leaveAfter`). Unset, every result is exactly as before (a test keeps it so).
  */
 
 /* ── Model ── */
@@ -48,6 +52,12 @@ export type SimOptions = {
   books?: Record<number, AppointmentBook>;
   /** Steps moved to another floor, as "flowId:stepKey" → floor level (wave 15). Only the lift trips change. */
   levels?: Record<string, number>;
+  /** Units on duty for each hour of the day (24 numbers, 0 = none) by resource key (wave 28): replaces its capacity hour by hour. */
+  shifts?: Record<string, number[]>;
+  /** Hours of the day (0–23) a resource is closed by key (wave 28): beds or rooms shut at night. Jobs under way finish. */
+  closed?: Record<string, number[]>;
+  /** Minutes by pathway id (wave 28): a patient still waiting for a first step after this long leaves without being seen. */
+  leaveAfter?: Record<number, number>;
 };
 /** Open from `open` to `close` o'clock (0–24, open before close) every day, or on weekdays only. */
 export type OpeningHours = { open: number; close: number; weekends: boolean };
@@ -71,6 +81,49 @@ export function bookedTimes(n: number, book: AppointmentBook): number[] {
   if (n <= 0 || to <= from) return [];
   const slot = ((to - from) * 60) / n;
   return Array.from({ length: n }, (_, i) => from * 60 + i * slot);
+}
+/**
+ * Units of a resource on duty for each hour of the day (wave 28): its shift profile (or its capacity all day), with
+ * closed hours at 0. Null when neither is set, so the resource behaves as before. Values are whole numbers, 0–1000.
+ */
+export function capacityByHour(capacity: number, shift: number[] | null | undefined, closed: number[] | null | undefined): number[] | null {
+  const hasShift = Array.isArray(shift) && shift.length === 24 && shift.every((x) => Number.isFinite(Number(x)));
+  const shut = new Set((closed ?? []).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h < 24));
+  if (!hasShift && !shut.size) return null;
+  return Array.from({ length: 24 }, (_, h) => (shut.has(h) ? 0 : Math.max(0, Math.min(1000, Math.round(hasShift ? Number(shift![h]) : capacity)))));
+}
+/** Clean a 24-hour profile from anywhere: 24 whole numbers 0–1000, or null. */
+export function cleanShift(v: unknown): number[] | null {
+  if (!Array.isArray(v) || v.length !== 24) return null;
+  const xs = v.map((x) => Math.round(Number(x)));
+  return xs.every((x) => Number.isFinite(x)) ? xs.map((x) => Math.max(0, Math.min(1000, x))) : null;
+}
+/** Clean a list of closed hours: whole hours 0–23, sorted, no repeats; null when none. */
+export function cleanClosed(v: unknown): number[] | null {
+  if (!Array.isArray(v)) return null;
+  const xs = [...new Set(v.map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h < 24))].sort((a, b) => a - b);
+  return xs.length ? xs : null;
+}
+/** Whole hours from `from` up to (not including) `to`, past midnight if need be: 22 → 7 = 22, 23, 0 … 6. Equal = none. */
+export function hourRange(from: number, to: number): number[] {
+  const f = ((Math.round(from) % 24) + 24) % 24, t = ((Math.round(to) % 24) + 24) % 24, out: number[] = [];
+  for (let h = f; h !== t; h = (h + 1) % 24) out.push(h);
+  return out;
+}
+/** "20:00–07:00" style ranges for a list of closed hours (wraps past midnight). */
+export function closedLabel(hours: number[]): string {
+  const set = new Set(hours);
+  if (!set.size) return "";
+  if (set.size === 24) return "all day";
+  const t = (h: number) => `${String(h % 24).padStart(2, "0")}:00`;
+  // Start from an open hour so a range across midnight reads as one.
+  const start = Array.from({ length: 24 }, (_, h) => h).find((h) => !set.has(h))!;
+  const out: string[] = [];
+  for (let i = 1; i <= 24; i++) {
+    const h = (start + i) % 24;
+    if (set.has(h) && !set.has((h + 23) % 24)) { let e = h; while (set.has((e + 1) % 24)) e = (e + 1) % 24; out.push(`${t(h)}–${t(e + 1)}`); }
+  }
+  return out.join(", ");
 }
 export const DEFAULT_OPTIONS: SimOptions = { days: 1, runs: 20, seed: 1, variability: 0.5, weekendShare: 0.6, walkMinutes: 3, volumeFactor: 1 };
 
@@ -121,6 +174,12 @@ const less = (x: Ev, y: Ev) => x.t < y.t || (x.t === y.t && x.seq < y.seq);
 type Waiter = { urgent: boolean; since: number; seq: number; go: () => void };
 type Pool = {
   res: SimResource; cap: number; busy: number; queue: Waiter[];
+  /** Units on duty by hour of the day (wave 28; null = `cap` all day), units now, and whether it is limited at all. */
+  capHour: number[] | null; capNow: number; limited: boolean;
+  /** Unit-minutes available in each measured hour (capacity × open minutes), for the busy share. */
+  capMin: number[];
+  /** Sum and count of waits by the hour of the day the wait began (wave 28). */
+  waitSum: number[]; waitN: number[];
   /** Opening hours (null = always open), whether it is open now, and open minutes in each measured hour. */
   sched: OpeningHours | null; open: boolean; openMin: number[];
   /** Busy unit-minutes and queue-length-minutes in each hour of the measured period, from the last change. */
@@ -128,8 +187,14 @@ type Pool = {
   waits: number[]; maxQueue: number;
 };
 export type RunResult = {
-  resources: Record<string, { utilisation: number; hourly: number[]; queueHourly: number[]; meanWait: number; p90Wait: number; maxWait: number; served: number; maxQueue: number }>;
-  flows: Record<number, { arrived: number; finished: number; meanTime: number; p90Time: number; meanWait: number }>;
+  resources: Record<string, { utilisation: number; hourly: number[]; queueHourly: number[]; meanWait: number; p90Wait: number; maxWait: number; served: number; maxQueue: number;
+    /** Sum and count of waits by hour of the day the wait began (wave 28). */
+    waitSum: number[]; waitN: number[] }>;
+  flows: Record<number, { arrived: number; finished: number; meanTime: number; p90Time: number; meanWait: number;
+    /** Left without being seen (wave 28). */
+    left: number;
+    /** Sum and count of each patient's total wait by the hour of the day they arrived (finished or left). */
+    waitSum: number[]; waitN: number[] }>;
 };
 
 const q = (xs: number[], p: number) => { if (!xs.length) return 0; const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
@@ -149,8 +214,19 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
       const day = 1 + Math.floor(h / 24), hod = h % 24;
       openMin[h] = !sched.weekends && isWeekend(day) ? 0 : Math.max(0, Math.min(hod + 1, sched.close) - Math.max(hod, sched.open)) * 60;
     }
-    pools.set(res.key, { res, cap, busy: 0, queue: [], sched, open: !sched, openMin, busyMin: Array(HOURS).fill(0), queueMin: Array(HOURS).fill(0), last: 0, waits: [], maxQueue: 0 });
+    const capHour = capacityByHour(cap, opt.shifts?.[res.key], opt.closed?.[res.key]);
+    const capMin = openMin.map((m, h) => (capHour ? capHour[h % 24] : cap) * m);
+    pools.set(res.key, { res, cap, busy: 0, queue: [], capHour, capNow: capHour ? capHour[0] : cap, limited: cap > 0 || !!capHour, capMin,
+      waitSum: Array(24).fill(0), waitN: Array(24).fill(0),
+      sched, open: !sched, openMin, busyMin: Array(HOURS).fill(0), queueMin: Array(HOURS).fill(0), last: 0, waits: [], maxQueue: 0 });
   }
+  const measured = () => now >= WARM && now < END;
+  /** Record a wait that began at `since` and ended now. */
+  const recordWait = (p: Pool, since: number) => {
+    if (!measured()) return;
+    p.waits.push(now - since);
+    const h = Math.floor((since % 1440) / 60); p.waitSum[h] += now - since; p.waitN[h]++;
+  };
   /** Add the time since the pool last changed to its hourly busy and queue totals (measured period only). */
   const account = (p: Pool) => {
     let t = Math.max(p.last, WARM); const end = Math.min(now, END);
@@ -161,40 +237,64 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
     }
     p.last = now;
   };
-  /** Wait for one unit (no pool, or a pool with no capacity set, means no waiting), then go. */
-  const acquire = (key: string | null | undefined, urgent: boolean, go: () => void) => {
+  /** Wait for one unit (no pool, or a pool with no capacity set, means no waiting), then go. Returns the place in the queue, if any. */
+  const acquire = (key: string | null | undefined, urgent: boolean, go: () => void): Waiter | null => {
     const p = key ? pools.get(key) : undefined;
-    if (!p || p.cap <= 0) { go(); return; }
+    if (!p || !p.limited) { go(); return null; }
     account(p);
-    if (p.open && p.busy < p.cap) { p.busy++; if (now >= WARM && now < END) p.waits.push(0); go(); return; }
-    p.queue.push({ urgent, since: now, seq: seq++, go }); p.maxQueue = Math.max(p.maxQueue, p.queue.length);
+    if (p.open && p.busy < p.capNow) { p.busy++; recordWait(p, now); go(); return null; }
+    const w = { urgent, since: now, seq: seq++, go };
+    p.queue.push(w); p.maxQueue = Math.max(p.maxQueue, p.queue.length);
+    return w;
+  };
+  /** Leave a queue without being served (wave 28). */
+  const cancel = (key: string | null | undefined, w: Waiter | null) => {
+    const p = key ? pools.get(key) : undefined;
+    if (!p || !w) return;
+    const i = p.queue.indexOf(w);
+    if (i >= 0) { account(p); p.queue.splice(i, 1); }
   };
   /** Hand the unit to the next in the queue: urgent first, then first come first served. */
   const next = (p: Pool) => {
     let best = 0; for (let i = 1; i < p.queue.length; i++) { const a = p.queue[i], b = p.queue[best]; if ((a.urgent && !b.urgent) || (a.urgent === b.urgent && a.seq < b.seq)) best = i; }
     const w = p.queue.splice(best, 1)[0];
-    if (now >= WARM && now < END) p.waits.push(now - w.since);
+    recordWait(p, w.since);
     w.go();
   };
   const release = (key: string | null | undefined) => {
     const p = key ? pools.get(key) : undefined;
-    if (!p || p.cap <= 0) return;
+    if (!p || !p.limited) return;
     account(p);
-    if (p.open && p.queue.length) next(p); else p.busy--;
+    // The unit goes to the next in the queue unless fewer are on duty now than are busy (a shift ended).
+    if (p.open && p.queue.length && p.busy <= p.capNow) next(p); else p.busy--;
   };
+  /** Start queued jobs while units are free. */
+  const fill = (p: Pool) => { while (p.open && p.busy < p.capNow && p.queue.length) { p.busy++; next(p); } };
   // Opening and closing (wave 15): at opening the queue is served up to capacity; at closing no new job starts.
   for (const p of pools.values()) {
     const sc = p.sched; if (!sc || p.cap <= 0) continue;
     for (let d = 0; d <= opt.days; d++) {
       if (!sc.weekends && isWeekend(d)) continue;
-      at(d * 1440 + sc.open * 60, () => { account(p); p.open = true; while (p.busy < p.cap && p.queue.length) { p.busy++; next(p); } });
+      at(d * 1440 + sc.open * 60, () => { account(p); p.open = true; fill(p); });
       at(d * 1440 + sc.close * 60, () => { account(p); p.open = false; });
     }
   }
+  // Shifts and closed hours (wave 28): the units on duty change on the hour; a rise starts queued jobs at once.
+  for (const p of pools.values()) {
+    const ch = p.capHour; if (!ch) continue;
+    for (let d = 0; d <= opt.days; d++) for (let h = 0; h < 24; h++) {
+      if ((d === 0 && h === 0) || ch[h] === ch[(h + 23) % 24]) continue;
+      at(d * 1440 + h * 60, () => { account(p); p.capNow = ch[h]; fill(p); });
+    }
+  }
 
-  const flowStats = new Map<number, { arrived: number; finished: number; times: number[]; waits: number[] }>();
+  const flowStats = new Map<number, { arrived: number; finished: number; times: number[]; waits: number[]; left: number; waitSum: number[]; waitN: number[] }>();
   for (const f of model.flows) {
-    const st = { arrived: 0, finished: 0, times: [] as number[], waits: [] as number[] };
+    const st = { arrived: 0, finished: 0, times: [] as number[], waits: [] as number[], left: 0, waitSum: Array(24).fill(0) as number[], waitN: Array(24).fill(0) as number[] };
+    const limit = Number(opt.leaveAfter?.[f.id]);
+    const leaveAfter = Number.isFinite(limit) && limit > 0 ? limit : null;
+    /** A patient's total wait, by the hour of the day they arrived. */
+    const byHour = (pt: { start: number }, waited: number) => { const h = Math.floor((pt.start % 1440) / 60); st.waitSum[h] += waited; st.waitN[h]++; };
     flowStats.set(f.id, st);
     const steps = new Map(f.steps.map((s) => { const lv = opt.levels?.[`${f.id}:${s.key}`]; return [s.key, lv != null && Number.isFinite(lv) ? { ...s, level: lv } : s]; }));
     const outs = new Map<string, SimLink[]>();
@@ -202,11 +302,12 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
     const starts = f.steps.filter((s) => s.kind === "START");
     if (!starts.length || f.perDay <= 0) continue;
 
-    const visit = (pt: { start: number; waited: number; hops: number; measured: boolean }, s: SimStep, urgent: boolean) => {
+    type Patient = { start: number; waited: number; hops: number; measured: boolean; seen?: boolean };
+    const visit = (pt: Patient, s: SimStep, urgent: boolean) => {
       const leave = () => {
         const ls = outs.get(s.key);
         if (s.kind === "END" || !ls?.length || pt.hops++ > 60) {
-          if (pt.measured && now < END) { st.finished++; st.times.push(now - pt.start); st.waits.push(pt.waited); }
+          if (pt.measured && now < END) { st.finished++; st.times.push(now - pt.start); st.waits.push(pt.waited); byHour(pt, pt.waited); }
           return;
         }
         let x = r() * ls.reduce((a, l) => a + l.share, 0), link = ls[ls.length - 1];
@@ -217,10 +318,27 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
       if (s.kind !== "STEP" || s.minutes <= 0) { leave(); return; }
       const asked = now;
       // The room or scanner first, then the staff to work it (wave 15); both are held for the step's minutes.
-      acquire(s.resource, urgent, () => acquire(s.staff, urgent, () => {
-        pt.waited += now - asked;
-        at(now + gammaTime(r, s.minutes, opt.variability), () => { release(s.staff); release(s.resource); leave(); });
-      }));
+      const state: { v: "room" | "staff" | "started" | "gone" } = { v: "room" };
+      let wRoom: Waiter | null = null, wStaff: Waiter | null = null;
+      wRoom = acquire(s.resource, urgent, () => {
+        if (state.v === "gone") return;
+        state.v = "staff";
+        wStaff = acquire(s.staff, urgent, () => {
+          state.v = "started"; pt.seen = true;
+          pt.waited += now - asked;
+          at(now + gammaTime(r, s.minutes, opt.variability), () => { release(s.staff); release(s.resource); leave(); });
+        });
+      });
+      // Not seen yet and still waiting (wave 28): leave unseen when the wait runs past the pathway's limit.
+      if (leaveAfter != null && !pt.seen && state.v !== "started") {
+        at(asked + Math.max(0, leaveAfter - pt.waited), () => {
+          if (state.v === "started" || state.v === "gone") return;
+          if (state.v === "room") cancel(s.resource, wRoom); else { cancel(s.staff, wStaff); release(s.resource); }
+          state.v = "gone";
+          pt.waited += now - asked;
+          if (pt.measured && now < END) { st.left++; byHour(pt, pt.waited); }
+        });
+      }
     };
 
     const transfer = (pt: { waited: number }, from: SimStep, to: SimStep, link: SimLink, arrive: () => void) => {
@@ -252,7 +370,7 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
     const arrive = (t: number) => {
       const start = starts[Math.floor(r() * starts.length)];
       at(t, () => {
-        const pt = { start: now, waited: 0, hops: 0, measured: now >= WARM && now < END };
+        const pt: Patient = { start: now, waited: 0, hops: 0, measured: now >= WARM && now < END };
         if (pt.measured) st.arrived++;
         visit(pt, start, false);
       });
@@ -284,11 +402,13 @@ export function simulateOnce(model: SimModel, opt: SimOptions, seed: number): Ru
   for (const [key, p] of pools) {
     account(p);
     // Busy share of the open time: closed hours count as 0 and don't lower the average.
-    const hourly = p.busyMin.map((m, h) => (p.cap && p.openMin[h] ? Math.min(1, m / (p.cap * p.openMin[h])) : 0)), queueHourly = p.queueMin.map((m) => m / 60);
-    const openTotal = p.openMin.reduce((a, b) => a + b, 0), busyTotal = p.busyMin.reduce((a, b) => a + b, 0);
-    out.resources[key] = { utilisation: p.cap && openTotal ? Math.min(1, busyTotal / (p.cap * openTotal)) : 0, hourly, queueHourly, meanWait: mean(p.waits), p90Wait: q(p.waits, 0.9), maxWait: p.waits.length ? Math.max(...p.waits) : 0, served: p.waits.length, maxQueue: p.maxQueue };
+    // Of the capacity on duty and open: closed hours count as 0 and don't lower the average.
+    const hourly = p.busyMin.map((m, h) => (p.capMin[h] ? Math.min(1, m / p.capMin[h]) : 0)), queueHourly = p.queueMin.map((m) => m / 60);
+    const capTotal = p.capMin.reduce((a, b) => a + b, 0), busyTotal = p.busyMin.reduce((a, b) => a + b, 0);
+    out.resources[key] = { utilisation: capTotal ? Math.min(1, busyTotal / capTotal) : 0, hourly, queueHourly, meanWait: mean(p.waits), p90Wait: q(p.waits, 0.9), maxWait: p.waits.length ? Math.max(...p.waits) : 0, served: p.waits.length, maxQueue: p.maxQueue,
+      waitSum: p.waitSum, waitN: p.waitN };
   }
-  for (const [id, s] of flowStats) out.flows[id] = { arrived: s.arrived, finished: s.finished, meanTime: mean(s.times), p90Time: q(s.times, 0.9), meanWait: mean(s.waits) };
+  for (const [id, s] of flowStats) out.flows[id] = { arrived: s.arrived, finished: s.finished, meanTime: mean(s.times), p90Time: q(s.times, 0.9), meanWait: mean(s.waits), left: s.left, waitSum: s.waitSum, waitN: s.waitN };
   return out;
 }
 
@@ -301,8 +421,14 @@ export type SimSummary = {
   options: SimOptions; runs: number;
   resources: { key: string; label: string; kind: ResourceKind; capacity: number; utilisation: Band; meanWait: Band; p90Wait: Band; maxQueue: Band;
     /** Average over runs (and over the days of a week) for each hour of the day, 0–23. */
-    hourly: number[]; queueHourly: number[]; peakHour: number; flag: boolean }[];
-  flows: { id: number; name: string; perDay: number; arrived: Band; finished: Band; meanTime: Band; p90Time: Band; meanWait: Band }[];
+    hourly: number[]; queueHourly: number[]; peakHour: number; flag: boolean;
+    /** Average wait (minutes) by the hour of the day it began, over every run (wave 28). */
+    waitHourly: number[] }[];
+  flows: { id: number; name: string; perDay: number; arrived: Band; finished: Band; meanTime: Band; p90Time: Band; meanWait: Band;
+    /** Left without being seen in the period (wave 28). */
+    left: Band;
+    /** Average total wait (minutes) of the patients who arrived in each hour of the day, and how many there were a run. */
+    waitByHour: number[]; patientsByHour: number[] }[];
 };
 
 /** Utilisation and waits that need a look: busy above 85 % on average, or one patient in ten waiting over 30 minutes. */
@@ -314,19 +440,29 @@ export function simulate(model: SimModel, options: Partial<SimOptions> = {}, onP
   const results: RunResult[] = [];
   for (let i = 0; i < runs; i++) { results.push(simulateOnce(model, opt, opt.seed * 1000 + i)); onProgress?.(i + 1, runs); }
   const byHourOfDay = (xs: number[][]) => Array.from({ length: 24 }, (_, h) => mean(xs.flatMap((arr) => arr.filter((_, i) => i % 24 === h))));
+  /** Pooled average by hour from per-run sums and counts. */
+  const pooled = (xs: { waitSum: number[]; waitN: number[] }[]) => Array.from({ length: 24 }, (_, h) => {
+    const n = xs.reduce((a, x) => a + x.waitN[h], 0);
+    return n ? xs.reduce((a, x) => a + x.waitSum[h], 0) / n : 0;
+  });
   return {
     options: opt, runs,
     resources: model.resources.map((res) => {
       const rs = results.map((x) => x.resources[res.key]);
       const hourly = byHourOfDay(rs.map((x) => x.hourly)), queueHourly = byHourOfDay(rs.map((x) => x.queueHourly));
       const utilisation = band(rs.map((x) => x.utilisation)), p90Wait = band(rs.map((x) => x.p90Wait));
-      const capacity = Math.max(0, Math.round(opt.capacity?.[res.key] ?? res.capacity));
+      const base = Math.max(0, Math.round(opt.capacity?.[res.key] ?? res.capacity));
+      const ch = capacityByHour(base, opt.shifts?.[res.key], opt.closed?.[res.key]);
+      // With shifts, the most on duty in any hour.
+      const capacity = ch ? Math.max(...ch) : base;
       return { key: res.key, label: res.label, kind: res.kind, capacity, utilisation, meanWait: band(rs.map((x) => x.meanWait)), p90Wait, maxQueue: band(rs.map((x) => x.maxQueue)),
-        hourly, queueHourly, peakHour: hourly.indexOf(Math.max(...hourly)), flag: capacity > 0 && (utilisation.mean > UTIL_FLAG || p90Wait.mean > WAIT_FLAG) };
+        hourly, queueHourly, peakHour: hourly.indexOf(Math.max(...hourly)), flag: capacity > 0 && (utilisation.mean > UTIL_FLAG || p90Wait.mean > WAIT_FLAG), waitHourly: pooled(rs) };
     }),
     flows: model.flows.map((f) => {
       const fs = results.map((x) => x.flows[f.id]);
-      return { id: f.id, name: f.name, perDay: f.perDay, arrived: band(fs.map((x) => x.arrived)), finished: band(fs.map((x) => x.finished)), meanTime: band(fs.map((x) => x.meanTime)), p90Time: band(fs.map((x) => x.p90Time)), meanWait: band(fs.map((x) => x.meanWait)) };
+      return { id: f.id, name: f.name, perDay: f.perDay, arrived: band(fs.map((x) => x.arrived)), finished: band(fs.map((x) => x.finished)), meanTime: band(fs.map((x) => x.meanTime)), p90Time: band(fs.map((x) => x.p90Time)), meanWait: band(fs.map((x) => x.meanWait)),
+        left: band(fs.map((x) => x.left)), waitByHour: pooled(fs),
+        patientsByHour: Array.from({ length: 24 }, (_, h) => fs.reduce((a, x) => a + x.waitN[h], 0) / (fs.length * opt.days)) };
     }),
   };
 }

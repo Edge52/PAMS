@@ -9,8 +9,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { glbToGeometry } from "./render/glb";
+import { glbGeometry, loadGlb } from "./render/glb";
 import { CONN_COLORS, connPoint, fringePoly, ZONE_COLORS, zoneRect } from "@/lib/assets/equipment-library";
 import { deviceModel, symbolModel } from "./render/device-models";
 import { modelGeometry } from "./render/furniture";
@@ -74,11 +73,9 @@ function kindGeometry(k: DeviceKind): { geo: THREE.BufferGeometry; y: number; ri
 /** Ring size under a kind's simple shape. */
 function kindGeometryRing(k: DeviceKind): number { return k === "bed" ? 1.15 : k === "imaging" ? 1.6 : k === "ventilator" ? 0.6 : k === "pump" ? 0.45 : 0.55; }
 /** A near shape's geometry by key: "m:<model>" = a detailed render model (a copy; the cache stays shared), else a kind. */
-/** Catalogue models' own 3D files (wave 17), merged into one coloured geometry each, by URL. */
-const glbGeo = new Map<string, THREE.BufferGeometry>();
-
 function shapeGeometry(key: string): THREE.BufferGeometry {
-  if (key.startsWith("g:")) return glbGeo.get(key.slice(2))!.clone();
+  // Catalogue models' own 3D files (wave 17; loader shared with the renders, wave 28), by URL.
+  if (key.startsWith("g:")) return glbGeometry(key.slice(2))!.clone();
   return key.startsWith("m:") ? modelGeometry(key.slice(2) as Model).clone() : kindGeometry(key as DeviceKind).geo;
 }
 
@@ -585,9 +582,9 @@ export class TwinScene {
   }
   /** The near shape of a device: its detailed model (wave 16) or its kind's simple shape. */
   private shapeKey(a: TwinAsset): string {
-    // The catalogue model's own 3D file (wave 17), once loaded.
-    const glb = this.detailed && a.lib ? this.data.library?.[a.lib]?.glb : null;
-    if (glb && glbGeo.has(glb)) return `g:${glb}`;
+    // The catalogue model's own 3D file (wave 17), once loaded; in place of the drawn shape, detailed or not (wave 28).
+    const glb = a.lib ? this.data.library?.[a.lib]?.glb : null;
+    if (glb && glbGeometry(glb)) return `g:${glb}`;
     return this.detailed ? `m:${deviceModel(a.typeCode, a.groupCode, a.categoryCode)}` : deviceKind(a.groupCode, a.categoryCode);
   }
 
@@ -690,7 +687,8 @@ export class TwinScene {
     for (const id of this.deviceIds) { const k = this.shapeKey(this.assetsById.get(id)!); (byKey.get(k) ?? byKey.set(k, []).get(k)!).push(id); }
     for (const [key, ids] of byKey) {
       // Lit models; simple shapes in a neutral colour, detailed ones in their own colours. The status shows as a ring.
-      const detailedKey = key.startsWith("m:");
+      // Own model files (g:) carry their colours too (wave 28; they were drawn plain before).
+      const detailedKey = key.startsWith("m:") || key.startsWith("g:");
       const mesh = new THREE.InstancedMesh(shapeGeometry(key), new THREE.MeshLambertMaterial({ color: "#ffffff", vertexColors: detailedKey }), ids.length);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       ids.forEach((id, i) => { this.kindIndex.set(id, { kind: key, i }); mesh.setColorAt(i, new THREE.Color(detailedKey ? "#ffffff" : PALETTE[this.style].model)); });
@@ -766,7 +764,7 @@ export class TwinScene {
       if (ki) {
         const hit = this.highlight.size > 0 && this.highlight.has(id);
         // Detailed models keep their own colours (brighter when a search hit; the ring shows the status).
-        const base = ki.kind.startsWith("m:") ? c.set(hit || this.style === "light" ? "#ffffff" : "#c9d8e2") : c.set(hit ? status : PALETTE[this.style].model);
+        const base = ki.kind.startsWith("m:") || ki.kind.startsWith("g:") ? c.set(hit || this.style === "light" ? "#ffffff" : "#c9d8e2") : c.set(hit ? status : PALETTE[this.style].model);
         if (dim) base.lerp(new THREE.Color(PALETTE[this.style].bg), 0.55);
         this.kindMeshes.get(ki.kind)!.mesh.setColorAt(ki.i, base);
       }
@@ -782,16 +780,11 @@ export class TwinScene {
 
   /** Load the catalogue models' own 3D files (GLB) the devices use; devices switch to them as they arrive. */
   private async loadModels() {
-    const urls = [...new Set(Object.values(this.data.library ?? {}).map((l) => l.glb).filter((u): u is string => !!u && !glbGeo.has(u)))];
+    const urls = [...new Set(Object.values(this.data.library ?? {}).map((l) => l.glb).filter((u): u is string => !!u && !glbGeometry(u)))];
     if (!urls.length) return;
-    const loader = new GLTFLoader();
     let any = false;
     for (const url of urls) {
-      try {
-        const gltf = await loader.loadAsync(url);
-        const g = glbToGeometry(gltf.scene);
-        if (g) { glbGeo.set(url, g); any = true; }
-      } catch (e) { console.warn("3D model file could not be read", url, e); }
+      if (await loadGlb(url)) any = true;
       if (this.disposed) return;
     }
     if (any && this.deviceMesh) { this.buildShapes(); this.applyNear(); this.positionDevices(); }

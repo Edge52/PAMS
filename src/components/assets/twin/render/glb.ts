@@ -1,6 +1,7 @@
 /** Catalogue models' own 3D files (wave 17): a loaded glTF scene turned into one instancable geometry. */
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { dropTextureRefs, isAppModelUrl } from "../../../../lib/assets/glb-file";
 
 /**
  * A GLB scene as one geometry with the materials' colours baked in (position, normal, colour), standing on y = 0 and
@@ -32,4 +33,39 @@ export function glbToGeometry(root: THREE.Object3D): THREE.BufferGeometry | null
   const b = merged.boundingBox!;
   merged.translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
   return merged;
+}
+
+/* ── Wave 28: one loader for the live view and the renders ── */
+
+/** Loaded model files by URL, merged and coloured (shared by the live view and the render studio). */
+const cache = new Map<string, THREE.BufferGeometry>();
+const loading = new Map<string, Promise<THREE.BufferGeometry | null>>();
+
+/** A model file's geometry once loaded (null before, or when it couldn't be read). Don't dispose it: it is shared. */
+export const glbGeometry = (url: string) => cache.get(url) ?? null;
+
+/**
+ * Load a catalogue model's own file from the app (never from another address, see isAppModelUrl), textures left out,
+ * and keep its geometry. Resolves null when the file can't be read; the built-in shape is used then.
+ */
+export function loadGlb(url: string): Promise<THREE.BufferGeometry | null> {
+  const have = cache.get(url); if (have) return Promise.resolve(have);
+  if (!isAppModelUrl(url)) return Promise.resolve(null);
+  let p = loading.get(url);
+  if (!p) {
+    p = (async () => {
+      const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+      const loader = new GLTFLoader();
+      // Colours only: strip texture references before anything loads, so no image is fetched.
+      loader.register((parser) => ({ name: "pams_no_textures", beforeRoot: () => { dropTextureRefs((parser.json as { materials?: unknown }).materials); return null; } }));
+      try {
+        const gltf = await loader.loadAsync(url);
+        const g = glbToGeometry(gltf.scene);
+        if (g) cache.set(url, g);
+        return g;
+      } catch (e) { console.warn("3D model file could not be read", url, e); return null; }
+    })();
+    loading.set(url, p);
+  }
+  return p;
 }

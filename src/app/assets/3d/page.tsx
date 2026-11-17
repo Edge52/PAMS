@@ -43,7 +43,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
   if (Number.isInteger(wanted) && wanted > 0) await requireFacilityAccess(wanted, me);
   const facility = facs.find((f) => f.id === wanted) ?? facs.find((f) => withCad.some((w) => w.id === f.id)) ?? facs[0];
 
-  const floorRows = await db.select({ f: floors, buildingName: buildings.name, hasCad: sql<boolean>`exists(select 1 from ${floorCad} where ${floorCad.floorId} = ${floors.id})` })
+  const floorRows = await db.select({ f: floors, buildingName: buildings.name, northDeg: buildings.northDeg, hasCad: sql<boolean>`exists(select 1 from ${floorCad} where ${floorCad.floorId} = ${floors.id})` })
     .from(floors).innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(eq(buildings.facilityId, facility.id)).orderBy(asc(floors.level));
   const floorIds = floorRows.map((r) => r.f.id);
   const roomRows = floorIds.length ? await db.select().from(rooms).where(inArray(rooms.floorId, floorIds)) : [];
@@ -85,11 +85,11 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     can: { report: can(me.role, "workorders.report"), move: can(me.role, "assets.move"), maintain: can(me.role, "maintenance.edit"), addAsset: can(me.role, "assets.edit"), editFacility: can(me.role, "facilities.edit"),
       zoneDepartments: me.role === "DEPARTMENT_HEAD" ? [...(await myDepartments(me.id))] : undefined },
     facilities: facs.map((f) => ({ id: f.id, name: f.name })),
-    floors: floorRows.map(({ f, buildingName, hasCad }) => ({
+    floors: floorRows.map(({ f, buildingName, northDeg, hasCad }) => ({
       id: f.id, name: floorRows.filter((x) => x.f.level === f.level).length > 1 ? `${buildingName}, ${f.name}` : f.name, level: f.level, buildingName,
       elevation: f.elevation ?? f.level * FLOOR_TO_FLOOR_M, planWidth: f.planWidth, planHeight: f.planHeight,
       // Hand-drawn plans have no scale; 10 units per metre gives the demo grid a believable size.
-      unitsPerMetre: f.unitsPerMetre ?? 10, hasCad: Boolean(hasCad),
+      unitsPerMetre: f.unitsPerMetre ?? 10, hasCad: Boolean(hasCad), northDeg,
     })),
     rooms: roomRows.filter((r) => r.type !== "CORRIDOR" || r.polygon).map((r) => ({
       id: r.id, floorId: r.floorId, code: r.code, name: r.name, type: r.type, departmentId: r.departmentId, zone: r.zone, workshop: r.workshop,

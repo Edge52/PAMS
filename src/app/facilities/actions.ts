@@ -6,6 +6,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { assets, buildings, departments, facilities, floors, liftCores, rooms, userFacilities, type LiftStop } from "@/db/schema";
 import { logActivity } from "@/lib/server-utils";
+import { changeSummary, diff } from "@/lib/audit-diff";
+import { cleanNorth } from "@/lib/assets/north";
 import { FACILITY_TYPES, ROOM_TYPES } from "@/lib/assets/filters";
 import { code, dbError, firstError, formObject, id, int, num, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
 import { imageSize, planSizeFor } from "@/lib/assets/image-size";
@@ -83,14 +85,23 @@ export async function updateFacility(_: FormState, fd: FormData): Promise<FormSt
 const BuildingSchema = z.object({ facilityId: reqId("Facility"), buildingId: id(), code: code("Building code"), name: reqText("Building name") });
 
 export async function saveBuilding(_: FormState, fd: FormData): Promise<FormState> {
-  await requirePermission("facilities.edit");
+  const me = await requirePermission("facilities.edit");
   const p = BuildingSchema.safeParse(formObject(fd));
   if (!p.success) return { error: firstError(p.error) };
+  // Wave 28: north on the plans (blank = not known).
+  const north = cleanNorth(fd.get("northDeg"));
+  if (north === "invalid") return { error: "North must be a number of degrees, for example 30." };
   await editFacility(p.data.facilityId);
-  const { facilityId, buildingId, ...v } = p.data;
+  const { facilityId, buildingId, ...rest } = p.data;
+  const v = { ...rest, northDeg: north };
   try {
-    if (buildingId) await db.update(buildings).set(v).where(and(eq(buildings.id, buildingId), eq(buildings.facilityId, facilityId)));
-    else await db.insert(buildings).values({ facilityId, ...v });
+    if (buildingId) {
+      const [before] = await db.select({ code: buildings.code, name: buildings.name, northDeg: buildings.northDeg }).from(buildings).where(and(eq(buildings.id, buildingId), eq(buildings.facilityId, facilityId)));
+      if (!before) return { error: "That building no longer exists." };
+      await db.update(buildings).set(v).where(and(eq(buildings.id, buildingId), eq(buildings.facilityId, facilityId)));
+      const changes = diff(before, v);
+      if (changes) await logActivity("building", buildingId, "updated", `Building ${v.name}: ${changeSummary(changes)}`, me.name, undefined, changes);
+    } else await db.insert(buildings).values({ facilityId, ...v });
   } catch (e) { return { error: dbError(e) }; }
   revalidatePath(`/facilities/${facilityId}`);
   redirect(back(facilityId, "buildings", buildingId ? "Building saved." : `Building ${v.name} added.`));

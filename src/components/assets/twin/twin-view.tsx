@@ -8,6 +8,8 @@ import { formatDims } from "@/lib/assets/dimensions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { HudRail, useHudMode, usePanelPrefs } from "./hud";
 import { HudMap } from "./hud-map";
+import { HudCompass } from "./hud-compass";
+import { northFor } from "@/lib/assets/north";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { DropResult, PickResult, TwinScene, TwinStyle } from "./scene";
 import { CLASH_LABELS } from "@/lib/assets/clash";
@@ -2383,7 +2385,10 @@ export function TwinView({ data, live: initialLive, views: initialViews, canMana
               { id: "history", label: "History", title: "History", summary: history ? `${shownEvents.length} shown` : "Off", body: timePanel },
               { id: "status", label: "Status", title: "Status", summary: statuses.size ? `${statuses.size} of ${visibleStatuses.length}` : "All", body: statusList },
             ]} />
-          <div className="pointer-events-none absolute bottom-4 left-4"><HudMap scene={sceneRef} ready={ready} floors={data.floors} rooms={data.rooms} light={style === "light"} /></div>
+          <div className="pointer-events-none absolute bottom-4 left-4 flex flex-col items-start gap-2">
+            <HudCompass scene={sceneRef} ready={ready} northDeg={northFor(data.floors, floorId)} light={style === "light"} />
+            <HudMap scene={sceneRef} ready={ready} floors={data.floors} rooms={data.rooms} light={style === "light"} />
+          </div>
 
           <HudRail side="right" isOpen={panels.isOpen} onToggle={panels.toggle} panelWidth={compact ? "16rem" : "20rem"} className={`bottom-4 right-4 ${compact ? "top-32" : "top-28"}`}
             tools={[
