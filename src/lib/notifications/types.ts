@@ -9,6 +9,7 @@ export type NewNotification = {
 
 /** Labels for the inbox filter and badges. Unknown kinds fall back to "Notice". */
 export const KIND_LABELS: Record<string, string> = {
+  loan_overdue: "Loan overdue",
   approval_needed: "Approval needed",
   approval_decided: "Approval decided",
   offer_expiring: "Offer expiring",

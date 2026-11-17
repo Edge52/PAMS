@@ -15,6 +15,7 @@ import {
 import type { Role } from "@/lib/auth/permissions";
 import { addDaysISO, todayISO } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
+import { notifyOverdueLoans } from "@/lib/assets/loans-server";
 import { notifyUsers, usersWithRole } from "./index";
 import { collectAlerts, CONTRACT_WARN_DAYS, digestAlerts, MAINTENANCE_DUE_DAYS, type AlertData, type AlertWindows } from "./alert-rules";
 
@@ -144,6 +145,9 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
         if (n) { created += n; byKind.executive_pack = (byKind.executive_pack ?? 0) + n; }
       }
     }
+    // Loan equipment past its due-back date (wave 27): the hospital's biomedical engineers, once per loan.
+    const loans = await notifyOverdueLoans(today);
+    if (loans) { created += loans; byKind.loan_overdue = (byKind.loan_overdue ?? 0) + loans; }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
     console.error("[alerts] run failed:", e);

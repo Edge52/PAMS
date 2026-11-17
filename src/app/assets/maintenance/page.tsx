@@ -18,6 +18,10 @@ import { assignableUsers, assignableUsersAll } from "@/lib/assets/work-order-ser
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere, type Scope } from "@/lib/assets/access";
+import { usageDueMap } from "@/lib/assets/meters-server";
+import { instrumentOptions } from "@/lib/assets/test-equipment-server";
+import { TestEquipmentField } from "@/components/assets/test-equipment-field";
+import { usageIntervalLabel } from "@/lib/assets/meters";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Maintenance" };
@@ -51,9 +55,12 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
       scopeWhere(assets.facilityId, scope)))
     .orderBy(asc(assets.assetTag));
 
+  // Wave 27: devices with a usage interval are due by use or by months, whichever comes first.
+  const usage = await usageDueMap(today, { ids: list.map((a) => a.id) });
   const withDue = list.map((a) => {
-    const n = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: a.lastPpm });
-    return { ...a, due: n.due, interval: n.intervalMonths, isDefault: n.isDefaultInterval, state: dueState(n.due, today) };
+    const u = usage.get(a.id);
+    const n = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: a.lastPpm, usageDue: u?.due });
+    return { ...a, due: n.due, interval: n.intervalMonths, isDefault: n.isDefaultInterval, state: dueState(n.due, today), byUse: n.basis === "usage", usageLabel: u ? usageIntervalLabel(u.interval, u.unit) : null };
   });
   // Wave 19: devices with no PPM on record apart from real overdue visits; life support first.
   const overdue = withDue.filter((a) => dueView(a) === "overdue");
@@ -127,7 +134,8 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
 }
 
 type DueRow = { id: number; tag: string; typeName: string; typeCode: string; departmentName: string | null; roomCode: string | null; roomName: string | null;
-  lastPpm: string | null; openPpm: string | null; due: string | null; interval: number; isDefault: boolean; state: string; criticality: string | null };
+  lastPpm: string | null; openPpm: string | null; due: string | null; interval: number; isDefault: boolean; state: string; criticality: string | null;
+  byUse?: boolean; usageLabel?: string | null };
 
 const PAGE = 50;
 
@@ -150,8 +158,8 @@ function DueTab({ rows, today, returnPath, canMaint }: { rows: DueRow[]; today: 
                   <div className="text-xs text-muted">{a.typeName}{a.criticality === "LIFE_SUPPORT" && <> · <span className="font-semibold text-danger">life support</span></>}</div></td>
                 <td className="px-3 py-2">{a.departmentName ?? "—"}<div className="text-xs text-muted">{a.roomName}</div></td>
                 <td className="whitespace-nowrap px-3 py-2">{a.lastPpm ? formatDate(a.lastPpm) : <span className="text-muted">Never</span>}</td>
-                <td className="whitespace-nowrap px-3 py-2">{a.interval} months{a.isDefault && <span className="text-xs text-muted"> (default)</span>}</td>
-                <td className="whitespace-nowrap px-3 py-2">{formatDate(a.due)}<div>{a.state === "OVERDUE" ? <Badge tone="danger">{late} days overdue</Badge> : <Badge tone="warn">Due soon</Badge>}</div></td>
+                <td className="whitespace-nowrap px-3 py-2">{a.interval} months{a.isDefault && <span className="text-xs text-muted"> (default)</span>}{a.usageLabel && <div className="text-xs text-muted">or {a.usageLabel}</div>}</td>
+                <td className="whitespace-nowrap px-3 py-2">{formatDate(a.due)}{a.byUse && <span className="text-xs text-muted"> (by use)</span>}<div>{a.state === "OVERDUE" ? <Badge tone="danger">{late} days overdue</Badge> : <Badge tone="warn">Due soon</Badge>}</div></td>
                 <td className="px-3 py-2">
                   {a.openPpm ? <span className="text-sm">Scheduled {formatDate(a.openPpm)}</span> : !canMaint ? <span className="text-sm text-muted">Not scheduled</span> : (
                     <ActionForm action={logMaintenanceAction} className="flex items-center gap-2">
@@ -192,7 +200,7 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
         deptId ? eq(assets.departmentId, deptId) : undefined, q ? sql`${assets.assetTag} ilike ${"%" + q + "%"}` : undefined, scopeWhere(assets.facilityId, scope)))
       .orderBy(asc(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`), asc(assets.assetTag)).limit(3000),
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(eq(suppliers.active, true)).orderBy(asc(suppliers.name)),
-    completeId ? db.select({ id: maintenanceEvents.id, type: maintenanceEvents.type, status: maintenanceEvents.status, scheduledDate: maintenanceEvents.scheduledDate, tag: assets.assetTag, assetStatus: assets.status, typeName: deviceTypes.name })
+    completeId ? db.select({ id: maintenanceEvents.id, type: maintenanceEvents.type, status: maintenanceEvents.status, scheduledDate: maintenanceEvents.scheduledDate, tag: assets.assetTag, assetStatus: assets.status, typeName: deviceTypes.name, facilityId: assets.facilityId })
       .from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId)).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
       .where(and(eq(maintenanceEvents.id, completeId), scopeWhere(assets.facilityId, scope))) : Promise.resolve([]),
   ]);
@@ -200,6 +208,7 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
   // People who can take PPM jobs: everyone with maintenance rights in the user's hospitals (deduplicated).
   const people = canMaint ? [...new Map((await Promise.all((scope ?? [null]).map((f) => (f === null ? assignableUsersAll() : assignableUsers(f))))).flat().map((u) => [u.id, u])).values()] : [];
   const c = completing[0];
+  const instruments = c && c.status !== "COMPLETED" ? await instrumentOptions(c.facilityId) : [];
   return (
     <div className="space-y-5">
       {c && c.status !== "COMPLETED" && (
@@ -218,6 +227,7 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
               <Field label="Condition after"><NativeSelect name="condition" options={enumOptions(ASSET_CONDITIONS)} placeholder="Unchanged" /></Field>
               <div className="flex items-end pb-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="returnToService" defaultChecked={c.assetStatus !== "IN_SERVICE"} /> Return the asset to service</label></div>
               <Field label="Findings" className="sm:col-span-2 lg:col-span-4"><Textarea name="findings" rows={2} placeholder="Checks performed, parts replaced, safety test result" /></Field>
+              <div className="sm:col-span-2 lg:col-span-4"><TestEquipmentField options={instruments} /></div>
             </FormGrid>
             <div className="mt-4 flex gap-2"><Button>Mark complete</Button><LinkButton href={returnPath} variant="ghost">Cancel</LinkButton></div>
           </ActionForm>

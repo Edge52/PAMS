@@ -119,6 +119,9 @@ export default async function SettingsPage() {
                 <Field label="Warn before an RFQ closes (days)" hint="Issued RFQs closing within this many days are flagged.">
                   <Input type="number" min={0} max={90} name="rfqClosingWarnDays" defaultValue={s.rfqClosingWarnDays} />
                 </Field>
+                <Field label="User training valid for (months)" hint="After this, a person's training on a device type shows as due again on the department page.">
+                  <Input type="number" min={1} max={120} name="trainingValidMonths" defaultValue={s.trainingValidMonths} />
+                </Field>
               </FormGrid>
             </fieldset>
 

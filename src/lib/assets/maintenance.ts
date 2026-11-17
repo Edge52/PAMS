@@ -6,6 +6,7 @@
  * - Interval comes from the device type (ppmIntervalMonths). When the catalogue has no interval yet we fall back to
  *   DEFAULT_PPM_INTERVAL_MONTHS (annual inspection) and flag it as a default so the UI can say so.
  * - Next due = last completed PPM + interval; with no PPM on record, install date (else purchase date) + interval.
+ * - Wave 27: when the device type also has a usage interval, the date that use runs out (`usageDue`) wins if earlier.
  * - A scheduled/in-progress event whose date has passed is shown as overdue.
  */
 import { addMonths, daysBetween, monthKey } from "./dates";
@@ -22,11 +23,13 @@ export type PpmAsset = {
   ppmIntervalMonths?: number | null;
   /** completedDate of the most recent COMPLETED PPM event. */
   lastPpmDate?: string | null;
+  /** Wave 27: when PPM falls due by use (`usagePpmDue` in ./meters); the earlier of the two dates wins. */
+  usageDue?: string | null;
 };
 
 export type NextPpm = {
   due: string | null;
-  basis: "last_ppm" | "install" | "purchase" | "none";
+  basis: "last_ppm" | "install" | "purchase" | "usage" | "none";
   intervalMonths: number;
   isDefaultInterval: boolean;
 };
@@ -42,7 +45,9 @@ export function nextPpmDue(a: PpmAsset): NextPpm {
   if (a.status && INACTIVE.has(a.status)) return { due: null, basis: "none", intervalMonths: months, isDefaultInterval: isDefault };
   const basis: NextPpm["basis"] = a.lastPpmDate ? "last_ppm" : a.installDate ? "install" : a.purchaseDate ? "purchase" : "none";
   const from = a.lastPpmDate ?? a.installDate ?? a.purchaseDate ?? null;
-  return { due: from ? addMonths(from, months) : null, basis, intervalMonths: months, isDefaultInterval: isDefault };
+  const byMonths = from ? addMonths(from, months) : null;
+  if (a.usageDue && (!byMonths || a.usageDue < byMonths)) return { due: a.usageDue, basis: "usage", intervalMonths: months, isDefaultInterval: isDefault };
+  return { due: byMonths, basis, intervalMonths: months, isDefaultInterval: isDefault };
 }
 
 export type DueState = "OVERDUE" | "DUE_SOON" | "UPCOMING" | "NONE";

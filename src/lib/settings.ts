@@ -27,6 +27,8 @@ export type Settings = {
   assistantModel: string;
   /** Two-step sign-in (wave 25): who must use it. Anyone may switch it on for themselves. */
   twoStepRequired: "off" | "admins" | "all";
+  /** User training (wave 27): months after which a person's training on a device type is due again. */
+  trainingValidMonths: number;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -44,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   assistantEnabled: false,
   assistantModel: "claude-sonnet-5-5",
   twoStepRequired: "off",
+  trainingValidMonths: 24,
 };
 
 export async function getSettings(): Promise<Settings> {

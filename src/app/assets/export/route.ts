@@ -4,6 +4,7 @@ import { toCsv } from "@/lib/assets/csv";
 import { parseAssetFilter } from "@/lib/assets/filters";
 import { nextPpmDue } from "@/lib/assets/maintenance";
 import { ppmInfo, searchAssets } from "@/lib/assets/queries";
+import { usageDueMap } from "@/lib/assets/meters-server";
 import { todayISO } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +23,12 @@ export async function GET(request: Request) {
   for (let i = 0; i < rows.length; i += 1000) {
     for (const [k, v] of await ppmInfo(rows.slice(i, i + 1000).map((r) => r.id))) ppm.set(k, v);
   }
+  const usage = await usageDueMap(todayISO(), { ids: rows.map((r) => r.id) });
   const header = ["Asset tag", "Device type code", "Device type", "Category", "Manufacturer", "Model", "Serial number", "Status", "Condition", "Criticality",
     "Facility", "Building", "Floor", "Department", "Room code", "Room", "Purchase date", "Install date", "Warranty end", "Purchase cost", "Currency", "Last PPM", "Next PPM"];
   const body = rows.map((a) => {
     const info = ppm.get(a.id);
-    const next = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: info?.lastPpm }).due;
+    const next = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: info?.lastPpm, usageDue: usage.get(a.id)?.due }).due;
     return [a.assetTag, a.deviceTypeCode, a.deviceTypeName, a.categoryName, a.manufacturer, a.model, a.serialNumber, a.status, a.condition, a.criticality,
       a.facilityCode, a.buildingName, a.floorName, a.departmentName, a.roomCode, a.roomName, a.purchaseDate, a.installDate, a.warrantyEnd,
       a.purchaseCost, a.currency, info?.lastPpm ?? "", info?.nextScheduled && (!next || info.nextScheduled < next) ? info.nextScheduled : next ?? ""];

@@ -3,6 +3,7 @@ import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, facilities, maintenanceEvents } from "@/db/schema";
 import { nextPpmDue } from "@/lib/assets/maintenance";
+import { usageDueMap } from "@/lib/assets/meters-server";
 import { formatDate, formatNumber } from "@/lib/format";
 import { addOutcome, classifyPpm, compliancePct, complianceTone, emptyTally, sumTallies, type PpmTally } from "./calc";
 import { facilityCond } from "./shared";
@@ -53,8 +54,10 @@ export async function ppmComplianceReport({ filters: f, scope, today }: ReportCo
     if (!e.scheduledDate) continue;
     addOutcome(acc(e).t, classifyPpm({ status: e.status, scheduledDate: e.scheduledDate, completedDate: e.completedDate }, today, f.grace));
   }
+  // Wave 27: due by use or by months, whichever comes first.
+  const usage = await usageDueMap(today, { ids: inUse.map((a) => a.id) });
   for (const a of inUse) {
-    const due = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: a.lastPpm }).due;
+    const due = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: a.lastPpm, usageDue: usage.get(a.id)?.due }).due;
     if (!due || due < from || due > to || due >= today) continue; // due today = not missed yet
     const g = acc(a);
     g.t.unscheduled++;

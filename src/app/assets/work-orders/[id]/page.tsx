@@ -19,9 +19,12 @@ import { CLAIM_STATUSES } from "@/lib/assets/contracts";
 import { allowedActions, downtimeHours, formatHours, isLate, WORK_ORDER_PRIORITIES } from "@/lib/assets/work-orders";
 import { can, ROLE_LABELS } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
-import { CURRENCIES, formatDateTime, formatMoney } from "@/lib/format";
+import { CURRENCIES, formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { getActivity } from "@/lib/server-utils";
 import { workshopRoute } from "@/lib/flows/route-server";
+import { instrumentOptions, instrumentsByEvent } from "@/lib/assets/test-equipment-server";
+import { TestEquipmentField } from "@/components/assets/test-equipment-field";
+import type { Instrument } from "@/lib/assets/test-equipment";
 import { formatDuration } from "@/components/assets/twin/nav/route";
 import {
   assignWorkOrderAction, cancelWorkOrderAction, completeWorkOrderAction, progressWorkOrderAction, signOffWorkOrderAction, updateClaimAction,
@@ -75,6 +78,11 @@ export default async function WorkOrderPage({ params, searchParams }: {
       .from(spareParts).where(and(eq(spareParts.facilityId, wo.facilityId), eq(spareParts.active, true)))
       .orderBy(sql`(${spareParts.deviceTypeId} = ${r.deviceTypeId}) desc nulls last`, asc(spareParts.name)).limit(400) : Promise.resolve([]),
   ]);
+  const [instruments, usedOn] = await Promise.all([
+    actions.has("complete") ? instrumentOptions(wo.facilityId) : Promise.resolve([]),
+    instrumentsByEvent(wo.maintenanceEventId ? [wo.maintenanceEventId] : []),
+  ]);
+  const usedInstruments = wo.maintenanceEventId ? usedOn.get(wo.maintenanceEventId) ?? [] : [];
   const used = partsUsed(partTxns);
   const usedRows = [...used.byPart.entries()].filter(([, v]) => v.qty !== 0).map(([partId, v]) => {
     const t = partTxns.find((x) => x.partId === partId)!;
@@ -122,7 +130,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
                 <input type="hidden" name="workOrderId" value={wo.id} />
                 <ChecklistInputs items={wo.checklist!} />
                 <p className="text-xs text-muted">A reading outside its range is recorded as failed. The checklist comes from the device type in the catalogue.</p>
-                <CompletionFields deviceDown={wo.deviceDown} optionalResolution partsCost={used.total} />
+                <CompletionFields deviceDown={wo.deviceDown} optionalResolution partsCost={used.total} instruments={instruments} />
               </ActionForm>
             </Panel>
           )}
@@ -142,6 +150,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
                 { label: "Root cause", value: wo.rootCause },
                 { label: "Labour", value: wo.laborHours != null ? `${wo.laborHours} h` : null },
                 { label: "Cost", value: wo.cost != null ? formatMoney(wo.cost, wo.currency ?? "EGP") : null },
+                { label: "Test equipment", value: usedInstruments.length ? usedInstruments.map((t) => <span key={t.label} className="block">{t.label}{t.calibrationDue ? <span className="text-xs text-muted"> · calibrated to {formatDate(t.calibrationDue)}</span> : null}</span>) : null },
               ]} />
             </Panel>
           )}
@@ -272,7 +281,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
             <Panel title="Complete the job">
               <ActionForm action={completeWorkOrderAction} className="space-y-3">
                 <input type="hidden" name="workOrderId" value={wo.id} />
-                <CompletionFields deviceDown={wo.deviceDown} partsCost={used.total} />
+                <CompletionFields deviceDown={wo.deviceDown} partsCost={used.total} instruments={instruments} />
               </ActionForm>
             </Panel>
           )}
@@ -340,7 +349,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
   );
 }
 
-function CompletionFields({ deviceDown, optionalResolution, partsCost = 0 }: { deviceDown: boolean; optionalResolution?: boolean; partsCost?: number }) {
+function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instruments }: { deviceDown: boolean; optionalResolution?: boolean; partsCost?: number; instruments: Instrument[] }) {
   return (
     <div className="space-y-3">
       <Field label={optionalResolution ? "What was done (optional)" : "What was done"} hint={optionalResolution ? "Left blank, the checklist result is recorded." : undefined}>
@@ -354,6 +363,7 @@ function CompletionFields({ deviceDown, optionalResolution, partsCost = 0 }: { d
         </Field>
         <Field label="Currency"><NativeSelect name="currency" value="EGP" options={CURRENCIES.map((c) => ({ value: c, label: c }))} /></Field>
       </FormGrid>
+      <TestEquipmentField options={instruments} />
       {deviceDown && (
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="returnToService" defaultChecked className="mt-1" />
           <span>Device is back in service</span></label>

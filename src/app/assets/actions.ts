@@ -18,6 +18,8 @@ import { DIM_MAX, DIM_MIN } from "@/lib/assets/dimensions";
 import { MAX_IMPORT_ROWS, mapHeaders, validateRows, type ImportKey, type Lookups, type RowResult, type ValidRow } from "@/lib/assets/import";
 import { moveAsset } from "@/lib/assets/mutations";
 import { planPpmEvents, maintenanceTypeLabel } from "@/lib/assets/maintenance";
+import { usageDueMap } from "@/lib/assets/meters-server";
+import { checkInstruments, saveInstruments } from "@/lib/assets/test-equipment-server";
 import { todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
 import { changeSummary, diff } from "@/lib/audit-diff";
@@ -228,11 +230,15 @@ export async function logMaintenanceAction(_: FormState, fd: FormData): Promise<
   const status = d.status ?? (d.completedDate ? "COMPLETED" : "SCHEDULED");
   if (status === "COMPLETED" && !d.completedDate) return { error: "Enter the date the work was completed." };
   if (status !== "COMPLETED" && !d.scheduledDate) return { error: "Enter the scheduled date." };
-  await db.insert(maintenanceEvents).values({
+  // Wave 27: test equipment used on completed work must be in calibration on the day.
+  const used = status === "COMPLETED" ? await checkInstruments(fd, (await facilityOfAsset(d.assetId))!, d.completedDate!) : { ok: [] };
+  if ("problem" in used) return { error: used.problem, fields: { testEquipment: used.problem } };
+  const [ev] = await db.insert(maintenanceEvents).values({
     assetId: d.assetId, type: d.type ?? "PPM", status, scheduledDate: d.scheduledDate ?? d.completedDate ?? null, completedDate: d.completedDate ?? null,
     performedBy: d.performedBy ?? null, vendorId: d.vendorId ?? null, cost: d.cost != null ? String(d.cost) : null,
     currency: d.cost != null ? (d.currency ?? "USD").toUpperCase() : null, downtimeHours: d.downtimeHours ?? null, findings: d.findings ?? null,
-  });
+  }).returning({ id: maintenanceEvents.id });
+  await saveInstruments(db, ev.id, used.ok);
   if (d.setStatus) await db.update(assets).set({ status: d.setStatus }).where(eq(assets.id, d.assetId));
   await logActivity("asset", d.assetId, "maintenance", `${maintenanceTypeLabel(d.type ?? "PPM")} ${status === "COMPLETED" ? `completed ${d.completedDate}` : `scheduled for ${d.scheduledDate}`}${d.findings ? ` — ${d.findings.slice(0, 120)}` : ""}`);
   revalidatePath(`/assets/${d.assetId}`);
@@ -256,11 +262,14 @@ export async function completeEventAction(_: FormState, fd: FormData): Promise<F
   if (d.completedDate > todayISO()) return { error: "The completed date cannot be in the future." };
   const [e] = await db.select().from(maintenanceEvents).where(eq(maintenanceEvents.id, d.eventId));
   if (!e) return { error: "That work order no longer exists." };
+  const used = await checkInstruments(fd, (await facilityOfAsset(e.assetId))!, d.completedDate);
+  if ("problem" in used) return { error: used.problem, fields: { testEquipment: used.problem } };
   await db.update(maintenanceEvents).set({
     status: "COMPLETED", completedDate: d.completedDate, performedBy: d.performedBy ?? e.performedBy, vendorId: d.vendorId ?? null,
     cost: d.cost != null ? String(d.cost) : null, currency: d.cost != null ? (d.currency ?? "USD").toUpperCase() : null,
     downtimeHours: d.downtimeHours ?? null, findings: d.findings ?? e.findings,
   }).where(eq(maintenanceEvents.id, e.id));
+  await saveInstruments(db, e.id, used.ok);
   const assetPatch: Partial<typeof assets.$inferInsert> = {};
   if (d.returnToService) assetPatch.status = "IN_SERVICE";
   if (d.condition) assetPatch.condition = d.condition;
@@ -294,7 +303,9 @@ export async function generatePpmAction(_: FormState, fd: FormData): Promise<For
   const ids = list.map((a) => a.id);
   const existing = ids.length ? await db.select({ assetId: maintenanceEvents.assetId, scheduledDate: maintenanceEvents.scheduledDate, status: maintenanceEvents.status, type: maintenanceEvents.type })
     .from(maintenanceEvents).where(and(inArray(maintenanceEvents.assetId, ids), isNotNull(maintenanceEvents.scheduledDate))) : [];
-  const plan = planPpmEvents(list, existing, from, to);
+  // Wave 27: devices due by use get their first visit on the usage date when it comes before the months interval.
+  const usage = await usageDueMap(todayISO(), { ids });
+  const plan = planPpmEvents(list.map((a) => ({ ...a, usageDue: usage.get(a.id)?.due })), existing, from, to);
   for (let i = 0; i < plan.length; i += 500) {
     await db.insert(maintenanceEvents).values(plan.slice(i, i + 500).map((e) => ({ assetId: e.assetId, type: "PPM" as const, status: "SCHEDULED" as const, scheduledDate: e.scheduledDate })));
   }
