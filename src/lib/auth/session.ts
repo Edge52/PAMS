@@ -12,10 +12,11 @@ import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt, lt, or } from "drizzle-orm";
+import { and, desc, eq, gt, lt, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { sessions, userFacilities, users } from "@/db/schema";
 import { can, type Permission, type Role } from "./permissions";
+import { browserLabel } from "./user-agent";
 
 export const SESSION_COOKIE = "hpams_session";
 const MAX_AGE_MS = 7 * 24 * 3600_000;
@@ -36,9 +37,12 @@ function cookieSecure(): boolean {
 
 export async function createSession(userId: number): Promise<void> {
   const token = randomBytes(32).toString("base64url");
-  const ua = (await headers()).get("user-agent")?.slice(0, 300) ?? null;
+  // Wave 27: only what "Your sessions" shows: a short browser label and the address.
+  const h = await headers();
+  const ua = browserLabel(h.get("user-agent")?.slice(0, 500));
+  const ip = ((h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "").trim().slice(0, 64)) || null;
   const expiresAt = new Date(Date.now() + MAX_AGE_MS);
-  await db.insert(sessions).values({ tokenHash: sha256(token), userId, expiresAt, userAgent: ua });
+  await db.insert(sessions).values({ tokenHash: sha256(token), userId, expiresAt, userAgent: ua, ip });
   await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, userId));
   // Housekeeping: drop this user's dead sessions.
   await db.delete(sessions).where(and(eq(sessions.userId, userId),
@@ -62,6 +66,27 @@ export async function destroyAllSessions(userId: number, exceptCurrent = false):
   const keep = token ? sha256(token) : "";
   const all = await db.select({ id: sessions.id, h: sessions.tokenHash }).from(sessions).where(eq(sessions.userId, userId));
   for (const s of all) if (s.h !== keep) await db.delete(sessions).where(eq(sessions.id, s.id));
+}
+
+export type SessionRow = { id: number; startedAt: Date; lastSeenAt: Date; browser: string | null; ip: string | null; current: boolean };
+
+/** Wave 27: this user's live sessions, newest use first, the current one marked. Never returns the token hash. */
+export async function listSessions(userId: number): Promise<SessionRow[]> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const mine = token ? sha256(token) : "";
+  const rows = await db.select().from(sessions)
+    .where(and(eq(sessions.userId, userId), gt(sessions.expiresAt, new Date()), gt(sessions.lastSeenAt, new Date(Date.now() - IDLE_MS))))
+    .orderBy(desc(sessions.lastSeenAt));
+  return rows.map((r) => ({ id: r.id, startedAt: r.createdAt, lastSeenAt: r.lastSeenAt, browser: browserLabel(r.userAgent), ip: r.ip, current: r.tokenHash === mine }));
+}
+
+/** Wave 27: end one of this user's sessions (not the current one: that's "Sign out"). True when one was ended. */
+export async function endSession(userId: number, sessionId: number): Promise<boolean> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const gone = await db.delete(sessions)
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId), ne(sessions.tokenHash, token ? sha256(token) : "")))
+    .returning({ id: sessions.id });
+  return gone.length > 0;
 }
 
 /** The signed-in user, or null. Memoised per request. */
