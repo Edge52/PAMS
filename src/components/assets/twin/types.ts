@@ -13,6 +13,8 @@ export type TwinFloor = {
   /** Plan units per metre (10 for CAD imports; an estimate for hand-drawn plans). */
   unitsPerMetre: number;
   hasCad: boolean;
+  /** Its building's north (wave 28): degrees clockwise from the top of the plan; null/absent = not known, no arrow. */
+  northDeg?: number | null;
 };
 
 export type TwinRoom = {

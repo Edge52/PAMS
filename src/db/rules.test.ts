@@ -36,7 +36,7 @@ describe("database rules (wave 24)", () => {
     const r = await pg.query<{ conname: string }>(`select conname from pg_constraint where contype = 'c' and conname like '%_check' order by 1`);
     const names = r.rows.map((x) => x.conname);
     for (const n of ["po_lines_quantity_check", "po_lines_price_check", "offer_lines_discount_check", "service_contracts_dates_check", "frameworks_dates_check",
-      "assets_residual_check", "device_types_residual_check"]) expect(names).toContain(n);
+      "assets_residual_check", "device_types_residual_check", "buildings_north_check", "equipment_models_glb_bytes_check"]) expect(names).toContain(n);
   });
   it("keeps a device's history: nothing is deleted along with a device", async () => {
     const r = await pg.query<{ n: number }>(`select count(*)::int as n from pg_constraint c join pg_class t on t.oid = c.confrelid where c.contype = 'f' and t.relname = 'assets' and c.confdeltype = 'c'`);

@@ -103,7 +103,8 @@ export function parseItems(text: string): { items: KitLine[]; errors: string[] }
 }
 
 /** One placed item: centre (metres), rotation about the vertical (radians; 0 = facing +z), and its model. */
-export type Placement = { model: Model; x: number; z: number; rot: number; registered?: number; /** real size of a registered device, metres */ dims?: { l: number; w: number; h: number } };
+export type Placement = { model: Model; x: number; z: number; rot: number; registered?: number; /** real size of a registered device, metres */ dims?: { l: number; w: number; h: number };
+  /** Wave 28: its catalogue model's own file (URL), drawn in place of the built-in model. */ glb?: string };
 
 type OBB = { x: number; z: number; hw: number; hd: number; rot: number };
 

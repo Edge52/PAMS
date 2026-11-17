@@ -3,7 +3,7 @@
  * becomes the baseline and what-if runs. Pure. Saved settings are read with cleanScenario, so an old or hand-edited
  * scenario never breaks the page: anything out of range is dropped or clamped.
  */
-import { cleanHours, type AppointmentBook, type OpeningHours, type SimModel, type SimOptions } from "./simulate";
+import { cleanClosed, cleanHours, cleanShift, type AppointmentBook, type OpeningHours, type SimModel, type SimOptions } from "./simulate";
 import { withStaff, type StaffGroup } from "./simulate-model";
 
 export type SimScenario = {
@@ -16,6 +16,12 @@ export type SimScenario = {
   hours: Record<string, OpeningHours>;
   /** Appointment books by pathway id. */
   books: Record<string, AppointmentBook>;
+  /** Units on duty by hour of the day (24 numbers) by resource key: staff groups and porters (wave 28). Missing = the set number all day. */
+  shifts: Record<string, number[]>;
+  /** Hours of the day closed by resource key: beds and rooms shut at night (wave 28). */
+  closed: Record<string, number[]>;
+  /** Minutes by pathway id after which a patient not yet seen leaves (wave 28). */
+  leaveAfter: Record<string, number>;
   whatIf: {
     /** New capacities by resource key (staff included). */
     capacity: Record<string, number>;
@@ -32,7 +38,7 @@ export const RUN_CHOICES = [10, 20, 50, 100] as const;
 export const VARIABILITY_CHOICES = [0, 0.25, 0.5, 1] as const;
 
 export function defaultScenario(porters: number): SimScenario {
-  return { days: 1, runs: 20, variability: 0.5, weekend: 60, volume: 100, walk: 3, porters, staff: [], hours: {}, books: {}, whatIf: { capacity: {}, volume: null, hours: {}, moves: {} } };
+  return { days: 1, runs: 20, variability: 0.5, weekend: 60, volume: 100, walk: 3, porters, staff: [], hours: {}, books: {}, shifts: {}, closed: {}, leaveAfter: {}, whatIf: { capacity: {}, volume: null, hours: {}, moves: {} } };
 }
 
 const n = (v: unknown, min: number, max: number, d: number) => { const x = Number(v); return Number.isFinite(x) ? Math.min(max, Math.max(min, x)) : d; };
@@ -56,7 +62,7 @@ export function cleanScenario(raw: unknown, porters: number): SimScenario {
     variability: (VARIABILITY_CHOICES as readonly number[]).includes(variability) ? variability : d.variability,
     weekend: n(s.weekend, 0, 200, d.weekend), volume: n(s.volume, 1, 1000, d.volume),
     walk: n(s.walk, 0, 60, d.walk), porters: Math.round(n(s.porters, 0, 200, porters)),
-    staff: [], hours: {}, books: {}, whatIf: { capacity: {}, volume: null, hours: {}, moves: {} },
+    staff: [], hours: {}, books: {}, shifts: {}, closed: {}, leaveAfter: {}, whatIf: { capacity: {}, volume: null, hours: {}, moves: {} },
   };
   const staff = Array.isArray(s.staff) ? s.staff.slice(0, 20) : [];
   staff.forEach((g, i) => {
@@ -67,6 +73,9 @@ export function cleanScenario(raw: unknown, porters: number): SimScenario {
   });
   for (const [k, v] of Object.entries(obj(s.hours))) { const h = KEY.test(k) ? cleanHours(obj(v)) : null; if (h) out.hours[k] = h; }
   for (const [k, v] of Object.entries(obj(s.books))) { const b = /^\d{1,9}$/.test(k) ? cleanBook(v) : null; if (b) out.books[k] = b; }
+  for (const [k, v] of Object.entries(obj(s.shifts))) { const x = KEY.test(k) ? cleanShift(v) : null; if (x) out.shifts[k] = x; }
+  for (const [k, v] of Object.entries(obj(s.closed))) { const x = KEY.test(k) ? cleanClosed(v) : null; if (x) out.closed[k] = x; }
+  for (const [k, v] of Object.entries(obj(s.leaveAfter))) { const m = Math.round(Number(v)); if (/^\d{1,9}$/.test(k) && Number.isFinite(m) && m >= 1) out.leaveAfter[k] = Math.min(24 * 60, m); }
   for (const [k, v] of Object.entries(obj(w.capacity))) { if (KEY.test(k) && Number.isFinite(Number(v))) out.whatIf.capacity[k] = Math.round(n(v, 0, 1000, 0)); }
   if (w.volume != null && Number.isFinite(Number(w.volume))) out.whatIf.volume = n(w.volume, 1, 1000, 100);
   for (const [k, v] of Object.entries(obj(w.hours))) { if (!KEY.test(k)) continue; out.whatIf.hours[k] = v === null ? null : cleanHours(obj(v)); }
@@ -101,10 +110,15 @@ export function buildRuns(model: SimModel, s: SimScenario): { model: SimModel; b
   const ids = new Set(m.flows.map((f) => f.id));
   const hours = Object.fromEntries(Object.entries(s.hours).filter(([k]) => keys.has(k)));
   const books = Object.fromEntries(Object.entries(s.books).filter(([k]) => ids.has(Number(k))).map(([k, b]) => [Number(k), b]));
+  const shifts = Object.fromEntries(Object.entries(s.shifts ?? {}).filter(([k]) => keys.has(k)));
+  const closed = Object.fromEntries(Object.entries(s.closed ?? {}).filter(([k, v]) => keys.has(k) && v.length));
+  const leaveAfter = Object.fromEntries(Object.entries(s.leaveAfter ?? {}).filter(([k, v]) => ids.has(Number(k)) && v > 0).map(([k, v]) => [Number(k), v]));
   const base: Partial<SimOptions> = {
     days: s.days, runs: s.runs, variability: s.variability, weekendShare: s.weekend / 100, walkMinutes: s.walk, volumeFactor: s.volume / 100, seed: 1,
     ...(m.porter ? { capacity: { porter: s.porters } } : {}),
     ...(Object.keys(hours).length ? { hours } : {}), ...(Object.keys(books).length ? { books } : {}),
+    // Wave 28: only when set, so an older scenario runs exactly as before.
+    ...(Object.keys(shifts).length ? { shifts } : {}), ...(Object.keys(closed).length ? { closed } : {}), ...(Object.keys(leaveAfter).length ? { leaveAfter } : {}),
   };
   if (!whatIfChanges(model, s).length) return { model: m, base, whatIf: null };
   const wHours: Record<string, OpeningHours> = { ...hours };

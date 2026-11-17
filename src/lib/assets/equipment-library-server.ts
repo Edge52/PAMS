@@ -28,7 +28,9 @@ export async function libraryFor(devices: { id: number; typeCode: string; manufa
       const e = libraryEntry(d.typeCode, m?.lib ?? null, m?.site ?? null);
       const glb = m?.lib?.glbUrl ?? null;
       if (!e && !glb) { library[key] = null as unknown as TwinLibrary; continue; }
-      library[key] = { ...(e ?? { label: null, zones: [], connections: [], fringe: null, custom: false }), glb, model: m ? `${m.manufacturer} ${m.model}` : null };
+      const l = m?.lib;
+      const credit = glb && l?.glbLicence && l.glbCredit ? { licence: l.glbLicence, credit: l.glbCredit, source: l.glbSource ?? "" } : null;
+      library[key] = { ...(e ?? { label: null, zones: [], connections: [], fringe: null, custom: false }), glb, model: m ? `${m.manufacturer} ${m.model}` : null, credit };
     }
     if (library[key]) keyOf.set(d.id, key);
   }

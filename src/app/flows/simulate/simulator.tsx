@@ -2,16 +2,17 @@
 /**
  * The queue simulation page's controls and results (wave 14, B3; wave 15 extras). Runs in a Web Worker (falls back to
  * the page when workers can't start); the baseline and an optional what-if, side by side. All settings live in one
- * SimScenario so a saved scenario loads in one step.
+ * SimScenario so a saved scenario loads in one step. Wave 28: staff by hour, closed hours, leaving unseen, and waits by
+ * hour of the day.
  */
 import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui";
 import { buildRuns, cleanScenario, defaultScenario, hoursLabel, RUN_CHOICES, whatIfChanges, type SimScenario } from "@/lib/flows/scenarios";
-import { fmtMinutes, simulate, UTIL_FLAG, WAIT_FLAG, type SimModel, type SimSummary } from "@/lib/flows/simulate";
+import { closedLabel, fmtMinutes, simulate, UTIL_FLAG, WAIT_FLAG, type SimModel, type SimSummary } from "@/lib/flows/simulate";
 import { withStaff } from "@/lib/flows/simulate-model";
 import type { SimReply, SimRequest } from "@/lib/flows/simulate.worker";
 import { deleteScenarioAction, saveScenarioAction, type SavedScenario } from "./actions";
-import { BooksEditor, HoursEditor, MovesEditor, StaffEditor } from "./extras";
+import { BooksEditor, ClosedEditor, HoursEditor, LeaveEditor, MovesEditor, ShiftsEditor, StaffEditor } from "./extras";
 
 const KIND_LABEL = { room: "Rooms", bed: "Beds", scanner: "Scanners", porter: "Porters", lift: "Lifts", staff: "Staff" } as const;
 const pct = (u: number) => `${Math.round(u * 100)} %`;
@@ -33,6 +34,25 @@ function HourChart({ base, what, queue }: { base: number[]; what?: number[]; que
       <line x1={L} x2={W} y1={y(UTIL_FLAG)} y2={y(UTIL_FLAG)} stroke="var(--color-danger)" strokeDasharray="3 3" />
       {base.map((v, h) => <rect key={h} x={L + h * bw + 1} y={y(v)} width={bw - 2} height={Math.max(0, H - B - y(v))} fill={v > UTIL_FLAG ? "var(--color-danger)" : "var(--color-info)"} opacity={0.75}><title>{`${hh(h)}: ${pct(v)} busy, ${queue[h].toFixed(1)} waiting on average`}</title></rect>)}
       {queue.some((x) => x > 0.05) && <polyline points={queue.map((v, h) => `${L + h * bw + bw / 2},${T + (1 - v / qmax) * (H - T - B)}`).join(" ")} fill="none" stroke="var(--color-warn)" strokeWidth={1.5} />}
+      {what && <polyline points={what.map((v, h) => `${L + h * bw + bw / 2},${y(v)}`).join(" ")} fill="none" stroke="var(--color-ok)" strokeWidth={2} />}
+      {[0, 6, 12, 18].map((h) => <text key={h} x={L + h * bw + bw / 2} y={H - 4} fontSize={9} textAnchor="middle" fill="var(--color-muted)">{hh(h)}</text>)}
+    </svg>
+  );
+}
+
+/** Average wait (minutes) by hour of the day (wave 28): bars for the baseline, a line for the what-if. */
+export function WaitChart({ base, what, label, count }: { base: number[]; what?: number[]; label: string; count?: number[] }) {
+  const W = 480, H = 110, L = 34, B = 18, T = 6, bw = (W - L) / 24;
+  const top = Math.max(10, ...base, ...(what ?? []));
+  const step = top > 240 ? 120 : top > 120 ? 60 : top > 40 ? 20 : 5;
+  const max = Math.ceil(top / step) * step;
+  const y = (v: number) => T + (1 - v / max) * (H - T - B);
+  const ticks = Array.from({ length: Math.floor(max / step) + 1 }, (_, i) => i * step).filter((_, i, a) => a.length <= 5 || i % 2 === 0);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-xl" role="img" aria-label={`${label}. Longest: ${fmtMinutes(Math.max(...base))} for patients arriving at ${hh(base.indexOf(Math.max(...base)))}.`}>
+      {ticks.map((v) => <g key={v}><line x1={L} x2={W} y1={y(v)} y2={y(v)} stroke="var(--color-line)" /><text x={L - 4} y={y(v) + 3} fontSize={9} textAnchor="end" fill="var(--color-muted)">{v} min</text></g>)}
+      {base.map((v, h) => <rect key={h} x={L + h * bw + 1} y={y(v)} width={bw - 2} height={Math.max(0, H - B - y(v))} fill={v > WAIT_FLAG ? "var(--color-warn)" : "var(--color-info)"} opacity={0.75}>
+        <title>{`${hh(h)}: ${fmtMinutes(v)} average wait${count ? `, ${count[h].toFixed(1)} patients a day` : ""}`}</title></rect>)}
       {what && <polyline points={what.map((v, h) => `${L + h * bw + bw / 2},${y(v)}`).join(" ")} fill="none" stroke="var(--color-ok)" strokeWidth={2} />}
       {[0, 6, 12, 18].map((h) => <text key={h} x={L + h * bw + bw / 2} y={H - 4} fontSize={9} textAnchor="middle" fill="var(--color-muted)">{hh(h)}</text>)}
     </svg>
@@ -95,6 +115,7 @@ export function Simulator({ model, porterDefault, facilityId, floors, scenarios:
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ base: SimSummary; whatIf: SimSummary | null; settings: SimScenario } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [openFlow, setOpenFlow] = useState<number | null>(null);
   const worker = useRef<Worker | null>(null);
   const set = (f: (x: SimScenario) => SimScenario) => setS(f);
 
@@ -135,6 +156,7 @@ export function Simulator({ model, porterDefault, facilityId, floors, scenarios:
     return Number(!!ry?.flag) - Number(!!rx?.flag) || (ry?.utilisation.mean ?? -1) - (rx?.utilisation.mean ?? -1);
   }) : effective.resources;
   const stale = result && JSON.stringify(result.settings) !== JSON.stringify(s);
+  const leaving = !!result && (Object.keys(result.settings.leaveAfter).length > 0 || !!b?.flows.some((f) => f.left.mean > 0));
 
   return (
     <div className="space-y-5">
@@ -157,6 +179,9 @@ export function Simulator({ model, porterDefault, facilityId, floors, scenarios:
           <HoursEditor model={effective} s={s} set={set} />
           <BooksEditor model={model} s={s} set={set} />
           <MovesEditor model={model} s={s} set={set} floors={floors} />
+          <ShiftsEditor model={effective} s={s} set={set} />
+          <ClosedEditor model={effective} s={s} set={set} />
+          <LeaveEditor model={model} s={s} set={set} />
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <Button type="button" onClick={run} disabled={!!busy}>{busy ? `Running ${busy.done} of ${busy.of}…` : result ? "Run again" : "Run the simulation"}</Button>
@@ -183,12 +208,12 @@ export function Simulator({ model, porterDefault, facilityId, floors, scenarios:
           <tbody>{sorted.map((res) => {
             const r = b?.resources.find((x) => x.key === res.key), x = w?.resources.find((y) => y.key === res.key);
             const have = res.key === "porter" ? s.porters : res.capacity;
-            const hrs = s.hours[res.key];
+            const hrs = s.hours[res.key], shift = s.shifts[res.key], shut = s.closed[res.key];
             return [
               <tr key={res.key} className={`border-t border-line align-top ${r?.flag ? "bg-danger-soft/40" : ""}`}>
                 <td className="px-3 py-1.5">{r ? <button type="button" onClick={() => setOpen(open === res.key ? null : res.key)} aria-expanded={open === res.key} className="text-left text-primary hover:underline">{res.label}</button> : res.label}
-                  <span className="block text-[11px] text-muted">{KIND_LABEL[res.kind]}{have === 0 ? " · none found, so not limited" : ""}{hrs && hrs.close > hrs.open && !(hrs.open === 0 && hrs.close === 24 && hrs.weekends) ? ` · open ${hoursLabel(hrs)}` : ""}</span></td>
-                <td className="px-2 text-right">{have}</td>
+                  <span className="block text-[11px] text-muted">{KIND_LABEL[res.kind]}{have === 0 ? " · none found, so not limited" : ""}{hrs && hrs.close > hrs.open && !(hrs.open === 0 && hrs.close === 24 && hrs.weekends) ? ` · open ${hoursLabel(hrs)}` : ""}{shift ? " · by hour" : ""}{shut?.length ? ` · closed ${closedLabel(shut)}` : ""}</span></td>
+                <td className="px-2 text-right">{shift ? (Math.min(...shift) === Math.max(...shift) ? shift[0] : `${Math.min(...shift)}–${Math.max(...shift)}`) : have}</td>
                 <td className="px-2"><input aria-label={`What-if ${res.label}`} inputMode="numeric" className="h-8 w-16 rounded border border-line bg-surface px-2 text-sm" value={s.whatIf.capacity[res.key] ?? ""} placeholder={String(have)} onChange={(e) => setCap(res.key, e.target.value)} /></td>
                 {b && (r ? <>
                   <td className={`px-2 text-right ${r.utilisation.mean > UTIL_FLAG ? "font-semibold text-danger" : ""}`}>{r.capacity ? <Range b={r.utilisation} fmt={pct} /> : "—"}</td>
@@ -205,7 +230,11 @@ export function Simulator({ model, porterDefault, facilityId, floors, scenarios:
               open === res.key && r && (
                 <tr key={`${res.key}-chart`} className="border-t border-line/50"><td colSpan={w ? 10 : 8} className="px-3 py-2">
                   <HourChart base={r.hourly} what={x?.hourly} queue={r.queueHourly} />
-                  <p className="text-xs text-muted">Bars: share busy each hour of the day (red above {pct(UTIL_FLAG)}){hrs ? ", of the open time" : ""}. Orange line: patients waiting{x ? "; green line: the what-if" : ""}. Hover a bar for the figures.</p>
+                  <p className="text-xs text-muted">Bars: share busy each hour of the day (red above {pct(UTIL_FLAG)}){hrs || shut || shift ? ", of the time open and the units on duty" : ""}. Orange line: patients waiting{x ? "; green line: the what-if" : ""}. Hover a bar for the figures.</p>
+                  {r.waitHourly.some((v) => v >= 0.5) && <>
+                    <h3 className="mt-2 text-xs font-semibold">Average wait by the hour it began</h3>
+                    <WaitChart label={`Average wait for ${res.label} by hour of the day`} base={r.waitHourly} what={x?.waitHourly} />
+                  </>}
                 </td></tr>
               ),
             ];
@@ -219,11 +248,14 @@ export function Simulator({ model, porterDefault, facilityId, floors, scenarios:
             <thead className="bg-sunken text-left text-xs text-muted"><tr>
               <th className="px-3 py-2">Pathway</th><th className="px-2 text-right">Patients a day (set)</th><th className="px-2 text-right">Finished in the period</th>
               <th className="px-2 text-right">Time in the pathway</th><th className="px-2 text-right">1 in 10 take over</th><th className="px-2 text-right">Of which waiting</th>
-              {w && <><th className="px-2 text-right">What-if time</th><th className="px-2 text-right">What-if waiting</th></>}
+              {leaving && <th className="px-2 text-right">Left unseen</th>}
+              {w && <><th className="px-2 text-right">What-if time</th><th className="px-2 text-right">What-if waiting</th>{leaving && <th className="px-2 text-right">What-if left unseen</th>}</>}
+              <th className="px-2"><span className="sr-only">Waits by hour</span></th>
             </tr></thead>
-            <tbody>{b.flows.map((f) => { const x = w?.flows.find((y) => y.id === f.id); const booked = result?.settings.books[String(f.id)]; return (
+            <tbody>{b.flows.map((f) => { const x = w?.flows.find((y) => y.id === f.id); const booked = result?.settings.books[String(f.id)]; const limit = result?.settings.leaveAfter[String(f.id)]; return [
               <tr key={f.id} className="border-t border-line">
-                <td className="px-3 py-1.5"><a href={`/flows/${f.id}`} className="text-primary hover:underline">{f.name}</a>{booked && <span className="block text-[11px] text-muted">Booked {hoursLabel({ open: booked.from, close: booked.to, weekends: true })}{booked.noShow ? `, ${Math.round(booked.noShow * 100)} % no-shows` : ""}</span>}</td>
+                <td className="px-3 py-1.5"><a href={`/flows/${f.id}`} className="text-primary hover:underline">{f.name}</a>{booked && <span className="block text-[11px] text-muted">Booked {hoursLabel({ open: booked.from, close: booked.to, weekends: true })}{booked.noShow ? `, ${Math.round(booked.noShow * 100)} % no-shows` : ""}</span>}
+                  {limit && <span className="block text-[11px] text-muted">Leave unseen after {fmtMinutes(limit)}</span>}</td>
                 <td className="px-2 text-right">{f.perDay}</td>
                 <td className="px-2 text-right">{Math.round(f.finished.mean)}</td>
                 {f.finished.mean < 0.5 ? <td colSpan={3} className="px-2 text-right text-xs text-muted">All still inside at the end{b.options.days === 1 ? ": long stays need a week" : ""}</td> : <>
@@ -231,12 +263,23 @@ export function Simulator({ model, porterDefault, facilityId, floors, scenarios:
                   <td className="px-2 text-right">{fmtMinutes(f.p90Time.mean)}</td>
                   <td className="px-2 text-right"><Range b={f.meanWait} fmt={fmtMinutes} /></td>
                 </>}
+                {leaving && <td className={`px-2 text-right ${f.left.mean >= 0.5 ? "font-semibold text-danger" : ""}`}>{limit || f.left.mean > 0 ? <Range b={f.left} fmt={(v) => String(Math.round(v))} /> : "—"}</td>}
                 {x && (x.finished.mean < 0.5 ? <td colSpan={2} className="px-2 text-right text-xs text-muted">Still inside</td>
                   : <><td className="px-2 text-right">{fmtMinutes(x.meanTime.mean)}</td><td className="px-2 text-right text-ok">{fmtMinutes(x.meanWait.mean)}</td></>)}
-              </tr>
-            ); })}</tbody>
+                {x && leaving && <td className="px-2 text-right">{Math.round(x.left.mean)}</td>}
+                <td className="px-2 text-right"><button type="button" className="min-h-6 text-sm text-primary hover:underline" aria-expanded={openFlow === f.id} onClick={() => setOpenFlow(openFlow === f.id ? null : f.id)}>Waits by hour</button></td>
+              </tr>,
+              openFlow === f.id && (
+                <tr key={`${f.id}-hours`} className="border-t border-line/50"><td colSpan={7 + (leaving ? 1 : 0) + (w ? 2 + (leaving ? 1 : 0) : 0)} className="px-3 py-2">
+                  {f.waitByHour.some((v) => v >= 0.5) ? <>
+                    <WaitChart label={`Average wait in ${f.name} by hour of arrival`} base={f.waitByHour} what={x?.waitByHour} count={f.patientsByHour} />
+                    <p className="text-xs text-muted">Average time each patient spent waiting in all, by the hour they arrived (orange above {WAIT_FLAG} minutes){x ? "; green line: the what-if" : ""}{limit ? ". Patients who left unseen count with the time they waited" : ""}. Hover a bar for the figures.</p>
+                  </> : <p className="text-sm text-muted">Nobody in this pathway waited, at any hour.</p>}
+                </td></tr>
+              ),
+            ]; })}</tbody>
           </table>
-          <p className="px-3 py-2 text-xs text-muted">Patients still inside at the end of the period (long stays) aren&apos;t counted as finished.</p>
+          <p className="px-3 py-2 text-xs text-muted">Patients still inside at the end of the period (long stays) aren&apos;t counted as finished{leaving ? "; nor are those who left unseen" : ""}.</p>
         </section>
       )}
     </div>

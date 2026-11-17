@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FloorGeometry, TwinData } from "../types";
 import type { RenderOptions, RenderStudio } from "./studio";
 import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server";
+import { floorModelFiles, mergeCredits, type Credit } from "./credits";
 
 /** Render settings as saved with a view (wave 7). */
 export type RenderSettings = {
@@ -74,6 +75,8 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
       .catch((e: Error) => { if (!stop) setError(`The BOQ couldn't be loaded (${e.message}).`); });
     return () => { stop = true; };
   }, [equipment, boqId, plan, data.facility.id]);
+  // Wave 28: credits of the equipment model files the render shows (none in "planned" mode, which draws no register).
+  const credits = useMemo(() => (equipment === "planned" || floorId == null ? [] : floorModelFiles(data, floorId).credits), [data, floorId, equipment]);
   const planned = useMemo(() => {
     if (equipment === "installed" || !plan || plan.boq.id !== boqId) return undefined;
     return plan.departments.map((d) => ({ departmentId: d.departmentId, items: d.items.map((it) => ({ code: it.code, n: equipment === "planned" ? it.planned : it.missing })).filter((it) => it.n > 0) }));
@@ -188,7 +191,9 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
       return true;
     });
     if (!ok || !pages.length) return;
-    const html = floorBookHtml(data.facility.name, pages, { logo: data.facility.logo ?? null, color: data.facility.brandColor ?? null });
+    // Credits of the model files on every floor in the book (wave 28).
+    const bookCredits = equipment === "planned" ? [] : mergeCredits(floors.map((f) => floorModelFiles(data, f.id).credits));
+    const html = floorBookHtml(data.facility.name, pages, { logo: data.facility.logo ?? null, color: data.facility.brandColor ?? null }, bookCredits);
     const win = window.open(URL.createObjectURL(new Blob([html], { type: "text/html" })), "_blank");
     if (!win) setError("Your browser blocked the floor book window. Allow pop-ups for this site and try again.");
   }
@@ -284,6 +289,16 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
               {canSaveDocs && <button type="button" onClick={doSaveDoc} disabled={!!busy} className="rounded-md border border-line px-3 py-1.5 text-sm font-semibold hover:border-primary disabled:opacity-50">Save to the hospital&apos;s documents</button>}
             </div>
             <p className="text-xs text-muted">The floor book renders every floor with these settings (whole floors, up to 4K) and opens it ready to print or save as PDF.</p>
+            {credits.length > 0 && (
+              <section aria-label="3D model credits" className="rounded-md border border-line p-2 text-xs">
+                <h3 className="font-semibold">3D model credits</h3>
+                <p className="text-muted">Model files from the equipment 3D library drawn on this floor. The credits are also printed in the title block and the floor book.</p>
+                <ul className="mt-1 space-y-0.5">{credits.map((c) => (
+                  <li key={`${c.model}|${c.source ?? c.line}`}><span className="font-semibold">{c.model}</span>: {c.line}
+                    {c.source && <> · <a href={c.source} target="_blank" rel="noopener noreferrer nofollow" className="inline-block min-h-6 break-all text-primary hover:underline">{c.source}</a></>}</li>
+                ))}</ul>
+              </section>
+            )}
             {onSaveView && (
               <div className="border-t border-line pt-3">
                 {saveName == null ? (
@@ -309,7 +324,7 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /** A printable floor book: cover, then one landscape page per floor with its departments. */
-export function floorBookHtml(facility: string, pages: { name: string; img: string; depts: string[] }[], brand: { logo?: string | null; color?: string | null } = {}): string {
+export function floorBookHtml(facility: string, pages: { name: string; img: string; depts: string[] }[], brand: { logo?: string | null; color?: string | null } = {}, credits: Credit[] = []): string {
   const accent = brand.color && /^#[0-9a-f]{6}$/i.test(brand.color) ? brand.color : "#c62f2f";
   const logo = brand.logo && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(brand.logo) ? brand.logo : null;
   const date = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
@@ -330,6 +345,7 @@ body { margin: 0; font-family: "Segoe UI", Inter, "Helvetica Neue", Arial, sans-
 .depts { position: absolute; top: 6mm; right: 10mm; max-width: 140mm; text-align: right; font-size: 9pt; color: #5b6670; }
 .img { position: absolute; top: 20mm; left: 8mm; right: 8mm; bottom: 8mm; display: flex; align-items: center; justify-content: center; }
 .img img { max-width: 100%; max-height: 100%; }
+.credits { margin-top: 8mm; font-size: 9pt; color: #5b6670; } .credits h2 { font-size: 10pt; margin: 0 0 1mm; color: #3b4650; } .credits ul { margin: 0; padding-left: 5mm; }
 .tools { text-align: center; margin: 6mm; }
 .tools button { font: inherit; font-weight: 600; padding: 2mm 6mm; border-radius: 2mm; border: 0; background: #0a84c1; color: #fff; cursor: pointer; }
 @media print { body { background: #fff; } .page { margin: 0; box-shadow: none; } .tools { display: none; } }
@@ -337,7 +353,8 @@ body { margin: 0; font-family: "Segoe UI", Inter, "Helvetica Neue", Arial, sans-
 <div class="tools"><button onclick="window.print()">Print or save as PDF</button></div>
 <section class="page cover">${logo ? `<img class="logo" src="${logo}" alt="">` : ""}<div class="bar"></div><h1>${esc(facility)}</h1><p>Floor book · ${esc(date)}</p>
 <p>Made from the drawings and the equipment register. Furniture is illustrative.</p>
-<ol>${pages.map((p) => `<li>${esc(p.name)}</li>`).join("")}</ol></section>
+<ol>${pages.map((p) => `<li>${esc(p.name)}</li>`).join("")}</ol>
+${credits.length ? `<div class="credits"><h2>3D model credits</h2><ul>${credits.map((c) => `<li>${esc(c.model)}: ${esc(c.line)}${c.source ? ` · ${esc(c.source)}` : ""}</li>`).join("")}</ul></div>` : ""}</section>
 ${pages.map((p) => `<section class="page"><div class="head">${esc(p.name.toUpperCase())}</div>
 <div class="depts">${p.depts.map(esc).join(" · ")}</div><div class="img"><img src="${p.img}" alt="${esc(p.name)}"></div>${logo ? `<img class="plogo" src="${logo}" alt="">` : ""}</section>`).join("\n")}
 </body></html>`;

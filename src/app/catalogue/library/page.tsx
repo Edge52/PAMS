@@ -2,7 +2,7 @@ import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { deviceModels, deviceTypes, equipmentModels, siteRequirements } from "@/db/schema";
-import { Badge, Button, Field, PageHeader, Panel, Table, Td, Textarea, Th, THead } from "@/components/ui";
+import { Badge, Button, Field, Input, PageHeader, Panel, Table, Td, Textarea, Th, THead } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { Notice } from "@/components/assets/bits";
 import { can } from "@/lib/auth/permissions";
@@ -10,6 +10,8 @@ import { requirePermission } from "@/lib/auth/session";
 import { countSiteData, siteDataState, SITE_DATA_LABELS } from "@/lib/assets/site-fit";
 import { connectionsText, FIRST_SET, GENERIC, genericFor, LIBRARY_NOTE, ZONE_KINDS, ZONE_SIDES, CONN_KINDS, zonesText } from "@/lib/assets/equipment-library";
 import { deviceModel } from "@/components/assets/twin/render/device-models";
+import { creditLine, LICENCE_SUGGESTIONS, MAX_GLB_BYTES } from "@/lib/assets/glb-file";
+import { formatNumber } from "@/lib/format";
 import { removeGlbAction, saveLibraryAction, uploadGlbAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +30,8 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
   const me = await requirePermission("assets.view");
   const sp = await searchParams;
   const canEdit = can(me.role, "catalogue.edit");
+  // Wave 28: model files only by an administrator, who answers for the licence.
+  const canUpload = can(me.role, "settings.manage");
   const rows = await db.select({ m: deviceModels, typeName: deviceTypes.name, typeCode: deviceTypes.code, lib: equipmentModels, site: siteRequirements }).from(deviceModels)
     .innerJoin(deviceTypes, eq(deviceTypes.id, deviceModels.deviceTypeId))
     .leftJoin(equipmentModels, eq(equipmentModels.modelId, deviceModels.id)).leftJoin(siteRequirements, eq(siteRequirements.modelId, deviceModels.id))
@@ -62,7 +66,11 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
               <tr key={r.m.id} id={`model-${r.m.id}`} className={editId === r.m.id ? "bg-primary-soft/40" : undefined}>
                 <Td><Link href={`/catalogue/models/${r.m.id}`} className="font-semibold text-primary hover:underline">{r.m.manufacturer} {r.m.model}</Link></Td>
                 <Td><span className="text-sm">{r.typeName}</span> <span className="font-mono text-xs text-muted">{r.typeCode}</span></Td>
-                <Td>{r.lib?.glbUrl ? <Badge tone="ok">Own file</Badge> : <span className="text-sm text-muted">Built-in {SHAPE[deviceModel(r.typeCode)] ?? "shape"}</span>}</Td>
+                <Td>{r.lib?.glbUrl ? <>
+                  <Badge tone="ok">Own file</Badge>
+                  {r.lib.glbCredit && r.lib.glbLicence ? <span className="mt-0.5 block max-w-56 text-xs text-muted">{creditLine({ credit: r.lib.glbCredit, licence: r.lib.glbLicence, source: r.lib.glbSource ?? "" })}</span>
+                    : <span className="mt-0.5 block text-xs text-warn">No licence recorded: upload it again with one</span>}
+                </> : <span className="text-sm text-muted">Built-in {SHAPE[deviceModel(r.typeCode)] ?? "shape"}</span>}</Td>
                 <Td><span className="text-sm">{zones.length ? zones.map((z) => `${z.name} ${z.depth} m`).join(", ") : "—"}</span>{!r.lib?.zones && zones.length > 0 && <span className="block text-xs text-muted">typical</span>}
                   {r.site?.fringeAlongM ? <span className="block text-xs text-danger">Fringe field {r.site.fringeAlongM} × {r.site.fringeAcrossM} m</span> : null}</Td>
                 <Td><span className="text-sm">{conns.length ? conns.map((c) => c.label).join(", ") : "—"}</span></Td>
@@ -97,17 +105,42 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
               <div>
                 <h3 className="mb-1 text-sm font-semibold">Own 3D file</h3>
                 {editing.lib?.glbUrl ? (
-                  <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
-                    <span>{editing.lib.glbName ?? "model.glb"}</span>
-                    <form action={removeGlbAction}><input type="hidden" name="modelId" value={editing.m.id} /><button className="text-danger hover:underline">Remove</button></form>
+                  <div className="mb-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span>{editing.lib.glbName ?? "model.glb"}{editing.lib.glbBytes ? <span className="text-muted"> · {formatNumber(Math.round(editing.lib.glbBytes / 1024))} KB</span> : null}</span>
+                      {canUpload && <form action={removeGlbAction}><input type="hidden" name="modelId" value={editing.m.id} /><button className="min-h-6 text-danger hover:underline">Remove</button></form>}
+                    </div>
+                    {editing.lib.glbCredit ? (
+                      <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 text-xs">
+                        <dt className="text-muted">Licence</dt><dd>{editing.lib.glbLicence}</dd>
+                        <dt className="text-muted">Credit</dt><dd>{editing.lib.glbCredit}</dd>
+                        <dt className="text-muted">Source</dt><dd className="break-all">{editing.lib.glbSource ? <a href={editing.lib.glbSource} rel="noopener noreferrer nofollow" target="_blank" className="text-primary hover:underline">{editing.lib.glbSource}</a> : "—"}</dd>
+                      </dl>
+                    ) : <p className="mt-1 text-xs text-warn">No licence or credit recorded for this file. Upload it again with them.</p>}
                   </div>
                 ) : <p className="mb-2 text-sm text-muted">None: the 3D view draws the built-in {SHAPE[deviceModel(editing.typeCode)] ?? "shape"}.</p>}
-                <ActionForm action={uploadGlbAction}>
-                  <input type="hidden" name="modelId" value={editing.m.id} />
-                  <input type="file" name="file" accept=".glb,model/gltf-binary" required className="block w-full text-sm" />
-                  <p className="mt-1 text-xs text-muted">Binary glTF (.glb), up to 25 MB, from the maker&apos;s BIM object, SketchUp or Blender. It is scaled to the model&apos;s size; colours are kept, textures are not. Use only files you have the right to use.</p>
-                  <Button variant="secondary" className="mt-2">Upload</Button>
-                </ActionForm>
+                {canUpload ? (
+                  <ActionForm action={uploadGlbAction}>
+                    <input type="hidden" name="modelId" value={editing.m.id} />
+                    <Field label="Model file (.glb)">
+                      <input type="file" name="file" accept=".glb,model/gltf-binary" required className="block min-h-6 w-full text-sm" />
+                    </Field>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <Field label="Licence" hint="The licence you may use it under.">
+                        <Input name="licence" required maxLength={120} list="glb-licences" placeholder="e.g. CC BY 4.0" defaultValue={editing.lib?.glbLicence ?? ""} />
+                      </Field>
+                      <Field label="Credit" hint="As the licence asks, shown with renders.">
+                        <Input name="credit" required maxLength={200} placeholder="e.g. Model by Jane Smith" defaultValue={editing.lib?.glbCredit ?? ""} />
+                      </Field>
+                    </div>
+                    <Field label="Source address" className="mt-2" hint="Where the model came from (the maker's BIM page, the model library).">
+                      <Input name="source" type="url" required maxLength={500} placeholder="https://" defaultValue={editing.lib?.glbSource ?? ""} />
+                    </Field>
+                    <datalist id="glb-licences">{LICENCE_SUGGESTIONS.map((l) => <option key={l} value={l} />)}</datalist>
+                    <p className="mt-1 text-xs text-muted">Binary glTF 2.0 (.glb), up to {MAX_GLB_BYTES / 1024 / 1024} MB, with everything inside the one file and no Draco compression: from the maker&apos;s BIM object, SketchUp or Blender. It is scaled to the model&apos;s real size; colours are kept, textures are not. Use only files you have the right to use.</p>
+                    <Button variant="secondary" className="mt-2">Upload</Button>
+                  </ActionForm>
+                ) : <p className="text-xs text-muted">Only an administrator can upload or remove model files, with their licence and credit.</p>}
               </div>
             </div>
           </Panel>

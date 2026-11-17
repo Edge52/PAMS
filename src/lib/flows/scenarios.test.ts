@@ -53,3 +53,34 @@ describe("simulation scenarios (wave 15)", () => {
     expect(hoursLabel({ open: 0, close: 24, weekends: true })).toBe("00:00–24:00");
   });
 });
+
+describe("simulation scenarios: shifts (wave 28)", () => {
+  it("cleans shifts, closed hours and leave-unseen limits", () => {
+    const s = cleanScenario({
+      shifts: { porter: Array(24).fill(2.4), "staff:1": [1, 2], "bad key!": Array(24).fill(1) },
+      closed: { "scan:mri": [23, 0, 1, 1, 40], porter: [] },
+      leaveAfter: { 7: 90.4, x: 30, 8: 0, 9: 99999 },
+    }, 4);
+    expect(s.shifts).toEqual({ porter: Array(24).fill(2) });
+    expect(s.closed).toEqual({ "scan:mri": [0, 1, 23] });
+    expect(s.leaveAfter).toEqual({ 7: 90, 9: 1440 });
+    // A scenario saved before wave 28 gets empty settings.
+    expect(cleanScenario({ days: 1 }, 4)).toMatchObject({ shifts: {}, closed: {}, leaveAfter: {} });
+  });
+
+  it("passes them to the runs only when set", () => {
+    const empty = buildRuns(model, defaultScenario(4));
+    expect(empty.base).not.toHaveProperty("shifts");
+    expect(empty.base).not.toHaveProperty("closed");
+    expect(empty.base).not.toHaveProperty("leaveAfter");
+    const s = { ...defaultScenario(4), shifts: { porter: Array(24).fill(1), gone: Array(24).fill(1) }, closed: { "scan:mri": [0, 1] }, leaveAfter: { 7: 60, 99: 5 } };
+    const r = buildRuns(model, s);
+    expect(r.base.shifts).toEqual({ porter: Array(24).fill(1) });
+    expect(r.base.closed).toEqual({ "scan:mri": [0, 1] });
+    expect(r.base.leaveAfter).toEqual({ 7: 60 });
+    expect(r.whatIf).toBeNull();
+    // The what-if carries them too.
+    const w = buildRuns(model, { ...s, whatIf: { ...s.whatIf, capacity: { "scan:mri": 2 } } });
+    expect(w.whatIf?.closed).toEqual({ "scan:mri": [0, 1] });
+  });
+});

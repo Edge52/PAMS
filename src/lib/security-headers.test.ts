@@ -22,4 +22,8 @@ describe("security headers (wave 25)", () => {
     expect(fixedHeaders(true).map(([k]) => k)).toContain("Strict-Transport-Security");
     expect(Object.fromEntries(fixedHeaders(false))["X-Frame-Options"]).toBe("DENY");
   });
+  it("loads equipment model files only from the app itself (wave 28)", () => {
+    // The 3D view fetches .glb files from /files/equipment_model/… with fetch: connect-src must stay the app's own.
+    expect(contentPolicy("n").split("; ").find((d) => d.startsWith("connect-src"))).toBe("connect-src 'self'");
+  });
 });

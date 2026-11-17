@@ -1,7 +1,9 @@
 "use client";
-/** Mini-map and scale bar for the 3D view (wave 22b). The map shows the floor in plan with the point looked at; a click moves there. */
+/** Mini-map and scale bar for the 3D view (wave 22b). The map shows the floor in plan with the point looked at; a click moves there.
+ *  Wave 28: a north arrow when the building's north is set. */
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { TwinFloor, TwinRoom } from "./types";
+import { MapNorth } from "./hud-compass";
 
 type ViewState = { metresPerPixel: number; target: { x: number; z: number }; camera: { x: number; z: number }; floorId: number | null };
 type SceneLike = { viewState(): ViewState; lookAt(x: number, z: number): void };
@@ -71,8 +73,11 @@ export function HudMap({ scene, ready, floors, rooms, light }: { scene: RefObjec
   };
   return (
     <div className="twin-card pointer-events-auto p-2!" style={{ width: W + 16 }}>
-      <canvas ref={canvas} onClick={go} style={{ width: W, height: H, cursor: "crosshair", display: "block" }} role="img"
-        aria-label={`Map of ${floor.name}. The dot is the point the 3D view looks at. Click to move there.`} />
+      <div className="relative">
+        <canvas ref={canvas} onClick={go} style={{ width: W, height: H, cursor: "crosshair", display: "block" }} role="img"
+          aria-label={`Map of ${floor.name}. The dot is the point the 3D view looks at. Click to move there.`} />
+        {floor.northDeg != null && <MapNorth northDeg={floor.northDeg} light={light} />}
+      </div>
       <div className="mt-1.5 flex items-end justify-between gap-2 text-[11px] text-[#8fb6cc]">
         <span className="truncate">{floor.name}</span>
         {bar && bar.px > 12 && bar.px < W && (

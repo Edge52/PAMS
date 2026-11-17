@@ -183,7 +183,10 @@ export const buildings = pgTable("buildings", {
   facilityId: integer("facility_id").notNull().references(() => facilities.id, { onDelete: "cascade" }),
   code: varchar("code", { length: 32 }).notNull(),
   name: text("name").notNull(),
-}, (t) => [uniqueIndex("buildings_facility_code_uq").on(t.facilityId, t.code)]);
+  /** Wave 28: where north is on the plans, degrees clockwise from the top of the plan (0–360); null = not known. */
+  northDeg: real("north_deg"),
+}, (t) => [uniqueIndex("buildings_facility_code_uq").on(t.facilityId, t.code),
+  check("buildings_north_check", sql`${t.northDeg} is null or (${t.northDeg} >= 0 and ${t.northDeg} < 360)`)]);
 
 export const floors = pgTable("floors", {
   id: serial("id").primaryKey(),
@@ -1659,11 +1662,16 @@ export const equipmentModels = pgTable("equipment_models", {
   modelId: integer("model_id").primaryKey().references(() => deviceModels.id, { onDelete: "cascade" }),
   glbUrl: text("glb_url"),
   glbName: text("glb_name"),
+  /** Wave 28: the model file's licence, credit line, where it came from and its size; required for every upload. */
+  glbLicence: text("glb_licence"),
+  glbCredit: text("glb_credit"),
+  glbSource: text("glb_source"),
+  glbBytes: integer("glb_bytes"),
   zones: jsonb("zones").$type<{ name: string; kind: "patient" | "staff" | "service" | "safety"; side: "all" | "front" | "back" | "head" | "foot"; depth: number }[]>(),
   connections: jsonb("connections").$type<{ kind: "power" | "data" | "water" | "gas" | "quench" | "drain" | "air"; label: string; along: number; across: number; height: number }[]>(),
   updatedByName: text("updated_by_name"),
   updatedAt: updatedAt(),
-});
+}, (t) => [check("equipment_models_glb_bytes_check", sql`${t.glbBytes} is null or ${t.glbBytes} > 0`)]);
 
 /** Space planning snapshots (wave 17): a hospital's area schedule saved under a name, to compare before and after. */
 export const spaceSnapshots = pgTable("space_snapshots", {
@@ -2126,3 +2134,5 @@ export const trainingAttendees = pgTable("training_attendees", {
 // src/lib/reports/service-cost-calc.ts, src/lib/procurement/supplier-docs.ts.
 /* ── Wave 27: fixes ── */
 // sessions.ip (above) and the short browser label in sessions.user_agent; no new tables.
+/* ── Wave 28: 3D view (north arrow, own model files with licence and credit) ── */
+// No new tables: buildings.north_deg and equipment_models.glb_licence / glb_credit / glb_source / glb_bytes above.
