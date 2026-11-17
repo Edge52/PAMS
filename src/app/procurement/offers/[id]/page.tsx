@@ -19,6 +19,7 @@ import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { pendingRequest } from "@/lib/approvals/server";
 import { ApprovalPanel } from "@/components/approvals/approval-panel";
 import { AwardTimeline } from "@/components/procurement/award-timeline";
+import { supplierExpiryWarning } from "@/lib/procurement/supplier-docs-server";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,8 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
   const mayRecommend = can(me.role, "award.recommend");
   const awardPending = !!(await pendingRequest("AWARD", id));
   const href = `/procurement/offers/${id}`;
+  // Wave 27: expired supplier documents are a warning where the award is recommended (never a block).
+  const docWarning = ["REJECTED", "WITHDRAWN"].includes(offer.status) ? null : await supplierExpiryWarning(supplier.id, supplier.name);
 
   const lines = await db.select({ line: offerLines, dtName: deviceTypes.name, dtCode: deviceTypes.code, boqDept: boqDepartments.label })
     .from(offerLines).innerJoin(deviceTypes, eq(deviceTypes.id, offerLines.deviceTypeId))
@@ -78,6 +81,7 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
 
       {live && validity.tone === "danger" && <Notice tone="danger">This offer {validity.text.toLowerCase()} ({formatDate(offer.validUntil)}). Ask {supplier.name} to extend the validity in writing before awarding.</Notice>}
       {live && validity.tone === "warn" && <Notice tone="warn">{validity.text} ({formatDate(offer.validUntil)}). Award or request an extension soon.</Notice>}
+      {docWarning && <Notice tone="warn">{docWarning} <Link href={`/procurement/suppliers/${supplier.id}`} className="font-semibold underline">Supplier documents</Link></Notice>}
       {failing.length > 0 && (
         <Notice tone="danger">
           {failing.length === 1 ? "One line fails" : `${failing.length} lines fail`} a mandatory specification item and {failing.length === 1 ? "is" : "are"} technically non-responsive:{" "}

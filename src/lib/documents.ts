@@ -10,6 +10,7 @@ import { db } from "@/db";
 import { documents } from "@/db/schema";
 import { requireDocumentEdit } from "./documents-access";
 import { logActivity } from "./server-utils";
+import { isISODate } from "./assets/dates";
 import { ALLOWED_EXTENSIONS_LABEL, fileKind, storeFile } from "./storage";
 
 const ENTITY_TYPES = ["offer", "po", "asset", "spec", "supplier", "project", "delivery", "boq", "rfq", "work_order", "contract", "disposal", "twin_note", "facility", "framework"] as const;
@@ -22,6 +23,10 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
   const entityType = String(formData.get("entityType") ?? "");
   const entityId = Number(formData.get("entityId"));
   const kind = (formData.get("kind") as string) || null;
+  // Wave 27: an optional expiry date (licences, registrations, certificates).
+  const expiresRaw = String(formData.get("expiresOn") ?? "").trim();
+  if (expiresRaw && !isISODate(expiresRaw)) return { error: "The expiry date isn't a valid date." };
+  const expiresOn = expiresRaw || null;
   const returnPath = String(formData.get("returnPath") ?? "/");
   const file = formData.get("file");
   if (!(ENTITY_TYPES as readonly string[]).includes(entityType) || !Number.isInteger(entityId) || entityId <= 0) return { error: "This attachment has no valid target. Reload the page and try again." };
@@ -31,8 +36,8 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
   if (!fileKind(file.name)) return { error: `That file type isn't accepted. Upload ${ALLOWED_EXTENSIONS_LABEL}.` };
 
   const url = await storeFile(`${entityType}/${entityId}`, file.name, new Uint8Array(await file.arrayBuffer()));
-  await db.insert(documents).values({ entityType, entityId, kind, fileName: file.name, sizeBytes: file.size, url });
-  await logActivity(entityType, entityId, "document_added", `Attached ${file.name}`);
+  await db.insert(documents).values({ entityType, entityId, kind, fileName: file.name, sizeBytes: file.size, url, expiresOn });
+  await logActivity(entityType, entityId, "document_added", `Attached ${file.name}${expiresOn ? `, valid until ${expiresOn}` : ""}`);
   if (returnPath.startsWith("/")) revalidatePath(returnPath);
   return { ok: `${file.name} attached.` };
 }

@@ -7,6 +7,7 @@ import type { Role } from "@/lib/auth/permissions";
 import { daysBetween } from "../assets/dates";
 import { maintenanceTypeLabel } from "../assets/maintenance";
 import type { NewNotification } from "./types";
+import { DOC_NOTIFY_DAYS, docReminderDue, docReminderKey, docTypeLabel } from "../procurement/supplier-docs";
 
 export type Alert = { role: Role; facilityId: number | null; n: NewNotification };
 
@@ -233,9 +234,34 @@ export function contractAlerts(rows: ContractRow[], today: string, warnDays = CO
   return out;
 }
 
+/* ── Supplier documents expiring (wave 27): procurement asks for the renewed copy ── */
+
+export type SupplierDocRow = { id: number; supplierId: number; supplierName: string; kind: string | null; fileName: string; expiresOn: string };
+
+/** Once per document and expiry date, `DOC_NOTIFY_DAYS` ahead. Suppliers are shared, so no facility. */
+export function supplierDocAlerts(rows: SupplierDocRow[], today: string, notifyDays = DOC_NOTIFY_DAYS): Alert[] {
+  const out: Alert[] = [];
+  for (const d of rows) {
+    if (!docReminderDue(d.expiresOn, today, notifyDays)) continue;
+    const days = daysBetween(today, d.expiresOn);
+    out.push({
+      role: "PROCUREMENT", facilityId: null,
+      n: {
+        kind: "supplier_doc_expiring",
+        title: `${d.supplierName}: ${docTypeLabel(d.kind)} expires ${inDays(days)}`,
+        body: `${d.fileName} is valid until ${fmt(d.expiresOn)}. Ask ${d.supplierName} for the renewed copy and attach it to the supplier.`,
+        href: `/procurement/suppliers/${d.supplierId}`,
+        dedupeKey: docReminderKey(d.id, d.expiresOn),
+      },
+    });
+  }
+  return out;
+}
+
 export type AlertData = {
   offers: OfferRow[]; rfqs: RfqRow[]; pos: PoRow[]; warranties: WarrantyRow[]; maintenance: MaintenanceRow[]; awards: AwardRow[];
   contracts?: ContractRow[];
+  supplierDocs?: SupplierDocRow[];
 };
 
 export function collectAlerts(data: AlertData, today: string, w: AlertWindows): Alert[] {
@@ -247,6 +273,7 @@ export function collectAlerts(data: AlertData, today: string, w: AlertWindows): 
     ...warrantyAlerts(data.warranties, today, w.warrantyWarnDays),
     ...maintenanceAlerts(data.maintenance, today, w.maintenanceDueDays),
     ...contractAlerts(data.contracts ?? [], today),
+    ...supplierDocAlerts(data.supplierDocs ?? [], today),
   ];
 }
 

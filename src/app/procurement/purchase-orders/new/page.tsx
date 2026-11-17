@@ -12,6 +12,7 @@ import { facilityDepartments } from "@/lib/procurement/server";
 import { requireFacilityAccess, requirePermission, facilityScope } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
 import { createPurchaseOrder } from "../actions";
+import { supplierExpiryWarning } from "@/lib/procurement/supplier-docs-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "New purchase order" };
@@ -67,6 +68,7 @@ export default async function NewPoPage({ searchParams }: { searchParams: Promis
   const depts = await facilityDepartments(project.facilityId);
   const deptOptions = depts.map((d) => ({ value: d.id, label: `${d.name} (${d.code})` }));
   const weeks = offer.deliveryWeeks ?? 12;
+  const docWarning = await supplierExpiryWarning(supplier.id, supplier.name);
 
   return (
     <>
@@ -75,6 +77,7 @@ export default async function NewPoPage({ searchParams }: { searchParams: Promis
       {offer.status !== "AWARDED" && <Notice tone="warn">This offer is not awarded yet. Recommend the award from the offer page; a purchase order can be raised once the award is approved.</Notice>}
       {offer.status === "AWARDED" && !offer.awardApprovedOn && <Notice tone="warn">The award of this offer has no recorded approval by the competent authority, so a purchase order can&apos;t be raised from it.</Notice>}
       {offer.awardApprovedOn && !offer.acceptedOn && <Notice tone="info">The acceptance notice to {supplier.name} hasn&apos;t been recorded yet (Law 182/2018 art. 39: after the complaint period{offer.complaintUntil ? `, which ends ${offer.complaintUntil}` : ""}). Record it on the offer page.</Notice>}
+      {docWarning && <Notice tone="warn">{docWarning} <Link href={`/procurement/suppliers/${supplier.id}`} className="font-semibold underline">Supplier documents</Link></Notice>}
       {!project.facilityId && <Notice tone="warn">The project has no facility, so destination departments cannot be set and goods cannot be received into the asset register. Set the facility on the project first.</Notice>}
 
       <ActionForm action={createPurchaseOrder.bind(null, offerId)} className="space-y-5">

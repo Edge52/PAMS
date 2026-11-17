@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
+import { supplierExpiryWarning } from "@/lib/procurement/supplier-docs-server";
 import { departments, deviceTypes, facilities, frameworkItems, frameworks, purchaseOrders, suppliers } from "@/db/schema";
 import { Badge, Button, Details, Field, Input, PageHeader, Panel, StatusBadge } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
@@ -40,12 +41,14 @@ export default async function FrameworkPage({ params, searchParams }: { params: 
   const left = Number(f.ceiling) - done.value;
   const facs = !f.facilityId && canCall ? await db.select({ id: facilities.id, name: facilities.name }).from(facilities).where(scopeWhere(facilities.id, scope)).orderBy(asc(facilities.name)) : [];
   const depts = f.facilityId ? await db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.facilityId, f.facilityId)).orderBy(asc(departments.name)) : [];
+  const docWarning = canCall ? await supplierExpiryWarning(f.supplierId, row.supplier) : null;
   const usedOf = (i: typeof items[number]["i"]) => done.qty.find((q) => q.desc === i.description && q.dt === i.deviceTypeId)?.q ?? 0;
 
   return (
     <>
       <PageHeader back={{ href: "/procurement/frameworks", label: "Framework agreements" }} title={<span className="flex flex-wrap items-center gap-2">{f.number} <Badge tone={live ? "ok" : "neutral"}>{live ? "In force" : today < f.startDate ? "Not started" : "Ended"}</Badge></span>} description={f.title} />
       <Notice sp={await searchParams} />
+      {docWarning && <p role="status" className="mb-4 rounded-[var(--radius-control)] border border-warn bg-warn-soft px-3 py-2 text-sm text-warn">{docWarning} <Link href={`/procurement/suppliers/${f.supplierId}`} className="font-semibold underline">Supplier documents</Link></p>}
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="min-w-0 space-y-6">
           <Panel title="Agreed items" padded={false}>

@@ -328,6 +328,8 @@ export const deviceTypes = pgTable("device_types", {
   riskClass: riskClass("risk_class"),
   criticality: criticality("criticality"),
   lifeExpectancyYears: integer("life_expectancy_years"),
+  /** Wave 27: value left at the end of the useful life, % of the purchase cost (straight-line depreciation). Null = 0 %. */
+  residualPct: real("residual_pct"),
   ppmIntervalMonths: integer("ppm_interval_months"),
   requiresCalibration: boolean("requires_calibration").notNull().default(false),
   /** Risk score (wave 23, after Fennigkoh and Smith): equipment function 2–10, physical risk 1–5, maintenance need 1–5.
@@ -352,7 +354,8 @@ export const deviceTypes = pgTable("device_types", {
   widthM: real("width_m"),
   heightM: real("height_m"),
   active: boolean("active").notNull().default(true),
-}, (t) => [index("device_types_parent_idx").on(t.parentId)]);
+}, (t) => [index("device_types_parent_idx").on(t.parentId),
+  check("device_types_residual_check", sql`${t.residualPct} is null or (${t.residualPct} >= 0 and ${t.residualPct} <= 100)`)]);
 
 /* ──────────────────────────── Suppliers ──────────────────────────── */
 
@@ -741,6 +744,8 @@ export const assets = pgTable("assets", {
   installDate: date("install_date"),
   warrantyEnd: date("warranty_end"),
   lifeExpectancyYears: integer("life_expectancy_years"),
+  /** Wave 27: residual value % for this device; null = the device type's. */
+  residualPct: real("residual_pct"),
   notes: text("notes"),
   /** Wave 24: the device identifier from the UDI on the label (GS1 GTIN, 14 digits), the rest of the UDI as scanned
    *  (lot, expiry, manufacture date), and the software or firmware version on the device. */
@@ -760,6 +765,7 @@ export const assets = pgTable("assets", {
   index("assets_department_idx").on(t.departmentId),
   index("assets_device_type_idx").on(t.deviceTypeId),
   index("assets_facility_idx").on(t.facilityId),
+  check("assets_residual_check", sql`${t.residualPct} is null or (${t.residualPct} >= 0 and ${t.residualPct} <= 100)`),
 ]);
 
 export const assetMovements = pgTable("asset_movements", {
@@ -1269,8 +1275,10 @@ export const documents = pgTable("documents", {
   fileName: text("file_name").notNull(),
   url: text("url").notNull(),
   sizeBytes: integer("size_bytes"),
+  /** Wave 27: the date a licence, registration or certificate stops being valid (supplier documents). */
+  expiresOn: date("expires_on"),
   uploadedAt: createdAt(),
-}, (t) => [index("documents_entity_idx").on(t.entityType, t.entityId)]);
+}, (t) => [index("documents_entity_idx").on(t.entityType, t.entityId), index("documents_expires_idx").on(t.expiresOn)]);
 
 export const activityLog = pgTable("activity_log", {
   id: serial("id").primaryKey(),
@@ -2005,3 +2013,9 @@ export const assetSecurity = pgTable("asset_security", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+
+/* ── Wave 27: finance ── */
+// No new tables. Columns added in place: device_types.residual_pct and assets.residual_pct (depreciation),
+// documents.expires_on (supplier document expiry). Logic: src/lib/assets/depreciation.ts,
+// src/lib/reports/service-cost-calc.ts, src/lib/procurement/supplier-docs.ts.

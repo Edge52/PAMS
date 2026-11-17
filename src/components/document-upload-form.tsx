@@ -2,10 +2,12 @@
 
 import { useActionState, useRef, useEffect } from "react";
 import { uploadDocument, type UploadState } from "@/lib/documents";
-import { Button, Select } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 
-export function DocumentUploadForm({ entityType, entityId, returnPath, kinds }: {
+export function DocumentUploadForm({ entityType, entityId, returnPath, kinds, withExpiry = false }: {
   entityType: string; entityId: number; returnPath: string; kinds: { value: string; label: string }[];
+  /** Wave 27: ask for an expiry date (supplier licences, registrations and certificates). */
+  withExpiry?: boolean;
 }) {
   const [state, action, pending] = useActionState<UploadState, FormData>(uploadDocument, null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -20,8 +22,10 @@ export function DocumentUploadForm({ entityType, entityId, returnPath, kinds }: 
           accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,.dwg,.dxf,.msg,.eml"
           className="max-w-full text-sm file:mr-2 file:rounded file:border file:border-line file:bg-surface file:px-2 file:py-1" />
         <Select name="kind" options={kinds} defaultValue={kinds[0]?.value} className="w-auto" aria-label="Document type" />
+        {withExpiry && <label className="flex items-center gap-1.5 text-sm"><span>Valid until</span><Input type="date" name="expiresOn" className="w-auto" aria-describedby={`exp-hint-${entityType}-${entityId}`} /></label>}
         <Button variant="secondary" disabled={pending}>{pending ? "Attaching…" : "Attach file"}</Button>
       </div>
+      {withExpiry && <p id={`exp-hint-${entityType}-${entityId}`} className="text-xs text-muted">Leave the date empty when the document has no expiry.</p>}
       {state?.error && <p role="alert" className="text-sm text-danger">{state.error}</p>}
       {state?.ok && <p role="status" className="text-sm text-ok">{state.ok}</p>}
     </form>

@@ -28,6 +28,7 @@ export const KIND_LABELS: Record<string, string> = {
   budget_warning: "Budget",
   invoice_received: "Invoice",
   bond_expiring: "Bond expiring",
+  supplier_doc_expiring: "Supplier document",
   executive_pack: "Monthly summary",
   equipment_request: "Equipment request",
   test: "Test",

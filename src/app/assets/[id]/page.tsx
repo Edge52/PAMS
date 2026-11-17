@@ -12,6 +12,8 @@ import {
   deviceModels,
 } from "@/db/schema";
 import { assetLifecycle } from "@/lib/assets/lifecycle-server";
+import { assetBookValue } from "@/lib/assets/depreciation-server";
+import { BookValuePanel } from "@/components/assets/book-value-panel";
 import { BAND_LABEL } from "@/lib/assets/lifecycle-kpis";
 import { formatHours } from "@/lib/assets/work-orders";
 import { Badge, Button, Details, Field, FormGrid, Input, LinkButton, PageHeader, Panel, StatusBadge, Textarea } from "@/components/ui";
@@ -88,7 +90,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   const canReport = can(me.role, "workorders.report");
   const today = todayISO();
 
-  const [trail, events, moves, components, activity, tree, vendors, mini, jobs, contracts, openRecalls, perf, disposal] = await Promise.all([
+  const [trail, events, moves, components, activity, tree, vendors, mini, jobs, contracts, openRecalls, perf, disposal, bookValue] = await Promise.all([
     x.poLineId ? db.select({
       poId: purchaseOrders.id, poNumber: purchaseOrders.number, poStatus: purchaseOrders.status, issueDate: purchaseOrders.issueDate, unitPrice: poLines.unitPrice, currency: purchaseOrders.currency,
       offerId: offers.id, offerRef: offers.reference, projectId: projects.id, projectCode: projects.code, projectTitle: projects.title,
@@ -117,6 +119,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
     assetLifecycle(assetId),
     db.select({ id: disposals.id, number: disposals.number, status: disposals.status }).from(disposals).where(eq(disposals.assetId, assetId))
       .orderBy(desc(disposals.createdAt)).limit(1),
+    assetBookValue(assetId),
   ]);
   const lastDisposal = disposal[0];
   const disposalOpen = lastDisposal && ["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(lastDisposal.status);
@@ -327,6 +330,8 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
               </div>
             </Panel>
           )}
+
+          {bookValue && <BookValuePanel bv={bookValue} own={{ lifeYears: x.lifeExpectancyYears, residualPct: x.residualPct }} canEdit={canEdit} />}
 
           <Panel title="Warranty and lifecycle">
             <dl className="space-y-4 text-sm">

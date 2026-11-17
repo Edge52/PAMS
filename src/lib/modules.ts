@@ -31,6 +31,7 @@ export const MODULES: AppModule[] = [
     { href: "/procurement/offers", label: "Offers", need: "procurement.view" },
     { href: "/procurement/purchase-orders", label: "Purchase orders", need: "procurement.view" },
     { href: "/procurement/suppliers", label: "Suppliers", need: "procurement.view" },
+    { href: "/procurement/suppliers/documents", label: "Supplier documents", need: "procurement.view" },
   ] },
   { id: "finance", name: "Finance", description: "Budgets, invoices with three-way match and framework agreements.", links: [
     { href: "/procurement/budgets", label: "Budgets", need: "procurement.view" },

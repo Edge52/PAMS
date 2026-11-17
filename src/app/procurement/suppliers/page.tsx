@@ -49,7 +49,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader title="Suppliers" description="Agents and distributors, the brands they represent, and how they have performed on your tenders."
-        actions={can(me.role, "suppliers.edit") ? <LinkButton href="/procurement/suppliers/new" variant="primary">Add supplier</LinkButton> : undefined} />
+        actions={<><LinkButton href="/procurement/suppliers/documents">Expiring documents</LinkButton>{can(me.role, "suppliers.edit") && <LinkButton href="/procurement/suppliers/new" variant="primary">Add supplier</LinkButton>}</>} />
       <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
         <AutoSubmit />
         {sort && <input type="hidden" name="sort" value={sort.key} />}{sort?.dir === "desc" && <input type="hidden" name="dir" value="desc" />}

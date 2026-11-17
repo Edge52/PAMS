@@ -11,6 +11,8 @@ import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { CURRENCIES, formatMoney } from "@/lib/format";
 import { budgetRows } from "@/lib/procurement/money-server";
 import { saveBudgetLineAction } from "../invoices/actions";
+import { sumToEgp, toEgp } from "@/lib/reports/calc";
+import { EGP_NOTE, missingRatesNote, ratesFor } from "@/lib/reports/shared";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Budgets" };
@@ -38,6 +40,13 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
   const canEdit = can(me.role, "budgets.edit");
   const byCur = new Map<string, { amount: number; used: number }>();
   for (const r of rows) { const t = byCur.get(r.currency) ?? { amount: 0, used: 0 }; t.amount += Number(r.amount); t.used += r.used; byCur.set(r.currency, t); }
+  // Wave 27: one EGP total across currencies, at the stored rates (the per-currency figures stay).
+  const rates = await ratesFor(rows.map((r) => r.currency));
+  const egpAmount = sumToEgp(rows.map((r) => ({ amount: Number(r.amount), currency: r.currency })), rates);
+  const egpUsed = sumToEgp(rows.map((r) => ({ amount: r.used, currency: r.currency })), rates);
+  const egpSpent = sumToEgp(rows.map((r) => ({ amount: r.spent, currency: r.currency })), rates);
+  const rateNote = missingRatesNote([...egpAmount.missing, ...egpUsed.missing]);
+  const mixed = byCur.size > 1 || (byCur.size === 1 && !byCur.has("EGP"));
   const q = (extra = "") => `/procurement/budgets?facilityId=${facilityId}&year=${year}${extra}`;
   const name = (id: number | null, list: { id: number; name?: string; code?: string }[]) => (id ? list.find((x) => x.id === id) : null);
 
@@ -52,8 +61,12 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
       </form>
       {byCur.size > 0 && (
         <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[...byCur].map(([c, t]) => <Stat key={c} label={`${year} budget (${c})`} value={formatMoney(t.amount, c, { compact: true })} hint={`${Math.round(t.amount ? t.used / t.amount * 100 : 0)} % committed or spent`} />)}
+          <Stat label={`${year} budget in EGP`} value={formatMoney(egpAmount.egp, "EGP", { compact: true })}
+            hint={`${Math.round(egpAmount.egp ? egpUsed.egp / egpAmount.egp * 100 : 0)} % committed or spent · ${formatMoney(egpSpent.egp, "EGP", { compact: true })} spent`} />
+          {(mixed ? [...byCur] : []).map(([c, t]) => <Stat key={c} label={`${year} budget (${c})`} value={formatMoney(t.amount, c, { compact: true })} hint={`${Math.round(t.amount ? t.used / t.amount * 100 : 0)} % committed or spent`} />)}
           <Stat label="Lines past 80 %" value={String(rows.filter((r) => r.level !== "OK").length)} hint={`of ${rows.length}`} />
+          {mixed && <p className="col-span-full text-xs text-muted">{EGP_NOTE} {rateNote}</p>}
+          {!mixed && rateNote && <p className="col-span-full text-xs text-muted">{rateNote}</p>}
         </div>
       )}
       <Panel title={`${year} budget lines`} padded={false}>
@@ -65,7 +78,7 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span><Link href={q(`&line=${r.id}`)} className="font-semibold text-primary hover:underline">{r.name}</Link>
                     <span className="text-muted"> {[r.kind === "MAINTENANCE" ? "maintenance" : null, name(r.departmentId, depts)?.name, name(r.projectId, projs)?.code].filter(Boolean).join(" · ")}</span></span>
-                  <span className="flex items-center gap-2"><Badge tone={TONE[r.level]}>{Number.isFinite(r.pct) ? `${Math.round(r.pct * 100)} %` : "no budget"}</Badge><b>{formatMoney(r.amount, r.currency)}</b></span>
+                  <span className="flex items-center gap-2"><Badge tone={TONE[r.level]}>{Number.isFinite(r.pct) ? `${Math.round(r.pct * 100)} %` : "no budget"}</Badge><b>{formatMoney(r.amount, r.currency)}</b>{r.currency !== "EGP" && <span className="text-xs text-muted">{(() => { const v = toEgp(Number(r.amount), r.currency, rates); return v == null ? "no EGP rate" : `≈ ${formatMoney(v, "EGP", { compact: true })}`; })()}</span>}</span>
                 </div>
                 <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-sunken" aria-hidden="true">
                   <span className="bg-primary" style={{ width: pct(r.spent) }} /><span className="bg-info" style={{ width: pct(r.committed) }} /><span className="bg-warn/50" style={{ width: pct(r.requested) }} />

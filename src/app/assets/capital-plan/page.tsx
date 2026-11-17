@@ -9,6 +9,7 @@ import { NativeSelect, Notice } from "@/components/assets/bits";
 import { scopeWhere, scopedFacilityId } from "@/lib/assets/access";
 import { BAND_LABEL } from "@/lib/assets/lifecycle-kpis";
 import { replacementPlan } from "@/lib/assets/lifecycle-server";
+import { bookValues } from "@/lib/assets/depreciation-server";
 import { plannedYear } from "@/lib/assets/planning";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
@@ -37,14 +38,20 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
   const years = Array.from({ length: horizon }, (_, i) => thisYear + i);
   const pick = Number(sp.year) && years.includes(Number(sp.year)) ? Number(sp.year) : thisYear;
 
-  const [plan, models, budgets, depts] = await Promise.all([
+  const replaceOn = pick === thisYear ? undefined : `${pick}-01-01`;
+  const [plan, models, budgets, depts, bvNow, bvAt] = await Promise.all([
     replacementPlan(eq(assets.facilityId, facilityId)),
     db.select({ id: assets.id, eos: deviceModels.endOfSupport }).from(assets).innerJoin(deviceModels, and(eq(deviceModels.deviceTypeId, assets.deviceTypeId),
       sql`lower(trim(${assets.manufacturer})) = lower(${deviceModels.manufacturer}) and lower(trim(${assets.model})) = lower(${deviceModels.model})`))
       .where(and(eq(assets.facilityId, facilityId), sql`${deviceModels.endOfSupport} is not null`)),
     db.select().from(capitalBudgets).where(and(eq(capitalBudgets.facilityId, facilityId), inArray(capitalBudgets.year, years))),
     db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.facilityId, facilityId)),
+    // Wave 27: book value today, and at the start of the chosen year (what is still on the books when the device goes).
+    bookValues(eq(assets.facilityId, facilityId)),
+    replaceOn ? bookValues(eq(assets.facilityId, facilityId), replaceOn) : Promise.resolve(null),
   ]);
+  const bookNow = new Map(bvNow.rows.map((r) => [r.id, r.bookValueEgp]));
+  const bookAt = new Map((bvAt ?? bvNow).rows.map((r) => [r.id, r.bookValueEgp]));
   const eos = new Map(models.map((m) => [m.id, m.eos]));
   // Approved department requests (wave 12), costed from the device type's price range.
   const rates = await egpRates();
@@ -61,6 +68,8 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
   const budgetOf = (y: number) => { const b = budgets.find((x) => x.year === y); return b ? num(b.amount) : null; };
   const yearRows = placed.filter((r) => r.year === pick).sort((a, b) => b.score.score - a.score.score);
   const unpriced = placed.filter((r) => r.estimateEgp == null).length;
+  const yearBook = yearRows.reduce((s, r) => s + (bookAt.get(r.id) ?? 0), 0);
+  const yearNoBook = yearRows.filter((r) => bookAt.get(r.id) == null).length;
   const canBoq = can(me.role, "boq.edit");
   const fac = facs.find((f) => f.id === facilityId);
   const q = (y: number) => `/assets/capital-plan?facilityId=${facilityId}&years=${horizon}&year=${y}`;
@@ -76,11 +85,12 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
         <Button variant="secondary">Show</Button>
         <Link href={`/assets/replacement?facilityId=${facilityId}`} className="ml-auto text-sm text-primary hover:underline">Replacement scores</Link>
       </form>
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label={`${horizon}-year need`} value={egp(total)} hint={`${formatNumber(placed.length)} devices`} />
         <Stat label={`${thisYear}`} value={egp(cell("all", thisYear))} hint={budgetOf(thisYear) != null ? `Budget ${egp(budgetOf(thisYear)!)}` : "No budget set"} />
         <Stat label="Maker support ending" value={formatNumber(placed.filter((r) => r.why === "Maker support ends").length)} hint="Brought forward to the end of support" />
         <Stat label="Without a price" value={formatNumber(unpriced)} hint="Add a price range to their device type" />
+        <Stat label={`Book value left, ${pick} devices`} value={egp(yearBook)} hint={`Written off if replaced${pick === thisYear ? " now" : ` on 1 Jan ${pick}`}${yearNoBook ? ` · ${formatNumber(yearNoBook)} without a book value` : ""}`} />
       </div>
       <Panel title="Need by department and year (EGP)" padded={false}>
         <div className="overflow-x-auto"><table className="w-full text-[13px]">
@@ -117,7 +127,7 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
           )}
           {yearRows.length === 0 ? <p className="text-sm text-muted">Nothing planned for {pick}.</p> : (
             <Table>
-              <THead><tr>{canBoq && <Th><span className="sr-only">Select</span></Th>}<Th>Device</Th><Th>Department</Th><Th>Why {pick}</Th><Th>Score</Th><Th align="right">Replacement</Th></tr></THead>
+              <THead><tr>{canBoq && <Th><span className="sr-only">Select</span></Th>}<Th>Device</Th><Th>Department</Th><Th>Why {pick}</Th><Th>Score</Th><Th align="right">Book value now</Th><Th align="right">Replacement</Th></tr></THead>
               <tbody>{yearRows.slice(0, 300).map((r) => (
                 <tr key={r.id}>
                   {canBoq && <Td><input type="checkbox" name="assetIds" value={r.id} defaultChecked aria-label={`Replace ${r.tag}`} /></Td>}
@@ -125,6 +135,7 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
                   <Td>{r.departmentName ?? "—"}</Td>
                   <Td>{r.why}{r.eos ? <div className="text-xs text-muted">support ends {r.eos}</div> : r.installDate && r.lifeYears ? <div className="text-xs text-muted">installed {r.installDate.slice(0, 4)}, {r.lifeYears}-year life</div> : null}</Td>
                   <Td><strong>{r.score.score}</strong> <Badge tone={r.score.band === "REPLACE" ? "danger" : r.score.band === "PLAN" ? "warn" : "ok"}>{BAND_LABEL[r.score.band]}</Badge></Td>
+                  <Td align="right">{bookNow.get(r.id) != null ? egp(bookNow.get(r.id)!) : "—"}</Td>
                   <Td align="right">{r.estimateEgp != null ? egp(r.estimateEgp) : "—"}</Td>
                 </tr>
               ))}</tbody>

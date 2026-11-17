@@ -4,7 +4,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, offerLines, offers, projects, purchaseOrders, rfqs, rfqSuppliers, suppliers } from "@/db/schema";
 import { Badge, Details, LinkButton, PageHeader, Panel, Stat, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
-import { DocumentsPanel } from "@/components/documents-panel";
+import { SupplierDocumentsPanel } from "@/components/procurement/supplier-documents";
 import { ActionForm, SubmitButton } from "@/components/procurement/action-form";
 import { ActivityPanel, Progress } from "@/components/procurement/bits";
 import { OffersTable } from "@/components/procurement/offers-table";
@@ -135,7 +135,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
         </div>
         <div className="space-y-5">
           <SupplierContacts supplierId={id} canEdit={can(me.role, "suppliers.edit")} />
-          <DocumentsPanel entityType="supplier" entityId={id} returnPath={`/procurement/suppliers/${id}`} title="Agency letters, registrations, certificates" />
+          <SupplierDocumentsPanel supplierId={id} />
           {invites.length > 0 && (
             <Panel title="RFQ invitations" padded={false}>
               <ul className="divide-y divide-line text-sm">

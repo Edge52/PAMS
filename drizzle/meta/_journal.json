@@ -302,6 +302,13 @@
       "when": 1794874701365,
       "tag": "0042_start_page",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1794877187826,
+      "tag": "0043_finance",
+      "breakpoints": true
     }
   ]
 }

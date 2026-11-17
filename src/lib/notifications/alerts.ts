@@ -10,13 +10,14 @@ import "server-only";
 import { and, eq, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  assets, departments, deviceTypes, facilities, maintenanceEvents, offers, projects, purchaseOrders, rfqs, serviceContracts, suppliers,
+  assets, departments, deviceTypes, documents, facilities, maintenanceEvents, offers, projects, purchaseOrders, rfqs, serviceContracts, suppliers,
 } from "@/db/schema";
 import type { Role } from "@/lib/auth/permissions";
 import { addDaysISO, todayISO } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
 import { notifyUsers, usersWithRole } from "./index";
 import { collectAlerts, CONTRACT_WARN_DAYS, digestAlerts, MAINTENANCE_DUE_DAYS, type AlertData, type AlertWindows } from "./alert-rules";
+import { DOC_NOTIFY_DAYS } from "@/lib/procurement/supplier-docs";
 
 export type AlertRunResult = {
   startedAt: string; finishedAt: string; ms: number;
@@ -58,7 +59,8 @@ async function loadData(today: string, w: AlertWindows): Promise<AlertData> {
   const maintHorizon = addDaysISO(today, w.maintenanceDueDays);
 
   const contractHorizon = addDaysISO(today, CONTRACT_WARN_DAYS);
-  const [offerRows, rfqRows, poRows, warrantyRows, maintRows, awardRows, contractRows] = await Promise.all([
+  const docHorizon = addDaysISO(today, DOC_NOTIFY_DAYS);
+  const [offerRows, rfqRows, poRows, warrantyRows, maintRows, awardRows, contractRows, docRows] = await Promise.all([
     db.select({
       id: offers.id, reference: offers.reference, status: offers.status, validUntil: offers.validUntil,
       supplierName: suppliers.name, projectCode: projects.code, facilityId: projects.facilityId,
@@ -102,8 +104,11 @@ async function loadData(today: string, w: AlertWindows): Promise<AlertData> {
       devices: sql<number>`(select count(*) from service_contract_assets x where x.contract_id = ${serviceContracts.id})::int`,
     }).from(serviceContracts).innerJoin(suppliers, eq(suppliers.id, serviceContracts.supplierId))
       .where(sql`${serviceContracts.endDate} between ${today} and ${contractHorizon}`),
+    db.select({ id: documents.id, supplierId: suppliers.id, supplierName: suppliers.name, kind: documents.kind, fileName: documents.fileName,
+      expiresOn: sql<string>`${documents.expiresOn}` }).from(documents).innerJoin(suppliers, eq(suppliers.id, documents.entityId))
+      .where(and(eq(documents.entityType, "supplier"), eq(suppliers.active, true), sql`${documents.expiresOn} between ${today} and ${docHorizon}`)),
   ]);
-  return { offers: offerRows, rfqs: rfqRows, pos: poRows, warranties: warrantyRows, maintenance: maintRows, awards: awardRows, contracts: contractRows };
+  return { offers: offerRows, rfqs: rfqRows, pos: poRows, warranties: warrantyRows, maintenance: maintRows, awards: awardRows, contracts: contractRows, supplierDocs: docRows };
 }
 
 async function doRun(trigger: string): Promise<AlertRunResult> {
