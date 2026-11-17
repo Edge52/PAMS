@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 29 — on branch `wave-29` (not merged yet)
+## Wave 29 — merged 17 Nov 2026
 
 The "set aside, or built only in part" list. Migration `0045_wave29.sql` (a new device status *On loan*, and the
 loan's status before).

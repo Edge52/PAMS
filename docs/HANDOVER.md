@@ -82,11 +82,11 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 28 (merged 17 Nov 2026): the nine-wave plan of Nov 2026 is built. `wave-29` (the leftovers list) is pushed and waits for Hisham's OK.
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 29 (merged 17 Nov 2026). Open items: section 7.
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
-- Old branches: `wave-13` to `wave-28` (and `wave-22b`) are merged and can be deleted from GitHub's branch page (the session's
+- Old branches: `wave-13` to `wave-29` (and `wave-22b`) are merged and can be deleted from GitHub's branch page (the session's
   connection can't delete branches). The Mac still has two old local branches (`claude/vigilant-noether-2l33kc`,
   `fix/demo-restart`); `git branch -D` them when convenient.
 
