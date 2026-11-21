@@ -1,4 +1,4 @@
-# Hospital PAMS — User guide (release 3.0, updated for wave 16)
+# Hospital PAMS — User guide (release 3.0, updated for wave 36)
 
 How to do the everyday jobs, by role. Every screen is reached from the menu on the left (the **Menu** button on a
 phone). The search box at the top of every page finds equipment, rooms, departments, suppliers, documents and more.
@@ -192,7 +192,8 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 ## Procurement officer
 
 1. **Projects & tenders** › create the project; add specifications per device type.
-2. **RFQs** › **New RFQ** from the approved BOQ (items and quantities are frozen).
+2. **RFQs** › **New RFQ** from the BOQ. Use the approved BOQ: the page warns, but does not stop you, when the BOQ
+   isn't approved yet.
 3. **Offers**: record each offer and its compliance line by line; **Compare offers** for the weighted score. Add each
    offer's running costs (service after warranty, consumables, energy, other, uptime guarantee) to see the **total
    cost of ownership** over 5 or 10 years, next to what the same models have cost you to maintain.
@@ -212,7 +213,11 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 - **Approvals**: everything waiting for you (POs, BOQs, awards, disposals). Approve, or reject with a comment.
 - **Budgets** (Finance): add the year's budget lines; you're notified when a PO takes one past 80 % or 100 %.
 - **Invoices** (Finance): *To decide* lists matched invoices and those with differences; approve (giving a reason when
-  it differs), reject, then **Mark paid**. **Export for finance (CSV)** for the accounting system.
+  it differs), reject, then **Mark paid**. Three different people are needed: whoever recorded the invoice can't
+  approve it, and neither of them can mark it paid. **Export for finance (CSV)** for the accounting system.
+- **Exchange rates** (Finance): record the Central Bank rate of each currency, by the date it applies from. Offers are
+  converted at their opening date, orders at their order date, purchases at their purchase date; estimates and budgets
+  use the latest rate. A rate older than a month is flagged: keep them current.
 - **Reports › Executive summary** for each hospital.
 
 ---
