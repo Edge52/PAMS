@@ -6,7 +6,7 @@ import "server-only";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, deviceTypes, serviceContractAssets, serviceContracts, suppliers, users, workOrders } from "@/db/schema";
+import { assets, deviceTypes, disposals, serviceContractAssets, serviceContracts, suppliers, users, workOrders } from "@/db/schema";
 import { defaultChecklist, effectiveChecklist, type ChecklistItem } from "./checklists";
 import { coverOn, type Cover } from "./contracts";
 import { can, ROLES, type Role } from "@/lib/auth/permissions";
@@ -53,6 +53,21 @@ export async function otherDownJobs(assetId: number, exceptId: number, x: Tx = d
   return Number(rows[0]?.n ?? 0);
 }
 
+/** Wave 34 (A3): a disposal of this asset is waiting for approval or approved, so it must not go back in service. */
+export async function hasDisposalPending(assetId: number, x: Tx = db): Promise<boolean> {
+  const rows = await x.select({ id: disposals.id }).from(disposals)
+    .where(and(eq(disposals.assetId, assetId), inArray(disposals.status, ["PENDING_APPROVAL", "APPROVED"]))).limit(1);
+  return rows.length > 0;
+}
+
+/** Open work orders that have this asset down (statuses only), for putting it back after a loan. */
+export async function openDownJobStatuses(assetId: number, x: Tx = db): Promise<string[]> {
+  const rows = await x.select({ status: workOrders.status }).from(workOrders).where(and(
+    eq(workOrders.assetId, assetId), eq(workOrders.deviceDown, true), inArray(workOrders.status, ["OPEN", "ASSIGNED", "IN_PROGRESS", "ON_HOLD"]),
+  ));
+  return rows.map((r) => r.status);
+}
+
 /** Apply assetStatusAfter() and log the change on the asset. Returns the new status, or null if unchanged. */
 export async function applyAssetEffect(
   event: Parameters<typeof assetStatusAfter>[0],
@@ -62,8 +77,10 @@ export async function applyAssetEffect(
 ): Promise<string | null> {
   const [a] = await x.select({ status: assets.status }).from(assets).where(eq(assets.id, wo.assetId));
   if (!a) return null;
-  const others = event === "complete" || event === "cancel" ? await otherDownJobs(wo.assetId, wo.id, x) : 0;
-  const next = assetStatusAfter(event, { assetStatus: a.status, deviceDown: wo.deviceDown, returnToService: opts.returnToService, otherDownJobs: others });
+  const ending = event === "complete" || event === "cancel";
+  const others = ending ? await otherDownJobs(wo.assetId, wo.id, x) : 0;
+  const disposalPending = ending ? await hasDisposalPending(wo.assetId, x) : false;
+  const next = assetStatusAfter(event, { assetStatus: a.status, deviceDown: wo.deviceDown, returnToService: opts.returnToService, otherDownJobs: others, disposalPending });
   if (!next) return null;
   await x.update(assets).set({ status: next as typeof a.status }).where(eq(assets.id, wo.assetId));
   await logActivity("asset", wo.assetId, "status_changed",

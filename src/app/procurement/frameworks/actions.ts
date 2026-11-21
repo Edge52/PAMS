@@ -36,9 +36,19 @@ export async function createFrameworkAction(_: FormState, fd: FormData): Promise
   redirect(`${path(fw.id)}?notice=${encodeURIComponent(`${number} created. Add its items and agreed prices.`)}`);
 }
 
+/** Wave 34 (S3): the agreement from the database, after checking the user may work on its hospital. */
+async function frameworkFor(fd: FormData, me: Awaited<ReturnType<typeof requirePermission>>) {
+  const id = Number(fd.get("frameworkId"));
+  const [fw] = Number.isInteger(id) && id > 0 ? await db.select({ id: frameworks.id, facilityId: frameworks.facilityId }).from(frameworks).where(eq(frameworks.id, id)) : [];
+  if (fw) await requireFacilityAccess(fw.facilityId, me);
+  return fw ?? null;
+}
+
 export async function addFrameworkItemAction(_: FormState, fd: FormData): Promise<FormState> {
-  await requirePermission("procurement.edit");
-  const frameworkId = Number(fd.get("frameworkId")), deviceTypeId = Number(fd.get("deviceTypeId"));
+  const me = await requirePermission("procurement.edit");
+  const fw = await frameworkFor(fd, me);
+  if (!fw) return { error: "That agreement no longer exists." };
+  const frameworkId = fw.id, deviceTypeId = Number(fd.get("deviceTypeId"));
   const unitPrice = Number(str(fd, "unitPrice").replace(/,/g, "")), maxQty = str(fd, "maxQty") ? Number(str(fd, "maxQty")) : null;
   const [t] = Number.isInteger(deviceTypeId) ? await db.select({ id: deviceTypes.id, name: deviceTypes.name, level: deviceTypes.level }).from(deviceTypes).where(eq(deviceTypes.id, deviceTypeId)) : [];
   if (!t || t.level !== 3) return { error: "Choose a device type." };
@@ -50,12 +60,22 @@ export async function addFrameworkItemAction(_: FormState, fd: FormData): Promis
 }
 
 export async function removeFrameworkItemAction(fd: FormData) {
-  await requirePermission("procurement.edit");
-  const id = Number(fd.get("itemId")), frameworkId = Number(fd.get("frameworkId"));
+  const me = await requirePermission("procurement.edit");
+  const fw = await frameworkFor(fd, me);
+  if (!fw) return;
+  // Wave 34 (S3): the item must belong to this agreement, and "called off" is worked out from the item's own
+  // agreement and device type in the database, not from ids sent by the browser.
+  const itemId = Number(fd.get("itemId"));
+  const [item] = Number.isInteger(itemId) && itemId > 0 ? await db.select({ id: frameworkItems.id, deviceTypeId: frameworkItems.deviceTypeId, description: frameworkItems.description }).from(frameworkItems)
+    .where(and(eq(frameworkItems.id, itemId), eq(frameworkItems.frameworkId, fw.id))) : [];
+  if (!item) return;
   const used = await db.select({ id: poLines.id }).from(poLines).innerJoin(purchaseOrders, eq(purchaseOrders.id, poLines.poId))
-    .innerJoin(frameworkItems, and(eq(frameworkItems.id, id), eq(frameworkItems.deviceTypeId, poLines.deviceTypeId))).where(eq(purchaseOrders.frameworkId, frameworkId)).limit(1);
-  if (!used.length) await db.delete(frameworkItems).where(eq(frameworkItems.id, id));
-  revalidatePath(path(frameworkId));
+    .where(and(eq(purchaseOrders.frameworkId, fw.id), eq(poLines.deviceTypeId, item.deviceTypeId))).limit(1);
+  if (!used.length) {
+    await db.delete(frameworkItems).where(and(eq(frameworkItems.id, item.id), eq(frameworkItems.frameworkId, fw.id)));
+    await logActivity("framework", fw.id, "item removed", `${item.description} removed`, me.name);
+  }
+  revalidatePath(path(fw.id));
 }
 
 export async function createCallOffAction(_: FormState, fd: FormData): Promise<FormState> {

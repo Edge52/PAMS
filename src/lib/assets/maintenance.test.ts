@@ -83,6 +83,15 @@ describe("ppmDatesInWindow / planPpmEvents", () => {
   it("returns nothing for an inverted window", () => {
     expect(ppmDatesInWindow(a, "2026-12-01", "2026-01-01")).toEqual([]);
   });
+  it("A5: a run-to-failure device has no PPM due and none scheduled, even with no interval set", () => {
+    // The strategy page clears the interval for run to failure; the 12-month default must not come back in.
+    const rtf = { id: 5, installDate: "2024-01-01", ppmIntervalMonths: null, maintenanceStrategy: "RUN_TO_FAILURE" };
+    expect(nextPpmDue(rtf)).toMatchObject({ due: null, basis: "run_to_failure" });
+    expect(dueState(nextPpmDue(rtf).due, "2026-11-21")).toBe("NONE");
+    expect(ppmDatesInWindow(rtf, "2026-01-01", "2027-12-31")).toEqual([]);
+    expect(planPpmEvents([rtf, { id: 6, installDate: "2026-02-01", ppmIntervalMonths: 12, maintenanceStrategy: "MANUFACTURER" }], [], "2027-01-01", "2027-12-31"))
+      .toEqual([{ assetId: 6, scheduledDate: "2027-02-01" }]);
+  });
 });
 
 describe("event status, warranty and lifecycle", () => {

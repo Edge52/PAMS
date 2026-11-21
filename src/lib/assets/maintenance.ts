@@ -8,6 +8,9 @@
  * - Next due = last completed PPM + interval; with no PPM on record, install date (else purchase date) + interval.
  * - Wave 27: when the device type also has a usage interval, the date that use runs out (`usageDue`) wins if earlier.
  * - A scheduled/in-progress event whose date has passed is shown as overdue.
+ * - Wave 34: a device type set to "repair when it fails" (RUN_TO_FAILURE) has no planned visits at all: no due date,
+ *   nothing scheduled, and it is left out of PPM compliance. Its interval is empty on purpose, so the default must
+ *   not fill it in.
  */
 import { addMonths, daysBetween, monthKey } from "./dates";
 
@@ -25,16 +28,21 @@ export type PpmAsset = {
   lastPpmDate?: string | null;
   /** Wave 27: when PPM falls due by use (`usagePpmDue` in ./meters); the earlier of the two dates wins. */
   usageDue?: string | null;
+  /** The device type's maintenance strategy (MANUFACTURER, ALTERNATIVE, RUN_TO_FAILURE); null = not chosen yet. */
+  maintenanceStrategy?: string | null;
 };
 
 export type NextPpm = {
   due: string | null;
-  basis: "last_ppm" | "install" | "purchase" | "usage" | "none";
+  basis: "last_ppm" | "install" | "purchase" | "usage" | "none" | "run_to_failure";
   intervalMonths: number;
   isDefaultInterval: boolean;
 };
 
 const INACTIVE = new Set(["DISPOSED"]);
+
+/** True when the device type is repaired when it fails, with no planned maintenance. */
+export const isRunToFailure = (strategy: string | null | undefined) => strategy === "RUN_TO_FAILURE";
 
 export function effectiveInterval(months: number | null | undefined): { months: number; isDefault: boolean } {
   return months && months > 0 ? { months, isDefault: false } : { months: DEFAULT_PPM_INTERVAL_MONTHS, isDefault: true };
@@ -42,6 +50,7 @@ export function effectiveInterval(months: number | null | undefined): { months: 
 
 export function nextPpmDue(a: PpmAsset): NextPpm {
   const { months, isDefault } = effectiveInterval(a.ppmIntervalMonths);
+  if (isRunToFailure(a.maintenanceStrategy)) return { due: null, basis: "run_to_failure", intervalMonths: months, isDefaultInterval: false };
   if (a.status && INACTIVE.has(a.status)) return { due: null, basis: "none", intervalMonths: months, isDefaultInterval: isDefault };
   const basis: NextPpm["basis"] = a.lastPpmDate ? "last_ppm" : a.installDate ? "install" : a.purchaseDate ? "purchase" : "none";
   const from = a.lastPpmDate ?? a.installDate ?? a.purchaseDate ?? null;

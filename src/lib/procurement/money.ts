@@ -138,3 +138,37 @@ export function warrantyEndFrom(acceptedOn: string, months: number | null | unde
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const fmt = (n: number) => n.toLocaleString("en", { maximumFractionDigits: 2 });
+
+/* ── Who may do what on an invoice ── */
+
+/**
+ * Segregation of duties on supplier invoices (wave 34, audit S7 / DL-19).
+ *
+ * Same rule as the approval engine (lib/approvals/core canDecide): whoever submits may not decide, and nobody
+ * decides two steps of the same thing. For an invoice the steps are record → approve (or reject) → record payment,
+ * so three different people:
+ *  - the person who recorded it may not approve or reject it;
+ *  - the person who approved it may not record its payment, and nor may the person who recorded it.
+ * Administrators are not exempt: there is no small-site setting that allows one person to do it all.
+ *
+ * People are compared by account id. Invoices recorded before wave 34 have only names, so then the name is compared.
+ */
+export type Person = { id: number; name: string };
+export type InvoicePeople = {
+  createdById: number | null; createdByName: string | null;
+  approvedById: number | null; approvedByName: string | null;
+};
+
+function same(me: Person, id: number | null, name: string | null): boolean {
+  if (id != null) return id === me.id;
+  return name != null && name.trim() !== "" && name.trim() === me.name.trim();
+}
+
+/** Why `me` may not take this step on the invoice, or null when allowed. Shown to the user. */
+export function invoiceDutyProblem(step: "decide" | "pay", inv: InvoicePeople, me: Person): string | null {
+  const recorded = same(me, inv.createdById, inv.createdByName);
+  if (step === "decide") return recorded ? "You recorded this invoice, so someone else must approve or reject it." : null;
+  if (recorded) return "You recorded this invoice, so someone else must record its payment.";
+  if (same(me, inv.approvedById, inv.approvedByName)) return "You approved this invoice, so someone else must record its payment.";
+  return null;
+}

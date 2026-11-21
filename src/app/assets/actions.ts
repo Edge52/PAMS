@@ -303,6 +303,7 @@ export async function generatePpmAction(_: FormState, fd: FormData): Promise<For
   if (new Date(to).getTime() - new Date(from).getTime() > 3 * 366 * 86_400_000) return { error: "Plan at most three years at a time." };
   const list = await db.select({
     id: assets.id, status: assets.status, installDate: assets.installDate, purchaseDate: assets.purchaseDate, ppmIntervalMonths: deviceTypes.ppmIntervalMonths,
+    maintenanceStrategy: deviceTypes.maintenanceStrategy,
     lastPpmDate: sql<string | null>`(select max(m.completed_date) from maintenance_events m where m.asset_id = ${assets.id} and m.type = 'PPM' and m.status = 'COMPLETED')`,
   }).from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
     .where(and(sql`${assets.status} in ('INSTALLED','IN_SERVICE','UNDER_MAINTENANCE')`,

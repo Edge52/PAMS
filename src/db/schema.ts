@@ -1464,11 +1464,15 @@ export const invoices = pgTable("invoices", {
   /** Why an invoice with differences was approved anyway, or why it was rejected. */
   decisionNote: text("decision_note"),
   approvedByName: text("approved_by_name"),
+  /** Wave 34 (S7): the account that approved or rejected it; the one who records payment must be someone else. */
+  approvedById: integer("approved_by_id").references(() => users.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   paidAt: date("paid_at"),
   paymentReference: text("payment_reference"),
   notes: text("notes"),
   createdByName: text("created_by_name"),
+  /** Wave 34 (S7): the account that recorded it; it may not also approve it or record its payment. */
+  createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [index("invoices_po_idx").on(t.poId), uniqueIndex("invoices_supplier_no_uq").on(t.supplierId, t.supplierInvoiceNo)]);
