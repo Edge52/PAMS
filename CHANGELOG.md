@@ -1,5 +1,35 @@
 # Changelog
 
+## Wave 33 — money right (audit fixes, not merged yet)
+
+Second of four waves that fix the wave 30 audit. Built on wave 32. No migration.
+
+- **Exchange-rate register (B1, critical).** Finance › Exchange rates: Finance records the Central Bank rate of each
+  currency by date (or corrects and removes one); every change is logged. Rates older than 31 days are flagged.
+  Until now the seed's 1 Oct 2026 rates were used for ever.
+- **Amounts convert at the date that fixes them.**
+  - Offers at the tender's price opening (financial envelopes, else the opening, else the RFQ closing date), so a
+    closed tender's ranking no longer moves with the rate (B2). The comparison says which date it used.
+  - Book value, cost of ownership and the purchase-order and assets-by-department reports at each purchase or
+    order date (DL-18).
+  - A date before the first stored rate uses the first rate.
+- **No more USD stored as EGP (DL-05).** With no rate for the BOQ currency, catalogue estimates are left unpriced with
+  a note to add a rate, instead of storing the USD figure (totals were about 50 times too low). Repricing clears old
+  "kept in USD" notes.
+- **Tender comparison** (DL-01, DL-02, DL-03): several lines of one device type in an offer are added up; an offer
+  that misses a required item is shown as "Not ranked" and gets no overall financial or combined score while another
+  offer quotes every item; "lowest single award" is priced at the required quantities. The minutes follow.
+- **Currencies** (DL-06, DL-07): the executive budget tile converts each line to EGP; bonds are converted to the
+  offer's or order's currency before the "short" check, and not checked when a rate is missing.
+- **Orders, invoices, budgets** (DL-04, DL-08, DL-09, B3, DL-12): raising a quantity on a framework call-off draft is
+  checked against the item maximum and the ceiling; an invoice can only hold lines of its own PO; paid invoices of a
+  cancelled PO still count as spent, and a PO closed short releases its undelivered value; "Register missing assets"
+  can no longer create duplicates when clicked twice.
+- Not in this wave: DL-24/DL-25 (approval close and its effect in one transaction, blocking a double award or a budget
+  overrun) needs a decision first: should a budget overrun block the approval or only warn?
+- Checked: typecheck, lint, 801 tests (about 30 new, each failing on the old code), page check of 123 page kinds,
+  the register and the comparison tried in the demo.
+
 ## Wave 32 — data safety (audit fixes, not merged yet)
 
 First of four waves that fix the critical and high findings of the wave 30 audit. No migration.

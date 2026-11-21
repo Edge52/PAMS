@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { activityLog, exchangeRates } from "@/db/schema";
-import { and, desc, eq, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, lte, sql } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { num, todayISO } from "./format";
 import { headers } from "next/headers";
@@ -57,13 +57,19 @@ export async function nextNumber(prefix: string, table: PgTable, column: PgColum
   return `${prefix}-${year}-${String(Number(rows[0].last)).padStart(4, "0")}`;
 }
 
-/** EGP per 1 unit of `currency` on or before `onDate` (EGP → 1). Returns null if no rate is stored. */
+/**
+ * EGP per 1 unit of `currency` on `onDate`: the latest rate dated on or before it; for a date before the first stored
+ * rate, the first one (as FxTable.rateOn does), so an old tender or purchase still converts. EGP → 1; null if the
+ * currency has no rate at all.
+ */
 export async function rateToEgp(currency: string, onDate = todayISO()): Promise<number | null> {
   if (currency === "EGP") return 1;
   const [r] = await db.select().from(exchangeRates)
     .where(and(eq(exchangeRates.currency, currency), lte(exchangeRates.effectiveDate, onDate)))
     .orderBy(desc(exchangeRates.effectiveDate)).limit(1);
-  return r ? num(r.rateToEgp) : null;
+  if (r) return num(r.rateToEgp);
+  const [first] = await db.select().from(exchangeRates).where(eq(exchangeRates.currency, currency)).orderBy(asc(exchangeRates.effectiveDate)).limit(1);
+  return first ? num(first.rateToEgp) : null;
 }
 
 /**
