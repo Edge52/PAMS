@@ -89,19 +89,31 @@ export async function offerTotalEgp(offerId: number, currency: string): Promise<
 }
 
 /** Approval effect: the competent authority approved the award. Offer → AWARDED with the art. 39 timeline. */
-export async function applyApprovedAward(offerId: number, actorName: string, approvedOn = todayISO()) {
+/**
+ * Apply an approved award. One atomic update (audit DL-24/DL-25): it only awards when no other offer of the same
+ * project is already awarded, and does nothing if this offer already is, so it is safe to run again (see
+ * reconcileApprovalEffects). Returns false when it was blocked because another offer holds the award.
+ */
+export async function applyApprovedAward(offerId: number, actorName: string, approvedOn = todayISO()): Promise<boolean> {
   const [o] = await db.select({ offer: offers, supplier: suppliers.name }).from(offers)
     .innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).where(eq(offers.id, offerId));
-  if (!o) return;
+  if (!o) return false;
+  if (o.offer.status === "AWARDED") return true;
   const s = await getSettings();
   const t = awardTimeline(approvedOn, s.complaintDays, s.acceptanceNoticeDays);
-  await db.update(offers).set({ status: "AWARDED", awardApprovedOn: approvedOn, complaintUntil: t.complaintUntil, acceptanceDue: t.acceptanceDue, acceptedOn: null })
-    .where(eq(offers.id, offerId));
+  const done = await db.update(offers).set({ status: "AWARDED", awardApprovedOn: approvedOn, complaintUntil: t.complaintUntil, acceptanceDue: t.acceptanceDue, acceptedOn: null })
+    .where(and(eq(offers.id, offerId), sql`not exists (select 1 from ${offers} o2 where o2.project_id = ${o.offer.projectId} and o2.status = 'AWARDED' and o2.id <> ${offerId})`))
+    .returning({ id: offers.id });
+  if (!done.length) {
+    await logActivity("offer", offerId, "award_blocked", `Award of ${o.offer.reference} approved but not applied: another offer of this tender is already awarded. Revoke that award first if this one should stand.`, actorName);
+    return false;
+  }
   const summary = `Offer ${o.offer.reference} (${o.supplier}) awarded: approved by the competent authority. Notify all bidders now; complaints until ${t.complaintUntil}, acceptance notice to the winner by ${t.acceptanceDue}`;
   await logActivity("offer", offerId, "status_changed", summary, actorName);
   await logActivity("project", o.offer.projectId, "offer_status", summary, actorName);
   await advanceProject(o.offer.projectId, "AWARDED", `offer ${o.offer.reference} awarded to ${o.supplier}`);
   await recomputeOfferScores(o.offer.projectId);
+  return true;
 }
 
 export async function logAwardOutcome(offerId: number, status: "REJECTED" | "CANCELLED", actorName: string) {

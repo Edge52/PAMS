@@ -7,9 +7,9 @@ import "server-only";
  *   AWARD: approved → offer AWARDED with the Law 182 art. 39 timeline; rejected → offer unchanged (logged)
  *   DISPOSAL: approved → disposal APPROVED, asset condemned and out of service; rejected → REJECTED; withdrawn → DRAFT
  */
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, boqs, disposals, purchaseOrders } from "@/db/schema";
+import { approvalRequests, assets, boqs, disposals, offers, purchaseOrders } from "@/db/schema";
 import { logActivity } from "@/lib/server-utils";
 import { applyApprovedAward, committeeChairUserIds, logAwardOutcome } from "@/lib/procurement/tender";
 import type { ApprovalEntity } from "./core";
@@ -47,4 +47,39 @@ export async function onRequestClosed(entity: ApprovalEntity, entityId: number, 
 /** Chairs of the committee(s) whose recommendation an award request carries (they can't approve it, art. 28). */
 export async function awardChairs(offerId: number): Promise<number[]> {
   return committeeChairUserIds(offerId);
+}
+
+/**
+ * Repair pass (audit DL-24/DL-25). Closing a request and applying its effect are separate writes; if the server stops
+ * between them, the record would stay "pending approval" for ever. This re-applies the effect of requests that ended
+ * in the last 30 days but whose record still waits — every effect above is a conditional update, so running it again
+ * is safe. Awards are only re-applied when the offer hasn't changed since the decision (a revoked award stays revoked).
+ * Runs with the hourly alert run. Returns how many records it repaired.
+ */
+export async function reconcileApprovalEffects(): Promise<number> {
+  const ended = await db.select().from(approvalRequests)
+    .where(and(inArray(approvalRequests.status, ["APPROVED", "REJECTED"]), gte(approvalRequests.decidedAt, sql`now() - interval '30 days'`)))
+    .orderBy(desc(approvalRequests.decidedAt));
+  const seen = new Set<string>();
+  let fixed = 0;
+  for (const r of ended) {
+    const key = `${r.entity}:${r.entityId}`;
+    if (seen.has(key)) continue; // only the latest ended request per record
+    seen.add(key);
+    const [open] = await db.select({ id: approvalRequests.id }).from(approvalRequests)
+      .where(and(eq(approvalRequests.entity, r.entity), eq(approvalRequests.entityId, r.entityId), eq(approvalRequests.status, "PENDING"))).limit(1);
+    if (open) continue;
+    let stuck = false;
+    if (r.entity === "PO") stuck = (await db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(and(eq(purchaseOrders.id, r.entityId), eq(purchaseOrders.status, "PENDING_APPROVAL")))).length > 0;
+    else if (r.entity === "BOQ") stuck = (await db.select({ id: boqs.id }).from(boqs).where(and(eq(boqs.id, r.entityId), eq(boqs.status, "UNDER_REVIEW")))).length > 0;
+    else if (r.entity === "DISPOSAL") stuck = (await db.select({ id: disposals.id }).from(disposals).where(and(eq(disposals.id, r.entityId), eq(disposals.status, "PENDING_APPROVAL")))).length > 0;
+    else if (r.entity === "AWARD" && r.status === "APPROVED" && r.decidedAt) {
+      stuck = (await db.select({ id: offers.id }).from(offers).where(and(eq(offers.id, r.entityId), ne(offers.status, "AWARDED"),
+        isNull(offers.awardApprovedOn), lte(offers.updatedAt, r.decidedAt)))).length > 0;
+    }
+    if (!stuck) continue;
+    await onRequestClosed(r.entity, r.entityId, r.status as "APPROVED" | "REJECTED", { requestId: r.id, actor: { id: 0, name: "System (repair)" } });
+    fixed++;
+  }
+  return fixed;
 }

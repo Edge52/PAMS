@@ -155,6 +155,10 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
     // Loan equipment past its due-back date (wave 27): the hospital's biomedical engineers, once per loan.
     const loans = await notifyOverdueLoans(today);
     if (loans) { created += loans; byKind.loan_overdue = (byKind.loan_overdue ?? 0) + loans; }
+    // Approvals that ended while their effect was not applied (audit DL-24/DL-25): apply it now.
+    const { reconcileApprovalEffects } = await import("@/lib/approvals/effects");
+    const repaired = await reconcileApprovalEffects();
+    if (repaired) console.log(`[alerts] ${repaired} approval effect(s) re-applied`);
     // Backups (audit CO-07): a failed nightly run, or no good database backup for two days, to every administrator.
     // Only for PostgreSQL servers: the laptop/demo install has no nightly job.
     if (!isPglite) {

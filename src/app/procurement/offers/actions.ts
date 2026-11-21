@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -281,6 +281,12 @@ export async function recommendAward(_prev: ActionState, fd: FormData): Promise<
     return fail(`An offer that is ${humanizeEnum(o.offer.status).toLowerCase()} can't be recommended for award. Review or shortlist it first.`);
   }
   if (await pendingRequest("AWARD", offerId)) return fail("An award recommendation for this offer is already waiting for approval.");
+  // One award per tender (audit DL-24/DL-25): not while another offer is awarded or waiting for its award approval.
+  for (const other of await db.select({ id: offers.id, reference: offers.reference, status: offers.status }).from(offers)
+    .where(and(eq(offers.projectId, o.offer.projectId), ne(offers.id, offerId)))) {
+    if (other.status === "AWARDED") return fail(`Offer ${other.reference} is already awarded in this tender. Revoke that award first.`);
+    if (await pendingRequest("AWARD", other.id)) return fail(`An award recommendation for offer ${other.reference} is already waiting for approval. Withdraw it first.`);
+  }
   if (o.project.twoEnvelope && !o.project.financialOpenedAt) return fail("This is a two-envelope tender and the financial envelopes are still sealed. Finish the technical evaluation and open them first (project › Tender tab).");
   const failures = await mandatoryFailures(offerId);
   if (failures.length && !reason) {
