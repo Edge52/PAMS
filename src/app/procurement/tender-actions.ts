@@ -3,6 +3,7 @@
  * Tender law pieces (wave 10): two-envelope opening (Law 182/2018 art. 23) and bonds (bid bond art. 16, performance
  * bond art. 40). Rates and steps confirmed by the hospital (Nov 2026).
  */
+import { todayISO } from "@/lib/format";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
@@ -83,7 +84,7 @@ export async function setBondStatusAction(_: FormState, fd: FormData): Promise<F
   if (!p) return { error: "That project no longer exists." };
   const id = Number(fd.get("bondId")), status = String(fd.get("status")) as "RELEASED" | "CALLED" | "HELD";
   if (!["RELEASED", "CALLED", "HELD"].includes(status)) return { error: "Choose what happened to the bond." };
-  const r = await db.update(bonds).set({ status, releasedOn: status === "HELD" ? null : new Date().toISOString().slice(0, 10) }).where(and(eq(bonds.id, id), eq(bonds.projectId, p.id))).returning({ id: bonds.id });
+  const r = await db.update(bonds).set({ status, releasedOn: status === "HELD" ? null : todayISO() }).where(and(eq(bonds.id, id), eq(bonds.projectId, p.id))).returning({ id: bonds.id });
   if (!r.length) return { error: "That bond no longer exists." };
   await logActivity("project", p.id, "bond", `Bond ${status.toLowerCase()}`, me.name);
   revalidatePath(tab(p.id));

@@ -3,6 +3,7 @@
  * Device incident actions (wave 23). Anyone signed in can report an incident on a device in a hospital they can
  * see; investigating, recording who was told and closing is for `incidents.manage` (biomedical and administrators).
  */
+import { todayISO, zonedInstant } from "@/lib/format";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -35,7 +36,7 @@ export async function reportIncidentAction(_: ActionState, fd: FormData): Promis
   const [a] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, status: assets.status }).from(assets).where(eq(assets.id, d.assetId));
   if (!a) return fail("That device is not in the register.");
   await requireFacilityAccess(a.facilityId, me);
-  const occurredAt = new Date(`${d.occurredOn}T${d.occurredTime ?? "12:00"}:00`);
+  const occurredAt = zonedInstant(d.occurredOn, d.occurredTime ?? "12:00"); // Cairo wall time (audit CO-09)
   if (Number.isNaN(occurredAt.getTime()) || occurredAt.getTime() > Date.now() + 86_400_000) return { errors: ["The date it happened can't be in the future."], fields: { occurredOn: "This date is in the future." } };
   const harm = d.harm ?? "NONE";
   const row = await db.transaction(async (tx) => {
@@ -79,7 +80,7 @@ export async function updateIncidentAction(_: ActionState, fd: FormData): Promis
   if (!i) return fail("That incident no longer exists.");
   await requireFacilityAccess(i.facilityId, me);
   if (i.status === "CLOSED") return fail("This incident is closed. Reopen it to change it.");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   for (const [k, v] of [["manufacturerNotifiedOn", d.manufacturerNotifiedOn], ["edaNotifiedOn", d.edaNotifiedOn]] as const) {
     if (v && v > today) return { errors: ["A notification date can't be in the future."], fields: { [k]: "This date is in the future." } };
   }

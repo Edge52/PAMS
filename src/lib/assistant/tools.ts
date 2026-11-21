@@ -1,3 +1,4 @@
+import { todayISO } from "@/lib/format";
 import "server-only";
 /** Runs the assistant's read-only tools for one user, within their permissions and hospitals (wave 13). */
 import { and, asc, desc, eq, ilike, inArray, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
@@ -146,7 +147,7 @@ export async function runTool(me: CurrentUser, name: string, input: Input): Prom
 
     case "service_contracts": {
       const within = n(input.ending_within_days), sup = s(input.supplier);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayISO();
       const devices = sql<number>`(select count(*)::int from ${serviceContractAssets} where ${serviceContractAssets.contractId} = ${serviceContracts.id})`;
       const rows = await db.select({ id: serviceContracts.id, number: serviceContracts.number, title: serviceContracts.title, type: serviceContracts.type, supplier: suppliers.name, hospital: facilities.code,
         start: serviceContracts.startDate, end: serviceContracts.endDate, devices, responseHours: serviceContracts.responseHours, repairHours: serviceContracts.repairHours, uptimePct: serviceContracts.uptimePct,

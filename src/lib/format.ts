@@ -56,6 +56,23 @@ export function todayISO(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
+/**
+ * The instant of a wall-clock date and time in the hospital's time zone (audit CO-09): "2026-11-21", "01:30" in Cairo
+ * → 2026-11-20T23:30Z. `new Date("2026-11-21T01:30:00")` would read it in the server's own zone (UTC in Docker).
+ */
+export function zonedInstant(dateISO: string, time = "00:00", timeZone = APP_TIME_ZONE): Date {
+  const [y, mo, d] = dateISO.split("-").map(Number), [h, mi] = time.split(":").map(Number);
+  const wall = Date.UTC(y, mo - 1, d, h || 0, mi || 0);
+  const offsetAt = (t: number) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      .formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - t;
+  };
+  let t = wall - offsetAt(wall);
+  t = wall - offsetAt(t); // second pass settles daylight-saving edges
+  return new Date(t);
+}
+
 /** Timestamps in the hospital's time zone: Date → "27 Oct 2026, 14:05". */
 export function formatDateTime(v: string | Date | null | undefined): string {
   if (!v) return "—";

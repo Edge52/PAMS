@@ -1,3 +1,4 @@
+import { todayISO } from "@/lib/format";
 import "server-only";
 /** Pathway analysis for one hospital (wave 7, step 7d): every published pathway, with the hospital's rooms and devices. */
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -58,7 +59,7 @@ export async function analysisWorkbook(facilityName: string, a: HospitalAnalysis
   const as = wb.addWorksheet("Assumptions");
   as.columns = [{ width: 120 }];
   for (const line of [
-    `Pathway analysis — ${facilityName}, ${new Date().toISOString().slice(0, 10)}. All figures are estimates.`,
+    `Pathway analysis — ${facilityName}, ${todayISO()}. All figures are estimates.`,
     `Pathways: ${a.flows.map((f) => `${f.name} v${f.version} (${f.dailyVolume ?? "no"} patients a day)`).join("; ") || "none published"}.`,
     "Room load: in each hour, patients arriving that hour × minutes at the step ÷ 60 (average number there at once), summed over pathways; the busiest hour ÷ rooms. A patient is counted at every step in the hour they arrive. Flag above 85 %.",
     "Rooms: the step's own room, or the department's care rooms (patient rooms, wards, ICU bays, theatres, procedure, imaging and consultation rooms).",

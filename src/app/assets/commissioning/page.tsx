@@ -9,7 +9,7 @@ import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/assets/access";
 import { listPlans } from "@/lib/assets/commissioning-server";
-import { formatDate } from "@/lib/format";
+import { formatDate, todayISO } from "@/lib/format";
 import { createPlanAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ export default async function CommissioningPage({ searchParams }: { searchParams
   const projs = mayEdit && fac ? await db.select({ id: projects.id, code: projects.code, title: projects.title }).from(projects)
     .where(or(eq(projects.facilityId, fac.id), isNull(projects.facilityId))).orderBy(asc(projects.code)) : [];
   const multiBuilding = new Set(fl.map((f) => f.building)).size > 1;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
 
   return (
     <>

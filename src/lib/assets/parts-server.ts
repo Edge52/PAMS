@@ -1,3 +1,4 @@
+import { todayISO } from "@/lib/format";
 import "server-only";
 /** Database side of spare parts: the one place stock changes, so the stock and the movement log never disagree. */
 import { and, eq, sql } from "drizzle-orm";
@@ -36,7 +37,7 @@ export async function notifyIfLow(r: MovementResult, partId: number) {
   await notifyRole("BIOMEDICAL", {
     kind: "part_low_stock", title: `${r.partName}: ${r.after === 0 ? "out of stock" : `only ${r.after} left`}`,
     body: `Stock is at or below the minimum of ${r.min}. Reorder it.`, href: `/assets/parts/${partId}`,
-    dedupeKey: `part_low:${partId}:${new Date().toISOString().slice(0, 10)}`,
+    dedupeKey: `part_low:${partId}:${todayISO()}`,
   }, r.facilityId);
 }
 

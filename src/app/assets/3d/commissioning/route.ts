@@ -1,3 +1,4 @@
+import { todayISO } from "@/lib/format";
 import { routeGuard } from "@/lib/auth/route-guard";
 import { facilityScope, getCurrentUser } from "@/lib/auth/session";
 import { inScope } from "@/lib/assets/access";
@@ -17,7 +18,7 @@ export async function GET(req: Request) {
   if (!row) return new Response("That plan isn't there.", { status: 404 });
   if (!inScope(await facilityScope(me), row.plan.facilityId)) return new Response("You don't have access to this facility.", { status: 403 });
   const p = planOf(row.plan);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   const rooms = await planRooms(id, row.plan.startsOn);
   const body: CommissioningPayload = {
     id, name: row.plan.name, facilityId: row.plan.facilityId, today, weeks: planWeeks(rooms, p, today),

@@ -3,6 +3,7 @@
  * Electrical safety test actions (wave 23). Recording a test needs `maintenance.edit` (biomedical engineers and
  * technicians); marking a device as test equipment and setting its calibration date needs `assets.edit`.
  */
+import { todayISO } from "@/lib/format";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -37,7 +38,7 @@ export async function recordSafetyTestAction(_: ActionState, fd: FormData): Prom
     .from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).where(eq(assets.id, d.assetId));
   if (!a) return fail("That device is not in the register.");
   await requireFacilityAccess(a.facilityId, me);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   if (d.testedOn > today) return { errors: ["The test date can't be in the future."], fields: { testedOn: "This date is in the future." } };
   // The analyser must be test equipment of the same hospital, with its calibration in date on the day of the test.
   const [an] = await db.select({ id: assets.id, tag: assets.assetTag, manufacturer: assets.manufacturer, model: assets.model, serial: assets.serialNumber, calibrationDue: assets.calibrationDue })

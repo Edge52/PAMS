@@ -1,5 +1,6 @@
 "use server";
 /** Space planning (wave 17): save the area schedule as a snapshot to compare with later, or remove one. */
+import { todayISO } from "@/lib/format";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -15,7 +16,7 @@ export async function saveSnapshotAction(fd: FormData) {
   const facilityId = Number(fd.get("facilityId"));
   if (!Number.isInteger(facilityId) || facilityId <= 0) redirect("/facilities");
   await requireFacilityAccess(facilityId, me);
-  const name = String(fd.get("name") ?? "").trim().slice(0, 80) || `Snapshot ${new Date().toISOString().slice(0, 10)}`;
+  const name = String(fd.get("name") ?? "").trim().slice(0, 80) || `Snapshot ${todayISO()}`;
   const data = toSnapshot(await facilitySpace(facilityId));
   const [row] = await db.insert(spaceSnapshots).values({ facilityId, name, data, createdByName: me.name }).returning({ id: spaceSnapshots.id });
   await logActivity("facility", facilityId, "space_snapshot", `Space snapshot “${name}” saved`, me.name);

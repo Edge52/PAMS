@@ -1,4 +1,5 @@
 /** Commissioning (wave 14, C5): the Gantt and progress of the commissioning plans linked to this project. */
+import { todayISO } from "@/lib/format";
 import Link from "next/link";
 import type { projects } from "@/db/schema";
 import { EmptyState, LinkButton, Panel } from "@/components/ui";
@@ -21,7 +22,7 @@ export async function CommissioningTab({ project, me }: { project: Project; me: 
       </EmptyState>
     );
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   const awaitingDept = await awaitingByDepartment(project.id);
   return (
     <div className="space-y-5">

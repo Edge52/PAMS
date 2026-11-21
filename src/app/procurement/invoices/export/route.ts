@@ -1,4 +1,5 @@
 /** Approved and paid invoices as CSV for the finance system (wave 10). */
+import { todayISO } from "@/lib/format";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { facilities, invoiceLines, invoices, purchaseOrders, suppliers } from "@/db/schema";
@@ -17,5 +18,5 @@ export async function GET() {
     .where(and(inArray(invoices.status, ["APPROVED", "PAID"]), scopeWhere(purchaseOrders.facilityId, scope))).orderBy(asc(invoices.invoiceDate));
   const head = ["Invoice", "Supplier invoice no", "Supplier", "Supplier tax ID", "Hospital", "PO", "Invoice date", "Due date", "Currency", "Amount", "Status", "Approved by", "Paid on", "Payment reference"];
   const body = rows.map((r) => [r.i.number, r.i.supplierInvoiceNo, r.supplier, r.taxId, r.facility, r.po, r.i.invoiceDate, r.i.dueDate, r.i.currency, Number(r.total ?? 0).toFixed(2), r.i.status, r.i.approvedByName, r.i.paidAt, r.i.paymentReference].map(cell).join(","));
-  return new Response([head.join(","), ...body].join("\r\n") + "\r\n", { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="invoices-${new Date().toISOString().slice(0, 10)}.csv"` } });
+  return new Response([head.join(","), ...body].join("\r\n") + "\r\n", { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="invoices-${todayISO()}.csv"` } });
 }

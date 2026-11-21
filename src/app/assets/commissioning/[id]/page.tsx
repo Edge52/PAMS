@@ -13,7 +13,7 @@ import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { curve, deviceCounts, ganttRows, planWeeks, roomsOn, STAGES, type RoomState } from "@/lib/assets/commissioning";
 import { pageOf, PLAN_TABS, type PlanTab } from "@/lib/assets/commissioning-view";
 import { awaitingByDepartment, loadPlan, planOf, planRooms } from "@/lib/assets/commissioning-server";
-import { formatDate } from "@/lib/format";
+import { formatDate, todayISO } from "@/lib/format";
 import { bulkDatesAction, deletePlanAction, saveRoomsAction, updatePlanAction } from "../actions";
 import { ConfirmButton } from "@/components/ui/confirm";
 
@@ -35,7 +35,7 @@ export default async function CommissioningPlanPage({ params, searchParams }: { 
   const { plan } = row;
   await requireFacilityAccess(plan.facilityId, me);
   const mayEdit = can(me.role, "facilities.edit");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   const p = planOf(plan);
   const rooms = await planRooms(id, plan.startsOn);
   const states = roomsOn(rooms, p, today, today);

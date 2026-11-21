@@ -1,3 +1,4 @@
+import { todayISO } from "@/lib/format";
 import "server-only";
 /**
  * Money on the server (wave 10): PO values, budget use per line, and the data an invoice is matched against.
@@ -92,7 +93,7 @@ export async function calledOff(frameworkId: number, excludePoId?: number) {
 
 /** A supplier's scorecard from what the system records (wave 10): delivery, acceptance, warranty response, invoices. */
 export async function supplierScorecard(supplierId: number) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   const pos = await db.select({ id: purchaseOrders.id, expected: purchaseOrders.expectedDelivery, status: purchaseOrders.status, last: sql<string | null>`(select max(${deliveries.deliveryDate}) from ${deliveries} where ${deliveries.poId} = ${purchaseOrders.id})` })
     .from(purchaseOrders).where(and(eq(purchaseOrders.supplierId, supplierId), sql`${purchaseOrders.expectedDelivery} is not null`, inArray(purchaseOrders.status, ["ISSUED", "ACKNOWLEDGED", "PARTIALLY_DELIVERED", "DELIVERED", "CLOSED"])));
   const days = (a: string, b: string) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);

@@ -11,6 +11,7 @@
  * - Room labels and the title block drawn by the app on top (labels.ts), never part of the 3D image.
  * - Images larger than the GPU allows are rendered in tiles and joined.
  */
+import { todayISO } from "@/lib/format";
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -573,7 +574,7 @@ export class RenderStudio {
     ctx.textBaseline = "middle"; ctx.textAlign = "left";
     ctx.fillStyle = "#1d252c"; ctx.font = font(700, 26); ctx.fillText(f.name.toUpperCase(), tx, y0 + band * 0.42);
     ctx.fillStyle = "#5b6670"; ctx.font = font(500, 15);
-    ctx.fillText(`${o.facilityName} · ${new Date().toISOString().slice(0, 10)}`, tx, y0 + band * 0.74);
+    ctx.fillText(`${o.facilityName} · ${todayISO()}`, tx, y0 + band * 0.74);
     // Right: what's shown, scale bar, north arrow.
     const eqMode = o.equipment ?? "installed";
     const notes = [

@@ -583,7 +583,7 @@ export function useTwinView({ data, live: initialLive, views: initialViews, canM
       const blob = await s.snapshot(2, caption);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = url; link.download = `${data.facility.code}-3d-${new Date().toISOString().slice(0, 10)}.png`;
+      link.href = url; link.download = `${data.facility.code}-3d-${todayISO()}.png`;
       document.body.appendChild(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch { setToast({ error: "The image couldn't be made. Try again with the glow switched off." }); }

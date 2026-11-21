@@ -1,3 +1,4 @@
+import { todayISO } from "@/lib/format";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { facilities } from "@/db/schema";
@@ -18,7 +19,7 @@ export async function GET(req: Request) {
   if (!fac) return new Response("Not found", { status: 404 });
   const wb = await analysisWorkbook(fac.name, await hospitalAnalysis(fid));
   const buf = await wb.xlsx.writeBuffer();
-  const name = `Pathway analysis - ${fac.name} - ${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const name = `Pathway analysis - ${fac.name} - ${todayISO()}.xlsx`;
   return new Response(new Uint8Array(buf as ArrayBuffer), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

@@ -1,3 +1,4 @@
+import { todayISO } from "@/lib/format";
 import "server-only";
 /**
  * The assistant's conversation loop (wave 13): sends the chat and the user's tools to Claude, runs the tools it asks
@@ -16,7 +17,7 @@ type Msg = { role: "user" | "assistant"; content: string | unknown[] };
 
 function system(me: CurrentUser) {
   return `You are the assistant inside Hospital PAMS, a system for hospital equipment planning (BOQs), procurement under Egyptian Law 182/2018, and medical device management.
-You are helping ${me.name}, ${ROLE_LABELS[me.role as Role] ?? me.role}${me.jobTitle ? ` (${me.jobTitle})` : ""}. Today is ${new Date().toISOString().slice(0, 10)}.
+You are helping ${me.name}, ${ROLE_LABELS[me.role as Role] ?? me.role}${me.jobTitle ? ` (${me.jobTitle})` : ""}. Today is ${todayISO()}.
 
 - Answer from PAMS data (devices, work orders, service contracts, recalls, BOQs, projects, suppliers, purchase orders, budgets): use the tools to look things up, and never make up tags, numbers, prices, dates or names. If the tools don't have it, say so.
 - The tools only show what this user may see. You can't change anything in PAMS; tell the user where to do it instead.

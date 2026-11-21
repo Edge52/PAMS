@@ -7,7 +7,7 @@ import { NativeSelect } from "@/components/assets/bits";
 import { scopeWhere, scopedFacilityId } from "@/lib/assets/access";
 import { egpRates, toEgp } from "@/lib/assets/lifecycle-server";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
-import { formatMoney, formatNumber } from "@/lib/format";
+import { formatMoney, formatNumber, todayISO } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Maintenance budget" };
@@ -39,7 +39,7 @@ export default async function MaintenanceBudgetPage({ searchParams }: { searchPa
     db.select().from(serviceContracts).where(and(eq(serviceContracts.facilityId, facilityId), lt(serviceContracts.startDate, y1), gte(serviceContracts.endDate, y0))),
     db.select().from(budgetLines).where(and(eq(budgetLines.facilityId, facilityId), eq(budgetLines.year, year), eq(budgetLines.kind, "MAINTENANCE"))),
     db.select({ n: sql<number>`count(*)::int` }).from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId))
-      .where(and(eq(assets.facilityId, facilityId), eq(maintenanceEvents.status, "SCHEDULED"), gte(maintenanceEvents.scheduledDate, now.toISOString().slice(0, 10)), lte(maintenanceEvents.scheduledDate, `${year}-12-31`))),
+      .where(and(eq(assets.facilityId, facilityId), eq(maintenanceEvents.status, "SCHEDULED"), gte(maintenanceEvents.scheduledDate, todayISO(now)), lte(maintenanceEvents.scheduledDate, `${year}-12-31`))),
   ]);
   const covered = contracts.length ? await db.select({ contractId: serviceContractAssets.contractId, dept: assets.departmentId }).from(serviceContractAssets)
     .innerJoin(assets, eq(assets.id, serviceContractAssets.assetId)).where(inArray(serviceContractAssets.contractId, contracts.map((c) => c.id))) : [];

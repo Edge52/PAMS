@@ -19,3 +19,16 @@ describe("addMonthsISO", () => {
     expect(addMonthsISO("2026-12-31", 12)).toBe("2027-12-31");
   });
 });
+
+describe("Cairo dates (CO-09)", () => {
+  it("today is the Cairo date, not the UTC one, just after midnight", async () => {
+    const { todayISO } = await import("./format");
+    // 00:30 on 21 Nov in Cairo is still 20 Nov in UTC.
+    expect(todayISO(new Date("2026-11-20T22:30:00Z"))).toBe("2026-11-21");
+  });
+  it("a Cairo date and time becomes the right instant", async () => {
+    const { zonedInstant } = await import("./format");
+    expect(zonedInstant("2026-11-21", "01:30").toISOString()).toBe("2026-11-20T23:30:00.000Z"); // winter, UTC+2
+    expect(zonedInstant("2026-07-15", "12:00").toISOString()).toBe("2026-07-15T09:00:00.000Z"); // summer time, UTC+3
+  });
+});

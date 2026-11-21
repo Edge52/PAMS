@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, deviceTypes, facilities, incidents } from "@/db/schema";
-import { formatNumber } from "@/lib/format";
+import { formatNumber, todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
 import { reportable } from "@/lib/assets/incidents";
 import { plural } from "./calc";
@@ -26,7 +26,7 @@ export async function incidentsReport({ filters: f, scope, today }: ReportContex
     const toReport = reportable(i.harm);
     const lateToReport = toReport && !i.edaNotifiedOn && !!i.reportBy && i.reportBy < today;
     return {
-      id: i.id, number: i.number, occurred: i.occurredAt.toISOString().slice(0, 10), title: i.title, harm: humanize(i.harm),
+      id: i.id, number: i.number, occurred: todayISO(i.occurredAt), title: i.title, harm: humanize(i.harm),
       patient: i.patientInvolved ? "Yes" : "No", status: humanize(i.status), tag: i.tag, assetId: i.assetId, deviceType: i.deviceType, facility: i.facility,
       maker: i.manufacturerNotifiedOn, eda: toReport ? (i.edaNotifiedOn ?? (lateToReport ? "Late" : "Not yet")) : "Not needed", edaRef: i.edaReference, late: lateToReport ? 1 : 0,
     };

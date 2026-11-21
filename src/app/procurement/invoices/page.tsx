@@ -6,7 +6,7 @@ import { EmptyState, PageHeader, Panel, StatusBadge, TabLinks } from "@/componen
 import { Notice } from "@/components/assets/bits";
 import { scopeWhere } from "@/lib/assets/access";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoney, todayISO } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Supplier invoices" };
@@ -26,7 +26,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const rows = await db.select({ i: invoices, po: purchaseOrders.number, supplier: suppliers.name, total: sql<string>`(select sum(${invoiceLines.quantity} * ${invoiceLines.unitPrice}) from ${invoiceLines} where ${invoiceLines.invoiceId} = ${invoices.id})` })
     .from(invoices).innerJoin(purchaseOrders, eq(purchaseOrders.id, invoices.poId)).innerJoin(suppliers, eq(suppliers.id, invoices.supplierId))
     .where(and(inArray(invoices.status, [...tab.statuses]), scopeWhere(purchaseOrders.facilityId, scope))).orderBy(desc(invoices.invoiceDate)).limit(300);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   return (
     <>
       <PageHeader title="Supplier invoices" description="Each invoice is matched against what its purchase order ordered and what was received. Record one from the PO's page."

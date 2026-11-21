@@ -4,6 +4,7 @@
  * rule lines: it holds exactly the devices chosen here, one line per department and device type, each line saying
  * which assets it replaces and why.
  */
+import { todayISO } from "@/lib/format";
 import { eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -39,7 +40,7 @@ export async function createReplacementBoqAction(_: FormState, fd: FormData): Pr
   const boqId = await db.transaction(async (tx) => {
     const [boq] = await tx.insert(boqs).values({
       name, facilityId, standardSetId: setId, currency: "EGP", contingencyPct: 0,
-      notes: `Created from the replacement plan on ${new Date().toISOString().slice(0, 10)} for ${plan.length} device${plan.length === 1 ? "" : "s"}.`,
+      notes: `Created from the replacement plan on ${todayISO()} for ${plan.length} device${plan.length === 1 ? "" : "s"}.`,
     }).returning({ id: boqs.id });
     // One BOQ department per real department (devices without one go to hospital-wide).
     const byDept = new Map<number | null, typeof plan>();
