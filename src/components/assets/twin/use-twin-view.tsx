@@ -31,7 +31,7 @@ import { readiness } from "@/lib/flows/readiness";
 import type { TwinNote } from "@/lib/assets/twin-notes";
 import { BUILTIN_KITS, type KitRule } from "./render/kits";
 import { presetById, presetRooms, presetSummary, type PresetId } from "./presets";
-import { statusesOn, type StatusRow } from "@/lib/assets/status-history";
+import { replayStatuses, type StatusRow } from "@/lib/assets/status-history";
 import { todayISO } from "@/lib/format";
 import { type Outline } from "./fit-panel";
 import { EVENT_COLORS, eventsAt, perDay, shortcutFor, type TimeEvent } from "./timeline";
@@ -149,7 +149,7 @@ export function useTwinView({ data, live: initialLive, views: initialViews, canM
   const [tours, setTours] = useState<Tour[]>(initialTours);
   const [tourEdit, setTourEdit] = useState<{ id?: number; name: string; shared: boolean; stops: { state: string; caption: string; seconds: number }[] } | null>(null);
   const [tourPlay, setTourPlay] = useState<{ tour: Tour; i: number; paused: boolean } | null>(null);
-  const [history, setHistory] = useState<{ since: number; until: number; days: number; events: TimeEvent[]; status: StatusRow[]; snapshotsSince: string | null } | null>(null);
+  const [history, setHistory] = useState<{ since: number; until: number; days: number; events: TimeEvent[]; status: StatusRow[]; snapshotsSince: string | null; statusFrom: string | null } | null>(null);
   // Replay each device's status on the slider's day (wave 16), instead of the live status.
   const [replayStatus, setReplayStatus] = useState(true);
   const [historyBusy, setHistoryBusy] = useState(false);
@@ -236,9 +236,17 @@ export function useTwinView({ data, live: initialLive, views: initialViews, canM
     return [...m.values()].sort((a, b) => b.n - a.n);
   }, [placed]);
   const statusOf = (id: number, fallback: string) => live.get(id)?.status ?? fallback;
+  const liveStatuses = useMemo(() => new Map(placed.map((a) => [a.id, live.get(a.id)?.status ?? a.status])), [placed, live]);
+  // The day being replayed (History panel, wave 16), or null for live statuses. Past days show the stored status or
+  // "no data", never the live one (wave 35, audit A7); "today" is the day the history was loaded, which shows live.
+  const replayDay = history && replayStatus && history.status.length ? todayISO(new Date(timeAt)) : null;
+  const replayed = useMemo(() => (replayDay && history
+    ? replayStatuses(history.status, replayDay, todayISO(new Date(history.until)), liveStatuses, history.statusFrom) : null), [replayDay, history, liveStatuses]);
+  // What the model shows: the replayed status while replaying, else live. The status filter and legend follow it (A12).
+  const shownStatuses = replayed ?? liveStatuses;
   const statusCounts = useMemo(() => {
-    const m = new Map<string, number>(); for (const a of placed) { const st = live.get(a.id)?.status ?? a.status; m.set(st, (m.get(st) ?? 0) + 1); } return m;
-  }, [placed, live]);
+    const m = new Map<string, number>(); for (const a of placed) { const st = shownStatuses.get(a.id) ?? a.status; m.set(st, (m.get(st) ?? 0) + 1); } return m;
+  }, [placed, shownStatuses]);
   const perFloor = useMemo(() => {
     const m = new Map<number, number>(); for (const a of placed) { const f = roomById.get(a.roomId!)!.floorId; m.set(f, (m.get(f) ?? 0) + 1); } return m;
   }, [placed, roomById]);
@@ -299,8 +307,8 @@ export function useTwinView({ data, live: initialLive, views: initialViews, canM
   }, [query, data.rooms]);
   useEffect(() => {
     const s = sceneRef.current; if (!s || !ready) return;
-    s.setVisibleAssets(new Set(placed.filter((a) => (!cats.size || cats.has(a.categoryCode)) && (!statuses.size || statuses.has(live.get(a.id)?.status ?? a.status))).map((a) => a.id)));
-  }, [cats, statuses, placed, ready, live]);
+    s.setVisibleAssets(new Set(placed.filter((a) => (!cats.size || cats.has(a.categoryCode)) && (!statuses.size || statuses.has(shownStatuses.get(a.id) ?? a.status))).map((a) => a.id)));
+  }, [cats, statuses, placed, ready, shownStatuses]);
   // Live alerts (wave 7e): a new fault since the last refresh flashes in the model, with a toast and "Go there".
   const alertsRef = useRef<(prev: Map<number, LiveMetrics>, next: Map<number, LiveMetrics>) => void>(() => {});
   const liveRef = useRef(live);
@@ -325,15 +333,10 @@ export function useTwinView({ data, live: initialLive, views: initialViews, canM
     document.addEventListener("visibilitychange", onVis);
     return () => { stop = true; window.clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [data.facility.id]);
-  // The day being replayed (History panel, wave 16), or null for live statuses.
-  const replayDay = history && replayStatus && history.status.length ? todayISO(new Date(timeAt)) : null;
-  const replayed = useMemo(() => (replayDay && history ? statusesOn(history.status, replayDay) : null), [replayDay, history]);
   useEffect(() => {
     if (!ready) return;
-    const now = new Map([...live].map(([id, m]) => [id, m.status]));
-    // Devices with no row on that day keep their live status.
-    sceneRef.current?.setStatuses(replayed ? new Map([...now].map(([id, st]) => [id, replayed.get(id) ?? st])) : now);
-  }, [live, ready, replayed]);
+    sceneRef.current?.setStatuses(shownStatuses);
+  }, [ready, shownStatuses]);
   // Problem layer → room colours.
   // Room areas in m² (equipment density layer, wave 17).
   const roomAreas = useMemo(() => {
@@ -1090,10 +1093,10 @@ export function useTwinView({ data, live: initialLive, views: initialViews, canM
     setHistoryBusy(true);
     try {
       const res = await fetch(`/assets/3d/history?facilityId=${data.facility.id}&days=${days}`, { cache: "no-store" });
-      const j = await res.json() as { since: string; until: string; events: TimeEvent[]; status?: [number, string, string][]; snapshotsSince?: string | null; error?: string };
+      const j = await res.json() as { since: string; until: string; events: TimeEvent[]; status?: [number, string, string][]; snapshotsSince?: string | null; statusFrom?: string | null; error?: string };
       if (!res.ok) throw new Error(j.error ?? String(res.status));
       const until = Date.parse(j.until);
-      setHistory({ since: Date.parse(j.since), until, days, events: j.events, status: (j.status ?? []).map(([assetId, day, status]) => ({ assetId, day, status })), snapshotsSince: j.snapshotsSince ?? null }); setTimeAt(until);
+      setHistory({ since: Date.parse(j.since), until, days, events: j.events, status: (j.status ?? []).map(([assetId, day, status]) => ({ assetId, day, status })), snapshotsSince: j.snapshotsSince ?? null, statusFrom: j.statusFrom ?? null }); setTimeAt(until);
     } catch (e) { setToast({ error: `The history couldn't be loaded (${(e as Error).message}).` }); }
     setHistoryBusy(false);
   }

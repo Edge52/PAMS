@@ -32,7 +32,8 @@ export function TimePanel({ t }: { t: TwinCtx }) {
             <span><span className="text-white">Device status on {replayDay ? new Date(`${replayDay}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "that day"}</span>
               <span className="block text-[11px] text-[#8fb6cc]">{!history.status.length ? "No status history yet: it is recorded every hour from now on." : history.snapshotsSince
                 ? `Recorded since ${new Date(`${history.snapshotsSince}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}; earlier days rebuilt from work orders' downtime.`
-                : "Rebuilt from work orders' downtime; recorded from now on."}</span></span>
+                : "Rebuilt from work orders' downtime; recorded from now on."}{history.status.length ? " A device with no record for the day shows as no data." : ""}
+                {history.statusFrom && ` Too many changes to load them all: days before ${new Date(`${history.statusFrom}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} show no data.`}</span></span>
           </label>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
             {(["fault", "repair", "move", "install"] as const).map((k) => (

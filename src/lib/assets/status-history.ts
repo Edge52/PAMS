@@ -48,6 +48,44 @@ export function statusesOn(rows: StatusRow[], day: string): Map<number, string> 
   return new Map([...best].map(([id, r]) => [id, r.status]));
 }
 
+/** Shown for a device on a past day with no stored row on or before it (wave 35, audit A7). */
+export const NO_DATA = "NO_DATA";
+
+/**
+ * Every device's status to show when replaying `day` (wave 35, audit A7). Past days: the latest stored row on or
+ * before that day, else "no data" — never today's live status. Days before `completeFrom` (rows were cut) are no data
+ * for every device. Today and later: the live status.
+ */
+export function replayStatuses(rows: StatusRow[], day: string, today: string, live: Map<number, string>, completeFrom: string | null = null): Map<number, string> {
+  if (day >= today) return new Map(live);
+  const stored = completeFrom && day < completeFrom ? new Map<number, string>() : statusesOn(rows, day);
+  return new Map([...live.keys()].map((id) => [id, stored.get(id) ?? NO_DATA]));
+}
+
+/** How bad a status is for the day's row: out of service, then under maintenance, then anything else. */
+const severity = (s: string) => (s === "OUT_OF_SERVICE" ? 2 : s === "UNDER_MAINTENANCE" ? 1 : 0);
+
+/**
+ * Today's rows to write (wave 35, audit A8). The hourly job sees each device's status now, and which devices had
+ * downtime today (from work orders, so an outage between two runs still counts as out of service). Today's row keeps
+ * the worst status seen that day: a device that went down and came back the same day stays out of service for that
+ * day, and the next day's run stores it back in service. Without a row today, a device is written when it differs
+ * from its latest row.
+ */
+export function snapshotWrites(current: { assetId: number; status: string }[], latest: Map<number, string>, todayRows: Map<number, string>,
+  downToday: Set<number> = new Set()): { assetId: number; status: string }[] {
+  const out: { assetId: number; status: string }[] = [];
+  for (const c of current) {
+    const seen = downToday.has(c.assetId) && severity(c.status) < 2 ? "OUT_OF_SERVICE" : c.status;
+    const stored = todayRows.get(c.assetId);
+    if (stored != null) {
+      const next = severity(seen) >= severity(stored) ? seen : stored;
+      if (next !== stored) out.push({ assetId: c.assetId, status: next });
+    } else if (latest.get(c.assetId) !== seen) out.push({ assetId: c.assetId, status: seen });
+  }
+  return out;
+}
+
 /** The changes to store today: devices whose status differs from their latest row (or that have none). */
 export function changesToday(current: { assetId: number; status: string }[], latest: Map<number, string>): { assetId: number; status: string }[] {
   return current.filter((a) => latest.get(a.assetId) !== a.status);

@@ -2,6 +2,7 @@
  * Imaging and equipment planning (wave 9): service contract performance (D6), imaging utilisation (D3), the year a
  * device goes in the capital plan (D4) and total cost of ownership of an offer (D5). Pure; hours and plain numbers.
  */
+import { downtimeMsByDevice } from "./downtime";
 
 /* ── D6: contract performance ── */
 
@@ -32,7 +33,6 @@ const hours = (a: Date, b: Date) => (b.getTime() - a.getTime()) / H;
  * was reported.
  */
 export function contractStatement(t: ContractTerms, jobs: ContractJob[], devices: number, from: Date, to: Date): Statement {
-  const end = (d: Date | null) => (d && d < to ? d : to);
   const rows: JobPerformance[] = jobs.map((j) => {
     const responseH = j.startedAt ? hours(j.reportedAt, j.startedAt) : j.completedAt ? hours(j.reportedAt, j.completedAt) : null;
     const back = j.downtimeEnd ?? j.completedAt;
@@ -43,12 +43,10 @@ export function contractStatement(t: ContractTerms, jobs: ContractJob[], devices
     return { ...j, responseH, repairH, lateH: Math.max(lateR, lateP), open: !back };
   });
   const periodHours = Math.max(0, hours(from, to));
-  let downtimeH = 0;
-  for (const j of jobs) {
-    if (!j.deviceDown || !j.downtimeStart) continue;
-    const a = j.downtimeStart > from ? j.downtimeStart : from, b = end(j.downtimeEnd);
-    if (b > a) downtimeH += hours(a, b);
-  }
+  // Two jobs on one outage count it once (audit A1): periods merge per device before they add up.
+  const down = downtimeMsByDevice(jobs.filter((j) => j.deviceDown && j.downtimeStart)
+    .map((j) => ({ device: j.tag, start: j.downtimeStart!, end: j.downtimeEnd })), from, to);
+  const downtimeH = [...down.values()].reduce((s, ms) => s + ms, 0) / H;
   const uptimePct = devices && periodHours ? Math.max(0, 100 * (1 - downtimeH / (devices * periodHours))) : null;
   // Lateness is charged in the month the job was reported (so an open job isn't charged twice); downtime in every month it falls in.
   const late = rows.filter((r) => r.reportedAt >= from).reduce((s, r) => s + r.lateH, 0);

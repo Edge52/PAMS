@@ -2,6 +2,8 @@
  * Per-device performance and the replacement score. Pure — the asset page, the replacement plan and the tests share it.
  * Money arrives already converted to one currency (EGP) by the caller.
  */
+import { downtimeMs } from "./downtime";
+
 const H = 3_600_000, D = 24 * H;
 
 export type KpiJob = { type: string; status: string; reportedAt: Date; completedAt: Date | null; downtimeStart: Date | null; downtimeEnd: Date | null };
@@ -23,14 +25,9 @@ export type DeviceKpis = {
 export function deviceKpis(jobs: KpiJob[], inServiceSince: Date | null, now: Date, windowDays = 365): DeviceKpis {
   const from = new Date(Math.max(now.getTime() - windowDays * D, inServiceSince?.getTime() ?? 0));
   const span = Math.max(1, now.getTime() - from.getTime());
-  let down = 0;
-  for (const j of jobs) {
-    if (!j.downtimeStart || j.status === "CANCELLED") continue;
-    const a = Math.max(j.downtimeStart.getTime(), from.getTime());
-    const b = Math.min((j.downtimeEnd ?? now).getTime(), now.getTime());
-    if (b > a) down += b - a;
-  }
-  down = Math.min(down, span);
+  // Overlapping jobs on one outage count it once (audit A2).
+  const down = Math.min(span, downtimeMs(jobs.filter((j) => j.downtimeStart && j.status !== "CANCELLED")
+    .map((j) => ({ start: j.downtimeStart!, end: j.downtimeEnd })), from, now));
   const failures = jobs.filter((j) => j.type === "CORRECTIVE" && j.status !== "CANCELLED" && j.reportedAt >= from);
   const repaired = failures.filter((j) => j.completedAt);
   return {

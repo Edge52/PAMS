@@ -47,7 +47,7 @@ export function selectImpl(scn: TwinScene, p: PickResult, fly = true) {
 export function bindPointerImpl(scn: TwinScene) {
   const el = scn.renderer.domElement;
   let down: { x: number; y: number } | null = null;
-  el.addEventListener("pointerdown", (e) => {
+  scn.listeners.on(el, "pointerdown", (e) => {
     down = { x: e.clientX, y: e.clientY };
     // Drag to move (wave 7e): press and hold on a device of the floor shown on its own, then drag it to a room.
     if (e.button !== 0 || scn.drop || scn.placing || scn.pointPick || scn.walk || scn.isolated == null || !scn.events.canDrag) return;
@@ -62,7 +62,7 @@ export function bindPointerImpl(scn: TwinScene) {
     }, 350) };
   });
   const endDrag = () => { if (scn.drag) window.clearTimeout(scn.drag.timer); scn.drag = null; if (scn.dragging) { scn.dragging = false; scn.controls.enabled = true; } };
-  el.addEventListener("pointerup", (e) => {
+  scn.listeners.on(el, "pointerup", (e) => {
     if (scn.dragging) { const was = scn.drop; endDrag(); if (was) scn.finishDrop(e); down = null; return; }
     endDrag();
     if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) {
@@ -75,7 +75,7 @@ export function bindPointerImpl(scn: TwinScene) {
     }
     down = null;
   });
-  el.addEventListener("pointermove", (e) => {
+  scn.listeners.on(el, "pointermove", (e) => {
     if (scn.drag && !scn.dragging && Math.hypot(e.clientX - scn.drag.x, e.clientY - scn.drag.y) > 6) endDrag(); // it's an orbit, not a hold
     if (scn.dragging && scn.drop) { scn.moveDrop(e); return; }
     if (e.buttons) return;
@@ -85,10 +85,10 @@ export function bindPointerImpl(scn: TwinScene) {
     el.style.cursor = hit ? "pointer" : "grab";
     scn.events.onHover?.(hit, hit ? { x: e.offsetX, y: e.offsetY } : null);
   });
-  el.addEventListener("pointerleave", () => scn.events.onHover?.(null, null));
-  el.addEventListener("pointermove", () => scn.wake(400), { passive: true });
-  el.addEventListener("wheel", () => scn.wake(1200), { passive: true });
-  el.addEventListener("pointercancel", () => { if (scn.dragging) scn.cancelDrop(); endDrag(); });
+  scn.listeners.on(el, "pointerleave", () => scn.events.onHover?.(null, null));
+  scn.listeners.on(el, "pointermove", () => scn.wake(400), { passive: true });
+  scn.listeners.on(el, "wheel", () => scn.wake(1200), { passive: true });
+  scn.listeners.on(el, "pointercancel", () => { if (scn.dragging) scn.cancelDrop(); endDrag(); });
 }
 
 export function pickImpl(scn: TwinScene, e: PointerEvent): PickResult {

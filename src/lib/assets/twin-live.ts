@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { assets, deviceTypes, maintenanceEvents, recallAssets, recalls, workOrders } from "@/db/schema";
 import { num, todayISO } from "@/lib/format";
 import type { LivePayload, LiveRow } from "@/components/assets/twin/types";
+import { downtimeMsByDevice } from "./downtime";
 import { egpRates } from "./lifecycle-server";
 
 export async function twinLive(facilityId: number): Promise<LivePayload> {
@@ -24,16 +25,19 @@ export async function twinLive(facilityId: number): Promise<LivePayload> {
       .where(and(eq(workOrders.facilityId, facilityId), inArray(workOrders.status, ["OPEN", "ASSIGNED", "IN_PROGRESS", "ON_HOLD"]))).groupBy(workOrders.assetId),
     db.selectDistinct({ id: maintenanceEvents.assetId }).from(maintenanceEvents)
       .where(and(inArray(maintenanceEvents.status, ["SCHEDULED", "IN_PROGRESS", "OVERDUE"]), sql`${maintenanceEvents.scheduledDate} < ${today}`, inFacility)),
-    db.select({ id: workOrders.assetId, h: sql<number>`sum(greatest(0, extract(epoch from (least(coalesce(${workOrders.downtimeEnd}, now()), now())
-      - greatest(${workOrders.downtimeStart}, now() - interval '365 days'))) / 3600))::float` }).from(workOrders)
-      .where(and(eq(workOrders.facilityId, facilityId), sql`${workOrders.downtimeStart} is not null`, sql`${workOrders.status} <> 'CANCELLED'`)).groupBy(workOrders.assetId),
+    // Downtime periods of the last year, merged per device below so two jobs on one outage count it once (audit A2).
+    db.select({ device: workOrders.assetId, start: workOrders.downtimeStart, end: workOrders.downtimeEnd }).from(workOrders)
+      .where(and(eq(workOrders.facilityId, facilityId), sql`${workOrders.downtimeStart} is not null`, sql`${workOrders.status} <> 'CANCELLED'`,
+        sql`coalesce(${workOrders.downtimeEnd}, now()) > now() - interval '365 days'`)),
     db.selectDistinct({ id: recallAssets.assetId }).from(recallAssets).innerJoin(recalls, eq(recalls.id, recallAssets.recallId))
       .where(and(eq(recallAssets.status, "PENDING"), eq(recalls.status, "OPEN"), inFacility)),
     egpRates(),
   ]);
   const jobsBy = new Map(jobs.map((r) => [r.id, Number(r.n)]));
   const overdueSet = new Set(overdue.map((r) => r.id));
-  const downBy = new Map(down.map((r) => [r.id, Number(r.h)]));
+  const nowD = new Date();
+  const downBy = new Map([...downtimeMsByDevice(down.map((r) => ({ device: r.device, start: r.start!, end: r.end })), new Date(nowD.getTime() - 365 * 86_400_000), nowD)]
+    .map(([id, ms]) => [id, ms / 3_600_000]));
   const recallSet = new Set(recalled.map((r) => r.id));
   return {
     at: new Date().toISOString(),
