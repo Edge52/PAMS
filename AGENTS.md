@@ -447,8 +447,9 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - **Two-step sign-in**: codes are in `lib/auth/totp.ts` (pure, RFC 6238 test values in the test), the half-signed-in
   state in `lib/auth/two-step.ts` (table `login_challenges`, cookie `hpams_login_step`, path `/login`). `signIn`
   creates a session only when no code is needed; otherwise `/login/code` (has two-step) or `/login/two-step` (must
-  set it up, setting `twoStepRequired`). Never call `createSession` after a password check without going through
-  that branch. Don't select `users.totpSecret` or `backupCodeHashes` into anything sent to a client component.
+  set it up, setting `twoStepRequired`). Never call `createSession` after a password check or an SSO callback
+  without going through `secondStep(user, next)` (wave 34): it picks the session, the code page, the set-up page or
+  "locked". Don't select `users.totpSecret` or `backupCodeHashes` into anything sent to a client component.
 - **Showing backup codes**: they exist in clear only in the action's return value. A server action that sets a
   cookie re-renders the page, so the page must keep `CodeForm` in the same place afterwards or the codes vanish.
 - **Content policy**: `lib/security-headers.ts`, applied in `src/proxy.ts` with a nonce per request. No inline
