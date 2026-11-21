@@ -13,6 +13,8 @@ import { assets, departments, equipmentLoans, suppliers } from "@/db/schema";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formObject, id, isoDate, num, reqId, text } from "@/lib/assets/forms";
 import { loanProblems, LOAN_DIRECTIONS } from "@/lib/assets/loans";
+import { openDownJobStatuses } from "@/lib/assets/work-order-server";
+import { statusBackFromLoan } from "@/lib/assets/work-orders";
 import { fail, zodFail, type ActionState } from "@/lib/procurement/forms";
 import { logActivity, nextNumber } from "@/lib/server-utils";
 import { todayISO } from "@/lib/format";
@@ -123,7 +125,9 @@ export async function returnLoanAction(_: ActionState, fd: FormData): Promise<Ac
     if (l.direction === "LENT" && l.assetId) {
       const [a] = await tx.select({ status: assets.status }).from(assets).where(eq(assets.id, l.assetId));
       if (a?.status === "ON_LOAN") {
-        const back = (MANUAL_ASSET_STATUSES as readonly string[]).includes(l.statusBefore ?? "") ? l.statusBefore as (typeof MANUAL_ASSET_STATUSES)[number] : "IN_SERVICE";
+        const before = (MANUAL_ASSET_STATUSES as readonly string[]).includes(l.statusBefore ?? "") ? l.statusBefore as (typeof MANUAL_ASSET_STATUSES)[number] : "IN_SERVICE";
+        // Wave 34 (A4): a fault reported while it was away keeps it down until that job is done.
+        const back = statusBackFromLoan(before, await openDownJobStatuses(l.assetId, tx)) as (typeof MANUAL_ASSET_STATUSES)[number];
         await tx.update(assets).set({ status: back }).where(eq(assets.id, l.assetId));
         await logActivity("asset", l.assetId, "status_changed", `Back from loan: on loan → ${back.toLowerCase().replace(/_/g, " ")}`, me.name, tx, { status: { from: "ON_LOAN", to: back } });
       }

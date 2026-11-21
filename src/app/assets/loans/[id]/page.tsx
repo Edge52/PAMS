@@ -25,7 +25,7 @@ export default async function LoanPage({ params, searchParams }: { params: Promi
   const sp = await searchParams;
   const [r] = await db.select({
     l: equipmentLoans, facility: facilities.name, department: departments.name, tag: assets.assetTag, typeName: deviceTypes.name,
-    manufacturer: assets.manufacturer, model: assets.model, status: assets.status, installDate: assets.installDate, purchaseDate: assets.purchaseDate, ppmIntervalMonths: deviceTypes.ppmIntervalMonths,
+    manufacturer: assets.manufacturer, model: assets.model, status: assets.status, installDate: assets.installDate, purchaseDate: assets.purchaseDate, ppmIntervalMonths: deviceTypes.ppmIntervalMonths, maintenanceStrategy: deviceTypes.maintenanceStrategy,
   }).from(equipmentLoans).innerJoin(facilities, eq(facilities.id, equipmentLoans.facilityId)).leftJoin(departments, eq(departments.id, equipmentLoans.departmentId))
     .leftJoin(assets, eq(assets.id, equipmentLoans.assetId)).leftJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
     .where(eq(equipmentLoans.id, Number(id)));
@@ -42,7 +42,7 @@ export default async function LoanPage({ params, searchParams }: { params: Promi
     const [lastPpm] = await db.select({ d: sql<string | null>`max(${maintenanceEvents.completedDate})` }).from(maintenanceEvents)
       .where(and(eq(maintenanceEvents.assetId, l.assetId), eq(maintenanceEvents.type, "PPM"), eq(maintenanceEvents.status, "COMPLETED")));
     const usage = (await usageDueMap(today, { ids: [l.assetId] })).get(l.assetId);
-    const ppm = nextPpmDue({ id: l.assetId, status: r.status, installDate: r.installDate, purchaseDate: r.purchaseDate, ppmIntervalMonths: r.ppmIntervalMonths, lastPpmDate: lastPpm?.d ?? null, usageDue: usage?.due });
+    const ppm = nextPpmDue({ id: l.assetId, status: r.status, installDate: r.installDate, purchaseDate: r.purchaseDate, ppmIntervalMonths: r.ppmIntervalMonths, maintenanceStrategy: r.maintenanceStrategy, lastPpmDate: lastPpm?.d ?? null, usageDue: usage?.due });
     const [test] = await db.select({ result: safetyTests.result, nextDue: safetyTests.nextDue }).from(safetyTests).where(eq(safetyTests.assetId, l.assetId)).orderBy(desc(safetyTests.testedOn), desc(safetyTests.id)).limit(1);
     hint = { ppmDue: ppm.due, safetyNextDue: test?.nextDue ?? null, safetyFailed: test?.result === "FAIL" };
   }

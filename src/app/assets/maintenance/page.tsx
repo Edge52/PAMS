@@ -45,7 +45,7 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
   const list = await db.select({
     id: assets.id, tag: assets.assetTag, status: assets.status, installDate: assets.installDate, purchaseDate: assets.purchaseDate,
     warrantyEnd: assets.warrantyEnd, manufacturer: assets.manufacturer, model: assets.model, departmentId: assets.departmentId,
-    typeCode: deviceTypes.code, typeName: deviceTypes.name, ppmIntervalMonths: deviceTypes.ppmIntervalMonths, criticality: assets.criticality,
+    typeCode: deviceTypes.code, typeName: deviceTypes.name, ppmIntervalMonths: deviceTypes.ppmIntervalMonths, maintenanceStrategy: deviceTypes.maintenanceStrategy, criticality: assets.criticality,
     departmentName: departments.name, roomCode: rooms.code, roomName: rooms.name,
     lastPpm: sql<string | null>`(select max(m.completed_date) from maintenance_events m where m.asset_id = ${assets.id} and m.type = 'PPM' and m.status = 'COMPLETED')`,
     openPpm: sql<string | null>`(select min(m.scheduled_date) from maintenance_events m where m.asset_id = ${assets.id} and m.type = 'PPM' and m.status in ('SCHEDULED','IN_PROGRESS','OVERDUE'))`,
@@ -60,7 +60,7 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
   const usage = await usageDueMap(today, { ids: list.map((a) => a.id) });
   const withDue = list.map((a) => {
     const u = usage.get(a.id);
-    const n = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: a.lastPpm, usageDue: u?.due });
+    const n = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, maintenanceStrategy: a.maintenanceStrategy, lastPpmDate: a.lastPpm, usageDue: u?.due });
     return { ...a, due: n.due, interval: n.intervalMonths, isDefault: n.isDefaultInterval, state: dueState(n.due, today), byUse: n.basis === "usage", usageLabel: u ? usageIntervalLabel(u.interval, u.unit) : null };
   });
   // Wave 19: devices with no PPM on record apart from real overdue visits; life support first.

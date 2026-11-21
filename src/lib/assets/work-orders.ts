@@ -162,17 +162,33 @@ export function workOrderKpis(rows: KpiRow[], now: Date): WorkOrderKpis {
 /**
  * Asset status after a work-order event, or null to leave it alone.
  *  - reported/started with the device down → OUT_OF_SERVICE / UNDER_MAINTENANCE;
- *  - completed with "back in service", or cancelled, when no other job keeps it down → IN_SERVICE.
+ *  - completed with "back in service", or cancelled, when no other job keeps it down → IN_SERVICE;
+ *  - wave 34 (A3): never back in service while a disposal is waiting for approval or approved: disposal asks for the
+ *    open jobs to be cancelled first, and that must not put a condemned device back on the ward;
+ *  - wave 34 (A4): a device on loan stays ON_LOAN. Only the loan record clears it, and the return then takes any
+ *    open down job into account (statusBackFromLoan).
  */
 export function assetStatusAfter(
   event: "report" | "start" | "complete" | "cancel",
-  o: { assetStatus: string; deviceDown: boolean; returnToService?: boolean; otherDownJobs: number },
+  o: { assetStatus: string; deviceDown: boolean; returnToService?: boolean; otherDownJobs: number; disposalPending?: boolean },
 ): string | null {
-  if (o.assetStatus === "DISPOSED" || o.assetStatus === "IN_STOCK") return null;
+  if (o.assetStatus === "DISPOSED" || o.assetStatus === "IN_STOCK" || o.assetStatus === "ON_LOAN") return null;
+  if ((event === "complete" || event === "cancel") && o.disposalPending) return null;
   if (event === "report") return o.deviceDown && o.assetStatus !== "OUT_OF_SERVICE" ? "OUT_OF_SERVICE" : null;
   if (event === "start") return o.deviceDown && o.assetStatus !== "UNDER_MAINTENANCE" ? "UNDER_MAINTENANCE" : null;
   const wasDown = o.assetStatus === "OUT_OF_SERVICE" || o.assetStatus === "UNDER_MAINTENANCE";
   if (!wasDown || o.otherDownJobs > 0) return null;
   if (event === "complete") return o.returnToService ? "IN_SERVICE" : null;
   return o.deviceDown ? "IN_SERVICE" : null; // cancel: a false alarm puts it back
+}
+
+/**
+ * Wave 34 (A4): the status a lent device returns to. Normally the status it had before it went out; but a fault
+ * reported while it was away leaves it down until that job is done (UNDER_MAINTENANCE once work has started).
+ * `openDownJobs` are the statuses of its open work orders that have the device down.
+ */
+export function statusBackFromLoan(before: string, openDownJobs: readonly string[]): string {
+  const jobs = openDownJobs.filter(isActive);
+  if (!jobs.length || before === "DISPOSED" || before === "IN_STOCK") return before;
+  return jobs.includes("IN_PROGRESS") ? "UNDER_MAINTENANCE" : "OUT_OF_SERVICE";
 }

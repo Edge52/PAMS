@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, facilities, maintenanceEvents } from "@/db/schema";
 import { nextPpmDue } from "@/lib/assets/maintenance";
@@ -11,6 +11,8 @@ import type { ReportContext, ReportResult, Row } from "./types";
 
 /** Asset statuses that need planned maintenance (same set as the maintenance page). */
 const IN_USE = ["INSTALLED", "IN_SERVICE", "UNDER_MAINTENANCE", "OUT_OF_SERVICE"] as const;
+/** Wave 34 (A5): leave out device types set to "repair when it fails". */
+const notRunToFailure = or(isNull(deviceTypes.maintenanceStrategy), ne(deviceTypes.maintenanceStrategy, "RUN_TO_FAILURE"));
 
 export async function ppmComplianceReport({ filters: f, scope, today }: ReportContext): Promise<ReportResult> {
   const from = f.from ?? today.slice(0, 4) + "-01-01";
@@ -24,14 +26,16 @@ export async function ppmComplianceReport({ filters: f, scope, today }: ReportCo
       status: maintenanceEvents.status, scheduledDate: maintenanceEvents.scheduledDate, completedDate: maintenanceEvents.completedDate,
     }).from(maintenanceEvents)
       .innerJoin(assets, eq(assets.id, maintenanceEvents.assetId))
+      .innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
       .innerJoin(facilities, eq(facilities.id, assets.facilityId))
       .leftJoin(departments, eq(departments.id, assets.departmentId))
-      .where(and(eq(maintenanceEvents.type, "PPM"), gte(maintenanceEvents.scheduledDate, from), lte(maintenanceEvents.scheduledDate, to), facCond)),
+      // Wave 34 (A5): types repaired when they fail have no planned maintenance, so they don't count for or against it.
+      .where(and(eq(maintenanceEvents.type, "PPM"), gte(maintenanceEvents.scheduledDate, from), lte(maintenanceEvents.scheduledDate, to), facCond, notRunToFailure)),
     // Assets in use without an open PPM work order: if their computed due date fell in the period, the PPM was
     // never scheduled. Due dates come from the asset module's nextPpmDue (interval from the device type).
     db.select({
       id: assets.id, status: assets.status, installDate: assets.installDate, purchaseDate: assets.purchaseDate,
-      ppmIntervalMonths: deviceTypes.ppmIntervalMonths,
+      ppmIntervalMonths: deviceTypes.ppmIntervalMonths, maintenanceStrategy: deviceTypes.maintenanceStrategy,
       facilityId: assets.facilityId, facility: facilities.name, departmentId: assets.departmentId, department: departments.name,
       lastPpm: sql<string | null>`(select max(m.completed_date) from maintenance_events m where m.asset_id = ${assets.id} and m.type = 'PPM' and m.status = 'COMPLETED')`,
     }).from(assets)
@@ -39,7 +43,7 @@ export async function ppmComplianceReport({ filters: f, scope, today }: ReportCo
       .innerJoin(facilities, eq(facilities.id, assets.facilityId))
       .leftJoin(departments, eq(departments.id, assets.departmentId))
       .where(and(inArray(assets.status, [...IN_USE]), facCond,
-        sql`not exists (select 1 from maintenance_events m where m.asset_id = ${assets.id} and m.type = 'PPM' and m.status in ('SCHEDULED','IN_PROGRESS','OVERDUE'))`)),
+        sql`not exists (select 1 from maintenance_events m where m.asset_id = ${assets.id} and m.type = 'PPM' and m.status in ('SCHEDULED','IN_PROGRESS','OVERDUE'))`, notRunToFailure)),
   ]);
 
   type Acc = { facility: string; department: string; departmentId: number | null; t: PpmTally };
@@ -57,7 +61,7 @@ export async function ppmComplianceReport({ filters: f, scope, today }: ReportCo
   // Wave 27: due by use or by months, whichever comes first.
   const usage = await usageDueMap(today, { ids: inUse.map((a) => a.id) });
   for (const a of inUse) {
-    const due = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: a.lastPpm, usageDue: usage.get(a.id)?.due }).due;
+    const due = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, maintenanceStrategy: a.maintenanceStrategy, lastPpmDate: a.lastPpm, usageDue: usage.get(a.id)?.due }).due;
     if (!due || due < from || due > to || due >= today) continue; // due today = not missed yet
     const g = acc(a);
     g.t.unscheduled++;
@@ -104,6 +108,7 @@ export async function ppmComplianceReport({ filters: f, scope, today }: ReportCo
     notes: [
       `Period ${formatDate(from)} to ${formatDate(to)}. On time = completed no later than ${f.grace} day${f.grace === 1 ? "" : "s"} after the scheduled date.`,
       "Compliance = completed on time ÷ (on time + late + overdue + due but never scheduled). PPMs not yet due are left out.",
+      "Device types set to be repaired when they fail have no planned maintenance and are left out.",
       "Due, not scheduled = assets in use whose next PPM (from the last completed PPM or install date and the device type's interval) fell in the period with no work order raised.",
     ],
   };

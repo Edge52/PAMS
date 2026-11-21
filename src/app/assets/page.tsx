@@ -148,7 +148,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
               {rows.map((a) => {
                 const w = warrantyState(a.warrantyEnd, today);
                 const info = ppm.get(a.id);
-                const computed = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: info?.lastPpm, usageDue: usage.get(a.id)?.due });
+                const computed = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, maintenanceStrategy: a.maintenanceStrategy, lastPpmDate: info?.lastPpm, usageDue: usage.get(a.id)?.due });
                 const next = info?.nextScheduled && (!computed.due || info.nextScheduled <= computed.due) ? info.nextScheduled : computed.due;
                 const ds = a.status === "IN_STOCK" ? "NONE" : dueState(next, today);
                 return (

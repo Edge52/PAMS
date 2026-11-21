@@ -11,7 +11,7 @@ import { budgetLines, invoiceLines, invoices, purchaseOrders } from "@/db/schema
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import type { FormState } from "@/lib/assets/forms";
 import { notifyRole } from "@/lib/notifications";
-import { budgetCrossing, matchInvoice } from "@/lib/procurement/money";
+import { budgetCrossing, invoiceDutyProblem, matchInvoice } from "@/lib/procurement/money";
 import { budgetRows, matchLinesFor, poValues } from "@/lib/procurement/money-server";
 import { fxFactors } from "@/lib/procurement/server";
 import { logActivity, nextNumber } from "@/lib/server-utils";
@@ -109,7 +109,7 @@ export async function createInvoiceAction(_: FormState, fd: FormData): Promise<F
   const inv = await db.transaction(async (tx) => {
     const number = await nextNumber("INV", invoices, invoices.number, tx);
     const [row] = await tx.insert(invoices).values({ number, supplierInvoiceNo, poId: po.id, supplierId: po.supplierId, invoiceDate, dueDate, currency: po.currency,
-      status: match.ok ? "MATCHED" : "EXCEPTION", notes: str(fd, "notes", 2000) || null, createdByName: me.name }).returning({ id: invoices.id, number: invoices.number });
+      status: match.ok ? "MATCHED" : "EXCEPTION", notes: str(fd, "notes", 2000) || null, createdByName: me.name, createdById: me.id }).returning({ id: invoices.id, number: invoices.number });
     await tx.insert(invoiceLines).values([...entered].map(([poLineId, l]) => ({ invoiceId: row.id, poLineId, quantity: l.quantity, unitPrice: l.unitPrice.toFixed(2) })));
     await logActivity("po", po.id, "invoice", `${row.number} (supplier's ${supplierInvoiceNo}) recorded: ${match.ok ? "matches" : "differs from"} the PO and goods received`, me.name, tx);
     return row;
@@ -126,9 +126,11 @@ export async function decideInvoiceAction(_: FormState, fd: FormData): Promise<F
   if (!inv) return { error: "That invoice no longer exists." };
   await requireFacilityAccess(inv.facilityId, me);
   if (!["MATCHED", "EXCEPTION"].includes(inv.i.status)) return { error: "Only invoices waiting for a decision can be approved or rejected." };
+  const duty = invoiceDutyProblem("decide", inv.i, me); // S7: not the person who recorded it
+  if (duty) return { error: duty };
   if (decision === "reject") {
     if (!note) return { error: "Say why the invoice is rejected; the supplier will need to know." };
-    await db.update(invoices).set({ status: "REJECTED", decisionNote: note, approvedByName: me.name, approvedAt: new Date() }).where(eq(invoices.id, id));
+    await db.update(invoices).set({ status: "REJECTED", decisionNote: note, approvedByName: me.name, approvedById: me.id, approvedAt: new Date() }).where(eq(invoices.id, id));
     await logActivity("po", inv.i.poId, "invoice rejected", `${inv.i.number}: ${note}`, me.name);
     revalidatePath(`/procurement/invoices/${id}`);
     return { ok: "Invoice rejected." };
@@ -137,7 +139,7 @@ export async function decideInvoiceAction(_: FormState, fd: FormData): Promise<F
   const lines = await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, id));
   const match = matchInvoice((await matchLinesFor(inv.i.poId, new Map(lines.map((l) => [l.poLineId, { quantity: l.quantity, unitPrice: Number(l.unitPrice) }])), id)).filter((l) => l.quantity > 0));
   if (!match.ok && !note) return { error: "It still differs from the PO or goods received. Give the reason for approving it anyway." };
-  await db.update(invoices).set({ status: "APPROVED", decisionNote: note || null, approvedByName: me.name, approvedAt: new Date() }).where(eq(invoices.id, id));
+  await db.update(invoices).set({ status: "APPROVED", decisionNote: note || null, approvedByName: me.name, approvedById: me.id, approvedAt: new Date() }).where(eq(invoices.id, id));
   await logActivity("po", inv.i.poId, "invoice approved", `${inv.i.number}${!match.ok ? ` despite differences: ${note}` : ""}`, me.name);
   revalidatePath(`/procurement/invoices/${id}`);
   return { ok: "Invoice approved for payment." };
@@ -150,6 +152,8 @@ export async function markPaidAction(_: FormState, fd: FormData): Promise<FormSt
   if (!inv) return { error: "That invoice no longer exists." };
   await requireFacilityAccess(inv.facilityId, me);
   if (inv.i.status !== "APPROVED") return { error: "Approve the invoice before recording payment." };
+  const duty = invoiceDutyProblem("pay", inv.i, me); // S7: neither the person who recorded it nor the one who approved it
+  if (duty) return { error: duty };
   if (!DATE.test(paidAt)) return { error: "Enter the payment date." };
   await db.update(invoices).set({ status: "PAID", paidAt, paymentReference: ref || null }).where(eq(invoices.id, id));
   await logActivity("po", inv.i.poId, "invoice paid", `${inv.i.number} paid ${paidAt}${ref ? ` (${ref})` : ""}`, me.name);

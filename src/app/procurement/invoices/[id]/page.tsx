@@ -10,7 +10,7 @@ import { Notice } from "@/components/assets/bits";
 import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatDateTime, formatMoney, todayISO } from "@/lib/format";
-import { matchInvoice } from "@/lib/procurement/money";
+import { invoiceDutyProblem, matchInvoice } from "@/lib/procurement/money";
 import { matchLinesFor } from "@/lib/procurement/money-server";
 import { decideInvoiceAction, markPaidAction } from "../actions";
 
@@ -29,6 +29,8 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   const lines = await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, id));
   const match = matchInvoice((await matchLinesFor(po.id, new Map(lines.map((l) => [l.poLineId, { quantity: l.quantity, unitPrice: Number(l.unitPrice) }])), id)).filter((l) => l.quantity > 0));
   const canDecide = can(me.role, "invoices.approve");
+  // S7: the action enforces it; here we only say why the form isn't offered.
+  const decideBlock = invoiceDutyProblem("decide", i, me), payBlock = invoiceDutyProblem("pay", i, me);
   const waiting = i.status === "MATCHED" || i.status === "EXCEPTION";
   const cur = i.currency;
   return (
@@ -65,7 +67,8 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
             ]} />
             {i.notes && <p className="mt-3 whitespace-pre-line text-sm">{i.notes}</p>}
           </Panel>
-          {canDecide && waiting && (
+          {canDecide && waiting && decideBlock && <Panel title="Decide"><p className="text-sm text-muted">{decideBlock}</p></Panel>}
+          {canDecide && waiting && !decideBlock && (
             <Panel title="Decide">
               <ActionForm action={decideInvoiceAction} className="space-y-3">
                 <input type="hidden" name="invoiceId" value={id} />
@@ -74,7 +77,8 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
               </ActionForm>
             </Panel>
           )}
-          {canDecide && i.status === "APPROVED" && (
+          {canDecide && i.status === "APPROVED" && payBlock && <Panel title="Record payment"><p className="text-sm text-muted">{payBlock}</p></Panel>}
+          {canDecide && i.status === "APPROVED" && !payBlock && (
             <Panel title="Record payment">
               <ActionForm action={markPaidAction} className="space-y-3">
                 <input type="hidden" name="invoiceId" value={id} />

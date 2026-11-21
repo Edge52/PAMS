@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     "Facility", "Building", "Floor", "Department", "Room code", "Room", "Purchase date", "Install date", "Warranty end", "Purchase cost", "Currency", "Last PPM", "Next PPM"];
   const body = rows.map((a) => {
     const info = ppm.get(a.id);
-    const next = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: info?.lastPpm, usageDue: usage.get(a.id)?.due }).due;
+    const next = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, maintenanceStrategy: a.maintenanceStrategy, lastPpmDate: info?.lastPpm, usageDue: usage.get(a.id)?.due }).due;
     return [a.assetTag, a.deviceTypeCode, a.deviceTypeName, a.categoryName, a.manufacturer, a.model, a.serialNumber, a.status, a.condition, a.criticality,
       a.facilityCode, a.buildingName, a.floorName, a.departmentName, a.roomCode, a.roomName, a.purchaseDate, a.installDate, a.warrantyEnd,
       a.purchaseCost, a.currency, info?.lastPpm ?? "", info?.nextScheduled && (!next || info.nextScheduled < next) ? info.nextScheduled : next ?? ""];

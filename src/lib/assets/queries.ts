@@ -99,7 +99,7 @@ const assetColumns = {
   warrantyEnd: assets.warrantyEnd, installDate: assets.installDate, purchaseDate: assets.purchaseDate,
   purchaseCost: assets.purchaseCost, currency: assets.currency, poLineId: assets.poLineId,
   roomId: assets.roomId, departmentId: assets.departmentId, facilityId: assets.facilityId,
-  deviceTypeCode: deviceTypes.code, deviceTypeName: deviceTypes.name, ppmIntervalMonths: deviceTypes.ppmIntervalMonths,
+  deviceTypeCode: deviceTypes.code, deviceTypeName: deviceTypes.name, ppmIntervalMonths: deviceTypes.ppmIntervalMonths, maintenanceStrategy: deviceTypes.maintenanceStrategy,
   categoryCode: cat.code, categoryName: cat.name,
   departmentName: departments.name, departmentCode: departments.code,
   roomCode: rooms.code, roomName: rooms.name, floorId: rooms.floorId, floorName: floors.name, floorLevel: floors.level,

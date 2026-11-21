@@ -75,7 +75,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   const assetId = Number(id);
   const [a] = await db.select({
     asset: assets,
-    typeCode: deviceTypes.code, typeName: deviceTypes.name, typeNameAr: deviceTypes.nameAr, ppmIntervalMonths: deviceTypes.ppmIntervalMonths, riskClass: deviceTypes.riskClass,
+    typeCode: deviceTypes.code, typeName: deviceTypes.name, typeNameAr: deviceTypes.nameAr, ppmIntervalMonths: deviceTypes.ppmIntervalMonths, maintenanceStrategy: deviceTypes.maintenanceStrategy, riskClass: deviceTypes.riskClass,
     requiresCalibration: deviceTypes.requiresCalibration, groupName: grp.name, groupCode: grp.code, categoryName: cat.name, categoryCode: cat.code,
     facilityName: facilities.name, facilityCode: facilities.code, departmentName: departments.name,
     roomCode: rooms.code, roomName: rooms.name, floorId: floors.id, floorName: floors.name, buildingName: buildings.name,
@@ -141,7 +141,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   const lastPpm = events.find((e) => e.e.type === "PPM" && e.e.status === "COMPLETED")?.e.completedDate ?? null;
   const usage = (await usageDueMap(today, { ids: [x.id] })).get(x.id) ?? null;
   const [instruments, usedOn] = await Promise.all([canMaint ? instrumentOptions(x.facilityId) : Promise.resolve([]), instrumentsByEvent(events.map((e) => e.e.id))]);
-  const next = nextPpmDue({ id: x.id, status: x.status, installDate: x.installDate, purchaseDate: x.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, lastPpmDate: lastPpm, usageDue: usage?.due });
+  const next = nextPpmDue({ id: x.id, status: x.status, installDate: x.installDate, purchaseDate: x.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, maintenanceStrategy: a.maintenanceStrategy, lastPpmDate: lastPpm, usageDue: usage?.due });
   const ppmState = x.status === "IN_STOCK" ? "NONE" : dueState(next.due, today);
   const edit = sp.edit === "1" && canEdit;
   const path = `/assets/${x.id}`;
@@ -381,7 +381,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
               <div>
                 <dt className="text-xs text-muted">Planned maintenance</dt>
                 <dd className="mt-0.5">
-                  {ppmState === "NONE" ? <span className="text-muted">Starts when the asset is installed</span> : <>
+                  {next.basis === "run_to_failure" ? <span className="text-muted">None planned: this type is repaired when it fails</span> : ppmState === "NONE" ? <span className="text-muted">Starts when the asset is installed</span> : <>
                     Next {formatDate(next.due)} {ppmState === "OVERDUE" && <Badge tone="danger">Overdue</Badge>}{ppmState === "DUE_SOON" && <Badge tone="warn">Due soon</Badge>}
                     <span className="block text-xs text-muted">Every {next.intervalMonths} months{next.isDefaultInterval ? " (default)" : ""}{usage ? ` or ${usageIntervalLabel(usage.interval, usage.unit)}` : ""} · last {lastPpm ? formatDate(lastPpm) : "never"}{a.requiresCalibration ? " · calibration required" : ""}</span>
                     {next.basis === "usage" && <span className="block text-xs text-muted">Due by use, before the months interval.</span>}

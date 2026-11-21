@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  actionProblem, allowedActions, assetStatusAfter, downtimeHours, formatHours, isLate, nextStatus, responseDue, suggestedPriority,
+  actionProblem, allowedActions, assetStatusAfter, downtimeHours, formatHours, isLate, nextStatus, responseDue, statusBackFromLoan, suggestedPriority,
   workOrderKpis, type KpiRow,
 } from "./work-orders";
 
@@ -126,5 +126,22 @@ describe("asset status effects", () => {
     expect(assetStatusAfter("cancel", { assetStatus: "OUT_OF_SERVICE", deviceDown: true, otherDownJobs: 0 })).toBe("IN_SERVICE");
     expect(assetStatusAfter("report", { assetStatus: "DISPOSED", deviceDown: true, otherDownJobs: 0 })).toBeNull();
     expect(assetStatusAfter("report", { assetStatus: "IN_STOCK", deviceDown: true, otherDownJobs: 0 })).toBeNull();
+  });
+  it("A3: does not put a device back in service while its disposal is pending or approved", () => {
+    expect(assetStatusAfter("cancel", { assetStatus: "OUT_OF_SERVICE", deviceDown: true, otherDownJobs: 0, disposalPending: true })).toBeNull();
+    expect(assetStatusAfter("complete", { assetStatus: "UNDER_MAINTENANCE", deviceDown: true, returnToService: true, otherDownJobs: 0, disposalPending: true })).toBeNull();
+    // A new fault still takes it down.
+    expect(assetStatusAfter("report", { assetStatus: "IN_SERVICE", deviceDown: true, otherDownJobs: 0, disposalPending: true })).toBe("OUT_OF_SERVICE");
+  });
+  it("A4: a device on loan stays on loan; the return takes open down jobs into account", () => {
+    for (const ev of ["report", "start", "complete", "cancel"] as const) {
+      expect(assetStatusAfter(ev, { assetStatus: "ON_LOAN", deviceDown: true, returnToService: true, otherDownJobs: 0 })).toBeNull();
+    }
+    expect(statusBackFromLoan("IN_SERVICE", [])).toBe("IN_SERVICE");
+    expect(statusBackFromLoan("INSTALLED", ["CLOSED", "CANCELLED"])).toBe("INSTALLED");
+    expect(statusBackFromLoan("IN_SERVICE", ["OPEN"])).toBe("OUT_OF_SERVICE");
+    expect(statusBackFromLoan("IN_SERVICE", ["ON_HOLD", "IN_PROGRESS"])).toBe("UNDER_MAINTENANCE");
+    // Back down, the job's completion then puts it in service as usual.
+    expect(assetStatusAfter("complete", { assetStatus: statusBackFromLoan("IN_SERVICE", ["IN_PROGRESS"]), deviceDown: true, returnToService: true, otherDownJobs: 0 })).toBe("IN_SERVICE");
   });
 });
