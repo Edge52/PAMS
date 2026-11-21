@@ -270,6 +270,7 @@ export async function loadComparison(projectId: number, weights: Weights = norma
 
   const rows: RowInput[] = types.map((t) => ({
     key: t.id,
+    required: required.get(t.id),
     specItems: (specs.get(t.id)?.items ?? []).map((i) => ({ id: i.id, mandatory: i.mandatory, weight: i.weight })),
     candidates: lines.filter((l) => l.deviceTypeId === t.id).map((l) => ({
       offerId: l.offerId, lineId: l.id, currency: offerById.get(l.offerId)!.currency, unitPrice: num(l.unitPrice),

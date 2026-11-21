@@ -11,7 +11,9 @@ import { ActionForm } from "@/components/assets/action-form";
 import { NativeSelect } from "@/components/assets/bits";
 import { can } from "@/lib/auth/permissions";
 import type { CurrentUser } from "@/lib/auth/session";
-import { CURRENCIES, formatDate, formatDateTime, formatMoney, todayISO } from "@/lib/format";
+import { CURRENCIES, formatDate, formatDateTime, formatMoney, num, todayISO } from "@/lib/format";
+import { convert } from "@/lib/server-utils";
+import { bondCover } from "@/lib/procurement/bond-cover";
 import { EXCLUDED_OFFER_STATUSES } from "@/lib/procurement/labels";
 import { BOND_RATE, requiredBond } from "@/lib/procurement/money";
 import { poValues } from "@/lib/procurement/money-server";
@@ -36,6 +38,22 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
   const today = todayISO();
   const soon = (d: string | null) => d != null && d >= today && Date.parse(d) - Date.parse(today) <= 30 * 864e5;
   const held = (offerId: number | null, poId: number | null, kind: string) => bs.filter((x) => x.b.status === "HELD" && x.b.kind === kind && (offerId ? x.b.offerId === offerId : x.b.poId === poId));
+  // Held bonds can be in another currency than the offer or order: convert before comparing (audit DL-07).
+  const targets = [
+    ...live.map((o) => ({ cur: o.currency, h: held(o.id, null, "BID") })),
+    ...pos.map((x) => ({ cur: x.currency, h: held(null, x.id, "PERFORMANCE") })),
+  ];
+  const pairs = [...new Set(targets.flatMap((t) => t.h.filter((x) => x.b.currency !== t.cur).map((x) => `${x.b.currency}>${t.cur}`)))];
+  const rate = new Map(await Promise.all(pairs.map(async (k) => { const [from, to] = k.split(">"); return [k, await convert(1, from, to)] as const; })));
+  const heldCell = (h: typeof bs, req: number | null, cur: string) => {
+    if (!h.length) return <Badge tone="warn">none</Badge>;
+    const c = bondCover(h.map((x) => ({ amount: num(x.b.amount), currency: x.b.currency })), req, cur,
+      Object.fromEntries(h.map((x) => [x.b.currency, rate.get(`${x.b.currency}>${cur}`)])));
+    if (c.missing.length) {
+      return <>{h.map((x) => formatMoney(x.b.amount, x.b.currency)).join(" + ")}<span className="block text-xs text-warn">No exchange rate from {c.missing.join(", ")} to {cur}, so not checked</span></>;
+    }
+    return <>{formatMoney(c.total, cur)} {c.short && <Badge tone="danger">short</Badge>}{c.converted && <span className="block text-xs text-muted">Converted to {cur} at today&apos;s rate</span>}</>;
+  };
   const m = (href: string, label: string) => <Link href={href} target="_blank" className="text-primary hover:underline">{label}</Link>;
 
   return (
@@ -69,24 +87,23 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
           <tbody>
             {live.map((o) => {
               const req = sealed ? null : requiredBond("BID", ot.get(o.id) ?? 0); const h = held(o.id, null, "BID");
-              const sum = h.reduce((s, x) => s + Number(x.b.amount), 0);
               return (
                 <tr key={`o${o.id}`} className="border-t border-line">
                   <td className="px-3 py-2">{o.supplier}<div className="text-xs text-muted">offer {o.ref}{o.validUntil ? ` · valid to ${formatDate(o.validUntil)} · ` : " · "}<Link href={`/procurement/offers/${o.id}/extension-letter`} target="_blank" className="text-primary hover:underline">validity extension letter</Link></div></td>
                   <td className="px-3 py-2">Bid bond ({BOND_RATE.BID * 100} %)</td>
                   <td className="px-3 py-2 text-right">{req != null ? formatMoney(req, o.currency) : <span className="text-muted">sealed</span>}</td>
-                  <td className="px-3 py-2">{h.length ? <>{formatMoney(sum, h[0].b.currency)} {req != null && sum + 0.005 < req && <Badge tone="danger">short</Badge>}</> : <Badge tone="warn">none</Badge>}</td>
+                  <td className="px-3 py-2">{heldCell(h, req, o.currency)}</td>
                   <td className="px-3 py-2">{h.map((x) => <span key={x.b.id} className={soon(x.b.expiryDate) || (x.b.expiryDate && x.b.expiryDate < today) ? "text-danger" : ""}>{formatDate(x.b.expiryDate)} </span>)}</td>
                 </tr>
               );
             })}
             {pos.filter((x) => x.status !== "CANCELLED").map((x) => {
-              const req = requiredBond("PERFORMANCE", pv.get(x.id) ?? 0); const h = held(null, x.id, "PERFORMANCE"); const sum = h.reduce((s, y) => s + Number(y.b.amount), 0);
+              const req = requiredBond("PERFORMANCE", pv.get(x.id) ?? 0); const h = held(null, x.id, "PERFORMANCE");
               return (
                 <tr key={`p${x.id}`} className="border-t border-line">
                   <td className="px-3 py-2">{x.supplier}<div className="text-xs text-muted">{x.number}</div></td><td className="px-3 py-2">Performance bond ({BOND_RATE.PERFORMANCE * 100} %)</td>
                   <td className="px-3 py-2 text-right">{formatMoney(req, x.currency)}</td>
-                  <td className="px-3 py-2">{h.length ? <>{formatMoney(sum, h[0].b.currency)} {sum + 0.005 < req && <Badge tone="danger">short</Badge>}</> : <Badge tone="warn">none</Badge>}</td>
+                  <td className="px-3 py-2">{heldCell(h, req, x.currency)}</td>
                   <td className="px-3 py-2">{h.map((y) => <span key={y.b.id} className={soon(y.b.expiryDate) || (y.b.expiryDate && y.b.expiryDate < today) ? "text-danger" : ""}>{formatDate(y.b.expiryDate)} </span>)}</td>
                 </tr>
               );
