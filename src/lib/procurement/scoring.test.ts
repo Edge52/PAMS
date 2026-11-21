@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  combinedScore, evaluateProject, evaluateRow, financialScores, netUnitPrice, normalizeWeights,
+  combinedScore, evaluateProject, evaluateRow, financialScores, netUnitPrice, normalizeWeights, PARTIAL_BID_NOTE,
   technicalEvaluation, toProjectCurrency, type OfferLineCandidate, type SpecItemForScoring,
 } from "./scoring";
 
@@ -283,5 +283,97 @@ describe("offer combined score with a non-responsive line (regression)", () => {
     expect(o1.nonResponsiveRows).toBe(1);
     expect(o1.combinedScore).toBeCloseTo(50);           // (100 + 0) / 2
     expect(o2.combinedScore!).toBeGreaterThan(o1.combinedScore!);
+  });
+});
+
+describe("wave 33 audit fixes", () => {
+  const fx = { USD: 1 };
+
+  it("adds up every non-optional line of a device type in an offer (DL-01)", () => {
+    // Offer 1 quotes 10 monitors at 100 and 5 more at 300 on a second line: 15 for 2500, 166.67 each.
+    // Offer 2 quotes 15 at 150 (2250). Counting only offer 1's cheapest line made it look cheapest.
+    const r = evaluateRow({
+      key: 1, specItems: [], candidates: [
+        cand({ offerId: 1, lineId: 11, unitPrice: 100, quantity: 10 }),
+        cand({ offerId: 1, lineId: 12, unitPrice: 300, quantity: 5 }),
+        cand({ offerId: 1, lineId: 13, unitPrice: 20, quantity: 1, isOptional: true }),
+        cand({ offerId: 2, unitPrice: 150, quantity: 15 }),
+      ],
+    }, fx, W);
+    const c1 = r.cells.find((c) => c.offerId === 1)!;
+    expect(c1.quantity).toBe(15);
+    expect(c1.lineTotal).toBeCloseTo(2500);
+    expect(c1.unitPrice).toBeCloseTo(2500 / 15);
+    expect(c1.lineIds).toEqual([11, 12]);
+    expect(c1.alternatives).toBe(1);
+    expect(r.bestOfferIds).toEqual([2]);
+    const ev = evaluateProject([{ key: 1, specItems: [], candidates: [
+      cand({ offerId: 1, lineId: 11, unitPrice: 100, quantity: 10 }), cand({ offerId: 1, lineId: 12, unitPrice: 300, quantity: 5 }),
+    ] }], fx, W);
+    expect(ev.offers.get(1)!.total).toBeCloseTo(2500);
+  });
+
+  it("makes the row non-responsive when any added-up line fails a mandatory item (DL-01)", () => {
+    const r = evaluateRow({
+      key: 1, specItems: items, candidates: [
+        cand({ offerId: 1, lineId: 11 }),
+        cand({ offerId: 1, lineId: 12, compliance: { 1: "NOT_COMPLIANT", 2: "COMPLIES", 3: "COMPLIES" } }),
+      ],
+    }, fx, W);
+    expect(r.cells[0].technical.responsive).toBe(false);
+  });
+
+  it("doesn't let a partial bid outrank a complete one on price (DL-02)", () => {
+    // Offer 1 quotes both items; offer 2 only the first, a little cheaper. On the old means offer 2 scored 100.
+    const ev = evaluateProject([
+      { key: 1, specItems: [], candidates: [cand({ offerId: 1, unitPrice: 100 }), cand({ offerId: 2, unitPrice: 90 })] },
+      { key: 2, specItems: [], candidates: [cand({ offerId: 1, unitPrice: 50 })] },
+    ], fx, W);
+    const o1 = ev.offers.get(1)!, o2 = ev.offers.get(2)!;
+    expect(o2.financialScore ?? -1).toBeLessThan(o1.financialScore!);
+    expect(o2.combinedScore ?? -1).toBeLessThan(o1.combinedScore!);
+    expect(o1.complete).toBe(true);
+    expect(o2.complete).toBe(false);
+    expect(o2.missingRows).toEqual([2]);
+    expect(o2.notRanked).toBe(PARTIAL_BID_NOTE);
+    expect(o2.financialScore).toBeNull();
+    expect(o2.combinedScore).toBeNull();
+    expect(o1.combinedScore).not.toBeNull();
+    // Still visible row by row: offer 2 is best value on item 1.
+    expect(ev.rows[0].bestOfferIds).toEqual([2]);
+  });
+
+  it("uses the tender's required items, and counts missing ones as 0 when no offer is complete (DL-02)", () => {
+    const ev = evaluateProject([
+      { key: 1, required: 2, specItems: [], candidates: [cand({ offerId: 1, unitPrice: 100 }), cand({ offerId: 2, unitPrice: 100 })] },
+      { key: 2, required: 1, specItems: [], candidates: [cand({ offerId: 1, unitPrice: 50 })] },
+      { key: 3, required: 1, specItems: [], candidates: [] },
+    ], fx, W);
+    const o1 = ev.offers.get(1)!, o2 = ev.offers.get(2)!;
+    expect(o1.financialScore).toBeCloseTo(200 / 3);
+    expect(o1.complete).toBe(false);
+    expect(o1.notRanked).toBeNull();
+    expect(o1.financialScore).toBeCloseTo(200 / 3);
+    expect(o2.financialScore).toBeCloseTo(100 / 3);
+    expect(o1.combinedScore!).toBeGreaterThan(o2.combinedScore!);
+  });
+
+  it("compares a single award at the required quantity (DL-03)", () => {
+    // Offer 1: 2 units at 150 (quoted total 300). Offer 2: 10 at 100 (1000). 10 are required.
+    const ev = evaluateProject([
+      { key: 1, required: 10, specItems: [], candidates: [cand({ offerId: 1, unitPrice: 150, quantity: 2 }), cand({ offerId: 2, unitPrice: 100, quantity: 10 })] },
+    ], fx, W);
+    expect(ev.offers.get(1)!.total).toBe(300);
+    expect(ev.offers.get(1)!.awardTotal).toBe(1500);
+    expect(ev.offers.get(2)!.awardTotal).toBe(1000);
+  });
+
+  it("falls back to the quoted quantity when none is required, and has no award total for a partial bid (DL-03)", () => {
+    const ev = evaluateProject([
+      { key: 1, specItems: [], candidates: [cand({ offerId: 1, unitPrice: 150, quantity: 2 }), cand({ offerId: 2, unitPrice: 100, quantity: 10 })] },
+      { key: 2, specItems: [], candidates: [cand({ offerId: 2, unitPrice: 10, quantity: 1 })] },
+    ], fx, W);
+    expect(ev.offers.get(1)!.awardTotal).toBeNull();
+    expect(ev.offers.get(2)!.awardTotal).toBe(1010);
   });
 });

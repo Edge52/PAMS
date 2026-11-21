@@ -1,5 +1,6 @@
 /** Executive one-page summary: headline figures and the "needs attention" list (pure). */
 import type { LiveRow } from "@/components/assets/twin/types";
+import { sumToEgp } from "./calc";
 
 export type EquipmentFigures = {
   devices: number; inService: number; down: number; availabilityPct: number;
@@ -39,4 +40,20 @@ export function attentionItems(x: {
   if (x.pendingApprovals) out.push({ level: "medium", text: `${x.pendingApprovals} approval${x.pendingApprovals === 1 ? "" : "s"} waiting`, href: "/approvals" });
   if (x.warrantyEnding) out.push({ level: "medium", text: `${x.warrantyEnding} warrant${x.warrantyEnding === 1 ? "y ends" : "ies end"} within 90 days`, href: `/assets?facilityId=${f}&warranty=expiring` });
   return out.slice(0, max);
+}
+
+/**
+ * Capital budget tile (audit DL-06): budget lines can be in different currencies, so amount and use are converted
+ * to EGP (rates = EGP per unit) before adding up. A line whose currency has no rate is left out of both figures and
+ * listed in `missing`; `poMissingRate` says some orders on a line couldn't be converted to the line's currency.
+ */
+export function budgetFigures(lines: { amount: number | string; used: number; currency: string; missingRate?: boolean }[], rates: Map<string, number | null>) {
+  const total = sumToEgp(lines.map((l) => ({ amount: Number(l.amount), currency: l.currency })), rates);
+  const used = sumToEgp(lines.map((l) => ({ amount: l.used, currency: l.currency })), rates);
+  return {
+    totalEgp: total.egp, usedEgp: used.egp,
+    pct: total.egp > 0 ? Math.round((used.egp / total.egp) * 100) : null,
+    missing: [...new Set([...total.missing, ...used.missing])].sort(),
+    poMissingRate: lines.some((l) => l.missingRate),
+  };
 }

@@ -85,7 +85,7 @@ export default async function MinutesPage({ params, searchParams }: { params: Pr
           <table className="mt-2 w-full border-collapse text-xs">
             <thead><tr className="border-b border-ink text-left"><th className="py-1">Rank</th><th>Supplier</th><th className="text-right">Total ({p.currency})</th><th className="text-right">Technical</th><th className="text-right">Financial</th><th className="text-right">Combined</th></tr></thead>
             <tbody>{ranked.map(({ o, s }, n) => (
-              <tr key={o.id} className="border-b border-line/60"><td className="py-1">{n + 1}</td><td>{o.supplierName}</td><td className="text-right">{s.total != null ? formatMoney(s.total, p.currency) : "rate missing"}</td>
+              <tr key={o.id} className="border-b border-line/60"><td className="py-1">{s.notRanked ? "—" : n + 1}</td><td>{o.supplierName}{s.notRanked && <div className="text-muted">{s.notRanked}</div>}</td><td className="text-right">{s.total != null ? formatMoney(s.total, p.currency) : "rate missing"}</td>
                 <td className="text-right">{f1(s.technicalScore)}</td><td className="text-right">{f1(s.financialScore)}</td><td className="text-right font-semibold">{f1(s.combinedScore)}</td></tr>
             ))}</tbody>
           </table>

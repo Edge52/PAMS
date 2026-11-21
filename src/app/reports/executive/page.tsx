@@ -15,7 +15,8 @@ import { listFacilities } from "@/lib/assets/queries";
 import { twinLive } from "@/lib/assets/twin-live";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { addDaysISO as addDays, formatDate, formatMoney, formatNumber, todayISO } from "@/lib/format";
-import { attentionItems, equipmentFigures } from "@/lib/reports/executive-calc";
+import { attentionItems, budgetFigures, equipmentFigures } from "@/lib/reports/executive-calc";
+import { missingRatesNote, ratesFor } from "@/lib/reports/shared";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Executive summary" };
@@ -59,7 +60,9 @@ export default async function ExecutiveSummaryPage({ searchParams }: { searchPar
       .where(sql`${assets.facilityId} = ${fac.id} and ${assets.status} <> 'DISPOSED' and ${assets.roomId} is not null`),
   ]);
   const budgets = await budgetRows(capLines);
-  const budgetTotal = budgets.reduce((s, b) => s + Number(b.amount), 0), budgetUsed = budgets.reduce((s, b) => s + b.used, 0);
+  // In EGP: budget lines can be in different currencies (audit DL-06).
+  const budget = budgetFigures(budgets, await ratesFor(budgets.map((b) => b.currency)));
+  const budgetNote = [missingRatesNote(budget.missing), budget.poMissingRate ? "Some orders have no exchange rate to their budget's currency and are not counted." : null].filter(Boolean).join(" ");
   const flows = (await Promise.all(flowIds.map((f) => loadFlow(f.id)))).filter((f) => f != null);
   const ready = flows.map((f) => ({ name: f.flow.name, r: readiness(f.steps, roomRows, kit) }));
   const notReady = ready.filter((x) => x.r.total && x.r.ok < x.r.total);
@@ -144,9 +147,10 @@ export default async function ExecutiveSummaryPage({ searchParams }: { searchPar
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {tile("Tenders in progress", formatNumber(tenders.reduce((t, x) => t + x.n, 0)), tenders.map((x) => `${x.n} ${x.status.toLowerCase()}`).join(", ") || "None")}
-            {tile(`Capital budget ${now.getFullYear()}`, budgetTotal ? `${Math.round((budgetUsed / budgetTotal) * 100)} % used` : "Not set", budgetTotal ? `${formatMoney(budgetUsed, budgets[0].currency, { compact: true })} of ${formatMoney(budgetTotal, budgets[0].currency, { compact: true })}` : undefined)}
+            {tile(`Capital budget ${now.getFullYear()}`, budget.pct != null ? `${budget.pct} % used` : budget.missing.length ? "No exchange rate" : "Not set", budget.pct != null ? `${formatMoney(budget.usedEgp, "EGP", { compact: true })} of ${formatMoney(budget.totalEgp, "EGP", { compact: true })}` : undefined)}
             {tile("Pathways ready", flows.length ? `${flows.length - notReady.length} of ${flows.length}` : "—", notReady.length ? `Missing equipment: ${notReady.slice(0, 2).map((x) => x.name).join(", ")}${notReady.length > 2 ? "…" : ""}` : flows.length ? "All equipment in place" : "No published pathways")}
           </div>
+          {budgetNote && <p className="mt-2 text-xs text-warn">{budgetNote}</p>}
           {plans.length > 0 && (
             <p className="mt-2 text-sm text-muted">Equipment plans: {plans.map((b) => `${b.name} v${b.version} (${b.status.replace(/_/g, " ").toLowerCase()})`).join("; ")}.</p>
           )}

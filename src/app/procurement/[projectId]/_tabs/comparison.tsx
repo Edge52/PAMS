@@ -73,9 +73,10 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
     const best = r.cells.find((c) => c.isBest && !c.isOptional);
     return best?.lineTotal != null ? s + best.lineTotal : s;
   }, 0);
+  // Compared at the required quantities (audit DL-03), so 2 units at 150 don't beat 10 at 100.
   const lowestCompliantTotal = Math.min(...offers.map((o) => {
     const s = evaluation.offers.get(o.id);
-    return s && s.nonResponsiveRows === 0 && s.total != null && s.rowsQuoted === types.length ? s.total : Infinity;
+    return s && s.complete && s.nonResponsiveRows === 0 && s.awardTotal != null ? s.awardTotal : Infinity;
   }));
   const noSpec = types.filter((t) => !specs.get(t.id)?.items.length);
   const head = (o: (typeof offers)[number]) => o.supplierName;
@@ -112,7 +113,7 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
         <div className="rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3">
           <p className="text-sm text-muted">Lowest fully compliant single award</p>
           <p className="mt-1 text-lg font-bold">{Number.isFinite(lowestCompliantTotal) ? formatMoney(lowestCompliantTotal, cur) : "None"}</p>
-          <p className="text-xs text-muted">One supplier quoting every item, no mandatory failures</p>
+          <p className="text-xs text-muted">One supplier quoting every required item, no mandatory failures, at the required quantities</p>
         </div>
         <div className="rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3">
           <p className="text-sm text-muted">Best value per item (split award)</p>
@@ -165,7 +166,7 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
             }} />
             <SummaryRow label="Items quoted" offers={offers} render={(o) => {
               const s = evaluation.offers.get(o.id)!;
-              return <>{s.rowsQuoted} of {types.length}{s.nonResponsiveRows > 0 && <span className="block text-xs font-semibold text-danger">{s.nonResponsiveRows} non-responsive</span>}</>;
+              return <>{s.rowsQuoted} of {types.length}{s.nonResponsiveRows > 0 && <span className="block text-xs font-semibold text-danger">{s.nonResponsiveRows} non-responsive</span>}{s.notRanked && <span className="block text-xs font-semibold text-warn">{s.notRanked}</span>}</>;
             }} />
             <SummaryRow label="Technical score" offers={offers} render={(o) => pct(evaluation.offers.get(o.id)?.technicalScore)} />
             <SummaryRow label="Financial score" offers={offers} render={(o) => pct(evaluation.offers.get(o.id)?.financialScore)} />
@@ -184,7 +185,8 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
       <p className="text-xs text-muted">
         Technical score = weighted share of spec items the offered model complies with (partial counts half). A mandatory item marked not compliant makes
         the line technically non-responsive: it gets no financial or combined score and cannot be best value. Financial score = lowest responsive price ÷
-        this price × 100. Highlighted cells are the best combined score per item (ties go to the lower price).
+        this price × 100. Highlighted cells are the best combined score per item (ties go to the lower price). Several lines of one device type in an
+        offer are added up. An offer that misses a required item gets no overall financial or combined score while another offer quotes every item.
       </p>
 
       <TcoPanel data={data} projectId={project.id} years={tcoYears === "10" ? 10 : 5} downtimeCostPerDay={tcoDown && Number(tcoDown) >= 0 ? Number(tcoDown) : null} />
@@ -245,7 +247,8 @@ function MatrixCell({ cell, line, currency, required }: {
             : <Badge tone={(t.score ?? 0) >= 90 ? "ok" : (t.score ?? 0) >= 60 ? "warn" : "neutral"}>{t.score!.toFixed(0)}% compliant</Badge>}
         {t.responsive && t.mandatoryUnstated.length > 0 && <Badge tone="warn">{t.mandatoryUnstated.length} unanswered</Badge>}
         {cell.isOptional && <Badge>Optional</Badge>}
-        {cell.alternatives > 0 && <Badge tone="info">+{cell.alternatives} alt.</Badge>}
+        {cell.lineIds.length > 1 && <Badge tone="info">{cell.lineIds.length} lines added up</Badge>}
+        {cell.alternatives > 0 && <Badge tone="info">+{cell.alternatives} optional</Badge>}
       </div>
       {t.responsive && (
         <p className="mt-1 text-xs text-muted tabular-nums">Fin. {pct(cell.financialScore)} · combined <strong className="text-ink">{pct(cell.combinedScore)}</strong></p>
