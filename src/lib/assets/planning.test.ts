@@ -18,6 +18,21 @@ describe("contract statement", () => {
     expect(s.capped).toBe(true); // cap is 10 % of a month's share of 1.2 M ≈ 10,190
     expect(s.penalty).toBeCloseTo(s.cap!, 5);
   });
+  it("counts one outage once when two jobs cover it (audit A1)", () => {
+    // A 2-day MRI outage logged as two jobs: 48 h down, not 96 h.
+    const mri = { tag: "MRI1", reportedAt: d("2026-10-10T00:00:00Z"), startedAt: d("2026-10-10T01:00:00Z"), completedAt: d("2026-10-12T00:00:00Z"), deviceDown: true,
+      downtimeStart: d("2026-10-10T00:00:00Z"), downtimeEnd: d("2026-10-12T00:00:00Z") };
+    const t95 = { ...terms, responseHours: null, repairHours: null, uptimePct: 95, penaltyCapPct: null };
+    const s = contractStatement(t95, [{ ...mri, id: 1, number: "WO-1" }, { ...mri, id: 2, number: "WO-2", reportedAt: d("2026-10-10T06:00:00Z") }], 1, from, to);
+    expect(s.downtimeH).toBe(48);
+    expect(s.uptimePct!).toBeCloseTo(93.5, 1);
+    expect(Math.round(s.penalty)).toBe(1452); // was 7,903 with the outage counted twice
+  });
+  it("keeps separate devices' outages apart", () => {
+    const job = (id: number, tag: string) => ({ id, number: `WO-${id}`, tag, reportedAt: d("2026-10-10T00:00:00Z"), startedAt: null, completedAt: d("2026-10-11T00:00:00Z"),
+      deviceDown: true, downtimeStart: d("2026-10-10T00:00:00Z"), downtimeEnd: d("2026-10-11T00:00:00Z") });
+    expect(contractStatement(terms, [job(1, "CT1"), job(2, "CT2")], 2, from, to).downtimeH).toBe(48);
+  });
   it("has no penalty without terms", () => {
     const s = contractStatement({ ...terms, responseHours: null, repairHours: null, uptimePct: null, penaltyCapPct: null }, [], 2, from, to);
     expect(s.penalty).toBe(0); expect(s.uptimePct).toBe(100);

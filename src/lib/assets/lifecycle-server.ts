@@ -10,6 +10,7 @@ import { assets, departments, deviceTypes, exchangeRates, maintenanceEvents, rec
 import { num, todayISO } from "@/lib/format";
 import { loadFx } from "@/lib/server-utils";
 import { daysBetween } from "./dates";
+import { downtimeMsByDevice } from "./downtime";
 import { costOfOwnership, deviceKpis, replacementScore, type ReplacementScore } from "./lifecycle-kpis";
 import { lifecycle } from "./maintenance";
 import { annualCostPerAsset } from "./contracts";
@@ -100,10 +101,10 @@ export async function replacementPlan(where: SQL | undefined): Promise<Replaceme
     db.select({ assetId: workOrders.assetId, n: sql<number>`count(*)::int` }).from(workOrders)
       .where(and(inArray(workOrders.assetId, ids), eq(workOrders.type, "CORRECTIVE"), sql`${workOrders.status} <> 'CANCELLED'`, sql`${workOrders.reportedAt} >= ${yearAgo}`))
       .groupBy(workOrders.assetId),
-    db.select({ assetId: workOrders.assetId, h: sql<number>`sum(greatest(0, extract(epoch from (least(coalesce(${workOrders.downtimeEnd}, now()), now())
-      - greatest(${workOrders.downtimeStart}, ${yearAgo}))) / 3600))::float` }).from(workOrders)
-      .where(and(inArray(workOrders.assetId, ids), sql`${workOrders.downtimeStart} is not null`, sql`${workOrders.status} <> 'CANCELLED'`))
-      .groupBy(workOrders.assetId),
+    // Downtime periods, merged per device in JS so two jobs on one outage count it once (audit A2).
+    db.select({ device: workOrders.assetId, start: workOrders.downtimeStart, end: workOrders.downtimeEnd }).from(workOrders)
+      .where(and(inArray(workOrders.assetId, ids), sql`${workOrders.downtimeStart} is not null`, sql`${workOrders.status} <> 'CANCELLED'`,
+        sql`coalesce(${workOrders.downtimeEnd}, now()) > ${yearAgo}`)),
     db.selectDistinct({ assetId: recallAssets.assetId }).from(recallAssets).innerJoin(recalls, eq(recalls.id, recallAssets.recallId))
       .where(and(inArray(recallAssets.assetId, ids), eq(recallAssets.status, "PENDING"), eq(recalls.status, "OPEN"))),
     db.select({ assetId: maintenanceEvents.assetId, currency: maintenanceEvents.currency, total: sql<string>`sum(${maintenanceEvents.cost})` }).from(maintenanceEvents)
@@ -112,7 +113,9 @@ export async function replacementPlan(where: SQL | undefined): Promise<Replaceme
     loadFx(),
   ]);
   const failures = new Map(failRows.map((r) => [r.assetId, Number(r.n)]));
-  const downtime = new Map(downRows.map((r) => [r.assetId, Number(r.h)]));
+  const nowD = new Date();
+  const downtime = new Map([...downtimeMsByDevice(downRows.map((r) => ({ device: r.device, start: r.start!, end: r.end })), new Date(nowD.getTime() - 365 * 86_400_000), nowD)]
+    .map(([id, ms]) => [id, ms / 3_600_000]));
   const recalled = new Set(recallRows.map((r) => r.assetId));
   const spend = new Map<number, number>();
   // Three years of repairs at today's rate; the purchase at the rate of its date (audit DL-18).

@@ -3,8 +3,11 @@ import { db } from "@/db";
 import { assetMovements, assets, assetStatusDays, deviceTypes, workOrders } from "@/db/schema";
 import { routeGuard } from "@/lib/auth/route-guard";
 import { facilityScope, getCurrentUser } from "@/lib/auth/session";
+import { addDaysISO, todayISO } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+
+const STATUS_LIMIT = 50_000;
 
 export type HistoryEvent = { t: string; kind: "fault" | "repair" | "move" | "install"; assetId: number; roomId: number | null; text: string };
 
@@ -23,6 +26,8 @@ export async function GET(req: Request) {
   const scope = await facilityScope(await getCurrentUser());
   if (scope && !scope.includes(fid)) return Response.json({ error: "You can't see this hospital." }, { status: 403 });
   const since = new Date(Date.now() - days * 86400_000);
+  // Days in the hospital's time zone, as the snapshot job stores them (audit A10).
+  const sinceDay = todayISO(since);
   const [faults, repairs, moves, installs] = await Promise.all([
     db.select({ t: workOrders.reportedAt, assetId: workOrders.assetId, roomId: assets.roomId, title: workOrders.title, number: workOrders.number }).from(workOrders)
       .innerJoin(assets, eq(assets.id, workOrders.assetId)).where(and(eq(workOrders.facilityId, fid), gte(workOrders.reportedAt, since))),
@@ -31,21 +36,26 @@ export async function GET(req: Request) {
     db.select({ t: assetMovements.movedAt, assetId: assetMovements.assetId, roomId: assetMovements.toRoomId, by: assetMovements.movedBy }).from(assetMovements)
       .innerJoin(assets, eq(assets.id, assetMovements.assetId)).where(and(eq(assets.facilityId, fid), gte(assetMovements.movedAt, since))),
     db.select({ d: assets.installDate, assetId: assets.id, roomId: assets.roomId, type: deviceTypes.name }).from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
-      .where(and(eq(assets.facilityId, fid), sql`${assets.installDate} >= ${since.toISOString().slice(0, 10)}::date`)),
+      .where(and(eq(assets.facilityId, fid), sql`${assets.installDate} >= ${sinceDay}::date`)),
   ]);
-  // Status changes: everything in the window, plus each device's last change before it.
+  // Status changes: everything in the window, plus each device's last change before it. Newest first, so a cut at the
+  // limit drops the oldest days (audit A11); a partly cut day is dropped whole and the client shows no data before it.
   const statusRows = await db.execute<{ asset_id: number; day: string; status: string; source: string }>(sql`
     select d.asset_id, d.day::text as day, d.status::text as status, d.source from ${assetStatusDays} d join ${assets} a on a.id = d.asset_id
-    where a.facility_id = ${fid} and (d.day >= ${since.toISOString().slice(0, 10)}::date
-      or d.day = (select max(d2.day) from ${assetStatusDays} d2 where d2.asset_id = d.asset_id and d2.day < ${since.toISOString().slice(0, 10)}::date))
-    order by d.day limit 50000`);
+    where a.facility_id = ${fid} and (d.day >= ${sinceDay}::date
+      or d.day = (select max(d2.day) from ${assetStatusDays} d2 where d2.asset_id = d.asset_id and d2.day < ${sinceDay}::date))
+    order by d.day desc limit ${STATUS_LIMIT + 1}`);
+  const cut = statusRows.rows.length > STATUS_LIMIT ? String(statusRows.rows[STATUS_LIMIT].day) : null;
+  const kept = (cut ? statusRows.rows.filter((r) => String(r.day) > cut) : statusRows.rows).reverse();
   const [first] = (await db.execute<{ day: string | null }>(sql`select min(day)::text as day from ${assetStatusDays} where source = 'snapshot'`)).rows;
+  // An installation has a date only: put it at 10:00 UTC, midday in Cairo, so it falls on its own day there (A10).
   const events: HistoryEvent[] = [
     ...faults.map((r) => ({ t: r.t.toISOString(), kind: "fault" as const, assetId: r.assetId, roomId: r.roomId, text: `${r.number} reported: ${r.title}` })),
     ...repairs.filter((r) => r.t).map((r) => ({ t: r.t!.toISOString(), kind: "repair" as const, assetId: r.assetId, roomId: r.roomId, text: `${r.number} done: ${r.title}` })),
     ...moves.map((r) => ({ t: r.t.toISOString(), kind: "move" as const, assetId: r.assetId, roomId: r.roomId, text: `Moved${r.by ? ` by ${r.by}` : ""}` })),
-    ...installs.filter((r) => r.d).map((r) => ({ t: new Date(`${r.d}T09:00:00`).toISOString(), kind: "install" as const, assetId: r.assetId, roomId: r.roomId, text: `${r.type} installed` })),
+    ...installs.filter((r) => r.d).map((r) => ({ t: `${r.d}T10:00:00Z`, kind: "install" as const, assetId: r.assetId, roomId: r.roomId, text: `${r.type} installed` })),
   ].sort((a, b) => a.t.localeCompare(b.t)).slice(-5000);
-  const status: [number, string, string][] = statusRows.rows.map((r) => [Number(r.asset_id), String(r.day), String(r.status)]);
-  return Response.json({ since: since.toISOString(), until: new Date().toISOString(), events, status, snapshotsSince: first?.day ?? null }, { headers: { "Cache-Control": "no-store" } });
+  const status: [number, string, string][] = kept.map((r) => [Number(r.asset_id), String(r.day), String(r.status)]);
+  return Response.json({ since: since.toISOString(), until: new Date().toISOString(), events, status, snapshotsSince: first?.day ?? null,
+    statusFrom: cut ? addDaysISO(cut, 1) : null }, { headers: { "Cache-Control": "no-store" } });
 }

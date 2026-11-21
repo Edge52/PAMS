@@ -18,6 +18,16 @@ describe("device KPIs", () => {
     expect(k.downtimeHours).toBe(72);
     expect(k.uptimePct).toBeCloseTo(99.2, 1);
   });
+  it("counts overlapping jobs on one outage once (audit A2)", () => {
+    // 10 days down on one job and 9 of the same days on a second: 240 h, not 456 h.
+    const k = deviceKpis([
+      job({ downtimeStart: t("2026-09-01T00:00:00Z"), downtimeEnd: t("2026-09-11T00:00:00Z") }),
+      job({ downtimeStart: t("2026-09-02T00:00:00Z"), downtimeEnd: t("2026-09-11T00:00:00Z") }),
+    ], t("2019-01-01"), now);
+    expect(k.downtimeHours).toBe(240);
+    expect(k.uptimePct).toBeCloseTo(97.3, 1);
+    expect(k.mtbfDays).toBe(177.5); // (365 − 10) days ÷ 2 failures
+  });
   it("uses the install date when the device is newer than the window", () => {
     expect(deviceKpis([], t("2026-09-01T00:00:00Z"), now).windowDays).toBe(60);
   });

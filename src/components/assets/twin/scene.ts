@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { disposeObject, disposeSceneTextures, Listeners, releaseRenderer } from "./dispose";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
@@ -140,6 +141,8 @@ export class TwinScene {
   flight: { from: THREE.Vector3; to: THREE.Vector3; tFrom: THREE.Vector3; tTo: THREE.Vector3; t0: number; dur: number } | null = null;
   frame = 0;
   disposed = false;
+  /** Every DOM listener the view adds on the canvas, removed on dispose (wave 35, audit A13). */
+  listeners = new Listeners();
   idleSince = performance.now();
   reducedMotion: boolean;
   resizeObs: ResizeObserver;
@@ -212,7 +215,7 @@ export class TwinScene {
     // The camera keeps gliding for a moment after the hand lets go (damping): stay at full rate for that.
     this.controls.addEventListener("end", () => { this.idleSince = performance.now(); this.interacting = false; this.wake(1500); });
     // Wave 22: if the browser drops the graphics context (sleep, driver reset, too many tabs), say so and offer a reload.
-    this.renderer.domElement.addEventListener("webglcontextlost", (e) => { e.preventDefault(); this.showContextLost(); });
+    this.listeners.on(this.renderer.domElement, "webglcontextlost", (e) => { e.preventDefault(); this.showContextLost(); });
 
     this.ambient = new THREE.AmbientLight("#9fd8ff", 0.6);
     this.hemi = new THREE.HemisphereLight("#ffffff", "#8a98a6", 0.45);
@@ -739,12 +742,16 @@ export class TwinScene {
   stopWalk() {
     const w = this.walk; if (!w) return;
     this.walk = null;
-    window.removeEventListener("keydown", this.walkKey); window.removeEventListener("keyup", this.walkKey);
-    this.renderer.domElement.removeEventListener("pointerdown", this.walkLookStart); window.removeEventListener("pointermove", this.walkLookMove); window.removeEventListener("pointerup", this.walkLookEnd);
+    this.unbindWalk();
     this.camera.near = 0.5; this.camera.updateProjectionMatrix();
     this.camera.position.copy(w.saved.cam); this.controls.target.copy(w.saved.tgt);
     this.controls.enabled = true; this.controls.update(); this.idleSince = performance.now();
     w.onExit?.();
+  }
+  /** Remove walk mode's key and look listeners (also on dispose, when the view closes mid-walk). */
+  unbindWalk() {
+    window.removeEventListener("keydown", this.walkKey); window.removeEventListener("keyup", this.walkKey);
+    this.renderer.domElement.removeEventListener("pointerdown", this.walkLookStart); window.removeEventListener("pointermove", this.walkLookMove); window.removeEventListener("pointerup", this.walkLookEnd);
   }
   /** Forward (−1…1) and turn (−1…1) from an on-screen stick. */
   setWalkStick(f: number, t: number) { if (this.walk) this.walk.stick = { f: Math.max(-1, Math.min(1, f)), t: Math.max(-1, Math.min(1, t)) }; }
@@ -1045,21 +1052,31 @@ export class TwinScene {
     this.frameTimes = [];
   }
 
+  /**
+   * Leaving the view (wave 35, audit A13): stop the frame loop, remove every listener (walk mode's too), free every
+   * geometry, material, texture and render target, and give the WebGL context back to the browser.
+   */
   dispose() {
+    if (this.disposed) return;
     this.disposed = true;
     cancelAnimationFrame(this.frame);
+    if (this.drag) window.clearTimeout(this.drag.timer);
+    this.drag = null; this.walk = null; this.rec = null; this.play = null;
+    this.unbindWalk();
+    this.listeners.clear(); // first, so the context loss below doesn't show the "graphics dropped" message
     this.resizeObs.disconnect();
     this.controls.dispose();
-    this.scene.traverse((o) => {
-      const m = o as THREE.Mesh;
-      m.geometry?.dispose?.();
-      const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-      if (Array.isArray(mat)) mat.forEach((x) => x.dispose()); else mat?.dispose?.();
-    });
+    // Parts kept outside the scene graph while hidden are freed too; freeing one twice is harmless.
+    for (const g of [...this.furniture.values(), ...this.shells.values()]) disposeObject(g);
+    for (const km of this.kindMeshes.values()) disposeObject(km.mesh);
+    disposeObject(this.scene);
+    disposeSceneTextures(this.scene);
+    this.floors.clear(); this.kindMeshes.clear(); this.furniture.clear(); this.shells.clear();
+    for (const pass of this.composer.passes) pass.dispose();
     this.composer.dispose();
-    this.renderer.dispose();
-    this.renderer.domElement.remove();
+    releaseRenderer(this.renderer);
     this.labelLayer.remove();
+    this.container.querySelector("[data-context-lost]")?.remove();
   }
 
   /* ───────────── Labels: floor tags, departments, rooms ───────────── */
