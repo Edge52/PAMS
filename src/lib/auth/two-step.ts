@@ -5,16 +5,20 @@ import "server-only";
  */
 import { cookies } from "next/headers";
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt, lt } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, lt, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { loginChallenges, users } from "@/db/schema";
+import { loginChallenges, sessions, users } from "@/db/schema";
 import { getSetting } from "@/lib/settings";
-import { newBackupCodes, normalBackupCode, verifyCode } from "./totp";
+import { newBackupCodes, newSecret, normalBackupCode, verifyCode } from "./totp";
 import type { Role } from "./permissions";
+import { SESSION_COOKIE } from "./session";
 
 export const STEP_COOKIE = "hpams_login_step";
 const STEP_MS = 10 * 60_000;
 export const MAX_TRIES = 5;
+/** After MAX_TRIES wrong codes, signing in again waits this long (S5). */
+export const LOCK_MS = 15 * 60_000;
+export const LOCKED_MESSAGE = "Too many wrong codes. Wait 15 minutes, then sign in again.";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 function cookieSecure(): boolean {
@@ -29,12 +33,38 @@ export async function twoStepRequiredFor(role: Role | string): Promise<boolean> 
   return rule === "all" || (rule === "admins" && role === "ADMIN");
 }
 
-export async function startChallenge(userId: number, step: "VERIFY" | "ENROL", next: string): Promise<void> {
+/**
+ * Start the code step. Wrong codes count per user across sign-ins (audit S5): the new challenge carries the
+ * count of the one it replaces, and only a right code resets it (the challenge is then deleted). After MAX_TRIES
+ * the user's row is kept as a lock for LOCK_MS. Returns false while locked (no challenge, no cookie).
+ */
+export async function startChallenge(userId: number, step: "VERIFY" | "ENROL", next: string): Promise<boolean> {
+  const now = new Date();
+  // Housekeeping: drop expired challenges that hold no wrong codes (rows with wrong codes are the counter).
+  await db.delete(loginChallenges).where(and(lt(loginChallenges.expiresAt, now), lte(loginChallenges.attempts, 0)));
+  const prev = await db.select({ attempts: loginChallenges.attempts, expiresAt: loginChallenges.expiresAt }).from(loginChallenges).where(eq(loginChallenges.userId, userId));
+  if (prev.some((r) => r.attempts >= MAX_TRIES && r.expiresAt > now)) return false;
+  // After a lock has run out: one more try before the next lock.
+  const carried = Math.min(MAX_TRIES - 1, Math.max(0, ...prev.map((r) => r.attempts)));
   const token = randomBytes(32).toString("base64url");
-  await db.delete(loginChallenges).where(lt(loginChallenges.expiresAt, new Date()));
   await db.delete(loginChallenges).where(eq(loginChallenges.userId, userId));
-  await db.insert(loginChallenges).values({ tokenHash: sha256(token), userId, step, next, expiresAt: new Date(Date.now() + STEP_MS) });
+  await db.insert(loginChallenges).values({ tokenHash: sha256(token), userId, step, next, attempts: carried, expiresAt: new Date(Date.now() + STEP_MS) });
   (await cookies()).set(STEP_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: cookieSecure(), path: "/login", maxAge: STEP_MS / 1000 });
+  return true;
+}
+
+/**
+ * After the first factor (the password, or Microsoft/Google sign-in): what comes next. "session" = no code needed,
+ * start the session. Otherwise the page of the code step, or "locked" after too many wrong codes (S2: every
+ * sign-in path goes through here).
+ */
+export async function secondStep(u: { id: number; role: Role | string; totpEnabledAt: Date | null; totpSecret: string | null }, next: string): Promise<"session" | "locked" | "/login/code" | "/login/two-step"> {
+  if (u.totpEnabledAt && u.totpSecret) return (await startChallenge(u.id, "VERIFY", next)) ? "/login/code" : "locked";
+  if (await twoStepRequiredFor(u.role)) {
+    if (!u.totpSecret) await db.update(users).set({ totpSecret: newSecret() }).where(and(eq(users.id, u.id), isNull(users.totpSecret)));
+    return (await startChallenge(u.id, "ENROL", next)) ? "/login/two-step" : "locked";
+  }
+  return "session";
 }
 
 export type Challenge = {
@@ -68,11 +98,49 @@ export async function markProved(id: number): Promise<void> {
   await db.update(loginChallenges).set({ attempts: PROVED }).where(eq(loginChallenges.id, id));
 }
 
-/** Count a wrong code; true when the tries have run out (the challenge is then gone). */
-export async function wrongTry(c: Challenge): Promise<boolean> {
-  if (c.attempts + 1 >= MAX_TRIES) { await endChallenge(c.id); return true; }
-  await db.update(loginChallenges).set({ attempts: c.attempts + 1 }).where(eq(loginChallenges.id, c.id));
-  return false;
+/**
+ * Use up one try before checking a code, in one statement, so codes sent in parallel can't share a try (S5).
+ * Returns the number of this try (1…MAX_TRIES), or null when none is left: the challenge is then locked and its
+ * cookie gone.
+ */
+export async function takeTry(c: Challenge): Promise<number | null> {
+  const [r] = await db.update(loginChallenges).set({ attempts: sql`${loginChallenges.attempts} + 1` })
+    .where(and(eq(loginChallenges.id, c.id), gte(loginChallenges.attempts, 0), lt(loginChallenges.attempts, MAX_TRIES), gt(loginChallenges.expiresAt, new Date())))
+    .returning({ attempts: loginChallenges.attempts });
+  if (!r) { await lockChallenge(c.id); return null; }
+  return r.attempts;
+}
+
+/** The code of try `n` (from takeTry) was wrong: true when that was the last try (then locked for LOCK_MS). */
+export async function wrongTry(c: Challenge, n: number): Promise<boolean> {
+  if (n < MAX_TRIES) return false;
+  await lockChallenge(c.id);
+  return true;
+}
+
+/** Keep the row as the user's lock: no cookie can match it, it holds MAX_TRIES and runs out after LOCK_MS. */
+async function lockChallenge(id: number): Promise<void> {
+  await db.update(loginChallenges).set({ tokenHash: sha256(randomBytes(32).toString("base64url")), attempts: MAX_TRIES, expiresAt: new Date(Date.now() + LOCK_MS) })
+    .where(eq(loginChallenges.id, id));
+  (await cookies()).delete({ name: STEP_COOKIE, path: "/login" });
+}
+
+/**
+ * Two-step sign-in became required (Admin › Settings, S14): end the sessions of the people it now applies to who
+ * haven't set it up, so they set it up when they next sign in. The session making the change stays.
+ * Returns how many people were signed out.
+ */
+export async function endSessionsWithoutTwoStep(rule: "off" | "admins" | "all"): Promise<number> {
+  if (rule === "off") return 0;
+  const mine = (await cookies()).get(SESSION_COOKIE)?.value;
+  const keepTokenHash = mine ? sha256(mine) : null;
+  const who = await db.select({ id: users.id }).from(users)
+    .where(and(isNull(users.totpEnabledAt), rule === "admins" ? eq(users.role, "ADMIN") : undefined));
+  if (!who.length) return 0;
+  const gone = await db.delete(sessions)
+    .where(and(inArray(sessions.userId, who.map((u) => u.id)), keepTokenHash ? ne(sessions.tokenHash, keepTokenHash) : undefined))
+    .returning({ userId: sessions.userId });
+  return new Set(gone.map((g) => g.userId)).size;
 }
 
 /**

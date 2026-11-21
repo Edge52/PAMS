@@ -7,7 +7,7 @@ import { EmptyState, Input, LinkButton, PageHeader, Select } from "@/components/
 import { OffersTable } from "@/components/procurement/offers-table";
 import { addDaysISO, todayISO } from "@/lib/format";
 import { OFFER_STATUSES, options, type OfferStatus } from "@/lib/procurement/labels";
-import { offerTotals } from "@/lib/procurement/server";
+import { offerListRows } from "@/lib/procurement/server";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
@@ -45,7 +45,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).orderBy(asc(suppliers.name)),
     db.select({ id: projects.id, code: projects.code }).from(projects).where(scope).orderBy(desc(projects.id)),
   ]);
-  const totals = await offerTotals(rows.map((r) => r.id));
+  const listRows = await offerListRows(rows);
   const filtered = Boolean(sp.status || sp.supplierId || expiring || sp.projectId || q);
 
   return (
@@ -78,7 +78,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
           </EmptyState>
         )
       ) : (
-        <OffersTable rows={rows.map((r) => ({ ...r, total: totals.get(r.id) ?? 0 }))} />
+        <OffersTable rows={listRows} />
       )}
     </>
   );

@@ -17,6 +17,7 @@ import { db } from "@/db";
 import { sessions, userFacilities, users } from "@/db/schema";
 import { can, type Permission, type Role } from "./permissions";
 import { browserLabel } from "./user-agent";
+import { clientAddress, trustProxy } from "../client-address";
 
 export const SESSION_COOKIE = "hpams_session";
 const MAX_AGE_MS = 7 * 24 * 3600_000;
@@ -40,7 +41,7 @@ export async function createSession(userId: number): Promise<void> {
   // Wave 27: only what "Your sessions" shows: a short browser label and the address.
   const h = await headers();
   const ua = browserLabel(h.get("user-agent")?.slice(0, 500));
-  const ip = ((h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "").trim().slice(0, 64)) || null;
+  const ip = clientAddress(h, trustProxy()); // S6: not the client-made first X-Forwarded-For hop
   const expiresAt = new Date(Date.now() + MAX_AGE_MS);
   await db.insert(sessions).values({ tokenHash: sha256(token), userId, expiresAt, userAgent: ua, ip });
   await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, userId));

@@ -102,7 +102,7 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
               { label: "Warranty", value: offer.warrantyMonths != null ? `${offer.warrantyMonths} months` : null },
               { label: "Payment terms", value: offer.paymentTerms },
               { label: "Scores (70/30)", value: offer.technicalScore != null || offer.financialScore != null
-                ? `Technical ${offer.technicalScore?.toFixed(1) ?? "—"} · financial ${offer.financialScore?.toFixed(1) ?? "—"}` : null },
+                ? `Technical ${offer.technicalScore?.toFixed(1) ?? "—"} · financial ${sealed ? "sealed" : offer.financialScore?.toFixed(1) ?? "—"}` : null },
             ]} />
             {offer.notes && <p className="mt-4 whitespace-pre-line border-t border-line pt-3 text-sm">{offer.notes}</p>}
           </Panel>

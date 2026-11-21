@@ -2,6 +2,8 @@
 import { breachedProblem } from "@/lib/auth/breached";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import { clientAddress, trustProxy } from "@/lib/client-address";
+import { emailDelay, Throttle } from "@/lib/auth/throttle";
 import { timingSafeEqual } from "node:crypto";
 import { count, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -13,7 +15,7 @@ import { revalidatePath } from "next/cache";
 import { newSecret, verifyCode } from "@/lib/auth/totp";
 import { landingPage, startPageOptions } from "@/lib/modules";
 import { permissionsOf } from "@/lib/auth/permissions";
-import { clearTwoStep, currentChallenge, enableTwoStep, endChallenge, freshBackupCodes, markProved, PROVED, startChallenge, twoStepRequiredFor, spendCode, wrongTry } from "@/lib/auth/two-step";
+import { clearTwoStep, currentChallenge, enableTwoStep, endChallenge, freshBackupCodes, LOCKED_MESSAGE, markProved, PROVED, secondStep, spendCode, takeTry, twoStepRequiredFor, wrongTry } from "@/lib/auth/two-step";
 import { logActivity } from "@/lib/server-utils";
 import type { ActionState } from "@/lib/procurement/forms";
 import { safeLocalPath } from "@/lib/safe-path";
@@ -24,36 +26,17 @@ function safeNext(v: FormDataEntryValue | null): string {
 }
 
 /*
- * Slowing down password guessing, without letting anyone lock others out:
+ * Slowing down password guessing, without letting anyone lock others out (wave 25; audit S4):
  * - per account: after 5 failures, each further attempt for that email waits (1 s, 2 s, 4 s… up to 30 s) — the
- *   real owner can still sign in, a guesser gets a few attempts a minute;
- * - per client address: 30 failures in 15 minutes blocks that address. The address is the socket's peer as reported
- *   by the proxy only when TRUST_PROXY=1 (then the last X-Forwarded-For hop, the one our proxy added); otherwise
- *   X-Forwarded-For is ignored, since any client can send it.
- * - the table is capped so random emails can't fill memory.
+ *   real owner can still sign in, a guesser gets a few attempts a minute. The attempt and its wait are booked
+ *   before the password is checked, so parallel requests queue instead of skipping the wait;
+ * - per client address: 30 failures in 15 minutes blocks that address (see lib/client-address: the last
+ *   X-Forwarded-For hop with TRUST_PROXY=1, otherwise the socket's address as Next.js reports it);
+ * - the table is capped so random emails can't fill memory, and filling it drops junk first (lib/auth/throttle).
  */
-const WINDOW_MS = 15 * 60_000, IP_MAX = 30, EMAIL_FREE = 5, MAX_KEYS = 5000;
-const g = globalThis as unknown as { hpamsLoginFails?: Map<string, { n: number; first: number }> };
-const fails = (g.hpamsLoginFails ??= new Map());
-function failures(key: string) {
-  const f = fails.get(key);
-  if (!f) return 0;
-  if (Date.now() - f.first > WINDOW_MS) { fails.delete(key); return 0; }
-  return f.n;
-}
-function noteFail(key: string) {
-  const f = fails.get(key);
-  if (!f || Date.now() - f.first > WINDOW_MS) {
-    if (fails.size >= MAX_KEYS) fails.delete(fails.keys().next().value as string); // oldest first
-    fails.set(key, { n: 1, first: Date.now() });
-  } else f.n++;
-}
-async function clientAddress(): Promise<string | null> {
-  if (process.env.TRUST_PROXY !== "1") return null;
-  const h = await headers();
-  const hops = (h.get("x-forwarded-for") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-  return hops.at(-1) ?? h.get("x-real-ip");
-}
+const WINDOW_MS = 15 * 60_000, IP_MAX = 30, MAX_KEYS = 5000, MAX_WAIT_MS = 30_000;
+const g = globalThis as unknown as { hpamsLoginThrottle?: Throttle };
+const throttle = (g.hpamsLoginThrottle ??= new Throttle({ windowMs: WINDOW_MS, maxKeys: MAX_KEYS }));
 function safeEqual(a: string, b: string) {
   const x = Buffer.from(a), y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
@@ -64,26 +47,27 @@ export async function signIn(_prev: ActionState, fd: FormData): Promise<ActionSt
   const email = String(fd.get("email") ?? "").trim().toLowerCase();
   const password = String(fd.get("password") ?? "");
   if (!email || !password) return { errors: ["Enter your email and password."] };
-  const ip = await clientAddress();
-  const keys = [`e:${email}`, ...(ip ? [`i:${ip}`] : [])];
-  if (ip && failures(`i:${ip}`) >= IP_MAX) return { errors: ["Too many failed sign-ins from this network. Wait 15 minutes and try again."] };
-  const extra = failures(`e:${email}`) - EMAIL_FREE;
-  if (extra >= 0) await wait(Math.min(30_000, 1000 * 2 ** extra));
+  const ip = clientAddress(await headers(), trustProxy());
+  const ipKey = ip ? `i:${ip}` : null, emailKey = `e:${email}`;
+  // Count the attempt first (S4): one synchronous step, so requests in parallel each see the ones before them.
+  if (ipKey && throttle.reserve(ipKey, () => 0).failures >= IP_MAX) return { errors: ["Too many failed sign-ins from this network. Wait 15 minutes and try again."] };
+  const slot = throttle.reserve(emailKey, emailDelay, MAX_WAIT_MS);
+  if (slot.refused) return { errors: ["Too many sign-in attempts for this account at once. Wait a minute and try again."] };
+  if (slot.wait > 0) await wait(slot.wait);
 
   const [u] = await db.select().from(users).where(sql`lower(${users.email}) = ${email}`).limit(1);
   const ok = u ? await verifyPassword(password, u.passwordHash) : await verifyPassword(password, DUMMY_HASH);
-  if (!u || !ok) { keys.forEach(noteFail); return { errors: ["That email and password don't match."] }; }
+  if (!u || !ok) return { errors: ["That email and password don't match."] };
   if (!u.active) return { errors: ["This account is switched off. Ask an administrator."] };
-  keys.forEach((k) => fails.delete(k));
+  throttle.clear(emailKey);
+  if (ipKey) throttle.clear(ipKey);
   // Wave 25: with two-step on, the session starts only after the code; when it's required and not set up yet,
   // only after setting it up.
   // Wave 26: the page asked for, else the person's chosen start page, else their role's.
   const next = landingPage(safeNext(fd.get("next")), u.startPage, u.role, permissionsOf(u.role));
-  if (u.totpEnabledAt && u.totpSecret) { await startChallenge(u.id, "VERIFY", next); redirect("/login/code"); }
-  if (await twoStepRequiredFor(u.role)) {
-    if (!u.totpSecret) await db.update(users).set({ totpSecret: newSecret() }).where(eq(users.id, u.id));
-    await startChallenge(u.id, "ENROL", next); redirect("/login/two-step");
-  }
+  const step = await secondStep(u, next);
+  if (step === "locked") return { errors: [LOCKED_MESSAGE] };
+  if (step !== "session") redirect(step);
   await createSession(u.id);
   await logActivity("user", u.id, "signed_in", "Signed in", u.name);
   redirect(next);
@@ -95,9 +79,12 @@ export type StepState = { error?: string; codes?: string[]; next?: string } | nu
 export async function signInCode(_prev: StepState, fd: FormData): Promise<StepState> {
   const c = await currentChallenge();
   if (!c || c.step !== "VERIFY") redirect("/login?error=" + encodeURIComponent("That took too long. Sign in again."));
+  // S5: the try is used up before the code is checked; wrong codes count across sign-ins until a right one.
+  const n = await takeTry(c);
+  if (n == null) redirect("/login?error=" + encodeURIComponent(LOCKED_MESSAGE));
   const how = await spendCode(c.user, String(fd.get("code") ?? ""));
   if (!how) {
-    if (await wrongTry(c)) redirect("/login?error=" + encodeURIComponent("Too many wrong codes. Sign in again."));
+    if (await wrongTry(c, n)) redirect("/login?error=" + encodeURIComponent(LOCKED_MESSAGE));
     return { error: "That code isn't right. Codes change every 30 seconds; check the clock on your phone is right." };
   }
   await endChallenge(c.id);
@@ -110,9 +97,11 @@ export async function signInCode(_prev: StepState, fd: FormData): Promise<StepSt
 export async function signInEnrol(_prev: StepState, fd: FormData): Promise<StepState> {
   const c = await currentChallenge();
   if (!c || c.step !== "ENROL" || !c.user.totpSecret || c.user.totpEnabledAt) redirect("/login?error=" + encodeURIComponent("That took too long. Sign in again."));
+  const n = await takeTry(c);
+  if (n == null) redirect("/login?error=" + encodeURIComponent(LOCKED_MESSAGE));
   const step = verifyCode(c.user.totpSecret, String(fd.get("code") ?? ""), Date.now());
   if (step == null) {
-    if (await wrongTry(c)) redirect("/login?error=" + encodeURIComponent("Too many wrong codes. Sign in again."));
+    if (await wrongTry(c, n)) redirect("/login?error=" + encodeURIComponent(LOCKED_MESSAGE));
     return { error: "That code isn't right. Scan the square again, or check the clock on your phone is right." };
   }
   const codes = await enableTwoStep(c.user.id, step);

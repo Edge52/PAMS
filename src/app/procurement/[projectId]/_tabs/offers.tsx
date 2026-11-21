@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { offerLines, offers, projects, suppliers } from "@/db/schema";
 import { EmptyState, LinkButton } from "@/components/ui";
 import { OffersTable } from "@/components/procurement/offers-table";
-import { offerTotals } from "@/lib/procurement/server";
+import { offerListRows } from "@/lib/procurement/server";
 import type { CurrentUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/permissions";
 
@@ -19,7 +19,7 @@ export async function OffersTab({ project, me }: { project: Project; me: Current
     lines: sql<number>`(select count(*)::int from ${offerLines} where ${offerLines.offerId} = ${offers.id})`,
   }).from(offers).innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).innerJoin(projects, eq(projects.id, offers.projectId))
     .where(eq(offers.projectId, project.id)).orderBy(desc(offers.id));
-  const totals = await offerTotals(rows.map((r) => r.id));
+  const listRows = await offerListRows(rows);
 
   return (
     <div className="space-y-4">
@@ -32,7 +32,7 @@ export async function OffersTab({ project, me }: { project: Project; me: Current
           Register each quotation as it arrives. You can attach the PDF and datasheets on the offer page.
         </EmptyState>
       ) : (
-        <OffersTable showProject={false} rows={rows.map((r) => ({ ...r, total: totals.get(r.id) ?? 0 }))} />
+        <OffersTable showProject={false} rows={listRows} />
       )}
     </div>
   );

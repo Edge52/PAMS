@@ -8,3 +8,8 @@ export function safeLocalPath(v: unknown): string | null {
   if (/[\u0000-\u001f\u007f\\]/.test(v)) return null;
   return v;
 }
+
+/** URL path segments decoded, or null when one has a broken % escape (audit S16: "/files/a/%E0" was a 500). */
+export function decodeSegments(segments: string[]): string[] | null {
+  try { return segments.map((s) => decodeURIComponent(s)); } catch { return null; }
+}

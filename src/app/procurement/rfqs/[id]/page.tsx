@@ -9,6 +9,7 @@ import { ActionForm, SubmitButton } from "@/components/procurement/action-form";
 import { ActivityPanel, DaysLeft } from "@/components/procurement/bits";
 import { formatDate, formatMoney, formatNumber } from "@/lib/format";
 import { offerTotals, rfqLines, splitRfqNotes } from "@/lib/procurement/server";
+import { pricesSealed, SEALED } from "@/lib/procurement/sealed";
 import { inviteSuppliers, setRfqStatus, updateInvitation, updateRfqNotes } from "../actions";
 
 import { can } from "@/lib/auth/permissions";
@@ -39,6 +40,7 @@ export default async function RfqPage({ params }: { params: Promise<{ id: string
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(eq(suppliers.active, true)).orderBy(asc(suppliers.name)),
   ]);
   const totals = await offerTotals(responses.map((r) => r.id));
+  const sealed = pricesSealed(project); // two-envelope tender, financial envelopes not opened (S1)
   const invitedIds = new Set(invited.map((i) => i.inv.supplierId));
   const notInvited = allSuppliers.filter((s) => !invitedIds.has(s.id));
   const open = rfq.status === "DRAFT" || rfq.status === "ISSUED";
@@ -120,7 +122,7 @@ export default async function RfqPage({ params }: { params: Promise<{ id: string
                       <Td><Link href={`/procurement/offers/${o.id}`} className="font-semibold text-primary hover:underline">{o.reference}</Link></Td>
                       <Td className="whitespace-nowrap">{formatDate(o.offerDate)}</Td>
                       <Td><StatusBadge value={o.status} /></Td>
-                      <Td align="right">{formatMoney(totals.get(o.id) ?? 0, o.currency)}</Td>
+                      <Td align="right">{sealed ? <span className="text-muted">{SEALED}</span> : formatMoney(totals.get(o.id) ?? 0, o.currency)}</Td>
                     </tr>
                   ))}
                 </tbody>

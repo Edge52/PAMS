@@ -7,6 +7,7 @@ import { can } from "@/lib/auth/permissions";
 import { facilityScope, getCurrentUser, type CurrentUser } from "@/lib/auth/session";
 import { canViewDocumentsOf } from "@/lib/documents-access";
 import { fileKind, resolveStored } from "@/lib/storage";
+import { decodeSegments } from "@/lib/safe-path";
 
 /**
  * A file is served only to someone who may see the record it belongs to: attachments need that module's read
@@ -43,7 +44,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ path: s
   const me = await getCurrentUser();
   if (!me) return new Response("Sign in first.", { status: 401 });
   const { path: segments } = await params;
-  const decoded = segments.map((s) => decodeURIComponent(s));
+  const decoded = decodeSegments(segments);
+  if (!decoded) return new Response("Not found", { status: 404 });
   // Stored URLs encode only the file name (see storeFile), so rebuild that form to match the record.
   const url = `/files/${decoded.slice(0, -1).join("/")}/${encodeURIComponent(decoded.at(-1) ?? "")}`;
   if (!(await mayRead(me, decoded, url))) return new Response("Not found", { status: 404 });

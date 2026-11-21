@@ -6,6 +6,7 @@ import { EmptyState, Field, FormGrid, Input, LinkButton, PageHeader, Panel, Sele
 import { ActionForm, SubmitButton } from "@/components/procurement/action-form";
 import { Notice } from "@/components/procurement/bits";
 import { addDaysISO, formatMoney, formatNumber, round2, todayISO } from "@/lib/format";
+import { pricesSealed, SEALED } from "@/lib/procurement/sealed";
 import { incotermOptions } from "@/lib/procurement/labels";
 import { netUnitPrice } from "@/lib/procurement/scoring";
 import { facilityDepartments } from "@/lib/procurement/server";
@@ -68,6 +69,7 @@ export default async function NewPoPage({ searchParams }: { searchParams: Promis
   const depts = await facilityDepartments(project.facilityId);
   const deptOptions = depts.map((d) => ({ value: d.id, label: `${d.name} (${d.code})` }));
   const weeks = offer.deliveryWeeks ?? 12;
+  const sealed = pricesSealed(project); // an offer of a tender whose financial envelopes are still sealed (S1)
   const docWarning = await supplierExpiryWarning(supplier.id, supplier.name);
 
   return (
@@ -97,7 +99,7 @@ export default async function NewPoPage({ searchParams }: { searchParams: Promis
                     <Td align="right">{formatNumber(l.quantity)}</Td>
                     <Td align="right">{done ? formatNumber(done) : "—"}</Td>
                     <Td><Input type="number" name={`qty_${l.id}`} min={0} max={remaining} step={1} defaultValue={remaining} disabled={remaining === 0} className="w-20" aria-label={`Quantity of ${l.description}`} /></Td>
-                    <Td align="right" className="whitespace-nowrap">{formatMoney(round2(netUnitPrice(Number(l.unitPrice), l.discountPct)), offer.currency)}</Td>
+                    <Td align="right" className="whitespace-nowrap">{sealed ? <span className="text-muted">{SEALED}</span> : formatMoney(round2(netUnitPrice(Number(l.unitPrice), l.discountPct)), offer.currency)}</Td>
                     <Td>{deptOptions.length ? <Select name={`dept_${l.id}`} placeholder="Not assigned (central store)" options={deptOptions} className="min-w-48" aria-label={`Destination of ${l.description}`} /> : <span className="text-xs text-muted">No facility</span>}</Td>
                   </tr>
                 );

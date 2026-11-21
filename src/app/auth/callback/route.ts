@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { createSession } from "@/lib/auth/session";
+import { LOCKED_MESSAGE, secondStep } from "@/lib/auth/two-step";
 import { exchangeCode, supabaseConfig } from "@/lib/auth/supabase";
 import { logActivity } from "@/lib/server-utils";
 import { permissionsOf } from "@/lib/auth/permissions";
@@ -28,7 +29,12 @@ export async function GET(req: Request) {
   const [user] = await db.select().from(users).where(sql`lower(${users.email}) = ${r.email}`).limit(1);
   if (!user) return fail(`There's no PAMS account for ${r.email}. Ask an administrator to add you with that email.`);
   if (!user.active) return fail("This account is switched off. Ask an administrator.");
+  const next = landingPage(state.n, user.startPage, user.role, permissionsOf(user.role));
+  // Audit S2: the same two-step check as the password sign-in — the code, or setting two-step up when required.
+  const step = await secondStep(user, next);
+  if (step === "locked") return fail(LOCKED_MESSAGE);
+  if (step !== "session") return NextResponse.redirect(`${base}${step}`);
   await createSession(user.id);
   await logActivity("user", user.id, "signed_in", "Signed in with Microsoft or Google (Supabase)", user.name);
-  return NextResponse.redirect(`${base}${landingPage(state.n, user.startPage, user.role, permissionsOf(user.role))}`);
+  return NextResponse.redirect(`${base}${next}`);
 }

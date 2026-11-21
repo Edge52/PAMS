@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { Badge, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
+import { SEALED } from "@/lib/procurement/sealed";
 import { validityState } from "./bits";
 
 export type OfferListRow = {
   id: number; reference: string; status: string; currency: string; offerDate: string; validUntil: string | null;
   supplierId: number; supplier: string; projectId: number; projectCode: string; lines: number;
-  technicalScore: number | null; financialScore: number | null; total: number;
+  technicalScore: number | null; financialScore: number | null;
+  /** null with `sealed`: a two-envelope tender whose financial envelopes are not open yet (build rows with `offerListRows`). */
+  total: number | null; sealed: boolean;
 };
 
 export function OffersTable({ rows, showProject = true }: { rows: OfferListRow[]; showProject?: boolean }) {
@@ -31,9 +34,9 @@ export function OffersTable({ rows, showProject = true }: { rows: OfferListRow[]
                 {!closed && (v.tone === "danger" || v.tone === "warn") && <span className="block"><Badge tone={v.tone}>{v.text}</Badge></span>}
               </Td>
               <Td align="right">{o.lines}</Td>
-              <Td align="right" className="whitespace-nowrap">{formatMoney(o.total, o.currency)}</Td>
+              <Td align="right" className="whitespace-nowrap">{o.sealed || o.total == null ? <span className="text-muted">{SEALED}</span> : formatMoney(o.total, o.currency)}</Td>
               <Td align="right" className="whitespace-nowrap tabular-nums">
-                {o.technicalScore != null ? o.technicalScore.toFixed(0) : "—"} / {o.financialScore != null ? o.financialScore.toFixed(0) : "—"}
+                {o.technicalScore != null ? o.technicalScore.toFixed(0) : "—"} / {o.sealed ? <span className="text-muted">{SEALED.toLowerCase()}</span> : o.financialScore != null ? o.financialScore.toFixed(0) : "—"}
               </Td>
               <Td><StatusBadge value={o.status} /></Td>
             </tr>
