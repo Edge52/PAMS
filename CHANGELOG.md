@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 31 — on branch `wave-31` (not merged yet)
+## Wave 31 — merged 21 Nov 2026
 
 `scene.ts` split. No change in what you see or do; no migration.
 
