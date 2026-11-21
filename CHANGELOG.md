@@ -1,5 +1,21 @@
 # Changelog
 
+## Wave 31 — on branch `wave-31` (not merged yet)
+
+`scene.ts` split. No change in what you see or do; no migration.
+
+- `scene.ts` (about 2,600 lines, the three.js scene) is now about 1,230: the class keeps every field and every method
+  with the same name and signature, so nothing that uses it changed. The bodies of 49 larger methods moved, unchanged,
+  into five files by job, each taking the scene as `scn` where it said `this`: `scene-build.ts` (floors, walls, devices,
+  furniture, shells), `scene-overlays.ts` (zones, routes, pathways, heat, notes, outlines, clashes, ghosts),
+  `scene-view.ts` (looks, presets, framing, snapshots, walk and play), `scene-interact.ts` (pointer, picking, selection,
+  placing and dropping) and `scene-labels.ts`.
+- Generated from the parsed file, not retyped. Members marked `private` are now plain members, because the helper
+  files need them (type-only; no run-time change).
+- Checked: every 3D panel showed the same content as on the wave 30 build with the same database (the room labels
+  differ between any two runs, as they follow the turning camera); pressing through the tools in every panel (views,
+  walk, trauma route, a week's simulation, history, statuses, types) gave no browser errors.
+
 ## Wave 30 — merged 17 Nov 2026
 
 The 3D view split into smaller files. No change in what you see or do; no migration.

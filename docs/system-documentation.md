@@ -292,7 +292,7 @@ As of wave 29 (17 Nov 2026). `docs/HANDOVER.md` › *What's left* is the working
 | Sign-in | Microsoft or Google sign-in is built but not tried with real accounts (needs a Supabase project) |
 | Assistant | Built, needs an Anthropic API key; only tried against a stand-in |
 | Phones | Scanning a QR label with the camera works in Chrome on Android; other phones type the tag or use a hand scanner |
-| 3D | No building services (MEP) layers, BIM import or real-time location; `scene.ts` is still one large class (about 2,600 lines); the view itself is split into a hook and panels |
+| 3D | No building services (MEP) layers, BIM import or real-time location: the code is split by job (view: a hook and panels; scene: the class and five method files) |
 | Integrations | No live link to ERP, HIS, RIS or e-procurement (Excel exports cover finance for now) |
 | Not yet tried for real | A full Docker build on a server; email through the hospital's mail server; a load test |
 
@@ -303,7 +303,7 @@ As of wave 29 (17 Nov 2026). `docs/HANDOVER.md` › *What's left* is the working
 | Arabic interface | Right-to-left screens, Arabic labels, bilingual printouts | L |
 | Pilots with partners | MEP layers from drawings, HIS volumes, automatic imaging volumes (RIS/MPPS), real-time location, IFC/BIM import | M–L each |
 | Exports | ERP and e-procurement file formats, when the hospital has them | S each |
-| 3D code | Split `scene.ts` into helpers by job, with picture tests of saved views | M |
+| 3D tests | Picture tests of saved views, to catch visual changes automatically | S |
 | Outside API | A read-only HL7 FHIR Device API, when a hospital system needs to read the register | M |
 
 ## Decisions and inputs needed

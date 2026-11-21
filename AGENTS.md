@@ -589,3 +589,11 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   Adding a panel: a component in `panels/`, then `const myPanel = <MyPanel t={t} />` in `twin-view.tsx`.
 - Two reads of refs during render (`root.current` for the right-click menu's position, `sceneRef.current` for the render
   panel's camera) carry an `eslint-disable-next-line react-hooks/refs`: unchanged behaviour from before the split.
+
+## Wave 31: scene.ts
+
+- `TwinScene` (twin/scene.ts) keeps the fields, the constructor, small methods and one-line hand-offs. Larger method
+  bodies live in `scene-build.ts`, `scene-overlays.ts`, `scene-view.ts`, `scene-interact.ts` and `scene-labels.ts` as
+  `<method>Impl(scn, …)`. Change a body there; add a new large method the same way (method on the class that returns
+  `fooImpl(this, …)`). `scene-build.ts` and `scene-view.ts` import `TwinScene` at run time for its static shapes; that
+  circular import is safe because it's only read inside functions.

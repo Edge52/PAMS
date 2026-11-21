@@ -82,7 +82,7 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 30 (merged 17 Nov 2026). Open items: section 7.
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 30 (merged 17 Nov 2026); `wave-31` (`scene.ts` split) is pushed and waits for Hisham's OK. Open items: section 7.
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
@@ -147,7 +147,6 @@ no finance export or e-procurement portal yet.
 | Item | Notes | Size |
 | --- | --- | --- |
 | Camera scanning on every phone | Needs a small QR-reading library in the browser (for example `jsqr`); waits on Hisham's OK to add a package. Chrome on Android already scans. | S |
-| Split `scene.ts` | Wave 30 split the 3D view (`twin-view.tsx` → hook + panels). `scene.ts` is still one three.js class of about 2,600 lines; move groups of methods (labels, paths, notes, context plates) to helpers that take the scene. | M |
 
 ### To check with Hisham (wave 16)
 
