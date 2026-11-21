@@ -5,17 +5,22 @@ import "server-only";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { acceptances, assets, budgetLines, deliveries, invoiceLines, invoices, poLines, purchaseOrders, workOrders } from "@/db/schema";
-import { budgetUse, scorecard, type MatchLine } from "./money";
+import { budgetUse, poBudgetShare, scorecard, type MatchLine } from "./money";
 import { fxFactors } from "./server";
-
-/** POs that commit money: approved onwards, not cancelled. */
-export const COMMITTING = ["APPROVED", "ISSUED", "ACKNOWLEDGED", "PARTIALLY_DELIVERED", "DELIVERED", "CLOSED"] as const;
 /** Invoices that count as spent. */
 export const SPENT = ["APPROVED", "PAID"] as const;
 
 export async function poValues(poIds: number[]): Promise<Map<number, number>> {
   if (!poIds.length) return new Map();
   const rows = await db.select({ poId: poLines.poId, v: sql<string>`sum(${poLines.quantity} * ${poLines.unitPrice})` }).from(poLines)
+    .where(inArray(poLines.poId, poIds)).groupBy(poLines.poId);
+  return new Map(rows.map((r) => [r.poId, Number(r.v)]));
+}
+
+/** Value of the goods received on each PO, at the PO's prices. */
+async function receivedValues(poIds: number[]): Promise<Map<number, number>> {
+  if (!poIds.length) return new Map();
+  const rows = await db.select({ poId: poLines.poId, v: sql<string>`sum(${poLines.receivedQty} * ${poLines.unitPrice})` }).from(poLines)
     .where(inArray(poLines.poId, poIds)).groupBy(poLines.poId);
   return new Map(rows.map((r) => [r.poId, Number(r.v)]));
 }
@@ -33,15 +38,18 @@ export type BudgetRow = typeof budgetLines.$inferSelect & {
 };
 
 /**
- * Budget use per line, in the line's currency: committed = approved POs not yet invoiced, spent = approved or paid
- * invoices, requested = POs waiting for approval (shown, not counted).
+ * Budget use per line, in the line's currency: committed = approved POs not yet invoiced (a PO closed short: only
+ * what was received), spent = approved or paid invoices, also on cancelled POs, requested = POs waiting for approval
+ * (shown, not counted). See poBudgetShare.
  */
 export async function budgetRows(lines: (typeof budgetLines.$inferSelect)[]): Promise<BudgetRow[]> {
   if (!lines.length) return [];
-  const pos = await db.select({ id: purchaseOrders.id, lineId: purchaseOrders.budgetLineId, status: purchaseOrders.status, currency: purchaseOrders.currency }).from(purchaseOrders)
-    .where(and(inArray(purchaseOrders.budgetLineId, lines.map((l) => l.id)), ne(purchaseOrders.status, "CANCELLED")));
-  const ids = pos.map((p) => p.id);
-  const [values, spent] = await Promise.all([poValues(ids), invoicedPerPo(ids, SPENT)]);
+  const all = await db.select({ id: purchaseOrders.id, lineId: purchaseOrders.budgetLineId, status: purchaseOrders.status, currency: purchaseOrders.currency }).from(purchaseOrders)
+    .where(inArray(purchaseOrders.budgetLineId, lines.map((l) => l.id)));
+  const ids = all.map((p) => p.id);
+  const [values, received, spent] = await Promise.all([poValues(ids), receivedValues(ids), invoicedPerPo(ids, SPENT)]);
+  // A cancelled PO matters only for the invoices already approved or paid on it.
+  const pos = all.filter((p) => p.status !== "CANCELLED" || spent.has(p.id));
   const out: BudgetRow[] = [];
   for (const l of lines) {
     const mine = pos.filter((p) => p.lineId === l.id);
@@ -49,12 +57,11 @@ export async function budgetRows(lines: (typeof budgetLines.$inferSelect)[]): Pr
     let committed = 0, sp = 0, requested = 0, missingRate = false;
     for (const p of mine) {
       const f = fx[p.currency]; if (f == null) { missingRate = true; continue; }
-      const v = (values.get(p.id) ?? 0) * f, s = (spent.get(p.id) ?? 0) * f;
-      if ((COMMITTING as readonly string[]).includes(p.status)) { sp += s; committed += Math.max(0, v - s); }
-      else if (p.status === "PENDING_APPROVAL" || p.status === "DRAFT") requested += v;
+      const share = poBudgetShare(p.status, (values.get(p.id) ?? 0) * f, (received.get(p.id) ?? 0) * f, (spent.get(p.id) ?? 0) * f);
+      committed += share.committed; sp += share.spent; requested += share.requested;
     }
     const u = budgetUse(Number(l.amount), committed, sp);
-    out.push({ ...l, committed, spent: sp, requested, used: u.used, remaining: u.remaining, pct: u.pct, level: u.level, pos: mine.length, missingRate });
+    out.push({ ...l, committed, spent: sp, requested, used: u.used, remaining: u.remaining, pct: u.pct, level: u.level, pos: mine.filter((p) => p.status !== "CANCELLED").length, missingRate });
   }
   return out;
 }
@@ -72,9 +79,10 @@ export async function matchLinesFor(poId: number, entered: Map<number, { quantit
   }));
 }
 
-/** What has been called off so far: PO value (not cancelled) and quantities per item. */
-export async function calledOff(frameworkId: number) {
-  const pos = await db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(and(eq(purchaseOrders.frameworkId, frameworkId), ne(purchaseOrders.status, "CANCELLED")));
+/** What has been called off so far: PO value (not cancelled) and quantities per item, leaving out `excludePoId`. */
+export async function calledOff(frameworkId: number, excludePoId?: number) {
+  const pos = await db.select({ id: purchaseOrders.id }).from(purchaseOrders)
+    .where(and(eq(purchaseOrders.frameworkId, frameworkId), ne(purchaseOrders.status, "CANCELLED"), excludePoId ? ne(purchaseOrders.id, excludePoId) : undefined));
   const ids = pos.map((p) => p.id);
   const value = [...(await poValues(ids)).values()].reduce((s, v) => s + v, 0);
   const qty = ids.length ? await db.select({ desc: poLines.description, dt: poLines.deviceTypeId, q: sql<number>`sum(${poLines.quantity})::int` }).from(poLines).where(inArray(poLines.poId, ids)).groupBy(poLines.description, poLines.deviceTypeId) : [];

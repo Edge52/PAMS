@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { budgetCrossing, budgetUse, checkCallOff, matchInvoice, requiredBond, scorecard, warrantyEndFrom } from "./money";
+import { budgetCrossing, budgetUse, checkCallOff, matchInvoice, poBudgetShare, requiredBond, scorecard, warrantyEndFrom } from "./money";
 
 const line = { poLineId: 1, description: "Monitor", ordered: 10, received: 6, poUnitPrice: 100, invoicedBefore: 0, quantity: 6, unitPrice: 100 };
 describe("three-way match", () => {
@@ -23,6 +23,14 @@ describe("budgets", () => {
     expect(budgetCrossing(1000, 700, 150)).toBe("80");
     expect(budgetCrossing(1000, 850, 200)).toBe("100");
     expect(budgetCrossing(1000, 100, 100)).toBeNull();
+  });
+  it("counts paid invoices of a cancelled PO and only the received value of a PO closed short (DL-09, B3)", () => {
+    // Ordered 1000, received 600, invoiced and paid 400.
+    expect(poBudgetShare("ISSUED", 1000, 600, 400)).toEqual({ committed: 600, spent: 400, requested: 0 });
+    expect(poBudgetShare("CLOSED", 1000, 600, 400)).toEqual({ committed: 200, spent: 400, requested: 0 });
+    expect(poBudgetShare("CLOSED", 1000, 600, 700)).toEqual({ committed: 0, spent: 700, requested: 0 });
+    expect(poBudgetShare("CANCELLED", 1000, 0, 400)).toEqual({ committed: 0, spent: 400, requested: 0 });
+    expect(poBudgetShare("PENDING_APPROVAL", 1000, 0, 0)).toEqual({ committed: 0, spent: 0, requested: 1000 });
   });
 });
 

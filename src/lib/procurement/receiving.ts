@@ -1,9 +1,9 @@
 import "server-only";
 /**
  * Goods receipt → assets. Records the delivery in one transaction, then registers one asset per received unit
- * through the shared asset factory. createAssets() runs on the shared connection pool (it cannot join our transaction),
- * so asset creation is idempotent: createMissingAssets() only creates units that do not have an asset yet and can be
- * retried from the PO page if it fails part-way.
+ * through the shared asset factory, in a second transaction. Asset creation is idempotent: createMissingAssets() locks
+ * the delivery and only creates units that do not have an asset yet, so it can be retried from the PO page if it
+ * fails, and two retries at once don't both create (DL-12).
  */
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
@@ -101,32 +101,36 @@ class ReceiptError extends Error {
 
 /** Create one asset per received unit of a delivery that does not have an asset yet. Returns how many were created. */
 export async function createMissingAssets(deliveryId: number, actor?: string): Promise<number> {
-  const [d] = await db.select({ delivery: deliveries, po: purchaseOrders }).from(deliveries)
-    .innerJoin(purchaseOrders, eq(purchaseOrders.id, deliveries.poId)).where(eq(deliveries.id, deliveryId));
-  if (!d) return 0;
-  const facilityId = await receiptFacility(d.po.id);
+  const [found] = await db.select({ poId: deliveries.poId }).from(deliveries).where(eq(deliveries.id, deliveryId));
+  if (!found) return 0;
+  const facilityId = await receiptFacility(found.poId);
   if (!facilityId) throw new Error("No facility for this purchase order");
-
-  const lines = await db.select({ dl: deliveryLines, pl: poLines }).from(deliveryLines)
-    .innerJoin(poLines, eq(poLines.id, deliveryLines.poLineId)).where(eq(deliveryLines.deliveryId, deliveryId)).orderBy(deliveryLines.id);
-  const inputs: NewAssetInput[] = [];
-  for (const { dl, pl } of lines) {
-    // Assets are created in unit order, so after a partial failure the first `made` units already exist.
-    const [{ made }] = await db.select({ made: sql<number>`count(*)::int` }).from(assets).where(eq(assets.deliveryLineId, dl.id));
-    for (let i = made; i < dl.quantity; i++) {
-      const serial = dl.serialNumbers?.[i] || null;
-      inputs.push({
-        deviceTypeId: pl.deviceTypeId, facilityId, departmentId: pl.destinationDepartmentId, manufacturer: pl.manufacturer, model: pl.model,
-        serialNumber: serial, status: "IN_STOCK", condition: "NEW", supplierId: d.po.supplierId, poLineId: pl.id, deliveryLineId: dl.id,
-        purchaseCost: pl.unitPrice, currency: d.po.currency, purchaseDate: d.delivery.deliveryDate, warrantyMonths: d.po.warrantyMonths,
-        notes: `Received on ${d.po.number}, delivery ${d.delivery.reference}`,
-      });
+  return db.transaction(async (tx) => {
+    // Lock the delivery first: a second click waits here, then counts the assets the first one made.
+    const [d] = await tx.select({ delivery: deliveries, po: purchaseOrders }).from(deliveries)
+      .innerJoin(purchaseOrders, eq(purchaseOrders.id, deliveries.poId)).where(eq(deliveries.id, deliveryId)).for("update", { of: deliveries });
+    if (!d) return 0;
+    const lines = await tx.select({ dl: deliveryLines, pl: poLines }).from(deliveryLines)
+      .innerJoin(poLines, eq(poLines.id, deliveryLines.poLineId)).where(eq(deliveryLines.deliveryId, deliveryId)).orderBy(deliveryLines.id);
+    const inputs: NewAssetInput[] = [];
+    for (const { dl, pl } of lines) {
+      // Assets are created in unit order, so the first `made` units already exist.
+      const [{ made }] = await tx.select({ made: sql<number>`count(*)::int` }).from(assets).where(eq(assets.deliveryLineId, dl.id));
+      for (let i = made; i < dl.quantity; i++) {
+        const serial = dl.serialNumbers?.[i] || null;
+        inputs.push({
+          deviceTypeId: pl.deviceTypeId, facilityId, departmentId: pl.destinationDepartmentId, manufacturer: pl.manufacturer, model: pl.model,
+          serialNumber: serial, status: "IN_STOCK", condition: "NEW", supplierId: d.po.supplierId, poLineId: pl.id, deliveryLineId: dl.id,
+          purchaseCost: pl.unitPrice, currency: d.po.currency, purchaseDate: d.delivery.deliveryDate, warrantyMonths: d.po.warrantyMonths,
+          notes: `Received on ${d.po.number}, delivery ${d.delivery.reference}`,
+        });
+      }
     }
-  }
-  if (!inputs.length) return 0;
-  const created = await createAssets(inputs, actor);
-  await logActivity("po", d.po.id, "assets_created", `${created.length} asset${created.length === 1 ? "" : "s"} registered from delivery ${d.delivery.reference} (${created[0].assetTag}${created.length > 1 ? ` … ${created.at(-1)!.assetTag}` : ""})`, actor);
-  return created.length;
+    if (!inputs.length) return 0;
+    const created = await createAssets(inputs, actor, tx);
+    await logActivity("po", d.po.id, "assets_created", `${created.length} asset${created.length === 1 ? "" : "s"} registered from delivery ${d.delivery.reference} (${created[0].assetTag}${created.length > 1 ? ` … ${created.at(-1)!.assetTag}` : ""})`, actor, tx);
+    return created.length;
+  });
 }
 
 /** Received units of a PO that have no asset yet (to offer a retry). */

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { departments, deliveries, offerLines, offers, poLines, projects, purchaseOrders, suppliers } from "@/db/schema";
+import { departments, deliveries, frameworkItems, frameworks, offerLines, offers, poLines, projects, purchaseOrders, suppliers } from "@/db/schema";
 import { formatDate, formatMoney, round2, todayISO } from "@/lib/format";
 import { convert, logActivity, nextNumber } from "@/lib/server-utils";
 import { changeSummary, diff } from "@/lib/audit-diff";
@@ -13,6 +13,8 @@ import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/li
 import { cancelApproval, startApproval } from "@/lib/approvals/server";
 import { fail, formObject, idParam, isUniqueViolation, optDate, optInt, optStr, reqDate, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { humanizeEnum, INCOTERMS } from "@/lib/procurement/labels";
+import { checkCallOff } from "@/lib/procurement/money";
+import { calledOff } from "@/lib/procurement/money-server";
 import { canSubmit, canTransition, isEditable, transitionPermission, type PoStatus, PO_STATUSES } from "@/lib/procurement/po-status";
 import { parseSerials, validateOrderQty } from "@/lib/procurement/receipt";
 import { createMissingAssets, receiveGoods } from "@/lib/procurement/receiving";
@@ -239,6 +241,11 @@ export async function updatePurchaseOrder(poId: number, _prev: ActionState, fd: 
     updates.push({ id: l.id, quantity, dept: deptIds.has(dept) ? dept : null });
   }
   if (errors.length) return fail(...errors);
+  // DL-04: a call-off stays within the agreement's ceiling and each item's limit, counting the other call-offs.
+  if (draft && po.frameworkId && updates.some((u) => u.quantity > (lines.find((l) => l.id === u.id)?.quantity ?? 0))) {
+    const problems = await callOffProblems(po.frameworkId, poId, lines.map((l) => ({ ...l, quantity: updates.find((u) => u.id === l.id)?.quantity ?? l.quantity })));
+    if (problems.length) return fail(...problems);
+  }
   const header = {
     expectedDelivery: h.expectedDelivery ?? null, notes: h.notes ?? null,
     // Commercial terms are part of what was approved: only drafts can change them.
@@ -266,6 +273,21 @@ export async function updatePurchaseOrder(poId: number, _prev: ActionState, fd: 
   }
   revalidatePath(`/procurement/purchase-orders/${poId}`);
   return { message: "Saved." };
+}
+
+/** What is wrong with a framework call-off PO at these line quantities (empty when it fits the agreement). */
+async function callOffProblems(frameworkId: number, poId: number, lines: { description: string; deviceTypeId: number; quantity: number; unitPrice: string }[]) {
+  const [fw] = await db.select().from(frameworks).where(eq(frameworks.id, frameworkId));
+  if (!fw) return [];
+  const items = await db.select().from(frameworkItems).where(eq(frameworkItems.frameworkId, fw.id));
+  const done = await calledOff(fw.id, poId);
+  const check = checkCallOff({ startDate: fw.startDate, endDate: fw.endDate, ceiling: Number(fw.ceiling), calledOff: done.value },
+    lines.map((l) => ({
+      description: l.description, qty: l.quantity, unitPrice: Number(l.unitPrice),
+      maxQty: items.find((i) => i.description === l.description && i.deviceTypeId === l.deviceTypeId)?.maxQty ?? null,
+      usedQty: done.qty.find((q) => q.desc === l.description && q.dt === l.deviceTypeId)?.q ?? 0,
+    })), todayISO());
+  return check.problems;
 }
 
 export async function recordDelivery(poId: number, _prev: ActionState, fd: FormData): Promise<ActionState> {

@@ -42,6 +42,21 @@ export function budgetUse(amount: number, committed: number, spent: number) {
   const level: BudgetLevel = pct >= 1 ? "OVER" : pct >= 0.8 ? "WARN" : "OK";
   return { used, remaining: amount - used, pct, level };
 }
+/** POs that commit money: approved onwards, not cancelled. */
+export const COMMITTING = ["APPROVED", "ISSUED", "ACKNOWLEDGED", "PARTIALLY_DELIVERED", "DELIVERED", "CLOSED"] as const;
+
+/**
+ * What one PO adds to its budget line. `value` is what it orders, `received` the value of the goods received and
+ * `invoiced` its approved or paid invoices. Invoices count as spent whatever the PO's status (DL-09). A PO closed short
+ * commits only what was received and not yet invoiced; a cancelled one commits nothing more (B3).
+ */
+export function poBudgetShare(status: string, value: number, received: number, invoiced: number) {
+  const requested = status === "PENDING_APPROVAL" || status === "DRAFT" ? value : 0;
+  const committed = status === "CLOSED" ? Math.max(0, received - invoiced)
+    : (COMMITTING as readonly string[]).includes(status) ? Math.max(0, value - invoiced) : 0;
+  return { committed, spent: invoiced, requested };
+}
+
 /** The warning to raise when a PO of `value` is added: crossing 80 % or 100 %, or null. */
 export function budgetCrossing(amount: number, usedBefore: number, value: number): "80" | "100" | null {
   if (amount <= 0) return null;

@@ -102,7 +102,10 @@ export async function createInvoiceAction(_: FormState, fd: FormData): Promise<F
   if (dup) return { error: `This supplier's invoice ${supplierInvoiceNo} is already recorded as ${dup.n}.` };
   const entered = enteredLines(fd);
   if (!entered.size) return { error: "Enter the quantity invoiced on at least one line." };
-  const match = matchInvoice((await matchLinesFor(po.id, entered)).filter((l) => l.quantity > 0));
+  const poLinesOf = await matchLinesFor(po.id, entered);
+  // DL-08: every invoiced line must be a line of this PO.
+  if ([...entered.keys()].some((id) => !poLinesOf.some((l) => l.poLineId === id))) return { error: `Every invoice line must be a line of ${po.number}. Reload the page and enter the invoice again.` };
+  const match = matchInvoice(poLinesOf.filter((l) => l.quantity > 0));
   const inv = await db.transaction(async (tx) => {
     const number = await nextNumber("INV", invoices, invoices.number, tx);
     const [row] = await tx.insert(invoices).values({ number, supplierInvoiceNo, poId: po.id, supplierId: po.supplierId, invoiceDate, dueDate, currency: po.currency,
