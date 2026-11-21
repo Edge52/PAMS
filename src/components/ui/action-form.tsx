@@ -86,7 +86,7 @@ export function normalizeState(state: AnyFormState): ActionState {
 export function FormMessages({ state, top }: { state: ActionState; top?: boolean }) {
   if (!state || (!state.errors?.length && !state.message)) return null;
   return (
-    <div aria-live="polite" className={top ? "mb-4 basis-full" : "mt-3 basis-full"}>
+    <div aria-live="polite" className={top ? "col-span-full mb-4 basis-full" : "col-span-full mt-3 basis-full"}>
       {state.errors && state.errors.length > 0 && (
         <div role="alert" className="rounded-[var(--radius-control)] border border-danger bg-danger-soft px-3 py-2 text-sm text-danger">
           {state.errors.length === 1 ? state.errors[0] : (
