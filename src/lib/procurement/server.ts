@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { lineTotal, num, round2, todayISO } from "@/lib/format";
 import { tenderPriceDate } from "./price-date";
+import { sealOfferRows, type SealedRow } from "./sealed";
 import { convert, logActivity } from "@/lib/server-utils";
 import { advanceTo, EXCLUDED_OFFER_STATUSES, humanizeEnum } from "./labels";
 import {
@@ -178,14 +179,37 @@ export async function deriveRfqLines(
 
 /* ───────────── Totals ───────────── */
 
-/** Offer value (non-optional lines, after discount) in the offer currency, keyed by offer id. */
+/** SQL: the offer's tender keeps its financial envelopes sealed (see ./sealed). */
+const sealedSql = sql<boolean>`(${projects.twoEnvelope} and ${projects.financialOpenedAt} is null)`;
+
+/**
+ * Offer value (non-optional lines, after discount) in the offer currency, keyed by offer id.
+ * Offers of a two-envelope tender whose financial envelopes are still sealed are left out (audit S1): use
+ * `sealedOfferIds` or `offerListRows` to show "Sealed" for them.
+ */
 export async function offerTotals(offerIds: number[]): Promise<Map<number, number>> {
   const out = new Map<number, number>();
   if (!offerIds.length) return out;
   const lines = await db.select({ offerId: offerLines.offerId, q: offerLines.quantity, p: offerLines.unitPrice, d: offerLines.discountPct, opt: offerLines.isOptional })
-    .from(offerLines).where(inArray(offerLines.offerId, offerIds));
+    .from(offerLines).innerJoin(offers, eq(offers.id, offerLines.offerId)).innerJoin(projects, eq(projects.id, offers.projectId))
+    .where(and(inArray(offerLines.offerId, offerIds), sql`not ${sealedSql}`));
   for (const l of lines) if (!l.opt) out.set(l.offerId, round2((out.get(l.offerId) ?? 0) + lineTotal(l.q, l.p, l.d)));
   return out;
+}
+
+/** Offers among these whose prices are still sealed (two-envelope tender, financial envelopes not opened). */
+export async function sealedOfferIds(offerIds: number[]): Promise<Set<number>> {
+  if (!offerIds.length) return new Set();
+  const rows = await db.select({ id: offers.id }).from(offers).innerJoin(projects, eq(projects.id, offers.projectId))
+    .where(and(inArray(offers.id, offerIds), sealedSql));
+  return new Set(rows.map((r) => r.id));
+}
+
+/** Offer list rows with their value and financial score, or sealed (for `OffersTable`). */
+export async function offerListRows<T extends { id: number; financialScore: number | null }>(rows: T[]): Promise<SealedRow<T>[]> {
+  const ids = rows.map((r) => r.id);
+  const [totals, sealed] = await Promise.all([offerTotals(ids), sealedOfferIds(ids)]);
+  return sealOfferRows(rows, totals, sealed);
 }
 
 export type PoTotals = { value: number; ordered: number; received: number };

@@ -7,6 +7,7 @@ import { num, todayISO } from "./format";
 import { headers } from "next/headers";
 import { currentUserVia, getCurrentUser } from "./auth/session";
 import type { Changes } from "./audit-diff";
+import { clientAddress, trustProxy } from "./client-address";
 import { FxTable } from "@/lib/fx";
 
 /** Record a human-readable event against any entity. Call from server actions after a change. */
@@ -23,12 +24,10 @@ export async function logActivity(
   await x.insert(activityLog).values({ entityType, entityId, action, summary, actor: who, actorId: me?.id ?? null, ip: await clientIp(), changes: changes ?? null });
 }
 
-/** The address the request came from, behind a proxy or not. Null outside a request (seeds, scheduled jobs). */
+/** The address the request came from (see ./client-address). Null outside a request (seeds, scheduled jobs). */
 async function clientIp(): Promise<string | null> {
   try {
-    const h = await headers();
-    const ip = (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "").trim();
-    return ip ? ip.slice(0, 64) : null;
+    return clientAddress(await headers(), trustProxy()); // S6: never the first, client-made X-Forwarded-For hop
   } catch { return null; }
 }
 

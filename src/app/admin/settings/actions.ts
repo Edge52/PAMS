@@ -1,4 +1,5 @@
 "use server";
+import { endSessionsWithoutTwoStep } from "@/lib/auth/two-step";
 import { revalidatePath } from "next/cache";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
@@ -115,7 +116,15 @@ export async function saveSettings(_prev: ActionState, fd: FormData): Promise<Ac
   const changed = (Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]).filter((k) => before[k] !== next[k]);
   for (const k of changed) await setSetting(k, next[k] as never);
   if (changed.length) await logActivity("settings", 0, "updated", `Settings changed: ${changed.map((k) => `${k} ${String(before[k])} → ${String(next[k])}`).join("; ")}`, me.name);
+  // Audit S14: two-step became required — sign out the people it now applies to who haven't set it up, so they
+  // set it up when they next sign in. Your own session stays.
+  let signedOut = 0;
+  if (changed.includes("twoStepRequired")) {
+    signedOut = await endSessionsWithoutTwoStep(next.twoStepRequired);
+    if (signedOut) await logActivity("settings", 0, "sessions_ended", `Signed out ${signedOut} ${signedOut === 1 ? "person" : "people"} without two-step sign-in`, me.name);
+  }
   revalidatePath("/admin/settings");
   revalidatePath("/login");
-  return { message: changed.length ? `Saved ${changed.length} change${changed.length === 1 ? "" : "s"}.` : "Nothing changed." };
+  const out = signedOut ? ` Signed out ${signedOut} ${signedOut === 1 ? "person" : "people"} without two-step sign-in; they set it up when they next sign in.` : "";
+  return { message: (changed.length ? `Saved ${changed.length} change${changed.length === 1 ? "" : "s"}.` : "Nothing changed.") + out };
 }

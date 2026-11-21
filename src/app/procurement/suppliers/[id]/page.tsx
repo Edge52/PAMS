@@ -10,7 +10,7 @@ import { ActivityPanel, Progress } from "@/components/procurement/bits";
 import { OffersTable } from "@/components/procurement/offers-table";
 import { Stars } from "@/components/procurement/stars";
 import { formatDate, formatMoney } from "@/lib/format";
-import { offerTotals, poTotals, sumInCurrency } from "@/lib/procurement/server";
+import { offerListRows, poTotals, sumInCurrency } from "@/lib/procurement/server";
 import { toggleSupplierActive } from "../actions";
 import { supplierScorecard } from "@/lib/procurement/money-server";
 import { SupplierContacts } from "@/components/procurement/supplier-contacts";
@@ -44,7 +44,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
       .from(rfqSuppliers).innerJoin(rfqs, eq(rfqs.id, rfqSuppliers.rfqId)).where(eq(rfqSuppliers.supplierId, id)).orderBy(desc(rfqs.id)),
     db.select({ n: sql<number>`count(*)::int` }).from(assets).where(and(eq(assets.supplierId, id))),
   ]);
-  const [oTotals, pTotals] = await Promise.all([offerTotals(offerRows.map((o) => o.id)), poTotals(poRows.map((p) => p.id))]);
+  const [offerList, pTotals] = await Promise.all([offerListRows(offerRows), poTotals(poRows.map((p) => p.id))]);
   const livePos = poRows.filter((p) => p.status !== "CANCELLED");
   const ordered = await sumInCurrency(livePos.map((p) => ({ amount: pTotals.get(p.id)?.value ?? 0, currency: p.currency })), "EGP");
   const orderedUsd = await sumInCurrency(livePos.map((p) => ({ amount: pTotals.get(p.id)?.value ?? 0, currency: p.currency })), "USD");
@@ -106,7 +106,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
           <section>
             <h2 className="mb-2 text-[15px] font-semibold">Offers</h2>
             {offerRows.length === 0 ? <p className="text-sm text-muted">No offers from this supplier yet.</p>
-              : <OffersTable rows={offerRows.map((o) => ({ ...o, total: oTotals.get(o.id) ?? 0 }))} />}
+              : <OffersTable rows={offerList} />}
           </section>
 
           <section>
