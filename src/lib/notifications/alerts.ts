@@ -8,7 +8,7 @@ import "server-only";
  * No database work happens at import time — safe to import from instrumentation, `next build` and scripts.
  */
 import { and, eq, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
-import { db } from "@/db";
+import { db, isPglite } from "@/db";
 import {
   assets, departments, deviceTypes, documents, facilities, maintenanceEvents, offers, projects, purchaseOrders, rfqs, serviceContracts, suppliers,
 } from "@/db/schema";
@@ -16,6 +16,8 @@ import type { Role } from "@/lib/auth/permissions";
 import { addDaysISO, todayISO } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
 import { notifyOverdueLoans } from "@/lib/assets/loans-server";
+import { backupHealth } from "@/lib/backups";
+import { backupAlert } from "@/lib/backup-health";
 import { notifyUsers, usersWithRole } from "./index";
 import { collectAlerts, CONTRACT_WARN_DAYS, digestAlerts, MAINTENANCE_DUE_DAYS, type AlertData, type AlertWindows } from "./alert-rules";
 import { DOC_NOTIFY_DAYS } from "@/lib/procurement/supplier-docs";
@@ -153,6 +155,16 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
     // Loan equipment past its due-back date (wave 27): the hospital's biomedical engineers, once per loan.
     const loans = await notifyOverdueLoans(today);
     if (loans) { created += loans; byKind.loan_overdue = (byKind.loan_overdue ?? 0) + loans; }
+    // Backups (audit CO-07): a failed nightly run, or no good database backup for two days, to every administrator.
+    // Only for PostgreSQL servers: the laptop/demo install has no nightly job.
+    if (!isPglite) {
+      const { lastUsable, nightly } = await backupHealth();
+      const b = backupAlert({ lastUsable, nightly, now: new Date(), today });
+      if (b) {
+        const n = await notifyUsers(await who("ADMIN", null), b);
+        if (n) { created += n; byKind.backup_failed = (byKind.backup_failed ?? 0) + n; }
+      }
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
     console.error("[alerts] run failed:", e);

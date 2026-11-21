@@ -13,6 +13,7 @@ import { deviceModel } from "@/components/assets/twin/render/device-models";
 import { creditLine, LICENCE_SUGGESTIONS, MAX_GLB_BYTES } from "@/lib/assets/glb-file";
 import { formatNumber } from "@/lib/format";
 import { removeGlbAction, saveLibraryAction, uploadGlbAction } from "./actions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Equipment 3D library" };
@@ -108,7 +109,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
                   <div className="mb-3 text-sm">
                     <div className="flex flex-wrap items-center gap-3">
                       <span>{editing.lib.glbName ?? "model.glb"}{editing.lib.glbBytes ? <span className="text-muted"> · {formatNumber(Math.round(editing.lib.glbBytes / 1024))} KB</span> : null}</span>
-                      {canUpload && <form action={removeGlbAction}><input type="hidden" name="modelId" value={editing.m.id} /><button className="min-h-6 text-danger hover:underline">Remove</button></form>}
+                      {canUpload && <form action={removeGlbAction}><input type="hidden" name="modelId" value={editing.m.id} /><ConfirmButton confirm="Remove the 3D model file? The view falls back to the generic shape." className="min-h-6 text-danger hover:underline">Remove</ConfirmButton></form>}
                     </div>
                     {editing.lib.glbCredit ? (
                       <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 text-xs">

@@ -97,14 +97,14 @@ export default async function DisposalPage({ params, searchParams }: {
           )}
           {canDispose && d.status === "PENDING_APPROVAL" && (
             <Panel title="Withdraw">
-              <ActionForm action={withdrawDisposalAction} className="space-y-3">{hidden}<p className="text-sm text-muted">Takes the request back to draft; decisions so far are discarded.</p><Button variant="secondary">Withdraw from approval</Button></ActionForm>
+              <ActionForm action={withdrawDisposalAction} className="space-y-3" confirm="Withdraw this request from approval? It goes back to draft and the decisions so far are discarded.">{hidden}<p className="text-sm text-muted">Takes the request back to draft; decisions so far are discarded.</p><Button variant="secondary">Withdraw from approval</Button></ActionForm>
             </Panel>
           )}
           {canDispose && (d.status === "DRAFT" || d.status === "REJECTED") && (
             <Panel title={d.status === "REJECTED" ? "Rejected" : "Draft"}>
               <div className="space-y-3">
                 <ActionForm action={resubmitDisposalAction}>{hidden}<Button>Submit for approval</Button></ActionForm>
-                <ActionForm action={cancelDisposalAction}>{hidden}<Button variant="ghost">Cancel the request</Button></ActionForm>
+                <ActionForm action={cancelDisposalAction} confirm="Cancel this disposal request? The device is not disposed of.">{hidden}<Button variant="ghost">Cancel the request</Button></ActionForm>
               </div>
             </Panel>
           )}

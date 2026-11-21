@@ -15,6 +15,7 @@ import { pageOf, PLAN_TABS, type PlanTab } from "@/lib/assets/commissioning-view
 import { awaitingByDepartment, loadPlan, planOf, planRooms } from "@/lib/assets/commissioning-server";
 import { formatDate } from "@/lib/format";
 import { bulkDatesAction, deletePlanAction, saveRoomsAction, updatePlanAction } from "../actions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Commissioning plan" };
@@ -187,7 +188,7 @@ export default async function CommissioningPlanPage({ params, searchParams }: { 
             <div className="mt-3"><Button>Save plan</Button></div>
           </ActionForm></div>
           <form action={deletePlanAction} className="mt-4 border-t border-line pt-3"><input type="hidden" name="planId" value={id} />
-            <button className="inline-flex min-h-6 items-center text-sm text-danger hover:underline">Remove this plan</button> <span className="text-xs text-muted">Rooms, devices and acceptances are not touched.</span>
+            <ConfirmButton confirm="Remove this commissioning plan? Rooms, devices and acceptances are not touched." className="inline-flex min-h-6 items-center text-sm text-danger hover:underline">Remove this plan</ConfirmButton> <span className="text-xs text-muted">Rooms, devices and acceptances are not touched.</span>
           </form>
         </Panel>
       )}

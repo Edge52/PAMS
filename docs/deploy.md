@@ -47,19 +47,27 @@ Then open `https://<DOMAIN>`: you'll be asked for the `SETUP_CODE` and to create
 stops anyone else who finds the new site first from doing it). Add the other users under
 **Administration › Users** and check **Administration › Approval rules & settings**.
 
-What runs: the app, PostgreSQL 16, Caddy (gets and renews the HTTPS certificate), and a backup job that writes a
-database dump and an archive of uploaded files to `./backups` every 24 hours, keeping 14 days. Copy `./backups` off the
+What runs: the app, PostgreSQL 16, Caddy (gets and renews the HTTPS certificate), and a backup job
+(`scripts/nightly-backup.sh`) that writes a database dump and an archive of uploaded files to `./backups` every 24
+hours, keeping 14 days. Each dump is checked with `pg_restore --list` before it counts; old backups are removed only
+after a good run, so a failing job never empties the folder. The result of the last run is in `backups/.nightly-status`;
+**Administration › Backups** shows it, and administrators get a notification (and an email, when email is set up) when
+the nightly backup fails or the newest good database backup is more than two days old. Copy `./backups` off the
 server regularly (another machine, or object storage) — a backup on the same disk doesn't survive losing that disk.
 
 **Administration › Backups** lists the same folder (the app sees it as `/data/backups`): the age of the last database
-backup, a restore check that each file opens, downloads, and **Back up now**, which runs `pg_dump` (the image includes
-the PostgreSQL 17 client, which can dump PostgreSQL 15–17 servers, Supabase too). The app runs as user 1000, so let it
+backup, a restore check that each file opens, downloads, and **Back up now**, which runs `pg_dump`. The image includes
+the PostgreSQL client with the same major version as the database (16), so its dumps restore with the database
+container's `pg_restore`; for a PostgreSQL 17 server (Supabase) set `PG_CLIENT_MAJOR=17` in `.env` before building. The app runs as user 1000, so let it
 write there once: `mkdir -p backups && sudo chown 1000:1000 backups`. Without Docker, install the PostgreSQL client tools
 (`pg_dump` at least as new as the server) or point `PG_DUMP_PATH` at one; the connection comes from `DATABASE_URL` and
 `DATABASE_SSL`, and the password is never put on the command line. Files made from the page are named like the
 nightly ones (`hpams-YYYYMMDD-HHMM.dump`, UTC time) with the uploads as a `.zip`.
 
 Updating: `git pull` (or copy the new folder) and `docker compose up -d --build`. Database changes are applied on start.
+Reference data (device catalogue, BOQ standards, department types) is only added on start, never overwritten, so your
+edits to device life, PPM intervals, BOQ rules and the default standard set survive updates. To deliberately reload it
+from `seed-data/`: `docker compose exec app npx tsx scripts/seed.ts --only=none --refresh-reference`.
 
 ### Restore
 

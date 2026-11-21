@@ -155,7 +155,7 @@ export default async function RfqPage({ params }: { params: Promise<{ id: string
                           <button className="text-primary hover:underline">{i.inv.responded ? "Mark not responded" : "Mark responded"}</button>
                         </ActionForm>}
                         {!offer && mayEdit && (
-                          <ActionForm action={updateInvitation}>
+                          <ActionForm action={updateInvitation} confirm="Remove this supplier from the invitation list?">
                             <input type="hidden" name="invitationId" value={i.inv.id} /><input type="hidden" name="op" value="remove" />
                             <button className="text-danger hover:underline">Remove</button>
                           </ActionForm>

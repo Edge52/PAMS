@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { facilities, flowSteps, patientFlows, rooms } from "@/db/schema";
-import { Badge, Button, EmptyState, Field, LinkButton, PageHeader, Panel, Stat, Table, Td, Th, THead } from "@/components/ui";
+import { Badge, Button, buttonClass, EmptyState, Field, LinkButton, PageHeader, Panel, Stat, Table, Td, Th, THead } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { Notice } from "@/components/assets/bits";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
@@ -11,6 +11,7 @@ import { readPendingDrawing } from "@/lib/assets/cad-pending";
 import { planFor } from "@/lib/assets/cad-merge-data";
 import type { RoomChangeKind } from "@/lib/assets/cad-merge";
 import { applyDrawingsAction, discardDrawingsAction, reviewDrawingsAction } from "../../actions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Update drawings" };
@@ -114,7 +115,7 @@ export default async function DrawingsPage({ params, searchParams }: { params: P
           </Panel>
           <div className="flex flex-wrap gap-2">
             <form action={applyDrawingsAction}><input type="hidden" name="facilityId" value={fac.id} /><input type="hidden" name="token" value={token} /><Button>Apply these changes</Button></form>
-            <form action={discardDrawingsAction}><input type="hidden" name="facilityId" value={fac.id} /><input type="hidden" name="token" value={token} /><Button variant="ghost">Discard</Button></form>
+            <form action={discardDrawingsAction}><input type="hidden" name="facilityId" value={fac.id} /><input type="hidden" name="token" value={token} /><ConfirmButton confirm="Discard these drawing changes? Nothing is applied." className={buttonClass("ghost")}>Discard</ConfirmButton></form>
             <LinkButton href={`${base}?tab=rooms`} variant="ghost">Back to the hospital</LinkButton>
           </div>
         </div>

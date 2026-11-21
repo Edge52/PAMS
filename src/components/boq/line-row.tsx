@@ -5,6 +5,7 @@ import { formatMoney, formatNumber } from "@/lib/format";
 import { keepInputs } from "@/lib/submit-keep";
 import { resetLinePrice } from "@/app/boq/actions";
 import { PRICE_TIER_LABELS, PRICE_TIERS, type PriceTier } from "@/lib/boq/pricing";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 type FormState = { error?: string; ok?: string } | undefined;
 
@@ -125,11 +126,10 @@ export function LineRow({ line, currency, locked, showWhy, updateAction, deleteA
               </select>
               <Button variant="secondary">Use catalogue price</Button>
             </form>
-            <form action={deleteAction} className="mt-2"
-              onSubmit={(e) => { if (!confirm(`Remove ${line.deviceName} from this BOQ?`)) e.preventDefault(); }}>
+            <form action={deleteAction} className="mt-2">
               <input type="hidden" name="lineId" value={line.id} />
               <input type="hidden" name="tab" value={tab} />
-              <button className="text-sm text-danger hover:underline">Delete this line</button>
+              <ConfirmButton confirm={`Remove ${line.deviceName} from this BOQ?`} className="text-sm text-danger hover:underline">Delete this line</ConfirmButton>
               {!line.isManual && <span className="ml-2 text-xs text-muted">It returns on the next regeneration while the rule exists — set the quantity to 0 to keep it out.</span>}
             </form>
           </td>

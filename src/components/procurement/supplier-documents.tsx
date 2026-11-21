@@ -6,6 +6,7 @@ import { deleteDocument } from "@/lib/documents";
 import { canEditDocuments, listDocuments } from "@/lib/documents-access";
 import { formatDate, todayISO } from "@/lib/format";
 import { DOC_STATE_LABELS, DOC_STATE_TONE, SUPPLIER_DOC_TYPES, docExpiry, docTypeLabel, expiryText } from "@/lib/procurement/supplier-docs";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 const TYPES = SUPPLIER_DOC_TYPES.map((t) => ({ value: t.value, label: t.label }));
 
@@ -51,7 +52,7 @@ export async function SupplierDocumentsPanel({ supplierId }: { supplierId: numbe
                     <form action={deleteDocument}>
                       <input type="hidden" name="id" value={d.id} />
                       <input type="hidden" name="returnPath" value={returnPath} />
-                      <button className="min-h-8 px-2 text-sm text-danger hover:underline" aria-label={`Remove ${d.fileName}`}>Remove</button>
+                      <ConfirmButton confirm={`Remove ${d.fileName} from this supplier?`} className="min-h-8 px-2 text-sm text-danger hover:underline" aria-label={`Remove ${d.fileName}`}>Remove</ConfirmButton>
                     </form>
                   </div>
                 </details>

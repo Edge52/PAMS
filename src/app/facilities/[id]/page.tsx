@@ -21,6 +21,7 @@ import {
 } from "../actions";
 import { LIFT_KIND_HINTS, LIFT_KIND_LABELS, LIFT_KINDS, liveStops } from "@/lib/assets/lifts";
 import { northLabel } from "@/lib/assets/north";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 
@@ -220,7 +221,7 @@ async function BuildingsTab({ facilityId, edit, canEdit }: { facilityId: number;
             {list.length === 0 ? (
               <div className="p-4 text-sm text-muted">No floors yet.{canEdit && <> <Link href={`${base}&edit=newfloor-${b.id}#floor-form`} className="text-primary hover:underline">Add the first floor</Link>.
                 <form action={deleteBuilding} className="mt-2"><input type="hidden" name="buildingId" value={b.id} /><input type="hidden" name="facilityId" value={facilityId} />
-                  <button className="text-sm text-danger hover:underline">Remove this building</button></form></>}
+                  <ConfirmButton confirm="Remove this building?" className="text-sm text-danger hover:underline">Remove this building</ConfirmButton></form></>}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -252,7 +253,7 @@ async function BuildingsTab({ facilityId, edit, canEdit }: { facilityId: number;
                             {canEdit && <Link href={`${base}&edit=floor-${f.id}#floor-form`} className="text-primary hover:underline">Edit</Link>}
                             {canEdit && f.rooms === 0 && (
                               <form action={deleteFloor}><input type="hidden" name="floorId" value={f.id} /><input type="hidden" name="facilityId" value={facilityId} />
-                                <button className="text-danger hover:underline">Remove</button></form>
+                                <ConfirmButton confirm="Remove this floor?" className="text-danger hover:underline">Remove</ConfirmButton></form>
                             )}
                           </span>
                         </Td>
@@ -348,7 +349,7 @@ async function DepartmentsTab({ facilityId, edit, canEdit }: { facilityId: numbe
                     {canEdit && <Link href={`${base}&edit=${d.id}#dept-form`} className="text-primary hover:underline">Edit</Link>}
                     {canEdit && d.assets === 0 && (
                       <form action={deleteDepartment}><input type="hidden" name="departmentId" value={d.id} /><input type="hidden" name="facilityId" value={facilityId} />
-                        <button className="text-danger hover:underline">Remove</button></form>
+                        <ConfirmButton confirm="Remove this department?" className="text-danger hover:underline">Remove</ConfirmButton></form>
                     )}
                   </span>
                 </Td>
@@ -478,7 +479,7 @@ async function LiftsTab({ facilityId, edit, canEdit }: { facilityId: number; edi
                         {canEdit && <Link href={`${base}&edit=${l.id}#lift-form`} className="text-primary hover:underline">Edit</Link>}
                         {canEdit && (
                           <form action={deleteLift}><input type="hidden" name="liftId" value={l.id} /><input type="hidden" name="facilityId" value={facilityId} />
-                            <button className="text-danger hover:underline">Remove</button></form>
+                            <ConfirmButton confirm="Remove this lift?" className="text-danger hover:underline">Remove</ConfirmButton></form>
                         )}
                       </span>
                     </Td>
@@ -589,7 +590,7 @@ async function RoomsTab({ facilityId, floorId, edit, canEdit }: { facilityId: nu
                     {canEdit && r.assets === 0 && (
                       <form action={deleteRoom}>
                         <input type="hidden" name="roomId" value={r.id} /><input type="hidden" name="facilityId" value={facilityId} /><input type="hidden" name="floorId" value={floor.id} />
-                        <button className="text-danger hover:underline">Remove</button>
+                        <ConfirmButton confirm="Remove this room?" className="text-danger hover:underline">Remove</ConfirmButton>
                       </form>
                     )}
                   </span>

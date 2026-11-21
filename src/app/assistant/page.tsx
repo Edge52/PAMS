@@ -7,6 +7,7 @@ import { getSettings } from "@/lib/settings";
 import { formatDate } from "@/lib/format";
 import { deleteChatAction } from "./actions";
 import { Chat } from "./chat";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Assistant" };
@@ -57,7 +58,7 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
                       <span className="block text-xs text-muted">{formatDate(c.updatedAt)}</span>
                     </Link>
                     <form action={deleteChatAction}><input type="hidden" name="chatId" value={c.id} />
-                      <button className="px-1 text-xs text-muted hover:text-danger" aria-label={`Delete chat: ${c.title}`} title="Delete">×</button>
+                      <ConfirmButton confirm={`Delete the chat "${c.title}"?`} className="px-1 text-xs text-muted hover:text-danger" aria-label={`Delete chat: ${c.title}`} title="Delete">×</ConfirmButton>
                     </form>
                   </li>
                 ))}

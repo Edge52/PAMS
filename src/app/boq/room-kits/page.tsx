@@ -8,6 +8,7 @@ import { loadKits } from "@/lib/assets/room-kits";
 import { roomType } from "@/db/schema";
 import { FINISH_COLORS, FINISHES, formatItems, MODELS } from "@/components/assets/twin/render/kits";
 import { deleteKitAction, moveKitAction, resetKitsAction, saveKitAction } from "./actions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Room kits" };
@@ -45,7 +46,7 @@ export default async function RoomKitsPage({ searchParams }: { searchParams: Pro
                   <Link href={`?edit=${i}#kit-form`} className="text-primary hover:underline">Edit</Link>
                   <form action={moveKitAction}>{idField(i)}<input type="hidden" name="dir" value="up" /><button disabled={i === 0} className="px-1 disabled:opacity-30" aria-label={`Move ${k.label} up`}>↑</button></form>
                   <form action={moveKitAction}>{idField(i)}<input type="hidden" name="dir" value="down" /><button disabled={i === kits.length - 1} className="px-1 disabled:opacity-30" aria-label={`Move ${k.label} down`}>↓</button></form>
-                  <form action={deleteKitAction}>{idField(i)}<button className="text-danger hover:underline">Remove</button></form>
+                  <form action={deleteKitAction}>{idField(i)}<ConfirmButton confirm={`Remove the ${k.label} kit?`} className="text-danger hover:underline">Remove</ConfirmButton></form>
                 </div></Td>
               )}
             </tr>
@@ -55,7 +56,7 @@ export default async function RoomKitsPage({ searchParams }: { searchParams: Pro
       {mayEdit && (
         <div className="mt-4 flex flex-wrap gap-3">
           <Link href="?edit=new#kit-form" className="text-sm font-semibold text-primary hover:underline">Add a kit</Link>
-          {custom && <form action={resetKitsAction}><button className="text-sm text-muted hover:text-danger">Reset to the built-in kits</button></form>}
+          {custom && <form action={resetKitsAction}><ConfirmButton confirm="Reset to the built-in kits? Your own kits and changes are replaced." className="text-sm text-muted hover:text-danger">Reset to the built-in kits</ConfirmButton></form>}
         </div>
       )}
       {mayEdit && (editing || adding) && (

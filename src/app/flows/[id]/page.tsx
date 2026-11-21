@@ -20,6 +20,7 @@ import { equipmentNames, loadFlow, placesOf } from "@/lib/flows/server";
 import { pathwayBuildingIssues } from "@/lib/flows/route-server";
 import { readiness, readinessLine } from "@/lib/flows/readiness";
 import { deleteFlow, deleteLink, deleteStep, newVersionAction, publishFlow, saveFlowDetails, saveLink, saveStep } from "../actions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 
@@ -151,7 +152,7 @@ export default async function FlowPage({ params, searchParams }: {
                 {editing && (
                   <Td><div className="flex gap-2 text-sm">
                     <Link href={`?edit=${s.key}#step-form`} className="text-primary hover:underline">Edit</Link>
-                    <form action={deleteStep}><input type="hidden" name="flowId" value={flow.id} /><input type="hidden" name="key" value={s.key} /><button className="text-danger hover:underline">Remove</button></form>
+                    <form action={deleteStep}><input type="hidden" name="flowId" value={flow.id} /><input type="hidden" name="key" value={s.key} /><ConfirmButton confirm="Remove this step from the flow?" className="text-danger hover:underline">Remove</ConfirmButton></form>
                   </div></Td>
                 )}
               </tr>
@@ -191,7 +192,7 @@ export default async function FlowPage({ params, searchParams }: {
                   {editing && (
                     <Td><div className="flex gap-2 text-sm">
                       <Link href={`?link=${l.id}#link-form`} className="text-primary hover:underline">Edit</Link>
-                      <form action={deleteLink}><input type="hidden" name="flowId" value={flow.id} /><input type="hidden" name="linkId" value={l.id} /><button className="text-danger hover:underline">Remove</button></form>
+                      <form action={deleteLink}><input type="hidden" name="flowId" value={flow.id} /><input type="hidden" name="linkId" value={l.id} /><ConfirmButton confirm="Remove this link from the flow?" className="text-danger hover:underline">Remove</ConfirmButton></form>
                     </div></Td>
                   )}
                 </tr>
@@ -248,7 +249,7 @@ export default async function FlowPage({ params, searchParams }: {
           </ul>
           {editing && (
             <form action={deleteFlow} className="mt-4"><input type="hidden" name="flowId" value={flow.id} />
-              <button className="text-sm text-danger hover:underline">Delete this draft</button></form>
+              <ConfirmButton confirm="Delete this draft flow?" className="text-sm text-danger hover:underline">Delete this draft</ConfirmButton></form>
           )}
         </Panel>
       </div>

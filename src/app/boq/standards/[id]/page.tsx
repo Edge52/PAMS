@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { boqs, standardSets } from "@/db/schema";
-import { Badge, Button, EmptyState, Field, Input, LinkButton, PageHeader, Panel, StatusBadge, Textarea } from "@/components/ui";
+import { Badge, Button, buttonClass, EmptyState, Field, Input, LinkButton, PageHeader, Panel, StatusBadge, Textarea } from "@/components/ui";
 import { Notice } from "@/components/boq/notice";
 import { RuleForm } from "@/components/boq/rule-form";
 import { StandardCalculator } from "@/components/boq/calculator";
@@ -13,6 +13,7 @@ import { deleteRule, deleteSet, duplicateSet, setDefaultSet, updateSet } from ".
 
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 
@@ -152,7 +153,7 @@ export default async function StandardSetPage({ params, searchParams }: {
                             <form action={deleteRule} className="inline">
                               <input type="hidden" name="setId" value={setId} /><input type="hidden" name="ruleId" value={r.id} />
                               {filter && <input type="hidden" name="dept" value={filter} />}
-                              <button className="text-sm text-danger hover:underline" aria-label={`Delete ${r.deviceName} rule`}>Delete</button>
+                              <ConfirmButton confirm={`Delete the ${r.deviceName} rule?`} className="text-sm text-danger hover:underline" aria-label={`Delete ${r.deviceName} rule`}>Delete</ConfirmButton>
                             </form>
                             </>}
                           </td>
@@ -210,7 +211,7 @@ export default async function StandardSetPage({ params, searchParams }: {
             {!set.isDefault && used === 0 && (
               <form action={deleteSet} className="mt-4 border-t border-line pt-3">
                 <input type="hidden" name="setId" value={setId} />
-                <Button variant="danger">Delete this standard set</Button>
+                <ConfirmButton confirm="Delete this standard set and all its rules?" className={buttonClass("danger")}>Delete this standard set</ConfirmButton>
               </form>
             )}
             {used > 0 && <p className="mt-3 text-xs text-muted">Used by {used} BOQ{used === 1 ? "" : "s"}. Rule changes apply when a BOQ is regenerated.</p>}

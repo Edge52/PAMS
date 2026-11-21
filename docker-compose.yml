@@ -19,7 +19,9 @@ services:
   app:
     build:
       context: .
-      args: { APP_TIME_ZONE: "${APP_TIME_ZONE:-Africa/Cairo}" }   # used at build time
+      # used at build time. PG_CLIENT_MAJOR must match the database server's major version (the db service below is 16),
+      # so files from Back up now restore with that server's pg_restore. Supabase on PostgreSQL 17: set it to 17.
+      args: { APP_TIME_ZONE: "${APP_TIME_ZONE:-Africa/Cairo}", PG_CLIENT_MAJOR: "${PG_CLIENT_MAJOR:-16}" }
     restart: unless-stopped
     depends_on: { db: { condition: service_healthy } }
     environment:
@@ -48,10 +50,14 @@ services:
     restart: unless-stopped
     depends_on: { db: { condition: service_healthy } }
     environment:
+      PGHOST: db
+      PGUSER: hpams
+      PGDATABASE: hpams
       PGPASSWORD: ${POSTGRES_PASSWORD}
       KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
-    volumes: [./backups:/backups, uploads:/uploads:ro]
-    # Every 24 h: database dump + uploads archive, oldest removed after KEEP_DAYS.
-    entrypoint: ["sh", "-c", "while true; do t=$$(date +%Y%m%d-%H%M); pg_dump -h db -U hpams -d hpams -Fc -f /backups/hpams-$$t.dump && tar -czf /backups/uploads-$$t.tar.gz -C /uploads . && echo backup $$t done; find /backups -type f -mtime +$$KEEP_DAYS -delete; sleep 86400; done"]
+    volumes: [./backups:/backups, uploads:/uploads:ro, ./scripts/nightly-backup.sh:/nightly-backup.sh:ro]
+    # Every 24 h: a verified database dump + uploads archive. Old backups are removed only after a good run, and the
+    # result is written to backups/.nightly-status (shown on Administration › Backups; failures alert administrators).
+    entrypoint: ["sh", "/nightly-backup.sh"]
 
 volumes: { db-data: {}, uploads: {}, caddy-data: {}, caddy-config: {} }

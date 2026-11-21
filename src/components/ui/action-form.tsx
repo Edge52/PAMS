@@ -3,8 +3,12 @@
 import { createContext, startTransition, useActionState, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/lib/procurement/forms";
+import { ConfirmDialog, confirmTone, type ConfirmTone } from "./confirm";
 
-type Action = (prev: ActionState, fd: FormData) => Promise<ActionState>;
+/** Either result shape: procurement/BOQ actions return { errors, message }, asset actions { error, ok }. */
+export type AnyFormState = ActionState | { error?: string; ok?: string; fields?: Record<string, string> } | null;
+/** Any server action returning either shape (its own state type is accepted as-is). */
+type Action = (prev: never, fd: FormData) => Promise<AnyFormState>;
 
 const PendingContext = createContext(false);
 
@@ -14,11 +18,15 @@ const PendingContext = createContext(false);
  *
  * Submits through a transition instead of the form's `action` prop: React resets a form after an
  * action-prop submission, which would wipe everything the user typed whenever validation fails.
+ *
+ * The one ActionForm of the app (audit U2): the assets module's copy re-exports this one.
+ * `confirm` asks first in the shared dialog, red for destructive wording (U3; `tone` overrides).
  */
-export function ActionForm({ action, children, className, confirm }: {
-  action: Action; children: ReactNode; className?: string; confirm?: string;
+export function ActionForm({ action, children, className, confirm, tone, confirmLabel, id, messagesAt = "bottom" }: {
+  action: Action; children: ReactNode; className?: string; confirm?: string; tone?: ConfirmTone; confirmLabel?: string;
+  id?: string; messagesAt?: "top" | "bottom";
 }) {
-  const [state, formAction, pending] = useActionState(action, null);
+  const [state, formAction, pending] = useActionState<AnyFormState, FormData>(action as (prev: AnyFormState, fd: FormData) => Promise<AnyFormState>, null);
   const form = useRef<HTMLFormElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const [waiting, setWaiting] = useState<FormData | null>(null);
@@ -32,7 +40,7 @@ export function ActionForm({ action, children, className, confirm }: {
     startTransition(() => formAction(fd));
   }
   const answer = (yes: boolean) => {
-    dialog.current?.close();
+    if (dialog.current?.open) dialog.current.close();
     const fd = waiting; setWaiting(null);
     if (yes && fd) startTransition(() => formAction(fd));
   };
@@ -46,40 +54,39 @@ export function ActionForm({ action, children, className, confirm }: {
     for (const [name, message] of Object.entries(state?.fields ?? {})) {
       const input = el.querySelector<HTMLElement>(`[name="${CSS.escape(name)}"]:not([type="hidden"])`);
       if (!input) continue;
-      const id = `err-${name.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+      const noteId = `err-${id ? `${id}-` : ""}${name.replace(/[^a-zA-Z0-9_-]/g, "")}`;
       const note = document.createElement("span");
-      note.id = id; note.dataset.fieldError = ""; note.className = "mt-1 block text-xs font-semibold text-danger"; note.textContent = message;
-      input.setAttribute("aria-invalid", "true"); input.setAttribute("aria-describedby", id);
+      note.id = noteId; note.dataset.fieldError = ""; note.className = "mt-1 block text-xs font-semibold text-danger"; note.textContent = message;
+      input.setAttribute("aria-invalid", "true"); input.setAttribute("aria-describedby", noteId);
       input.insertAdjacentElement("afterend", note);
       first ??= input;
     }
     first?.focus();
-  }, [state]);
+  }, [state, id]);
+  const messages = <FormMessages state={normalizeState(state)} top={messagesAt === "top"} />;
   return (
-    <form ref={form} onSubmit={onSubmit} className={className} aria-busy={pending || undefined} noValidate={false}>
+    <form ref={form} id={id} onSubmit={onSubmit} className={className} aria-busy={pending || undefined} noValidate={false}>
       <PendingContext.Provider value={pending}>
+        {messagesAt === "top" && messages}
         {children}
-        <FormMessages state={state} />
+        {messagesAt === "bottom" && messages}
       </PendingContext.Provider>
-      {confirm && (
-        <dialog ref={dialog} onClose={() => setWaiting(null)} aria-labelledby="confirm-title"
-          className="m-auto w-[min(92vw,440px)] rounded-[var(--radius-panel)] border border-line bg-surface p-6 text-ink shadow-2xl backdrop:bg-nav/50">
-          <p id="confirm-title" className="font-display text-[22px] leading-tight">Are you sure?</p>
-          <p className="mt-2 text-sm text-muted">{confirm}</p>
-          <div className="mt-5 flex justify-end gap-2">
-            <button type="button" autoFocus onClick={() => answer(false)} className="min-h-9 rounded-full border border-line bg-surface px-4 text-sm font-semibold hover:bg-sunken">Cancel</button>
-            <button type="button" onClick={() => answer(true)} className="min-h-9 rounded-full border border-primary bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-strong">Yes, go ahead</button>
-          </div>
-        </dialog>
-      )}
+      {confirm && <ConfirmDialog dialog={dialog} message={confirm} tone={confirmTone(confirm, tone)} confirmLabel={confirmLabel} onAnswer={answer} />}
     </form>
   );
 }
 
-export function FormMessages({ state }: { state: ActionState }) {
+/** Both result shapes as { errors, message, fields }. */
+export function normalizeState(state: AnyFormState): ActionState {
   if (!state) return null;
+  const s = state as { errors?: string[]; message?: string; error?: string; ok?: string; fields?: Record<string, string> };
+  return { errors: s.errors ?? (s.error ? [s.error] : undefined), message: s.message ?? s.ok, fields: s.fields };
+}
+
+export function FormMessages({ state, top }: { state: ActionState; top?: boolean }) {
+  if (!state || (!state.errors?.length && !state.message)) return null;
   return (
-    <div aria-live="polite" className="mt-3 basis-full">
+    <div aria-live="polite" className={top ? "mb-4 basis-full" : "mt-3 basis-full"}>
       {state.errors && state.errors.length > 0 && (
         <div role="alert" className="rounded-[var(--radius-control)] border border-danger bg-danger-soft px-3 py-2 text-sm text-danger">
           {state.errors.length === 1 ? state.errors[0] : (
@@ -88,7 +95,7 @@ export function FormMessages({ state }: { state: ActionState }) {
         </div>
       )}
       {state.message && (
-        <p className="rounded-[var(--radius-control)] bg-ok-soft px-3 py-2 text-sm text-ok">{state.message}</p>
+        <p role="status" className="rounded-[var(--radius-control)] bg-ok-soft px-3 py-2 text-sm text-ok">{state.message}</p>
       )}
     </div>
   );

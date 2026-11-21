@@ -87,6 +87,11 @@ export function Button({ variant = "primary", className, ...p }: ComponentProps<
   return <button type="submit" {...p} className={cx(btnBase, btn[variant], className)} />;
 }
 
+/** Button styling for elements that aren't a <Button> (e.g. a <ConfirmButton>). */
+export function buttonClass(variant: Variant = "primary", className?: string) {
+  return cx(btnBase, btn[variant], className);
+}
+
 export function LinkButton({ variant = "secondary", className, ...p }: ComponentProps<typeof Link> & { variant?: Variant }) {
   return <Link {...p} className={cx(btnBase, btn[variant], className)} />;
 }

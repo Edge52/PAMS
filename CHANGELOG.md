@@ -1,5 +1,31 @@
 # Changelog
 
+## Wave 32 — data safety (audit fixes, not merged yet)
+
+First of four waves that fix the critical and high findings of the wave 30 audit. No migration.
+
+- **Your edits survive restarts and updates (CO-01, critical).** The start-up seed used to overwrite device types (life,
+  PPM interval, risk class), department types, BOQ rules, throughput rates, companions and the default standard set
+  from `seed-data/` on every start. It now only adds rows that are missing. To reload them on purpose:
+  `npx tsx scripts/seed.ts --only=none --refresh-reference`. Test: `scripts/seed.test.ts` (fails on the old seed).
+- **The nightly backup can't empty the folder (CO-02, high).** `scripts/nightly-backup.sh` writes each dump to a
+  temporary file, checks it is non-empty and readable by `pg_restore --list`, and only then removes old backups. The
+  result goes to `backups/.nightly-status`.
+- **Backup alerts (CO-07).** Administrators get a notification (and email, when set up) when the nightly backup fails
+  or the newest good database backup is more than two days old. The Backups page shows the nightly result, ignores
+  empty dump files when judging freshness, and marks them "Empty: not a usable backup".
+- **Back up now files restore (CO-03, high).** The app image's PostgreSQL client now matches the server (16); set
+  `PG_CLIENT_MAJOR=17` for a PostgreSQL 17 server such as Supabase. **(CO-04)** `unzip` is in the image, so the
+  documented uploads `.zip` restore works. `docs/deploy.md` updated.
+- **Confirmations (U1–U3, high).** One shared confirm dialog: red "Yes, do it" for destructive actions, the usual
+  colour otherwise. Added to about 30 one-click actions that had none: BOQ department and line removal, standard set and
+  rule deletion, "Reset to the built-in kits / standards", document, contact, contract device, framework item, floor,
+  room, department, building, lift, flow step, link and draft, snapshot, 3D model file, backup file and chat removal,
+  discarding drawing changes, withdrawing or cancelling a disposal and removing an RFQ invitation. The BOQ line delete
+  no longer uses the browser's own box. The two `ActionForm` components are one (the assets one re-exports it).
+- Checked: typecheck, lint, 769 tests (10 new), page check of 122 page kinds, start-up seed and nightly script run
+  against PostgreSQL 16, the confirm dialog clicked through in the demo. Not checked here: building the Docker image.
+
 ## Wave 31 — merged 21 Nov 2026
 
 `scene.ts` split. No change in what you see or do; no migration.

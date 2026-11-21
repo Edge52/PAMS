@@ -6,6 +6,7 @@ import { Button, Field, Input, Panel } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { NativeSelect } from "@/components/assets/bits";
 import { addContactAction, removeContactAction } from "@/app/procurement/suppliers/contact-actions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const ROLE_LABEL = { SALES: "Sales", SERVICE: "Service", FINANCE: "Finance", MANAGEMENT: "Management", OTHER: "Other" } as const;
 
@@ -24,7 +25,7 @@ export async function SupplierContacts({ supplierId, canEdit }: { supplierId: nu
           <li key={c.id} className="flex flex-wrap items-start justify-between gap-2">
             <span><b>{c.name}</b> <span className="text-muted">· {ROLE_LABEL[c.role]}{c.jobTitle ? `, ${c.jobTitle}` : ""}</span><br />
               <span className="select-all">{[c.email, c.phone].filter(Boolean).join(" · ")}</span>{c.notes ? <span className="block text-xs text-muted">{c.notes}</span> : null}</span>
-            {canEdit && <form action={removeContactAction}><input type="hidden" name="contactId" value={c.id} /><input type="hidden" name="supplierId" value={supplierId} /><button className="text-xs text-danger hover:underline">Remove</button></form>}
+            {canEdit && <form action={removeContactAction}><input type="hidden" name="contactId" value={c.id} /><input type="hidden" name="supplierId" value={supplierId} /><ConfirmButton confirm={`Remove ${c.name} from this supplier's contacts?`} className="text-xs text-danger hover:underline">Remove</ConfirmButton></form>}
           </li>
         ))}</ul>
       )}

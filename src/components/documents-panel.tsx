@@ -3,6 +3,7 @@ import { canEditDocuments, listDocuments } from "@/lib/documents-access";
 import { Panel } from "@/components/ui";
 import { DocumentUploadForm } from "./document-upload-form";
 import { formatDate } from "@/lib/format";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 const KINDS = [
   { value: "quotation", label: "Quotation" }, { value: "datasheet", label: "Datasheet" },
@@ -45,7 +46,7 @@ export async function DocumentsPanel({ entityType, entityId, returnPath, title =
                 {canEdit && <form action={deleteDocument}>
                   <input type="hidden" name="id" value={d.id} />
                   <input type="hidden" name="returnPath" value={returnPath} />
-                  <button className="text-danger hover:underline" aria-label={`Remove ${d.fileName}`}>Remove</button>
+                  <ConfirmButton confirm={`Remove ${d.fileName} from this record?`} className="text-danger hover:underline" aria-label={`Remove ${d.fileName}`}>Remove</ConfirmButton>
                 </form>}
               </span>
             </li>

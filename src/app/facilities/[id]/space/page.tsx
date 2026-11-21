@@ -12,6 +12,7 @@ import { facilitySpace } from "@/lib/assets/space-planning-server";
 import { formatDate, formatNumber } from "@/lib/format";
 import { humanize } from "@/lib/status";
 import { deleteSnapshotAction, saveSnapshotAction } from "./actions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Space planning" };
@@ -118,7 +119,7 @@ export default async function SpacePage({ params, searchParams }: { params: Prom
               <span className="font-semibold">{x.name}</span><span className="text-muted">{formatDate(x.createdAt)}{x.createdByName ? ` · ${x.createdByName}` : ""}</span>
               {cmpId === x.id ? <Badge tone="info">Before</Badge> : <Link href={`?compare=${x.id}#compare`} className="text-primary hover:underline">Compare with now</Link>}
               {before && before.id !== x.id && (withId === x.id ? <Badge tone="info">After</Badge> : <Link href={`?compare=${before.id}&with=${x.id}#compare`} className="text-primary hover:underline">Use as after</Link>)}
-              {canEdit && <form action={deleteSnapshotAction}><input type="hidden" name="facilityId" value={fac.id} /><input type="hidden" name="id" value={x.id} /><button className="text-muted hover:text-danger">Remove</button></form>}
+              {canEdit && <form action={deleteSnapshotAction}><input type="hidden" name="facilityId" value={fac.id} /><input type="hidden" name="id" value={x.id} /><ConfirmButton confirm={`Remove the snapshot "${x.name}"?`} className="text-muted hover:text-danger">Remove</ConfirmButton></form>}
             </li>
           ))}</ul>
         )}

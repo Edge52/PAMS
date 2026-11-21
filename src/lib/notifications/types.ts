@@ -31,6 +31,7 @@ export const KIND_LABELS: Record<string, string> = {
   bond_expiring: "Bond expiring",
   supplier_doc_expiring: "Supplier document",
   executive_pack: "Monthly summary",
+  backup_failed: "Backup problem",
   equipment_request: "Equipment request",
   test: "Test",
 };

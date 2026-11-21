@@ -16,6 +16,7 @@ import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatDateTime, formatMoney, formatNumber, num, todayISO } from "@/lib/format";
 import { getActivity } from "@/lib/server-utils";
 import { addContractAssetsAction, removeContractAssetAction, updateContractAction } from "../actions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +117,7 @@ export default async function ContractPage({ params, searchParams }: {
                     <td className="px-4 py-2"><StatusBadge value={d.status} /></td>
                     {canEdit && <td className="px-4 py-2 text-right">
                       <form action={removeContractAssetAction}><input type="hidden" name="contractId" value={c.id} /><input type="hidden" name="assetId" value={d.id} />
-                        <button className="text-sm text-danger hover:underline" aria-label={`Remove ${d.tag}`}>Remove</button></form></td>}
+                        <ConfirmButton confirm={`Remove ${d.tag} from this contract?`} className="text-sm text-danger hover:underline" aria-label={`Remove ${d.tag}`}>Remove</ConfirmButton></form></td>}
                   </tr>
                 ))}</tbody>
               </table></div>

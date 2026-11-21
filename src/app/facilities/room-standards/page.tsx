@@ -12,6 +12,7 @@ import { equipmentText, GAS_LABELS, GASES, STANDARDS_NOTE, type RoomStandardSpec
 import { checkedRooms, loadStandards } from "@/lib/assets/room-standards-server";
 import { humanize } from "@/lib/status";
 import { deleteStandardAction, moveStandardAction, resetStandardsAction, saveStandardAction } from "./actions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Room standards" };
@@ -70,7 +71,7 @@ export default async function RoomStandardsPage({ searchParams }: { searchParams
                     <Link href={`?${new URLSearchParams({ ...(fac ? { facilityId: String(fac.id) } : {}), edit: String(i) })}#rule-form`} className="text-primary hover:underline">Edit</Link>
                     <form action={moveStandardAction}>{idField(i)}<input type="hidden" name="dir" value="up" /><button disabled={i === 0} className="px-1 disabled:opacity-30" aria-label={`Move ${r.label} up`}>↑</button></form>
                     <form action={moveStandardAction}>{idField(i)}<input type="hidden" name="dir" value="down" /><button disabled={i === rules.length - 1} className="px-1 disabled:opacity-30" aria-label={`Move ${r.label} down`}>↓</button></form>
-                    <form action={deleteStandardAction}>{idField(i)}<button className="text-danger hover:underline">Remove</button></form>
+                    <form action={deleteStandardAction}>{idField(i)}<ConfirmButton confirm={`Remove the ${r.label} standard?`} className="text-danger hover:underline">Remove</ConfirmButton></form>
                   </div></Td>
                 )}
               </tr>
@@ -82,7 +83,7 @@ export default async function RoomStandardsPage({ searchParams }: { searchParams
       {mayEdit && (
         <div className="mt-4 flex flex-wrap gap-3">
           <Link href={`?${new URLSearchParams({ ...(fac ? { facilityId: String(fac.id) } : {}), edit: "new" })}#rule-form`} className="text-sm font-semibold text-primary hover:underline">Add a standard</Link>
-          {custom && <form action={resetStandardsAction}><button className="text-sm text-muted hover:text-danger">Reset to the built-in standards</button></form>}
+          {custom && <form action={resetStandardsAction}><ConfirmButton confirm="Reset to the built-in standards? Your own standards and changes are replaced." className="text-sm text-muted hover:text-danger">Reset to the built-in standards</ConfirmButton></form>}
         </div>
       )}
       {mayEdit && (editing || adding) && (

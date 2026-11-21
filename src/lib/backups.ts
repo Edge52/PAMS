@@ -12,6 +12,7 @@ import { DATABASE_URL, dumpEmbeddedDatabase, isPglite } from "@/db";
 import { dumpError, pgDumpEnv } from "@/lib/backup-env";
 import { UPLOAD_ROOT } from "@/lib/storage";
 import { zip } from "@/lib/zip";
+import { latestUsableDatabaseBackup, parseNightlyStatus, type NightlyStatus } from "@/lib/backup-health";
 
 const execFileP = promisify(execFile);
 
@@ -79,6 +80,17 @@ async function writeBackup(stem: string, ext: string, write: (file: string) => P
     await fs.rm(tmp, { force: true });
   }
   return name;
+}
+
+/** The nightly job's last result (backups/.nightly-status, written by scripts/nightly-backup.sh); null without Docker. */
+export async function readNightlyStatus(): Promise<NightlyStatus | null> {
+  return parseNightlyStatus(await fs.readFile(path.join(/* turbopackIgnore: true */ BACKUP_DIR, ".nightly-status"), "utf8").catch(() => null));
+}
+
+/** Newest database backup that is a real dump, and the nightly job's last result: what the page and alerts judge by. */
+export async function backupHealth() {
+  const [files, nightly] = await Promise.all([listBackups(), readNightlyStatus()]);
+  return { files, nightly, lastUsable: latestUsableDatabaseBackup(files) };
 }
 
 /** Back up now: the database (embedded: a copy of its folder; PostgreSQL: pg_dump) and the uploaded files. */

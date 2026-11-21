@@ -15,6 +15,7 @@ import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/a
 import { formatDate, formatMoney, todayISO } from "@/lib/format";
 import { calledOff, poValues } from "@/lib/procurement/money-server";
 import { addFrameworkItemAction, createCallOffAction, removeFrameworkItemAction } from "../actions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Framework agreement" };
@@ -63,7 +64,7 @@ export default async function FrameworkPage({ params, searchParams }: { params: 
                       <td className="px-3 py-2 text-right">{formatMoney(i.unitPrice, f.currency)}</td>
                       <td className="px-3 py-2 text-right">{usedOf(i)}{i.maxQty != null ? ` of ${i.maxQty}` : ""}</td>
                       {canCall && live && <td className="px-3 py-2"><Input type="number" min={0} max={i.maxQty != null ? i.maxQty - usedOf(i) : undefined} name={`qty_${i.id}`} className="w-24" aria-label={`Quantity of ${i.description}`} /></td>}
-                      {canEdit && <td className="px-3 py-2 text-right"><button formAction={removeFrameworkItemAction} name="itemId" value={i.id} className="text-sm text-danger hover:underline" aria-label={`Remove ${i.description}`}>Remove</button></td>}
+                      {canEdit && <td className="px-3 py-2 text-right"><ConfirmButton confirm={`Remove ${i.description} from the framework?`} formAction={removeFrameworkItemAction} name="itemId" value={i.id} className="text-sm text-danger hover:underline" aria-label={`Remove ${i.description}`}>Remove</ConfirmButton></td>}
                     </tr>
                   ))}</tbody>
                 </table></div>

@@ -1,4 +1,4 @@
-import { Button, Field, FormGrid, Input, Panel, Select, Textarea } from "@/components/ui";
+import { Button, buttonClass, Field, FormGrid, Input, Panel, Select, Textarea } from "@/components/ui";
 import { CURRENCIES, formatNumber } from "@/lib/format";
 import type { BoqWorkspace } from "@/lib/boq/queries";
 import {
@@ -6,6 +6,7 @@ import {
 } from "@/app/boq/actions";
 import { PRICE_TIER_LABELS, PRICE_TIERS } from "@/lib/boq/pricing";
 import { DEPARTMENT_QUESTIONS, FEATURES } from "@/lib/boq/questions";
+import { ConfirmButton } from "@/components/ui/confirm";
 
 type Opt = { value: string | number; label: string };
 
@@ -74,7 +75,7 @@ export function ScopeTab({ ws, locked, deptTypes, facilities, projects, realDepa
                           <Button form={formId} variant="secondary">Save</Button>
                           <form action={deleteDepartment} className="ml-1 inline">
                             <input type="hidden" name="boqId" value={boq.id} /><input type="hidden" name="deptId" value={d.id} />
-                            <Button variant="danger" aria-label={`Remove ${d.label}`} title="Removes the department and its lines">Remove</Button>
+                            <ConfirmButton confirm={`Remove ${d.label} and all its BOQ lines?`} className={buttonClass("danger")} aria-label={`Remove ${d.label}`}>Remove</ConfirmButton>
                           </form>
                         </>
                       )}
