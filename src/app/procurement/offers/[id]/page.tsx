@@ -12,7 +12,7 @@ import { OfferStatusActions } from "@/components/procurement/offer-status-action
 import { formatDate, formatMoney, formatNumber, lineTotal, round2 } from "@/lib/format";
 import { INCOTERM_LABELS, type Incoterm, type OfferStatus } from "@/lib/procurement/labels";
 import { technicalEvaluation, type ComplianceStatus } from "@/lib/procurement/scoring";
-import { evaluationLock, fxFactors, projectSpecs } from "@/lib/procurement/server";
+import { evaluationLock, fxFactors, projectPriceDate, projectSpecs } from "@/lib/procurement/server";
 import { deleteOffer, saveCompliance, withdrawAwardRecommendation } from "../actions";
 import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
@@ -47,7 +47,7 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
     .where(eq(offerLines.offerId, id)).orderBy(asc(offerLines.id));
   const comp = lines.length ? await db.select().from(offerCompliance).where(inArray(offerCompliance.offerLineId, lines.map((l) => l.line.id))) : [];
   const specs = await projectSpecs(project.id);
-  const fx = await fxFactors([offer.currency], project.currency);
+  const fx = await fxFactors([offer.currency], project.currency, (await projectPriceDate(project)).date); // the tender's price date (B2)
   const pos = await db.select({ id: purchaseOrders.id, number: purchaseOrders.number, status: purchaseOrders.status }).from(purchaseOrders).where(eq(purchaseOrders.offerId, id));
 
   // Two-envelope tender (wave 10): prices stay sealed until the financial envelopes are opened.

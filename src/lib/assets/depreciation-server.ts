@@ -1,15 +1,14 @@
 import "server-only";
 /**
  * Database side of depreciation and book value (wave 27). Amounts stay in each asset's currency and are converted to
- * EGP with the stored exchange rates, the same way the reports do (`ratesFor`); amounts without a rate are left out
+ * EGP at the exchange rate of the purchase date (audit DL-18); amounts without a rate are left out
  * of EGP totals and their currencies listed.
  */
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { acceptances, assets, departments, deviceTypes, facilities } from "@/db/schema";
 import { num, todayISO } from "@/lib/format";
-import { toEgp } from "@/lib/reports/calc";
-import { ratesFor } from "@/lib/reports/shared";
+import { loadFx } from "@/lib/server-utils";
 import { getSetting } from "@/lib/settings";
 import { depreciation, depreciationTerms, inServiceDate, type Depreciation, type DepreciationMethod, type StartBasis } from "./depreciation";
 
@@ -40,16 +39,19 @@ export async function bookValues(where: SQL | undefined, onDate = todayISO(), in
     .innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).innerJoin(facilities, eq(facilities.id, assets.facilityId))
     .leftJoin(departments, eq(departments.id, assets.departmentId)).leftJoin(acceptances, eq(acceptances.assetId, assets.id))
     .where(and(includeDisposed ? undefined : sql`${assets.status} <> 'DISPOSED'`, where));
-  const [rates, method] = await Promise.all([ratesFor(list.map((r) => r.currency ?? "EGP")), getSetting("depreciationMethod")]);
+  const [fx, method] = await Promise.all([loadFx(), getSetting("depreciationMethod")]);
   const missing = new Set<string>();
   const rows = list.map((r): BookValueRow => {
     const start = inServiceDate(r);
     const terms = depreciationTerms({ lifeYears: r.assetLife, residualPct: r.assetResidual }, { lifeYears: r.typeLife, residualPct: r.typeResidual });
     const dep = depreciation({ method, cost: r.cost != null ? num(r.cost) : null, inService: start.date, ...terms }, onDate);
     const currency = r.currency || "EGP";
+    // Historical cost (audit DL-18): a foreign-currency purchase is valued at the rate of its purchase date (else the
+    // day it went into service), not today's, so book values don't jump when the pound moves.
+    const costDate = r.purchaseDate ?? start.date ?? onDate;
     const egp = (v: number | null) => {
       if (v == null) return null;
-      const x = toEgp(v, currency, rates);
+      const x = fx.toEgp(v, currency, costDate);
       if (x == null && v !== 0) missing.add(currency);
       return x;
     };

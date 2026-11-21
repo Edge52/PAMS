@@ -99,3 +99,15 @@ export function scenarioTotals(lines: ScenarioLine[], toUsd: (amount: number) =>
   }
   return { byTier: out, unpriced };
 }
+
+export interface PriceResult { price: string | null; /** No USD rate to the BOQ currency: left unpriced (DL-05). */ noRate: boolean }
+
+/**
+ * Catalogue estimate in the BOQ currency from a USD price (audit DL-05): never the USD figure itself when there is no
+ * rate — that stored USD as EGP and made totals, the Excel export and the tender estimate about 50 times too low.
+ */
+export function bandPrice(usd: number | null, rate: number | null): PriceResult {
+  if (usd === null) return { price: null, noRate: false };
+  if (rate === null) return { price: null, noRate: true };
+  return { price: (Math.round(usd * rate * 100) / 100).toFixed(2), noRate: false };
+}

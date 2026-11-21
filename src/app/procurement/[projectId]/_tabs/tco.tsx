@@ -16,7 +16,7 @@ type Data = NonNullable<ComparisonData>;
 export async function TcoPanel({ data, projectId, years, downtimeCostPerDay }: { data: Data; projectId: number; years: 5 | 10; downtimeCostPerDay: number | null }) {
   const { offers, evaluation, lines, project } = data;
   const cur = project.currency;
-  const fx = await fxFactors(offers.map((o) => o.currency), cur);
+  const fx = await fxFactors(offers.map((o) => o.currency), cur, data.priceDate.date); // the tender's price date (B2)
   const amt = (v: string | null, c: string) => (v == null ? null : fx[c] != null ? num(v) * fx[c]! : null);
   const rows = offers.map((o) => {
     const capex = evaluation.offers.get(o.id)?.total ?? null;

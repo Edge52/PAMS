@@ -9,7 +9,8 @@ import {
   approvalRequests, boqDepartments, boqLines, boqs, departments, deviceTypes, offerCompliance, offerLines, offers, poLines, projects, purchaseOrders,
   rfqs, rfqLines as rfqLineRows, specItems, suppliers, techSpecs,
 } from "@/db/schema";
-import { lineTotal, num, round2 } from "@/lib/format";
+import { lineTotal, num, round2, todayISO } from "@/lib/format";
+import { tenderPriceDate } from "./price-date";
 import { convert, logActivity } from "@/lib/server-utils";
 import { advanceTo, EXCLUDED_OFFER_STATUSES, humanizeEnum } from "./labels";
 import {
@@ -18,11 +19,24 @@ import {
 
 /* ───────────── FX ───────────── */
 
-/** Multiplier from each currency to `to` (null when a rate is missing). Uses the shared convert() seam. */
-export async function fxFactors(currencies: Iterable<string>, to: string): Promise<FxFactors> {
+/**
+ * Multiplier from each currency to `to` (null when a rate is missing), at the rate in force on `onDate`
+ * (default today). Uses the shared convert() seam.
+ */
+export async function fxFactors(currencies: Iterable<string>, to: string, onDate?: string): Promise<FxFactors> {
   const out: FxFactors = {};
-  await Promise.all([...new Set(currencies)].map(async (c) => { out[c] = await convert(1, c, to); }));
+  await Promise.all([...new Set(currencies)].map(async (c) => { out[c] = await convert(1, c, to, onDate); }));
   return out;
+}
+
+/**
+ * The date a project's offers are converted at (audit B2): the price opening, so a closed tender's ranking doesn't
+ * move with later exchange rates. See ./price-date.
+ */
+export async function projectPriceDate(project: { id: number; twoEnvelope: boolean; technicalOpenedAt: Date | null; financialOpenedAt: Date | null }) {
+  const [rfq] = await db.select({ closingDate: rfqs.closingDate }).from(rfqs)
+    .where(and(eq(rfqs.projectId, project.id), notInArray(rfqs.status, ["CANCELLED"]))).orderBy(desc(rfqs.id)).limit(1);
+  return tenderPriceDate({ ...project, rfqClosingDate: rfq?.closingDate ?? null }, todayISO(), (d) => todayISO(d));
 }
 
 /** Sum amounts in mixed currencies into one currency. total is null if any rate is missing. */
@@ -243,7 +257,8 @@ export async function loadComparison(projectId: number, weights: Weights = norma
   const required = new Map<number, number>();
   if (latestRfq) for (const l of await rfqLines(latestRfq)) if (l.quantity != null) required.set(l.deviceTypeId, l.quantity);
 
-  const fx = await fxFactors(competing.map((o) => o.currency), project.currency);
+  const priceDate = tenderPriceDate({ ...project, rfqClosingDate: latestRfq?.closingDate ?? null }, todayISO(), (d) => todayISO(d));
+  const fx = await fxFactors(competing.map((o) => o.currency), project.currency, priceDate.date);
 
   const compByLine = new Map<number, ComplianceMap>();
   for (const c of comp) {
@@ -264,7 +279,7 @@ export async function loadComparison(projectId: number, weights: Weights = norma
 
   const evaluation = evaluateProject(rows, fx, weights, competing.map((o) => o.id));
   return {
-    project, weights, offers: competing, excluded, lines, types, specs, required, fx, evaluation,
+    project, weights, offers: competing, excluded, lines, types, specs, required, fx, priceDate, evaluation,
     lineById: new Map(lines.map((l) => [l.id, l])),
   };
 }

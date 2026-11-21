@@ -10,7 +10,7 @@ import { CURRENCIES, formatMoney, num } from "@/lib/format";
 import { convert, float, int, logActivity, str } from "@/lib/server-utils";
 import { TIERS } from "@/lib/boq/engine";
 import { cleanFeatures, cleanParams, featureLabel, paramUnit } from "@/lib/boq/questions";
-import { defaultUnitPrices, facilityScope as facilityDepartmentScope, regenerateBoq, repriceBoqLines } from "@/lib/boq/generate";
+import { defaultUnitPrices, facilityScope as facilityDepartmentScope, regenerateBoq, repriceBoqLines, USD_FALLBACK_NOTE } from "@/lib/boq/generate";
 import { PRICE_TIER_LABELS, PRICE_TIERS, type PriceTier } from "@/lib/boq/pricing";
 import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { cancelApproval, pendingRequest, startApproval } from "@/lib/approvals/server";
@@ -382,7 +382,7 @@ export async function addManualLine(fd: FormData) {
   if (price === null) {
     const p = (await defaultUnitPrices(db, [deviceTypeId], boq.currency, convert)).get(deviceTypeId);
     price = p?.price ?? null;
-    if (p?.usdFallback && !notes) notes = "Estimate kept in USD — no exchange rate for the BOQ currency.";
+    if (p?.noRate && !notes) notes = USD_FALLBACK_NOTE;
   }
   await db.insert(boqLines).values({
     boqId, boqDepartmentId: dept.id, deviceTypeId, ruleId: null, tier: "ESSENTIAL",

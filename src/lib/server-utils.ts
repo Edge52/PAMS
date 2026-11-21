@@ -7,6 +7,7 @@ import { num, todayISO } from "./format";
 import { headers } from "next/headers";
 import { currentUserVia, getCurrentUser } from "./auth/session";
 import type { Changes } from "./audit-diff";
+import { FxTable } from "@/lib/fx";
 
 /** Record a human-readable event against any entity. Call from server actions after a change. */
 export async function logActivity(
@@ -63,6 +64,15 @@ export async function rateToEgp(currency: string, onDate = todayISO()): Promise<
     .where(and(eq(exchangeRates.currency, currency), lte(exchangeRates.effectiveDate, onDate)))
     .orderBy(desc(exchangeRates.effectiveDate)).limit(1);
   return r ? num(r.rateToEgp) : null;
+}
+
+/**
+ * All stored exchange rates as an FxTable (audit B1/B2/DL-18): one query, then rate-on-date lookups in memory.
+ * Use it to convert amounts at the date that fixes them (offer opening, order date, purchase date).
+ */
+export async function loadFx(): Promise<FxTable> {
+  const rows = await db.select().from(exchangeRates);
+  return new FxTable(rows.map((r) => ({ currency: r.currency, rateToEgp: num(r.rateToEgp), effectiveDate: r.effectiveDate })));
 }
 
 /** Convert an amount between currencies through EGP. Returns null when a rate is missing. */

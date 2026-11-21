@@ -8,6 +8,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, exchangeRates, maintenanceEvents, recallAssets, recalls, serviceContractAssets, serviceContracts, workOrders } from "@/db/schema";
 import { num, todayISO } from "@/lib/format";
+import { loadFx } from "@/lib/server-utils";
 import { daysBetween } from "./dates";
 import { costOfOwnership, deviceKpis, replacementScore, type ReplacementScore } from "./lifecycle-kpis";
 import { lifecycle } from "./maintenance";
@@ -43,22 +44,25 @@ export async function assetLifecycle(assetId: number) {
       .from(serviceContractAssets).innerJoin(serviceContracts, eq(serviceContracts.id, serviceContractAssets.contractId)).where(eq(serviceContractAssets.assetId, assetId)),
     db.select({ n: sql<number>`count(*)::int` }).from(recallAssets).innerJoin(recalls, eq(recalls.id, recallAssets.recallId))
       .where(and(eq(recallAssets.assetId, assetId), eq(recallAssets.status, "PENDING"), eq(recalls.status, "OPEN"))),
-    egpRates(),
+    loadFx(),
   ]);
   if (!a) return null;
+  // Audit DL-18: past amounts at the rate of their own date; ongoing contract cost at today's.
+  const egpOn = (amount: string | number | null, currency: string | null, date: string | null | undefined) =>
+    amount == null ? 0 : rates.toEgp(num(amount), currency, date ?? today) ?? 0;
   const since = a.installDate ?? a.purchaseDate;
   const kpis = deviceKpis(jobs, since ? new Date(`${since}T00:00:00Z`) : null, now);
-  const maintenance = events.reduce((s, e) => s + toEgp(rates, e.cost, e.currency), 0);
+  const maintenance = events.reduce((s, e) => s + egpOn(e.cost, e.currency, e.date), 0);
   const threeYearsAgo = new Date(now.getTime() - 3 * 365.25 * 86_400_000).toISOString().slice(0, 10);
-  const maintenance3y = events.filter((e) => (e.date ?? "") >= threeYearsAgo).reduce((s, e) => s + toEgp(rates, e.cost, e.currency), 0);
+  const maintenance3y = events.filter((e) => (e.date ?? "") >= threeYearsAgo).reduce((s, e) => s + egpOn(e.cost, e.currency, e.date), 0);
   // Contract share: the per-device annual cost for the part of each contract that has run so far.
   const contractCost = contracts.reduce((s, c) => {
     const perYear = annualCostPerAsset(c.value != null ? num(c.value) : null, c.start, c.end, c.n);
     if (perYear == null || today < c.start) return s;
     const years = (daysBetween(c.start, today < c.end ? today : c.end) + 1) / 365.25;
-    return s + toEgp(rates, perYear * years, c.currency);
+    return s + egpOn(perYear * years, c.currency, today);
   }, 0);
-  const purchase = a.purchaseCost != null ? toEgp(rates, a.purchaseCost, a.currency) : null;
+  const purchase = a.purchaseCost != null ? egpOn(a.purchaseCost, a.currency, a.purchaseDate ?? a.installDate) : null;
   const life = lifecycle(since, a.life, today);
   const score = replacementScore({
     lifeUsedPct: life.pctUsed, repairCostRatio: purchase ? maintenance3y / purchase : null, failures12m: kpis.failures,
@@ -105,17 +109,18 @@ export async function replacementPlan(where: SQL | undefined): Promise<Replaceme
     db.select({ assetId: maintenanceEvents.assetId, currency: maintenanceEvents.currency, total: sql<string>`sum(${maintenanceEvents.cost})` }).from(maintenanceEvents)
       .where(and(inArray(maintenanceEvents.assetId, ids), eq(maintenanceEvents.status, "COMPLETED"), sql`${maintenanceEvents.completedDate} >= current_date - interval '3 years'`))
       .groupBy(maintenanceEvents.assetId, maintenanceEvents.currency),
-    egpRates(),
+    loadFx(),
   ]);
   const failures = new Map(failRows.map((r) => [r.assetId, Number(r.n)]));
   const downtime = new Map(downRows.map((r) => [r.assetId, Number(r.h)]));
   const recalled = new Set(recallRows.map((r) => r.assetId));
   const spend = new Map<number, number>();
-  for (const c of costs) spend.set(c.assetId, (spend.get(c.assetId) ?? 0) + toEgp(rates, c.total, c.currency));
-  const usd = rates.get("USD") ?? null;
+  // Three years of repairs at today's rate; the purchase at the rate of its date (audit DL-18).
+  for (const c of costs) spend.set(c.assetId, (spend.get(c.assetId) ?? 0) + (rates.toEgp(num(c.total), c.currency, today) ?? 0));
+  const usd = rates.rateOn("USD", today)?.rate ?? null;
   return rows.map((r): ReplacementRow => {
     const life = lifecycle(r.installDate, r.lifeYears, today);
-    const purchase = r.purchaseCost != null ? toEgp(rates, r.purchaseCost, r.currency) : null;
+    const purchase = r.purchaseCost != null ? rates.toEgp(num(r.purchaseCost), r.currency, r.installDate ?? today) : null;
     const repairCostRatio = purchase ? (spend.get(r.id) ?? 0) / purchase : null;
     const mid = r.priceMin != null || r.priceMax != null ? (num(r.priceMin ?? r.priceMax) + num(r.priceMax ?? r.priceMin)) / 2 : null;
     const estimateEgp = mid != null && usd != null ? Math.round(mid * usd) : purchase;

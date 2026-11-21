@@ -11,7 +11,8 @@ import {
   generateLines, HOSPITAL_WIDE, mergeRegeneration, needsHospitalWideDepartment, summarizeMerge,
   type CompanionInput, type ExistingLine, type MergePlan, type RuleInput, type Tier,
 } from "./engine";
-import { effectiveTier, tierPriceUsd, type PriceTier } from "./pricing";
+import { bandPrice, effectiveTier, tierPriceUsd, type PriceResult, type PriceTier } from "./pricing";
+export type { PriceResult };
 
 /** Signature of convert() from @/lib/server-utils — injected so this module stays free of server-only imports. */
 export type ConvertFn = (amount: number, from: string, to: string) => Promise<number | null>;
@@ -64,9 +65,7 @@ export async function loadCompanions(d: DB, deviceTypeIds: number[]): Promise<Co
     .from(deviceCompanions).where(inArray(deviceCompanions.deviceTypeId, [...new Set(deviceTypeIds)]));
 }
 
-export interface PriceResult { price: string | null; usdFallback: boolean }
-
-/** Default unit price per device type: midpoint of the USD band converted to `currency` (USD kept if no rate). */
+/** Default unit price per device type: midpoint of the USD band converted to `currency`; unpriced if there is no rate. */
 export async function defaultUnitPrices(d: DB, deviceTypeIds: number[], currency: string, convert: ConvertFn, tier: PriceTier = "STANDARD") {
   const out = new Map<number, PriceResult>();
   if (deviceTypeIds.length === 0) return out;
@@ -74,15 +73,14 @@ export async function defaultUnitPrices(d: DB, deviceTypeIds: number[], currency
     .from(deviceTypes).where(inArray(deviceTypes.id, [...new Set(deviceTypeIds)]));
   const rate = currency === "USD" ? 1 : await convert(1, "USD", currency);
   for (const r of rows) {
-    const mid = tierPriceUsd(r.min, r.max, tier);
-    if (mid === null) { out.set(r.id, { price: null, usdFallback: false }); continue; }
-    if (rate === null) { out.set(r.id, { price: mid.toFixed(2), usdFallback: true }); continue; }
-    out.set(r.id, { price: (Math.round(mid * rate * 100) / 100).toFixed(2), usdFallback: false });
+    out.set(r.id, bandPrice(tierPriceUsd(r.min, r.max, tier), rate));
   }
   return out;
 }
 
-export const USD_FALLBACK_NOTE = "Estimate kept in USD — no exchange rate for the BOQ currency.";
+const OLD_USD_FALLBACK_NOTE = "Estimate kept in USD — no exchange rate for the BOQ currency.";
+export const USD_FALLBACK_NOTE = "No estimate yet: no USD exchange rate to the BOQ currency. Add one under Finance › Exchange rates, then reprice.";
+const FALLBACK_NOTES = [OLD_USD_FALLBACK_NOTE, USD_FALLBACK_NOTE];
 
 export interface GenerationResult { plan: MergePlan; summary: string; createdHospitalWide: boolean }
 
@@ -143,7 +141,7 @@ export async function regenerateBoq(d: DB, boqId: number, convert: ConvertFn): P
       await tx.update(boqLines).set({
         calculatedQty: u.calculatedQty, quantity: u.quantity, tier: u.tier, ruleId: u.ruleId, calcExplanation: u.calcExplanation,
         ...(p?.price ? { unitPriceEstimate: p.price } : {}),
-        ...(p?.usdFallback && !row.notes ? { notes: USD_FALLBACK_NOTE } : {}),
+        ...(p?.noRate && !row.notes ? { notes: USD_FALLBACK_NOTE } : {}),
       }).where(eq(boqLines.id, u.id));
     }
     if (plan.inserts.length) {
@@ -152,7 +150,7 @@ export async function regenerateBoq(d: DB, boqId: number, convert: ConvertFn): P
         return {
           boqId, boqDepartmentId: c.boqDepartmentId, deviceTypeId: c.deviceTypeId, ruleId: c.ruleId, tier: c.tier,
           calculatedQty: c.calculatedQty, quantity: c.calculatedQty, isOverridden: false, isManual: false,
-          unitPriceEstimate: p?.price ?? null, calcExplanation: c.explanation, notes: p?.usdFallback ? USD_FALLBACK_NOTE : null,
+          unitPriceEstimate: p?.price ?? null, calcExplanation: c.explanation, notes: p?.noRate ? USD_FALLBACK_NOTE : null,
         };
       }));
     }
@@ -196,8 +194,10 @@ export async function repriceBoqLines(d: DB, boqId: number, convert: ConvertFn, 
       const usd = tierPriceUsd(bands.get(l.deviceTypeId)?.min, bands.get(l.deviceTypeId)?.max, t);
       if (usd === null || rate === null) { noBand++; continue; }
       const price = (Math.round(usd * rate * 100) / 100).toFixed(2);
-      if (price === l.unitPriceEstimate) continue;
-      await tx.update(boqLines).set({ unitPriceEstimate: price }).where(eq(boqLines.id, l.id));
+      // Lines priced before the fix for DL-05 may hold a USD figure with the old "kept in USD" note: clear the note.
+      const staleNote = l.notes != null && FALLBACK_NOTES.includes(l.notes);
+      if (price === l.unitPriceEstimate && !staleNote) continue;
+      await tx.update(boqLines).set({ unitPriceEstimate: price, ...(staleNote ? { notes: null } : {}) }).where(eq(boqLines.id, l.id));
       changed++;
     }
     if (changed) await tx.update(boqs).set({ updatedAt: new Date() }).where(eq(boqs.id, boqId));

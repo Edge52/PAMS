@@ -33,10 +33,11 @@ export const MODULES: AppModule[] = [
     { href: "/procurement/suppliers", label: "Suppliers", need: "procurement.view" },
     { href: "/procurement/suppliers/documents", label: "Supplier documents", need: "procurement.view" },
   ] },
-  { id: "finance", name: "Finance", description: "Budgets, invoices with three-way match and framework agreements.", links: [
+  { id: "finance", name: "Finance", description: "Budgets, invoices with three-way match, framework agreements and exchange rates.", links: [
     { href: "/procurement/budgets", label: "Budgets", need: "procurement.view" },
     { href: "/procurement/invoices", label: "Invoices", need: "procurement.view" },
     { href: "/procurement/frameworks", label: "Framework agreements", need: "procurement.view" },
+    { href: "/procurement/exchange-rates", label: "Exchange rates", need: "procurement.view" },
   ] },
   { id: "assets", name: "Assets", description: "The equipment register, labels, requests, rounds and disposals.", links: [
     { href: "/assets", label: "Asset register", need: "assets.view" },

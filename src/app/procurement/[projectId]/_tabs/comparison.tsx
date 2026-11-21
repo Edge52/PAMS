@@ -5,7 +5,7 @@ import { Badge, EmptyState, LinkButton, Panel, StatusBadge } from "@/components/
 import { Notice, validityState } from "@/components/procurement/bits";
 import { OfferStatusActions } from "@/components/procurement/offer-status-actions";
 import { WeightControl } from "@/components/procurement/weight-control";
-import { formatMoney, formatNumber } from "@/lib/format";
+import { formatDate, formatMoney, formatNumber } from "@/lib/format";
 import type { OfferStatus } from "@/lib/procurement/labels";
 import { normalizeWeights, type CellResult } from "@/lib/procurement/scoring";
 import { loadComparison } from "@/lib/procurement/server";
@@ -25,7 +25,7 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
   const weights = normalizeWeights(tw);
   const data = await loadComparison(project.id, weights);
   if (!data) return null;
-  const { offers, excluded, types, specs, required, evaluation, lineById, fx } = data;
+  const { offers, excluded, types, specs, required, evaluation, lineById, fx, priceDate } = data;
   const cur = project.currency;
 
   if (offers.length === 0) {
@@ -85,7 +85,7 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <WeightControl projectId={project.id} technical={weights.technical} />
-          <p className="text-xs text-muted">Prices converted to {cur} at the latest stored exchange rates, after discounts.</p>
+          <p className="text-xs text-muted">Prices converted to {cur} after discounts, at the exchange rates of {formatDate(priceDate.date)} ({priceDate.basis}){priceDate.fixed ? "" : ": provisional until the envelopes are opened"}.</p>
         </div>
       </Panel>
 
