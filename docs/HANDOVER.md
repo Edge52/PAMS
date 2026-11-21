@@ -1,8 +1,9 @@
 # Hospital PAMS — handover
 
 The starting point for anyone (or any new Claude session) picking up the project. It says what the app is, how it's
-built and run, how work is done here, what's finished and what's left. Last updated 7 Nov 2026: `main` has waves 1–19
-(wave 16 = 3D roadmap phases 0–4, wave 17 = phases 5–9; 10 MEP and 11 Campus/BIM on hold).
+built and run, how work is done here, what's finished and what's left. Last updated 21 Nov 2026: `main` has waves 1–35
+(wave 16 = 3D roadmap phases 0–4, wave 17 = phases 5–9; 10 MEP and 11 Campus/BIM on hold; waves 32–35 = fixes from the
+wave 30 audit, see CHANGELOG).
 
 Read next: `AGENTS.md` (coding conventions; they're strict), `docs/system-documentation.md` (modules in depth),
 `docs/user-guide.md` (by role), `docs/deploy.md` (servers, Supabase), `CHANGELOG.md` (what each wave added),
@@ -82,7 +83,8 @@ Administration › Settings).
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 31 (merged 21 Nov 2026). Open items: section 7.
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 35 (waves 32–35, the wave 30 audit fixes, merged 21 Nov 2026). Open items:
+  section 7; from the audit, about 50 low findings and the missing-features list are still to do.
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
