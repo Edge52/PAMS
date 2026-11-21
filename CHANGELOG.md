@@ -1,5 +1,43 @@
 # Changelog
 
+## Waves 34 and 35 — sign-in, sealed bids, assets and history (audit fixes, not merged yet)
+
+Last two waves that fix the wave 30 audit. Built on wave 33. One migration (0046: who recorded and approved each
+invoice).
+
+**Wave 34 — sign-in, sealed bids and controls**
+- **Sealed prices stay sealed (S1, high).** In a two-envelope tender, offer totals, unit prices and financial scores
+  show "Sealed" on every page (offers list, project, supplier, RFQ, new PO) until the financial envelopes are opened.
+- **Two-step sign-in for Microsoft and Google too (S2, high).** SSO sign-in now goes through the same code check, or
+  the set-up page when two-step is required and not set up yet.
+- **Code tries last across sign-ins (S5).** After 5 wrong codes the account waits 15 minutes; parallel tries can't
+  share one. Only a right code resets the count.
+- **Sign-in throttling (S4)** books each attempt before the password check, can't be reset by flooding junk emails,
+  and keeps a per-address limit. **(S6)** With TRUST_PROXY, the address recorded is the one the proxy saw, not one the
+  browser made up. **(S14)** Turning on "two-step required" signs out the people without it. **(S16)** A broken link
+  to a file answers "not found" instead of an error.
+- **One award per tender (DL-24, DL-25).** A second award can't be recommended or applied while another offer holds the
+  award or waits for its approval. If an approval ends but its effect wasn't applied (server stopped), the hourly run
+  applies it. A budget overrun still warns (80 % and 100 % alerts) and does not block an approval.
+- **Framework items (S3)** can only be changed by users of the agreement's hospital; "used by a PO" comes from the
+  database. **Invoices (S7)** need three people: the recorder can't approve, and neither the recorder nor the approver
+  can record the payment (admins included). In the demo: procurement@ records, finance@ approves, admin@ marks paid.
+
+**Wave 35 — assets and history**
+- **Downtime counted once (A1 critical, A2 high).** Overlapping work orders on the same device no longer double the
+  downtime in contract statements (penalties), uptime, MTBF, the replacement score and the 3D downtime layer.
+- **Condemned devices stay out of service (A3)**; **a device on loan stays on loan (A4)** when a fault is reported and
+  returns to the right status; **run-to-failure types get no PPM (A5)** and are left out of compliance.
+- **History replay (A7, A8, A10–A12).** Past days show the stored status or "No data", never today's live status;
+  the daily record keeps the worst status of the day, so short outages show; days follow Cairo time; filters and
+  legend use the replayed statuses.
+- **3D view clean-up (A13).** Leaving the view frees its textures, listeners and graphics context.
+- **Cairo dates everywhere (CO-09).** "Today" is the Cairo date in about 20 places that used UTC (the incident form
+  rejected today's date between midnight and 2–3 am); incident times are read as Cairo time.
+- Checked: typecheck, lint, 859 tests (about 60 new, each failing on the old code), page check of 123 page kinds,
+  the 3D view opened and left twice with no errors. Not tried on screen: sealed prices (the demo has no two-envelope
+  tender) and the Microsoft/Google two-step path (needs a real sign-in provider).
+
 ## Wave 33 — money right (audit fixes, not merged yet)
 
 Second of four waves that fix the wave 30 audit. Built on wave 32. No migration.
