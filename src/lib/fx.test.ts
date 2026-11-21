@@ -29,6 +29,17 @@ describe("rate on a date (B2, DL-18)", () => {
   });
 });
 
+describe("dated sum (DL-18)", () => {
+  it("converts each amount at the rate of its own date and lists currencies with no rate", () => {
+    expect(fx.sum([
+      { amount: 100, currency: "USD", date: "2026-10-10" }, // 48.5
+      { amount: 100, currency: "USD", date: "2026-11-20" }, // 50.25
+      { amount: 500, currency: "EGP", date: "2026-11-20" },
+      { amount: 10, currency: "CNY", date: "2026-11-20" },
+    ])).toEqual({ egp: 4850 + 5025 + 500, missing: ["CNY"] });
+  });
+});
+
 describe("latest rates", () => {
   it("flags rates older than a month", () => {
     const l = fx.latest("2026-11-21");

@@ -51,6 +51,16 @@ export class FxTable {
     return a && b ? (amount * a.rate) / b.rate : null;
   }
 
+  /** EGP total of amounts each converted on its own date; currencies with no rate are left out and listed. */
+  sum(items: { amount: number; currency: string | null | undefined; date: string }[]): { egp: number; missing: string[] } {
+    let egp = 0; const missing = new Set<string>();
+    for (const i of items) {
+      const v = this.toEgp(i.amount, i.currency, i.date);
+      if (v == null) { if (i.amount !== 0) missing.add((i.currency || "EGP").toUpperCase()); } else egp += v;
+    }
+    return { egp: Math.round(egp * 100) / 100, missing: [...missing].sort() };
+  }
+
   currencies(): string[] { return [...this.byCurrency.keys()].sort(); }
 
   /** Latest rate per currency, with its age in days on `today` and whether it is stale. */

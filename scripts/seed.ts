@@ -143,7 +143,7 @@ export async function seedReference(d: DB, opts: { refresh?: boolean } = {}) {
     console.log(`quick start: ${tp} throughput rates, ${cond} conditional rules, ${comp} companion pairs`);
   }
 
-  // Exchange rates (indicative — edit in the app)
+  // Exchange rates: indicative starting rates only (insert-only). Finance keeps them current under Finance › Exchange rates.
   for (const [currency, rate] of [["USD", "48.500000"], ["EUR", "52.800000"], ["GBP", "61.900000"], ["CNY", "6.750000"]] as const) {
     await d.insert(exchangeRates).values({ currency, rateToEgp: rate, effectiveDate: "2026-10-01" }).onConflictDoNothing();
   }

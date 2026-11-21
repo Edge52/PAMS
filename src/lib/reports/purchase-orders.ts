@@ -4,8 +4,9 @@ import { db } from "@/db";
 import { facilities, poLines, purchaseOrders, suppliers } from "@/db/schema";
 import { formatMoney, num } from "@/lib/format";
 import { humanize } from "@/lib/status";
-import { daysLate, sumKey, sumToEgp, toEgp, plural } from "./calc";
-import { EGP_NOTE, facilityCond, missingRatesNote, ratesFor } from "./shared";
+import { daysLate, sumKey, sumToEgp, plural } from "./calc";
+import { facilityCond, missingRatesNote } from "./shared";
+import { loadFx } from "@/lib/server-utils";
 import type { ReportContext, ReportResult, Row } from "./types";
 
 /** Statuses that are no longer open. Everything else (draft, pending approval, approved, issued…) is listed. */
@@ -32,7 +33,9 @@ export async function openPurchaseOrdersReport({ filters: f, scope, today }: Rep
     .groupBy(purchaseOrders.id, suppliers.name, facilities.name)
     .orderBy(sql`${purchaseOrders.expectedDelivery} asc nulls last`, asc(purchaseOrders.number));
 
-  const rates = await ratesFor(list.map((p) => p.currency));
+  // Each order at the rate of its issue date (audit DL-18): an order's EGP value doesn't move with later rates.
+  const fx = await loadFx();
+  const on = (p: (typeof list)[number]) => p.issueDate ?? today;
   const rows: Row[] = list.map((p) => {
     const value = num(p.value);
     const late = daysLate(p.expectedDelivery, today, p.ordered > 0 && p.received >= p.ordered);
@@ -40,10 +43,11 @@ export async function openPurchaseOrdersReport({ filters: f, scope, today }: Rep
       id: p.id, number: p.number, supplier: p.supplier, facility: p.facility, status: humanize(p.status),
       issueDate: p.issueDate, expectedDelivery: p.expectedDelivery, daysLate: late,
       ordered: p.ordered, received: p.received, outstanding: Math.max(0, p.ordered - p.received),
-      currency: p.currency, value, valueEgp: toEgp(value, p.currency, rates),
+      currency: p.currency, value, valueEgp: fx.toEgp(value, p.currency, on(p)),
     };
   });
-  const totals = sumToEgp(list.map((p) => ({ amount: num(p.value), currency: p.currency })), rates);
+  const totals = { ...fx.sum(list.map((p) => ({ amount: num(p.value), currency: p.currency, date: on(p) }))),
+    byCurrency: sumToEgp(list.map((p) => ({ amount: num(p.value), currency: p.currency })), new Map()).byCurrency };
   const lateCount = rows.filter((r) => typeof r.daysLate === "number" && r.daysLate > 0).length;
 
   return {
@@ -77,7 +81,7 @@ export async function openPurchaseOrdersReport({ filters: f, scope, today }: Rep
       } : undefined,
       empty: "No open purchase orders match these filters.",
     }],
-    notes: [EGP_NOTE, "Days late counts from the expected delivery date until every ordered unit is received.", missingRatesNote(totals.missing)]
+    notes: ["EGP values use the exchange rate of each order's issue date.", "Days late counts from the expected delivery date until every ordered unit is received.", missingRatesNote(totals.missing)]
       .filter((x): x is string => !!x),
   };
 }

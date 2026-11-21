@@ -4,8 +4,9 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, facilities } from "@/db/schema";
 import { formatMoney, formatNumber, num } from "@/lib/format";
-import { sumKey, sumToEgp } from "./calc";
-import { EGP_NOTE, facilityCond, missingRatesNote, ratesFor } from "./shared";
+import { sumKey } from "./calc";
+import { facilityCond, missingRatesNote } from "./shared";
+import { loadFx } from "@/lib/server-utils";
 import type { ReportContext, ReportResult, Row } from "./types";
 
 const grp = alias(deviceTypes, "rep_grp");
@@ -18,12 +19,14 @@ const STATUS_HEADERS: Record<(typeof ASSET_STATUSES)[number], string> = {
 };
 
 export async function assetsByDepartmentReport({ filters: f, scope }: ReportContext): Promise<ReportResult> {
-  // One row per department × status × category × currency; everything else is folded in JS.
+  // One row per department × status × category × currency × purchase month; everything else is folded in JS.
+  // The month lets each cost convert at the rate of its purchase (audit DL-18), not today's.
+  const bought = sql<string>`to_char(coalesce(${assets.purchaseDate}, ${assets.installDate}, current_date), 'YYYY-MM-DD')`;
   const categoryName = sql<string>`coalesce(${cat.name}, ${grp.name}, ${deviceTypes.name})`;
   const list = await db.select({
     facilityId: assets.facilityId, facility: facilities.name, facilityCode: facilities.code,
     departmentId: assets.departmentId, department: departments.name,
-    status: assets.status, category: categoryName, currency: assets.currency,
+    status: assets.status, category: categoryName, currency: assets.currency, bought,
     n: sql<number>`count(*)::int`,
     cost: sql<string>`coalesce(sum(${assets.purchaseCost}), 0)`,
   }).from(assets)
@@ -33,17 +36,17 @@ export async function assetsByDepartmentReport({ filters: f, scope }: ReportCont
     .leftJoin(grp, eq(grp.id, deviceTypes.parentId))
     .leftJoin(cat, eq(cat.id, grp.parentId))
     .where(and(facilityCond(assets.facilityId, f, scope)))
-    .groupBy(assets.facilityId, facilities.name, facilities.code, assets.departmentId, departments.name, assets.status, categoryName, assets.currency);
+    .groupBy(assets.facilityId, facilities.name, facilities.code, assets.departmentId, departments.name, assets.status, categoryName, assets.currency, bought);
 
-  const rates = await ratesFor(list.map((r) => r.currency ?? "EGP"));
+  const fx = await loadFx();
   const missing: string[] = [];
   const deptKey = (r: (typeof list)[number]) => `${r.facilityId}:${r.departmentId ?? "none"}`;
 
-  type Acc = { row: Row; money: { amount: number; currency: string }[] };
+  type Acc = { row: Row; money: { amount: number; currency: string; date: string }[] };
   const depts = new Map<string, Acc>();
   const cats = new Map<string, Acc>();
   for (const r of list) {
-    const amount = { amount: num(r.cost), currency: r.currency ?? "EGP" };
+    const amount = { amount: num(r.cost), currency: r.currency ?? "EGP", date: r.bought };
     const dk = deptKey(r);
     let d = depts.get(dk);
     if (!d) {
@@ -66,7 +69,7 @@ export async function assetsByDepartmentReport({ filters: f, scope }: ReportCont
     c.money.push(amount);
   }
   const finish = (a: Acc): Row => {
-    const s = sumToEgp(a.money, rates);
+    const s = fx.sum(a.money);
     missing.push(...s.missing);
     return { ...a.row, costEgp: s.egp };
   };
@@ -119,6 +122,6 @@ export async function assetsByDepartmentReport({ filters: f, scope }: ReportCont
         empty: "No assets to group by category.",
       },
     ],
-    notes: [EGP_NOTE, "Cost is the recorded purchase cost; assets without a cost count as zero.", missingRatesNote(missing)].filter((x): x is string => !!x),
+    notes: ["Purchase costs in EGP use the exchange rate of each purchase date.", "Cost is the recorded purchase cost; assets without a cost count as zero.", missingRatesNote(missing)].filter((x): x is string => !!x),
   };
 }
