@@ -15,7 +15,7 @@ import { Columns, PairColumns } from "@/components/ui/charts";
 import { direction, monthKeys, monthLabel, onMonths, onTimeShare } from "@/lib/trends";
 import { DEFAULT_PPM_GRACE_DAYS } from "@/lib/reports/calc";
 import { addDaysISO, addMonthsISO, daysUntil, formatDate, formatMoney, formatNumber, num, todayISO } from "@/lib/format";
-import { seesPrices } from "@/lib/auth/prices";
+import { opensFor, seesPrices } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
 
@@ -166,7 +166,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <ul className="divide-y divide-line">
             {waiting.slice(0, 5).map((w) => (
               <li key={w.step.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm">
-                <Link href={w.request.href} className="font-semibold text-primary hover:underline">{w.request.title}</Link>
+                {opensFor(me.role, w.request.href) ? <Link href={w.request.href} className="font-semibold text-primary hover:underline">{w.request.title}</Link> : <span className="font-semibold">{w.request.title}</span>}
                 <span className="text-xs text-muted">{w.mode === "paper" ? `Record ${w.step.memberName ?? "member"}'s signature` : w.step.label} · since {formatDate(w.request.requestedAt)}</span>
               </li>
             ))}
@@ -307,7 +307,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                   const href = ENTITY_HREF[a.entityType]?.(a.entityId);
                   return (
                     <li key={a.id} className="px-4 py-2.5 text-sm">
-                      {href ? <Link href={href} className="hover:text-primary">{a.summary}</Link> : a.summary}
+                      {href && opensFor(me.role, href) ? <Link href={href} className="hover:text-primary">{a.summary}</Link> : a.summary}
                       <span className="block text-xs text-muted">{formatDate(a.at)}{a.actor ? `, ${a.actor}` : ""}</span>
                     </li>
                   );

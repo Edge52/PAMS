@@ -49,6 +49,7 @@ import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/a
 import {
   changeStatusAction, linkComponentAction, logMaintenanceAction, moveAssetAction, unlinkComponentAction, updateAssetAction,
 } from "../actions";
+import { seesPrices, shownMoney } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
 
@@ -407,9 +408,9 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
             {po ? (
               <ol className="space-y-2 text-sm">
                 {po.projectId && <li><span className="text-xs text-muted">Project</span><br /><Link href={`/procurement/${po.projectId}`} className="text-primary hover:underline">{po.projectCode} — {po.projectTitle}</Link></li>}
-                {po.offerId && <li><span className="text-xs text-muted">Offer</span><br /><Link href={`/procurement/offers/${po.offerId}`} className="text-primary hover:underline">{po.offerRef}</Link></li>}
+                {po.offerId && <li><span className="text-xs text-muted">Offer</span><br />{seesPrices(me.role) ? <Link href={`/procurement/offers/${po.offerId}`} className="text-primary hover:underline">{po.offerRef}</Link> : po.offerRef}</li>}
                 <li><span className="text-xs text-muted">Purchase order</span><br /><Link href={`/procurement/purchase-orders/${po.poId}`} className="font-semibold text-primary hover:underline">{po.poNumber}</Link> <StatusBadge value={po.poStatus} />
-                  <span className="block text-xs text-muted">{po.issueDate ? `Issued ${formatDate(po.issueDate)} · ` : ""}unit price {formatMoney(po.unitPrice, po.currency)}</span></li>
+                  <span className="block text-xs text-muted">{po.issueDate ? `Issued ${formatDate(po.issueDate)} · ` : ""}unit price {shownMoney(seesPrices(me.role), po.unitPrice, po.currency)}</span></li>
                 {po.supplierId && <li><span className="text-xs text-muted">Supplier</span><br /><Link href={`/procurement/suppliers/${po.supplierId}`} className="text-primary hover:underline">{po.supplierName}</Link></li>}
                 <li><Link href={`/assets?poId=${po.poId}`} className="text-xs text-primary hover:underline">All assets on this order</Link></li>
               </ol>

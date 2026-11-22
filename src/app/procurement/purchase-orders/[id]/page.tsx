@@ -68,7 +68,7 @@ export default async function PoPage({ params, searchParams }: {
         title={<span className="flex flex-wrap items-center gap-2">{po.number} <StatusBadge value={po.status} /></span>}
         description={<>To <Link href={`/procurement/suppliers/${supplier.id}`} className="text-primary hover:underline">{supplier.name}</Link>
           {project && <> · <Link href={`/procurement/${project.id}`} className="text-primary hover:underline">{project.code}</Link></>}
-          {po.offerId && <> · from offer <Link href={`/procurement/offers/${po.offerId}`} className="text-primary hover:underline">{row.offerRef}</Link></>}</>}
+          {po.offerId && <> · from offer {prices ? <Link href={`/procurement/offers/${po.offerId}`} className="text-primary hover:underline">{row.offerRef}</Link> : row.offerRef}</>}</>}
         actions={<>
           <LinkButton href={`/procurement/purchase-orders/${id}/print`}>Print purchase order</LinkButton>
           {mayReceive && <LinkButton href={`/procurement/purchase-orders/${id}/receive`} variant="primary">Receive goods</LinkButton>}

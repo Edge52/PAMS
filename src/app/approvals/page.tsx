@@ -3,7 +3,7 @@ import { Badge, EmptyState, PageHeader, Panel, Table, Td, Th, THead, type Tone }
 import { requireUser } from "@/lib/auth/session";
 import { pendingForUser, recentDecisions, requestedBy } from "@/lib/approvals/server";
 import { formatDate, formatMoney } from "@/lib/format";
-import { HIDDEN_PRICE, seesPrices } from "@/lib/auth/prices";
+import { HIDDEN_PRICE, opensFor, seesPrices } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approvals" };
@@ -31,12 +31,12 @@ export default async function ApprovalsPage() {
             <tbody>
               {waiting.map(({ request: r, step, mode }) => (
                 <tr key={step.id}>
-                  <Td className="min-w-56"><Link href={r.href} className="font-semibold text-primary hover:underline">{r.title}</Link></Td>
+                  <Td className="min-w-56">{opensFor(me.role, r.href) ? <Link href={r.href} className="font-semibold text-primary hover:underline">{r.title}</Link> : <span className="font-semibold">{r.title}</span>}</Td>
                   <Td>{KIND[r.entity]}</Td>
                   <Td>{step.label}{mode === "paper" && <span className="block text-xs text-muted">Record the signature from the signed minutes</span>}</Td>
                   <Td align="right" className="whitespace-nowrap">{r.amountEgp == null ? "—" : seesPrices(me.role) ? formatMoney(r.amountEgp, "EGP") : HIDDEN_PRICE}</Td>
                   <Td className="whitespace-nowrap">{formatDate(r.requestedAt)}</Td>
-                  <Td><Link href={r.href} className="whitespace-nowrap text-sm font-semibold text-primary hover:underline">{mode === "paper" ? "Record signature" : "Review and decide"}</Link></Td>
+                  <Td>{opensFor(me.role, r.href) && <Link href={r.href} className="whitespace-nowrap text-sm font-semibold text-primary hover:underline">{mode === "paper" ? "Record signature" : "Review and decide"}</Link>}</Td>
                 </tr>
               ))}
             </tbody>
@@ -50,7 +50,7 @@ export default async function ApprovalsPage() {
             <ul className="divide-y divide-line">
               {mine.map((r) => (
                 <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2.5 text-sm">
-                  <span className="min-w-0"><Link href={r.href} className="font-semibold text-primary hover:underline">{r.title}</Link>
+                  <span className="min-w-0">{opensFor(me.role, r.href) ? <Link href={r.href} className="font-semibold text-primary hover:underline">{r.title}</Link> : <span className="font-semibold">{r.title}</span>}
                     <span className="block text-xs text-muted">{KIND[r.entity]} · submitted {formatDate(r.requestedAt)}{r.decidedAt ? ` · closed ${formatDate(r.decidedAt)}` : ""}</span></span>
                   <Badge tone={REQ_TONE[r.status]}>{REQ_TEXT[r.status]}</Badge>
                 </li>
@@ -64,7 +64,7 @@ export default async function ApprovalsPage() {
               {recent.map(({ step, request: r, decidedByName }) => (
                 <li key={step.id} className="px-4 py-2.5 text-sm">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <Link href={r.href} className="font-semibold text-primary hover:underline">{r.title}</Link>
+                    {opensFor(me.role, r.href) ? <Link href={r.href} className="font-semibold text-primary hover:underline">{r.title}</Link> : <span className="font-semibold">{r.title}</span>}
                     <Badge tone={step.status === "APPROVED" ? "ok" : "danger"}>{step.status === "APPROVED" ? "Approved" : "Rejected"}</Badge>
                   </div>
                   <span className="block text-xs text-muted">{step.label} · {decidedByName ?? "—"} · {formatDate(step.decidedAt)}</span>

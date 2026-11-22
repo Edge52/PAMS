@@ -35,7 +35,7 @@ export function TopBar({ user, assistant = false }: { user: CurrentUser; assista
         </div>
       </details>
     </div>
-    <PathBar />
+    <PathBar perms={permissionsOf(user.role)} />
     </>
   );
 }

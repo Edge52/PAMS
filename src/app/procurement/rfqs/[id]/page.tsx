@@ -121,7 +121,7 @@ export default async function RfqPage({ params }: { params: Promise<{ id: string
                   {responses.map((o) => (
                     <tr key={o.id}>
                       <Td>{o.supplier}</Td>
-                      <Td><Link href={`/procurement/offers/${o.id}`} className="font-semibold text-primary hover:underline">{o.reference}</Link></Td>
+                      <Td>{prices ? <Link href={`/procurement/offers/${o.id}`} className="font-semibold text-primary hover:underline">{o.reference}</Link> : <span className="font-semibold">{o.reference}</span>}</Td>
                       <Td className="whitespace-nowrap">{formatDate(o.offerDate)}</Td>
                       <Td><StatusBadge value={o.status} /></Td>
                       <Td align="right">{sealed ? <span className="text-muted">{SEALED}</span> : shownMoney(prices, totals.get(o.id) ?? 0, o.currency)}</Td>
@@ -150,7 +150,7 @@ export default async function RfqPage({ params }: { params: Promise<{ id: string
                       <p className="text-xs text-muted">{[i.contact, i.email, i.phone].filter(Boolean).join(" · ") || "No contact details"}</p>
                       <p className="text-xs text-muted">{i.inv.invitedAt ? `Invited ${formatDate(i.inv.invitedAt)}` : "Not sent yet (draft)"}</p>
                       <div className="mt-1 flex flex-wrap gap-3 text-xs">
-                        {offer ? <Link href={`/procurement/offers/${offer.id}`} className="text-primary hover:underline">Offer {offer.reference}</Link> : mayOffer && (
+                        {offer ? (prices ? <Link href={`/procurement/offers/${offer.id}`} className="text-primary hover:underline">Offer {offer.reference}</Link> : <span>Offer {offer.reference}</span>) : mayOffer && (
                           <Link href={`/procurement/offers/new?projectId=${project.id}&rfqId=${id}&supplierId=${i.inv.supplierId}`} className="text-primary hover:underline">Register their offer</Link>
                         )}
                         {mayEdit && <ActionForm action={updateInvitation}>

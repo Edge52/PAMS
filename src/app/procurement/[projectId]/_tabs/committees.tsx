@@ -1,3 +1,4 @@
+import { seesPrices } from "@/lib/auth/prices";
 import Link from "next/link";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
@@ -172,7 +173,7 @@ export async function CommitteesTab({ project, me }: { project: Project; me: Cur
               </tbody>
             </Table>
           )}
-          {approved.map((o) => <AwardTimeline key={o.offer.id} offer={o.offer} supplier={o.supplier} canRecord={can(me.role, "award.recommend")} linkOffer />)}
+          {approved.map((o) => <AwardTimeline key={o.offer.id} offer={o.offer} supplier={o.supplier} canRecord={can(me.role, "award.recommend")} linkOffer={seesPrices(me.role)} />)}
         </section>
       )}
 

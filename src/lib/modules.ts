@@ -134,12 +134,15 @@ export function orderModules<T extends { id: string }>(list: T[], role: string |
 }
 
 /** `Modules › Maintenance › Work orders` for the bar above each page. */
-export function pathOf(pathname: string): { label: string; href?: string }[] {
+export function pathOf(pathname: string, perms?: Permission[]): { label: string; href?: string }[] {
   const m = moduleOf(pathname);
   if (!m) return [];
   const href = activeHref(pathname);
   const link = m.links.find((l) => l.href === href);
-  return [{ label: "Modules", href: "/modules" }, { label: m.name, href: m.links[0]?.href }, ...(link ? [{ label: link.label, href: pathname === link.href ? undefined : link.href }] : [])];
+  // The module crumb opens the first page of the module this person may open (audit R9: Finance → Exchange rates
+  // for a viewer, not Budgets).
+  const first = perms ? m.links.find((l) => !l.need || perms.includes(l.need)) : m.links[0];
+  return [{ label: "Modules", href: "/modules" }, { label: m.name, href: first?.href }, ...(link ? [{ label: link.label, href: pathname === link.href ? undefined : link.href }] : [])];
 }
 
 /* ── Start page (wave 26): where each person lands after signing in ── */

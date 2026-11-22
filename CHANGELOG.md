@@ -1,5 +1,47 @@
 # Changelog
 
+## Wave 36 — the rest of the wave 30 audit (not merged yet)
+
+Medium and low findings left after waves 32–35. One migration (0047: indexes and data checks).
+
+**Who sees prices (R9, decided by Hisham).** Supplier offers, prices, order values, budgets, framework agreements,
+invoices and the spend reports are for Admin, Director, Procurement and Finance only. Department heads, viewers,
+planners, biomedical engineers and technicians see tenders and orders (items, quantities, dates, status) with "Hidden"
+for the money, and no Offers, Invoices, Budgets or Framework pages.
+
+**Running the server**
+- Docker passes every setting the app reads (assistant key, Microsoft/Google sign-in, pool, alerts) (CO-05).
+- Migrations run under a lock and, on a database with data, after a safety copy (`hpams-premigrate-*.dump`) (CO-12).
+- Smaller image (dev packages pruned) (CO-13); CI now builds the image and tests on PostgreSQL 16 (CO-14).
+- Fonts ship with the app, so neither the pages nor the build need internet (R4).
+- Backups are readable by the app only (0600) (S13); "Back up now" handles 65,536+ uploads (ZIP64) (CO-06).
+- First-administrator setup can't run twice at once, and a production server needs `SETUP_CODE` (S10).
+- 33 indexes on busy links, and checks that refuse negative money, zero quantities, over-receipt and negative stock (CO-10,
+  DL-23). Checks apply to new and changed rows; old rows can be checked with `VALIDATE CONSTRAINT`.
+
+**Procurement and money**
+- Receipts, status changes, orders and invoices are safe against two people (or clicks) at once (DL-13, DL-14, DL-15);
+  part returns too.
+- A PO from an offer adds up to the offer total to the cent (DL-10); warranty end dates stay in the right month (DL-11).
+- Missing exchange rates are listed, never counted as 0 (B7); book value "% left" is worked out over devices that could
+  be valued (DL-17).
+- CSV exports are safe to open in Excel (S11); Microsoft/Google sign-in needs a verified email, and Microsoft can be
+  limited to your tenant (`SUPABASE_AZURE_TENANTS`) (S15); the assistant has an hourly question limit per person
+  (Settings) and treats pasted text as data (S8, S9).
+- Long lists say when they stop ("Showing the first 500…"); invoices are paged (B6, CO-11).
+
+**Assets, 3D and pages**
+- PPM, safety-test and depreciation dates fixed at month ends and life ends (A16, A17, A18).
+- QR labels open the device by its tag, and warn when they would point to localhost (B4, B5).
+- Building files with bad outline points are refused (A14); the CAD import stops with a reason instead of failing quietly
+  (A15); the floor book opens without being blocked (A20); the 3D map and compass stay idle when nothing moves (A21);
+  3D note and tour deletes use the app's dialog.
+- The BOQ standards page is about 13 times smaller and the 3D page about half the size (R6).
+- The page check sees "not found" and error pages, and runs as admin, viewer and a department head (R1, R3).
+- Not done: encrypting two-step secrets (needs a new `APP_SECRET`; proposal in the wave 36 notes), linking Microsoft
+  sign-in to the account's subject id (needs a column), and the missing-features list.
+- Checked: typecheck, lint, 919 tests (3 more run with PostgreSQL), page check as three accounts, demo build offline.
+
 ## Waves 34 and 35 — sign-in, sealed bids, assets and history (audit fixes, not merged yet)
 
 Last two waves that fix the wave 30 audit. Built on wave 33. One migration (0046: who recorded and approved each
