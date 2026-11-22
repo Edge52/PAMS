@@ -10,6 +10,7 @@ import { annualCostPerAsset, CONTRACT_RENEWAL_DAYS, CONTRACT_TYPE_LABELS, contra
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatMoney, formatNumber, num, todayISO } from "@/lib/format";
+import { capRows } from "@/lib/list";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Service contracts" };
@@ -28,12 +29,12 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
   if (tab === "expiring") conds.push(sql`${serviceContracts.endDate} between ${today} and ${soon}`);
   if (tab === "expired") conds.push(sql`${serviceContracts.endDate} < ${today}`);
 
-  const [rows, [totals]] = await Promise.all([
+  const [rawRows, [totals]] = await Promise.all([
     db.select({
       c: serviceContracts, supplier: suppliers.name, facility: facilities.name,
       devices: sql<number>`(select count(*) from service_contract_assets x where x.contract_id = ${serviceContracts.id})::int`,
     }).from(serviceContracts).innerJoin(suppliers, eq(suppliers.id, serviceContracts.supplierId)).innerJoin(facilities, eq(facilities.id, serviceContracts.facilityId))
-      .where(and(...conds)).orderBy(asc(serviceContracts.endDate)).limit(500),
+      .where(and(...conds)).orderBy(asc(serviceContracts.endDate)).limit(501),
     db.select({
       running: sql<number>`count(*) filter (where ${serviceContracts.startDate} <= ${today} and ${serviceContracts.endDate} >= ${today})::int`,
       expiring: sql<number>`count(*) filter (where ${serviceContracts.endDate} between ${today} and ${soon})::int`,
@@ -43,10 +44,12 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
   ]);
   const canEdit = can(me.role, "contracts.edit");
 
+  const { rows: rows, note: capNote } = capRows(rawRows, 500, "contracts"); // audit B6/CO-11
   return (
     <>
       <PageHeader title="Service contracts" description="Vendor maintenance contracts and the devices they cover. A fault on a covered device shows the contract on its work order."
         actions={canEdit && <LinkButton href="/assets/contracts/new" variant="primary">Add a contract</LinkButton>} />
+      {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Stat label="Running contracts" value={formatNumber(totals?.running ?? 0)} />

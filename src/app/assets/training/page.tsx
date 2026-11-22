@@ -14,6 +14,7 @@ import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatNumber, todayISO } from "@/lib/format";
 import { parseSort, sortRows } from "@/lib/list";
+import { capRows } from "@/lib/list";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "User training" };
@@ -27,7 +28,7 @@ export default async function TrainingPage({ searchParams }: { searchParams: Pro
   const facilityId = scopedFacilityId(scope, Number(one("facilityId")) || undefined);
   const typeId = Number(one("deviceTypeId")) || undefined;
   const today = todayISO();
-  const [facs, months, list, typesUsed] = await Promise.all([
+  const [facs, months, rawList, typesUsed] = await Promise.all([
     db.select({ id: facilities.id, name: facilities.name }).from(facilities).where(scopeWhere(facilities.id, scope)).orderBy(asc(facilities.name)),
     trainingValidMonths(),
     db.select({
@@ -37,10 +38,11 @@ export default async function TrainingPage({ searchParams }: { searchParams: Pro
     }).from(trainingSessions).innerJoin(deviceTypes, eq(deviceTypes.id, trainingSessions.deviceTypeId)).innerJoin(facilities, eq(facilities.id, trainingSessions.facilityId))
       .leftJoin(departments, eq(departments.id, trainingSessions.departmentId))
       .where(and(scopeWhere(trainingSessions.facilityId, scope), facilityId ? eq(trainingSessions.facilityId, facilityId) : undefined, typeId ? eq(trainingSessions.deviceTypeId, typeId) : undefined))
-      .orderBy(desc(trainingSessions.heldOn), desc(trainingSessions.id)).limit(500),
+      .orderBy(desc(trainingSessions.heldOn), desc(trainingSessions.id)).limit(501),
     db.selectDistinct({ id: deviceTypes.id, code: deviceTypes.code, name: deviceTypes.name }).from(trainingSessions).innerJoin(deviceTypes, eq(deviceTypes.id, trainingSessions.deviceTypeId))
       .where(scopeWhere(trainingSessions.facilityId, scope)).orderBy(asc(deviceTypes.name)),
   ]);
+  const { rows: list, note: capNote } = capRows(rawList, 500, "training sessions"); // audit B6/CO-11
   const sort = parseSort(sp, ["date", "type", "trainer", "people"] as const);
   const rows = sortRows(list, sort, { date: (r) => r.s.heldOn, type: (r) => r.typeName, trainer: (r) => r.s.trainer, people: (r) => r.attendees });
   const canEdit = can(me.role, "maintenance.edit");
@@ -50,6 +52,7 @@ export default async function TrainingPage({ searchParams }: { searchParams: Pro
     <>
       <PageHeader title="User training" description={`Training sessions for the people who use each kind of device. Training older than ${months} months shows as due again on the department page.`}
         actions={canEdit ? <LinkButton href={`/assets/training/new${facilityId ? `?facilityId=${facilityId}` : ""}`} variant="primary">Record training</LinkButton> : undefined} />
+      {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Stat label="Sessions" value={formatNumber(list.length)} />

@@ -9,6 +9,7 @@ import { reorderQty, stockState } from "@/lib/assets/parts";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatMoney, formatNumber, num } from "@/lib/format";
+import { capRows } from "@/lib/list";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Spare parts" };
@@ -28,20 +29,22 @@ export default async function PartsPage({ searchParams }: { searchParams: Promis
     const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     conds.push(or(sql`${spareParts.partNumber} ilike ${like}`, sql`${spareParts.name} ilike ${like}`, sql`${spareParts.manufacturer} ilike ${like}`, sql`${deviceTypes.name} ilike ${like}`));
   }
-  const [rows, [t]] = await Promise.all([
+  const [rawRows, [t]] = await Promise.all([
     db.select({ p: spareParts, typeName: deviceTypes.name, typeCode: deviceTypes.code, facility: facilities.name })
       .from(spareParts).leftJoin(deviceTypes, eq(deviceTypes.id, spareParts.deviceTypeId)).innerJoin(facilities, eq(facilities.id, spareParts.facilityId))
-      .where(and(...conds)).orderBy(sql`(${spareParts.stockQty} <= ${spareParts.minQty}) desc`, asc(spareParts.name)).limit(500),
+      .where(and(...conds)).orderBy(sql`(${spareParts.stockQty} <= ${spareParts.minQty}) desc`, asc(spareParts.name)).limit(501),
     db.select({
       parts: sql<number>`count(*)::int`, low: sql<number>`count(*) filter (where ${spareParts.stockQty} <= ${spareParts.minQty})::int`,
       value: sql<string>`coalesce(sum(${spareParts.stockQty} * coalesce(${spareParts.unitCost}, 0)) filter (where ${spareParts.currency} = 'EGP' or ${spareParts.currency} is null), 0)`,
     }).from(spareParts).where(and(scopeWhere(spareParts.facilityId, scope), eq(spareParts.active, true))),
   ]);
   const canEdit = can(me.role, "parts.edit");
+  const { rows: rows, note: capNote } = capRows(rawRows, 500, "parts"); // audit B6/CO-11
   return (
     <>
       <PageHeader title="Spare parts" description="Parts held in the biomedical store. Technicians book parts to work orders; stock and job costs follow."
         actions={canEdit && <LinkButton href="/assets/parts/new" variant="primary">Add a part</LinkButton>} />
+      {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Stat label="Parts stocked" value={formatNumber(t?.parts ?? 0)} />

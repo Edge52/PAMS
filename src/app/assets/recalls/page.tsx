@@ -1,3 +1,4 @@
+import { capRows } from "@/lib/list";
 import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
@@ -21,15 +22,17 @@ export default async function RecallsPage({ searchParams }: { searchParams: Prom
   const inScope = scope === null ? sql`true` : scope.length ? sql`a.facility_id in (${sql.join(scope.map((s) => sql`${s}`), sql`, `)})` : sql`false`;
   const count = (status?: string) => sql<number>`(select count(*) from recall_assets x join assets a on a.id = x.asset_id
     where x.recall_id = ${recalls.id} and ${inScope}${status ? sql` and x.status = ${status}` : sql``})::int`;
-  const rows = await db.select({ r: recalls, typeName: deviceTypes.name, total: count(), pending: count("PENDING") })
+  const rawRows = await db.select({ r: recalls, typeName: deviceTypes.name, total: count(), pending: count("PENDING") })
     .from(recalls).leftJoin(deviceTypes, eq(deviceTypes.id, recalls.deviceTypeId))
     .where(tab === "all" ? undefined : eq(recalls.status, tab === "open" ? "OPEN" : "CLOSED"))
-    .orderBy(desc(recalls.urgent), desc(recalls.createdAt)).limit(300);
+    .orderBy(desc(recalls.urgent), desc(recalls.createdAt)).limit(301);
   const canEdit = can(me.role, "recalls.edit");
+  const { rows: rows, note: capNote } = capRows(rawRows, 300, "recalls"); // audit B6/CO-11
   return (
     <>
       <PageHeader title="Recalls and safety notices" description="Field safety notices from manufacturers and regulators, matched to the devices in your register, with each device tracked until it is dealt with."
         actions={canEdit && <LinkButton href="/assets/recalls/new" variant="primary">Record a notice</LinkButton>} />
+      {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
       <TabLinks active={tab} tabs={[{ key: "open", label: "Open", href: "/assets/recalls" }, { key: "closed", label: "Closed", href: "/assets/recalls?tab=closed" }, { key: "all", label: "All", href: "/assets/recalls?tab=all" }]} />
       {rows.length === 0 ? (

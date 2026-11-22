@@ -5,7 +5,7 @@ import { assets, budgetLines, departments, deviceTypes, facilities, maintenanceE
 import { Badge, Button, EmptyState, Field, PageHeader, Panel, Stat } from "@/components/ui";
 import { NativeSelect } from "@/components/assets/bits";
 import { scopeWhere, scopedFacilityId } from "@/lib/assets/access";
-import { egpRates, toEgp } from "@/lib/assets/lifecycle-server";
+import { egpRates, missingCurrencies, toEgp } from "@/lib/assets/lifecycle-server";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatMoney, formatNumber, todayISO } from "@/lib/format";
 
@@ -65,9 +65,12 @@ export default async function MaintenanceBudgetPage({ searchParams }: { searchPa
   const spent = rows.reduce((s, r) => s + r.work + r.contracts * elapsed, 0);
   const top = Object.values(events.reduce((m, e) => { const k = e.tag; m[k] = m[k] ?? { tag: e.tag, type: e.type, id: e.assetId, v: 0 }; m[k].v += toEgp(rates, e.cost, e.currency); return m; }, {} as Record<string, { tag: string; type: string; id: number; v: number }>)).sort((a, b) => b.v - a.v).slice(0, 10);
 
+  // Audit B7: say which currencies have no rate instead of silently counting them as 0.
+  const noRate = missingCurrencies(rates, [...events.map((e) => e.currency), ...contracts.map((c) => c.currency), ...lines.map((l) => l.currency)]);
   return (
     <>
       <PageHeader title="Maintenance budget" back={{ href: "/assets/maintenance", label: "Maintenance" }} description="Upkeep per department: completed maintenance and repairs, plus each service contract's share for the year, against maintenance budget lines (set them under Procurement › Budgets, kind Maintenance)." />
+      {noRate.length > 0 && <p role="note" className="mb-3 text-sm text-warn">No exchange rate for {noRate.join(", ")}: those amounts count as 0 here. Add the rate under Finance › Exchange rates.</p>}
       <form className="mb-5 flex flex-wrap items-end gap-2">
         <Field label="Hospital"><NativeSelect name="facilityId" value={facilityId} options={facs.map((f) => ({ value: f.id, label: f.name }))} /></Field>
         <Field label="Year"><NativeSelect name="year" value={year} options={[-2, -1, 0, 1].map((k) => thisYear + k).map((y) => ({ value: y, label: String(y) }))} /></Field>

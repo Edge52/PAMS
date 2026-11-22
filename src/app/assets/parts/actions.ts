@@ -109,6 +109,8 @@ export async function jobPartsAction(_: FormState, fd: FormData): Promise<FormSt
   const [part] = await db.select({ facilityId: spareParts.facilityId, active: spareParts.active }).from(spareParts).where(eq(spareParts.id, partId));
   if (!part || part.facilityId !== wo.facilityId) return { error: "That part isn't stocked in this hospital." };
   const r = await db.transaction(async (tx) => {
+    // Lock the part first (audit wave 36): two returns at once can't both pass "not more than issued to this job".
+    await tx.select({ id: spareParts.id }).from(spareParts).where(eq(spareParts.id, partId)).for("update");
     const used = step === "return" ? await issuedToJob(partId, wo.id, tx) : 0;
     const res = await applyMovement({ partId, kind: step === "issue" ? "ISSUE" : "RETURN", quantity, workOrderId: wo.id, actor: me.name }, tx, used);
     if (res.ok) {

@@ -39,3 +39,11 @@ describe("long lists (B6 / CO-11)", () => {
     expect(pagingNote(pageFor({}, 50, 100))).toBeNull();
   });
 });
+
+describe("capRows (B6/CO-11)", () => {
+  it("says so when the list stops at its limit", async () => {
+    const { capRows } = await import("./list");
+    expect(capRows([1, 2, 3, 4], 3, "parts")).toEqual({ rows: [1, 2, 3], note: "Showing the first 3 parts. Narrow the filters to see the rest." });
+    expect(capRows([1, 2, 3], 3, "parts")).toEqual({ rows: [1, 2, 3], note: null });
+  });
+});

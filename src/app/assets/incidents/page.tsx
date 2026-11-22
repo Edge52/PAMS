@@ -11,6 +11,7 @@ import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, todayISO } from "@/lib/format";
 import { parseSort, sortRows } from "@/lib/list";
+import { capRows } from "@/lib/list";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Incidents" };
@@ -25,10 +26,11 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const tab = TABS.find((t) => t === sp.tab) ?? "open";
   const today = todayISO();
-  const found = await db.select({ i: incidents, tag: assets.assetTag, typeName: deviceTypes.name, facility: facilities.code }).from(incidents)
+  const rawFound = await db.select({ i: incidents, tag: assets.assetTag, typeName: deviceTypes.name, facility: facilities.code }).from(incidents)
     .innerJoin(assets, eq(assets.id, incidents.assetId)).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).innerJoin(facilities, eq(facilities.id, incidents.facilityId))
     .where(and(scopeWhere(incidents.facilityId, scope), tab === "open" ? ne(incidents.status, "CLOSED") : tab === "closed" ? eq(incidents.status, "CLOSED") : undefined))
-    .orderBy(desc(incidents.occurredAt)).limit(500);
+    .orderBy(desc(incidents.occurredAt)).limit(501);
+  const { rows: found, note: capNote } = capRows(rawFound, 500, "incidents"); // audit B6/CO-11
   const [k] = await db.select({
     open: sql<number>`count(*) filter (where ${incidents.status} <> 'CLOSED')::int`,
     serious: sql<number>`count(*) filter (where ${incidents.status} <> 'CLOSED' and ${incidents.harm} in ('SERIOUS','DEATH'))::int`,
@@ -43,6 +45,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader title="Incidents" description="Something went wrong with a device, or nearly did. Record it here, keep the device as found, and note who was told. Serious harm is reported to the manufacturer and the Egyptian Drug Authority."
         actions={can(me.role, "workorders.report") ? <LinkButton href="/assets/incidents/new" variant="primary">Report an incident</LinkButton> : undefined} />
+      {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Open incidents" value={k.open} />

@@ -1,3 +1,4 @@
+import { capRows } from "@/lib/list";
 import Link from "next/link";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
@@ -20,14 +21,16 @@ export default async function DisposalsPage({ searchParams }: { searchParams: Pr
   const scope = await facilityScope(me);
   const sp = await searchParams;
   const tab = sp.tab === "done" ? "done" : sp.tab === "all" ? "all" : "open";
-  const rows = await db.select({ d: disposals, tag: assets.assetTag, typeName: deviceTypes.name }).from(disposals)
+  const rawRows = await db.select({ d: disposals, tag: assets.assetTag, typeName: deviceTypes.name }).from(disposals)
     .innerJoin(assets, eq(assets.id, disposals.assetId)).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
     .where(and(scopeWhere(disposals.facilityId, scope), tab === "open" ? inArray(disposals.status, [...OPEN]) : tab === "done" ? inArray(disposals.status, ["COMPLETED", "REJECTED", "CANCELLED"]) : undefined))
-    .orderBy(desc(disposals.createdAt)).limit(500);
+    .orderBy(desc(disposals.createdAt)).limit(501);
+  const { rows: rows, note: capNote } = capRows(rawRows, 500, "disposal requests"); // audit B6/CO-11
   return (
     <>
       <PageHeader title="Disposals" description="Requests to condemn devices, their approval, and how each device left the hospital."
         actions={can(me.role, "assets.dispose") && <LinkButton href="/assets/replacement">Replacement plan</LinkButton>} />
+      {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
       <TabLinks active={tab} tabs={[{ key: "open", label: "In progress", href: "/assets/disposals" }, { key: "done", label: "Finished", href: "/assets/disposals?tab=done" }, { key: "all", label: "All", href: "/assets/disposals?tab=all" }]} />
       {rows.length === 0 ? (

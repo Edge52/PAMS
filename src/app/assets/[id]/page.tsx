@@ -334,6 +334,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
                 <div><dt className="text-xs text-muted">Mean time to repair</dt><dd>{formatHours(perf.kpis.mttrHours)}</dd></div>
                 <div><dt className="text-xs text-muted">Maintenance spend</dt><dd>{formatMoney(perf.cost.maintenance + perf.cost.contracts, "EGP")}{perf.cost.contracts > 0 && <span className="block text-xs text-muted">incl. {formatMoney(perf.cost.contracts, "EGP")} contract share</span>}</dd></div>
                 <div><dt className="text-xs text-muted">Cost of ownership</dt><dd>{formatMoney(perf.cost.total, "EGP")}{perf.cost.maintenancePct != null && <span className="block text-xs text-muted">upkeep {perf.cost.maintenancePct} % of price</span>}</dd></div>
+                {perf.cost.missingRates.length > 0 && <p className="col-span-full text-xs text-warn">No exchange rate for {perf.cost.missingRates.join(", ")}: those amounts are left out. Add the rate under Finance › Exchange rates.</p>}
               </dl>
               <div className="mt-4 border-t border-line pt-3 text-sm">
                 <p>Replacement score <strong>{perf.score.score}</strong> <Badge tone={perf.score.band === "REPLACE" ? "danger" : perf.score.band === "PLAN" ? "warn" : "ok"}>{BAND_LABEL[perf.score.band]}</Badge></p>

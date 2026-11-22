@@ -54,3 +54,13 @@ export function pageFor(sp: Params, total: number, size: number): Paging {
 export function pagingNote(p: Paging, what = "rows"): string | null {
   return p.pages > 1 ? `Showing ${count(p.from)}–${count(p.to)} of ${count(p.total)} ${what}.` : null;
 }
+
+/**
+ * A list read with `.limit(max + 1)` (audit B6/CO-11): the first `max` rows, and a note when there were more, so a
+ * page never stops at its limit without saying so.
+ */
+export function capRows<T>(rows: T[], max: number, what = "rows"): { rows: T[]; note: string | null } {
+  return rows.length > max
+    ? { rows: rows.slice(0, max), note: `Showing the first ${count(max)} ${what}. Narrow the filters to see the rest.` }
+    : { rows, note: null };
+}

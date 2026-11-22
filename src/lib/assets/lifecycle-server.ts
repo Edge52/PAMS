@@ -22,6 +22,10 @@ export async function egpRates(): Promise<Map<string, number>> {
   for (const r of rows) if (!m.has(r.c)) m.set(r.c, num(r.r));
   return m;
 }
+/** Currencies among `currencies` that have no rate in `rates` (audit B7: say what was left out instead of counting 0). */
+export const missingCurrencies = (rates: Map<string, number>, currencies: (string | null)[]) =>
+  [...new Set(currencies.map((c) => c ?? "EGP"))].filter((c) => c !== "EGP" && !rates.has(c)).sort();
+/** EGP value; an amount in a currency with no rate counts 0 — pair it with missingCurrencies() so the page says so. */
 export const toEgp = (rates: Map<string, number>, amount: string | number | null, currency: string | null) => {
   if (amount == null) return 0;
   const r = rates.get(currency ?? "EGP");
@@ -49,8 +53,14 @@ export async function assetLifecycle(assetId: number) {
   ]);
   if (!a) return null;
   // Audit DL-18: past amounts at the rate of their own date; ongoing contract cost at today's.
-  const egpOn = (amount: string | number | null, currency: string | null, date: string | null | undefined) =>
-    amount == null ? 0 : rates.toEgp(num(amount), currency, date ?? today) ?? 0;
+  // Audit B7: an amount whose currency has no rate is left out and its currency listed, never counted as 0.
+  const missingRates = new Set<string>();
+  const egpOn = (amount: string | number | null, currency: string | null, date: string | null | undefined) => {
+    if (amount == null) return 0;
+    const v = rates.toEgp(num(amount), currency, date ?? today);
+    if (v == null) { missingRates.add(currency ?? "EGP"); return 0; }
+    return v;
+  };
   const since = a.installDate ?? a.purchaseDate;
   const kpis = deviceKpis(jobs, since ? new Date(`${since}T00:00:00Z`) : null, now);
   const maintenance = events.reduce((s, e) => s + egpOn(e.cost, e.currency, e.date), 0);
@@ -63,13 +73,14 @@ export async function assetLifecycle(assetId: number) {
     const years = (daysBetween(c.start, today < c.end ? today : c.end) + 1) / 365.25;
     return s + egpOn(perYear * years, c.currency, today);
   }, 0);
-  const purchase = a.purchaseCost != null ? egpOn(a.purchaseCost, a.currency, a.purchaseDate ?? a.installDate) : null;
+  const purchase = a.purchaseCost != null && rates.rateOn(a.currency, a.purchaseDate ?? a.installDate ?? today)
+    ? egpOn(a.purchaseCost, a.currency, a.purchaseDate ?? a.installDate) : (a.purchaseCost != null && missingRates.add(a.currency ?? "EGP"), null);
   const life = lifecycle(since, a.life, today);
   const score = replacementScore({
     lifeUsedPct: life.pctUsed, repairCostRatio: purchase ? maintenance3y / purchase : null, failures12m: kpis.failures,
     downtimeHours12m: kpis.downtimeHours, criticality: a.criticality, condition: a.condition, openRecall: (recall[0]?.n ?? 0) > 0,
   });
-  return { kpis, cost: { purchase, maintenance, contracts: contractCost, ...costOfOwnership(purchase, maintenance, contractCost) }, score, life };
+  return { kpis, cost: { purchase, maintenance, contracts: contractCost, missingRates: [...missingRates].sort(), ...costOfOwnership(purchase, maintenance, contractCost) }, score, life };
 }
 
 export type ReplacementRow = {
