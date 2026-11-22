@@ -25,7 +25,7 @@ describe("matching the signed-in person (S15)", () => {
 
   it("accepts a confirmed, verified Microsoft account", async () => {
     answer(azure({}));
-    expect(await run()).toEqual({ email: "dr.ali@hospital.eg" });
+    expect(await run()).toMatchObject({ email: "dr.ali@hospital.eg" });
   });
 
   it("refuses an address Supabase hasn't confirmed, even when the field is missing", async () => {
@@ -43,8 +43,26 @@ describe("matching the signed-in person (S15)", () => {
   it("keeps Microsoft sign-in to the hospital's tenants when they are listed", async () => {
     process.env.SUPABASE_AZURE_TENANTS = "tenant-1";
     answer(azure({}));
-    expect(await run()).toEqual({ email: "dr.ali@hospital.eg" });
+    expect(await run()).toMatchObject({ email: "dr.ali@hospital.eg" });
     answer(azure({ tid: "other" }));
     expect(await run()).toHaveProperty("error");
+  });
+});
+
+describe("SSO account link (S15)", () => {
+  it("records the provider's own id for the person", async () => {
+    const { signedInEmail } = await import("./supabase");
+    const r = signedInEmail({ email: "a@h.eg", email_confirmed_at: "2026-11-01", app_metadata: { provider: "azure" },
+      identities: [{ id: "x", provider: "azure", identity_data: { email: "a@h.eg", oid: "11111111-aaaa", tid: "t1" } }] });
+    expect(r).toEqual({ email: "a@h.eg", subject: "azure:11111111-aaaa" });
+  });
+  it("opens the linked account, links the first time, and refuses an email whose account is linked to someone else", async () => {
+    const { ssoAccount } = await import("./supabase");
+    const sara = { id: 1, ssoSubject: "azure:sara" }, newUser = { id: 2, ssoSubject: null };
+    expect(ssoAccount(sara, undefined, "azure:sara")).toEqual({ user: sara, link: false });
+    expect(ssoAccount(undefined, newUser, "azure:new")).toEqual({ user: newUser, link: true });
+    // Someone else's Microsoft account now carries Sara's old email address: not let in.
+    expect(ssoAccount(undefined, sara, "azure:someone-else")).toEqual({ error: expect.stringMatching(/linked to a different/) });
+    expect(ssoAccount(undefined, undefined, "azure:x")).toBeNull();
   });
 });

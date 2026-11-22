@@ -118,6 +118,11 @@ export const users = pgTable("users", {
   /** true = sees every facility; false = only those in user_facilities. Admins always see all. */
   allFacilities: boolean("all_facilities").notNull().default(true),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  /**
+   * Microsoft/Google sign-in (audit S15): "<provider>:<the provider's own id for the person>", set at the first SSO
+   * sign-in. Later sign-ins match on it, so a changed or reused email address can't open someone else's account.
+   */
+  ssoSubject: text("sso_subject").unique(),
   /** Two-step sign-in (wave 25): the authenticator secret (base32), set once the user has proved a first code. */
   totpSecret: text("totp_secret"),
   totpEnabledAt: timestamp("totp_enabled_at", { withTimezone: true }),

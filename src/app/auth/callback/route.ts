@@ -1,12 +1,12 @@
 /** Finish signing in through Supabase Auth: match the verified email to an active PAMS user (wave 13). */
-import { sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { createSession } from "@/lib/auth/session";
 import { LOCKED_MESSAGE, secondStep } from "@/lib/auth/two-step";
-import { exchangeCode, supabaseConfig } from "@/lib/auth/supabase";
+import { exchangeCode, ssoAccount, supabaseConfig } from "@/lib/auth/supabase";
 import { logActivity } from "@/lib/server-utils";
 import { permissionsOf } from "@/lib/auth/permissions";
 import { landingPage } from "@/lib/modules";
@@ -26,8 +26,17 @@ export async function GET(req: Request) {
   if (!state.v) return fail("The sign-in took too long or started in another browser. Try again.");
   const r = await exchangeCode(cfg, code, state.v);
   if ("error" in r) return fail(r.error);
-  const [user] = await db.select().from(users).where(sql`lower(${users.email}) = ${r.email}`).limit(1);
-  if (!user) return fail(`There's no PAMS account for ${r.email}. Ask an administrator to add you with that email.`);
+  // Audit S15: match on the linked Microsoft/Google identity first, then on the email (linking it the first time).
+  const [bySubject] = r.subject ? await db.select().from(users).where(eq(users.ssoSubject, r.subject)).limit(1) : [];
+  const [byEmail] = await db.select().from(users).where(sql`lower(${users.email}) = ${r.email}`).limit(1);
+  const found = ssoAccount(bySubject, byEmail, r.subject);
+  if (!found) return fail(`There's no PAMS account for ${r.email}. Ask an administrator to add you with that email.`);
+  if ("error" in found) return fail(found.error);
+  const user = found.user;
+  if (found.link) {
+    await db.update(users).set({ ssoSubject: r.subject }).where(and(eq(users.id, user.id), isNull(users.ssoSubject)));
+    await logActivity("user", user.id, "sso_linked", "Microsoft or Google account linked for sign-in", user.name);
+  }
   if (!user.active) return fail("This account is switched off. Ask an administrator.");
   const next = landingPage(state.n, user.startPage, user.role, permissionsOf(user.role));
   // Audit S2: the same two-step check as the password sign-in — the code, or setting two-step up when required.

@@ -59,9 +59,10 @@ vi.mock("@/lib/auth/password", () => ({
   verifyPassword: async (p: string, stored: string | null | undefined) => stored === `plain:${p}`,
   passwordProblem: () => null,
 }));
-vi.mock("@/lib/auth/supabase", () => ({
+vi.mock("@/lib/auth/supabase", async () => ({
+  ...(await import("./supabase")),
   supabaseConfig: () => ({ url: "https://sb.example", key: "k", providers: ["azure"] }),
-  exchangeCode: async () => ({ email: h.ssoEmail }),
+  exchangeCode: async () => ({ email: h.ssoEmail, subject: `azure:${h.ssoEmail}` }),
 }));
 
 const { activityLog, appSettings, loginChallenges, sessions, users } = schema;

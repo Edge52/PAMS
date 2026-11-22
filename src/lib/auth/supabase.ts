@@ -34,7 +34,7 @@ export function authorizeUrl(cfg: { url: string }, provider: string, redirectTo:
 type TokenUser = {
   email?: string; email_confirmed_at?: string | null;
   app_metadata?: { provider?: string };
-  identities?: { provider?: string; identity_data?: { email?: string; email_verified?: boolean; tid?: string; sub?: string } }[];
+  identities?: { id?: string; provider?: string; identity_data?: { email?: string; email_verified?: boolean; tid?: string; sub?: string; oid?: string } }[];
 };
 
 /**
@@ -42,19 +42,36 @@ type TokenUser = {
  * the person signed in with must not say otherwise: its email, when given, is the same and not marked unverified.
  * For Microsoft, when SUPABASE_AZURE_TENANTS lists tenant ids, the account must belong to one of them. Pure.
  */
-export function signedInEmail(user: TokenUser | undefined, azureTenants: string[] = []): { email: string } | { error: string } {
+export function signedInEmail(user: TokenUser | undefined, azureTenants: string[] = []): { email: string; subject: string | null } | { error: string } {
   const email = user?.email?.trim().toLowerCase();
   if (!email) return { error: "Sign-in wasn't completed." };
   if (!user?.email_confirmed_at) return { error: "That email address isn't confirmed yet." };
   const provider = user.app_metadata?.provider;
-  const id = user.identities?.find((i) => i.provider === provider)?.identity_data;
+  const identity = user.identities?.find((i) => i.provider === provider);
+  const id = identity?.identity_data;
   if (provider && provider !== "email" && !id) return { error: "Sign-in wasn't completed." };
   if (id?.email && id.email.trim().toLowerCase() !== email) return { error: "The account you signed in with has a different email address." };
   if (id?.email_verified === false) return { error: `${PROVIDER_LABELS[provider ?? ""] ?? "That account"} hasn't verified this email address.` };
   if (provider === "azure" && azureTenants.length && !(id?.tid && azureTenants.includes(id.tid.toLowerCase()))) {
     return { error: "Sign in with your hospital's Microsoft account." };
   }
-  return { email };
+  // The provider's stable id for this person (Microsoft: oid; Google: sub), to link the PAMS account to (S15).
+  const sid = id?.oid ?? id?.sub ?? identity?.id;
+  return { email, subject: provider && provider !== "email" && sid ? `${provider}:${sid}` : null };
+}
+
+/**
+ * Which PAMS account an SSO sign-in opens (audit S15). The linked subject wins; otherwise the email, but only if that
+ * account isn't linked to a different Microsoft/Google identity. `link` says whether to store the subject now.
+ */
+export function ssoAccount<U extends { id: number; ssoSubject: string | null }>(bySubject: U | undefined, byEmail: U | undefined, subject: string | null):
+  { user: U; link: boolean } | { error: string } | null {
+  if (bySubject) return { user: bySubject, link: false };
+  if (!byEmail) return null;
+  if (byEmail.ssoSubject && subject && byEmail.ssoSubject !== subject) {
+    return { error: "This PAMS account is linked to a different Microsoft or Google account. Ask an administrator." };
+  }
+  return { user: byEmail, link: !!subject && !byEmail.ssoSubject };
 }
 
 /** Microsoft tenant ids allowed to sign in (SUPABASE_AZURE_TENANTS, comma separated); empty = any. */
@@ -63,7 +80,7 @@ export function azureTenants(): string[] {
 }
 
 /** Exchange the code for the signed-in person's verified email, or an error to show. */
-export async function exchangeCode(cfg: { url: string; key: string }, code: string, verifier: string): Promise<{ email: string } | { error: string }> {
+export async function exchangeCode(cfg: { url: string; key: string }, code: string, verifier: string): Promise<{ email: string; subject: string | null } | { error: string }> {
   const res = await fetch(`${cfg.url}/auth/v1/token?grant_type=pkce`, {
     method: "POST", headers: { apikey: cfg.key, "content-type": "application/json" }, body: JSON.stringify({ auth_code: code, code_verifier: verifier }),
   }).catch(() => null);
