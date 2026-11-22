@@ -4,6 +4,7 @@
  */
 
 import { lineTotal } from "../format";
+import { addMonths } from "../assets/dates";
 
 /* ── Offer → purchase order prices ── */
 
@@ -149,9 +150,7 @@ export const DEFAULT_ACCEPTANCE: { text: string }[] = [
 /** Acceptance is complete with both signatures and no failed check; the warranty then runs from the acceptance date. */
 export function warrantyEndFrom(acceptedOn: string, months: number | null | undefined): string | null {
   if (!months) return null;
-  const d = new Date(`${acceptedOn}T00:00:00Z`);
-  d.setUTCMonth(d.getUTCMonth() + months);
-  return d.toISOString().slice(0, 10);
+  return addMonths(acceptedOn, months); // clamped to the month's end: 31 Aug + 6 months = 28 Feb, not 3 Mar (DL-11)
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;

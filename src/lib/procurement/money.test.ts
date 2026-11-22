@@ -66,3 +66,11 @@ describe("PO prices from an offer line (DL-10)", () => {
     }
   });
 });
+
+describe("warranty end (DL-11)", () => {
+  it("stays in the right month at month ends", async () => {
+    const { warrantyEndFrom } = await import("./money");
+    expect(warrantyEndFrom("2026-08-31", 6)).toBe("2027-02-28"); // old code: 2027-03-03
+    expect(warrantyEndFrom("2026-01-15", 24)).toBe("2028-01-15");
+  });
+});

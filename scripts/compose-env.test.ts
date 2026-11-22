@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, "..");
 /** Set by Next.js, the image, the build, or only used by the laptop launcher and the page checker. */
 const NOT_FOR_COMPOSE = new Set([
   "NODE_ENV", "NEXT_RUNTIME", "NEXT_PHASE", "NEXT_DIST_DIR", "NEXT_PUBLIC_APP_TIME_ZONE", "PORT",
-  "LAN", "DEMO_DATA_DIR", "CHECK_EMAIL", "CHECK_PASSWORD", "CHECK_LIMIT", "BASE_URL", "TEST_DATABASE_URL",
+  "LAN", "DEMO_DATA_DIR", "CHECK_EMAIL", "CHECK_PASSWORD", "CHECK_LIMIT", "CHECK_USERS", "CHECK_ALL", "BASE_URL", "TEST_DATABASE_URL",
 ]);
 
 function envNames(): Set<string> {

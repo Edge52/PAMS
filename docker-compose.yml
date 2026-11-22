@@ -40,6 +40,7 @@ services:
       SUPABASE_URL: ${SUPABASE_URL:-}                  # Microsoft / Google sign-in
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_PROVIDERS: ${SUPABASE_PROVIDERS:-azure,google}
+      SUPABASE_AZURE_TENANTS: ${SUPABASE_AZURE_TENANTS:-}
       DATABASE_SSL: ${DATABASE_SSL:-}                  # only for a hosted database instead of the db service
       DATABASE_SSL_CA: ${DATABASE_SSL_CA:-}            # a path inside the container: mount the file too
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-}

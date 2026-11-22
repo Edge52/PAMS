@@ -1,37 +1,13 @@
 import "server-only";
-import { bookValues, type BookValueRow } from "@/lib/assets/depreciation-server";
+import { bookValues } from "@/lib/assets/depreciation-server";
 import { DEPRECIATION_METHOD_LABELS } from "@/lib/assets/depreciation";
 import { getSetting } from "@/lib/settings";
 import { formatMoney, formatNumber } from "@/lib/format";
 import { assets } from "@/db/schema";
-import { plural, sumKey } from "./calc";
+import { plural } from "./calc";
+import { group, KNOWN, totalsOf } from "./book-value-calc";
 import { EGP_NOTE, facilityCond, missingRatesNote } from "./shared";
-import type { Column, ReportContext, ReportResult, Row } from "./types";
-
-const KNOWN = new Set(["DEPRECIATING", "FULLY_DEPRECIATED", "NOT_STARTED"]);
-
-/** Add one device to a group row. Book value only counts devices whose depreciation could be worked out. */
-function add(row: Row, r: BookValueRow) {
-  const inc = (k: string, v: number | null) => { if (v != null) row[k] = (row[k] as number) + v; };
-  row.devices = (row.devices as number) + 1;
-  inc("costEgp", r.costEgp);
-  if (KNOWN.has(r.dep.state)) {
-    inc("accumulatedEgp", r.accumulatedEgp);
-    inc("bookValueEgp", r.bookValueEgp);
-    if (r.dep.state === "FULLY_DEPRECIATED") row.fully = (row.fully as number) + 1;
-  } else row.unknown = (row.unknown as number) + 1;
-}
-const blank = (extra: Row): Row => ({ ...extra, devices: 0, costEgp: 0, accumulatedEgp: 0, bookValueEgp: 0, fully: 0, unknown: 0 });
-
-function group(rows: BookValueRow[], key: (r: BookValueRow) => string, init: (r: BookValueRow) => Row): Row[] {
-  const m = new Map<string, Row>();
-  for (const r of rows) {
-    const k = key(r);
-    if (!m.has(k)) m.set(k, blank(init(r)));
-    add(m.get(k)!, r);
-  }
-  return [...m.values()].map((g) => ({ ...g, pctLeft: (g.costEgp as number) > 0 ? Math.round(((g.bookValueEgp as number) / (g.costEgp as number)) * 1000) / 10 : null }));
-}
+import type { Column, ReportContext, ReportResult } from "./types";
 
 const money: Column[] = [
   { key: "devices", header: "Devices", type: "int", width: 10 },
@@ -42,12 +18,6 @@ const money: Column[] = [
   { key: "fully", header: "Fully depreciated", type: "int", width: 12 },
   { key: "unknown", header: "Not worked out", type: "int", width: 12 },
 ];
-const totalsOf = (rows: Row[], label: Row): Row | undefined => {
-  if (!rows.length) return undefined;
-  const cost = sumKey(rows, "costEgp"), book = sumKey(rows, "bookValueEgp");
-  return { ...label, devices: sumKey(rows, "devices"), costEgp: cost, accumulatedEgp: sumKey(rows, "accumulatedEgp"), bookValueEgp: book,
-    pctLeft: cost > 0 ? Math.round((book / cost) * 1000) / 10 : null, fully: sumKey(rows, "fully"), unknown: sumKey(rows, "unknown") };
-};
 
 /** Book value report (wave 27): cost, depreciation so far and book value today, by facility, department and type. */
 export async function bookValueReport({ filters: f, scope, today }: ReportContext): Promise<ReportResult> {
