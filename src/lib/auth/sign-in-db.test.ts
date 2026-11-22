@@ -171,7 +171,7 @@ describe("S4: password throttling", () => {
     const waits: number[] = [];
     const real = globalThis.setTimeout;
     vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) => {
-      if ((ms ?? 0) >= 1000) waits.push(ms!);
+      if ((ms ?? 0) >= 1000 && ms! % 1000 === 0) waits.push(ms!); // sign-in delays are whole seconds; ignore other timers (e.g. the database's)
       return real(fn, 0);
     }) as typeof setTimeout);
     return waits;
