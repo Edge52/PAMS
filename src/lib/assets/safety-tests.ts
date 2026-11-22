@@ -5,6 +5,8 @@
  * the form beside each reading. Check them against the hospital's own copy of IEC 62353 and the maker's manual:
  * a maker may state stricter values, and those then apply.
  */
+import { addMonths } from "./dates";
+
 export const PROTECTION_CLASSES = ["I", "II", "INTERNAL"] as const;
 export type ProtectionClass = (typeof PROTECTION_CLASSES)[number];
 export const CLASS_LABELS: Record<ProtectionClass, string> = { I: "Class I (earthed)", II: "Class II (double insulated)", INTERNAL: "Internally powered (battery)" };
@@ -75,11 +77,9 @@ export function analyserProblem(a: { calibrationDue?: string | null; label: stri
   return null;
 }
 
-/** When the next test falls due: `months` after this one (12 when the type gives no interval). */
+/** When the next test falls due: `months` after this one (12 when the type gives no interval), clamped to the month end. */
 export function nextTestDue(testedOn: string, months: number | null | undefined): string {
-  const d = new Date(`${testedOn}T00:00:00Z`);
-  d.setUTCMonth(d.getUTCMonth() + (months && months > 0 ? months : 12));
-  return d.toISOString().slice(0, 10);
+  return addMonths(testedOn, months && months > 0 ? months : 12);
 }
 
 export type DueState = "overdue" | "soon" | "ok" | "never";

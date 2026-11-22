@@ -65,4 +65,15 @@ describe("deptKey and checkBuilding", () => {
     expect(checkBuilding(b)).toMatch(/appears twice/);
     expect(checkBuilding(building([{ level: 0, rooms: [room("A", "X", null, sq(0, 0))] }]))).toBeNull();
   });
+  it("rejects outline points that aren't finite number pairs (A14)", () => {
+    const bad = (poly: unknown) => checkBuilding(building([{ level: 0, rooms: [room("A", "X", null, poly as Pt[])] }]));
+    expect(bad([[0, 0], [10, 0], ["10", 10]])).toMatch(/isn't a pair of numbers/);
+    expect(bad([[0, 0], [10, 0], [null, 10]])).toMatch(/isn't a pair of numbers/);
+    expect(bad([[0, 0], [10, 0], [NaN, 10]])).toMatch(/isn't a pair of numbers/);
+    expect(bad([[0, 0], [10, 0], [10]])).toMatch(/isn't a pair of numbers/);
+    expect(bad([[0, 0], [10, 0], "10,10"])).toMatch(/isn't a pair of numbers/);
+    const b = building([{ level: 0, rooms: [room("A", "X", null, sq(0, 0))] }]);
+    b.floors[0].walls = [0, 0, "1" as unknown as number, 1];
+    expect(checkBuilding(b)).toMatch(/isn't a number/);
+  });
 });

@@ -1,3 +1,8 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { readDxf } from './dxf.mjs';
 import { dimensionScale, makeRules } from './rules.mjs';
@@ -43,5 +48,26 @@ describe('CAD reading (wave 16)', () => {
     expect(dimensionScale([{ measurement: 6000, p1: { x: 0, y: 0 }, p2: { x: 6000, y: 0 } }])).toEqual({ count: 1, ratio: 1 });
     expect(dimensionScale([{ measurement: 6, p1: { x: 0, y: 0 }, p2: { x: 6000, y: 0 } }, { measurement: 3, p1: { x: 0, y: 0 }, p2: { x: 0, y: 3000 } }]).ratio).toBe(1000);
     expect(dimensionScale([])).toEqual({ count: 0, ratio: null });
+  });
+});
+
+describe('CAD import fails clearly (A15)', () => {
+  const extract = fileURLToPath(new URL('./extract.mjs', import.meta.url));
+  const run = (dxf) => {
+    const dir = mkdtempSync(join(tmpdir(), 'cad-a15-'));
+    writeFileSync(join(dir, 'floor.dxf'), dxf);
+    const r = spawnSync(process.execPath, [extract, join(dir, 'floor.dxf'), join(dir, 'out.json')], { encoding: 'utf8' });
+    return { ...r, dir };
+  };
+  it('stops with a reason when a floor has no wall lines', () => {
+    const empty = sampleFloor('GR').replace(/\nA-WALL\n/g, '\nA-NOTES\n');
+    const r = run(empty);
+    expect(r.status).toBe(2);
+    expect(r.stderr).toMatch(/no wall lines found/);
+  });
+  it('still extracts a normal floor', () => {
+    const r = run(sampleFloor('GR'));
+    expect(r.status).toBe(0);
+    expect(JSON.parse(readFileSync(join(r.dir, 'out.json'), 'utf8')).segs.wall.length).toBeGreaterThan(0);
   });
 });

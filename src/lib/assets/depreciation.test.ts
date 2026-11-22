@@ -83,6 +83,18 @@ describe("declining balance (wave 29)", () => {
     expect(decliningWrittenOff(10_000, 0, 5, 0.5)).toBeCloseTo(2000);
     expect(decliningWrittenOff(10_000, 1_000, 5, 5)).toBeCloseTo(9_000);
   });
+  it("ends a part-year life on the residual with no jump (A18)", async () => {
+    const { decliningWrittenOff, depreciation } = await import("./depreciation");
+    // 1,000 over 2.5 years: 800, 160, then the last half year writes off the 40 that is left.
+    expect(decliningWrittenOff(1_000, 0, 2.5, 2)).toBeCloseTo(960);
+    expect(decliningWrittenOff(1_000, 0, 2.5, 2.25)).toBeCloseTo(980);
+    expect(decliningWrittenOff(1_000, 0, 2.5, 2.5)).toBeCloseTo(1_000);
+    expect(decliningWrittenOff(1_000, 100, 2.5, 2.5)).toBeCloseTo(900);
+    const base = { method: "DECLINING" as const, cost: 1_000, inService: "2024-01-01", lifeYears: 2.5, residualPct: 10 };
+    const dayBefore = depreciation(base, "2026-06-30"), end = depreciation(base, "2026-07-01");
+    expect(end.state).toBe("FULLY_DEPRECIATED");
+    expect(dayBefore.bookValue! - end.bookValue!).toBeLessThan(1);
+  });
   it("is used by depreciation() when asked, and writes off more early than straight line", async () => {
     const { depreciation } = await import("./depreciation");
     const base = { cost: 10_000, inService: "2024-01-01", lifeYears: 5, residualPct: 0 };

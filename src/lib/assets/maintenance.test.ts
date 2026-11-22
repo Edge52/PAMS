@@ -53,6 +53,12 @@ describe("dueState", () => {
 });
 
 describe("ppmDatesInWindow / planPpmEvents", () => {
+  it("keeps a month-end cycle on the last day of each month (A16)", () => {
+    const a = { id: 1, lastPpmDate: "2025-12-31", ppmIntervalMonths: 1 };
+    expect(ppmDatesInWindow(a, "2026-01-01", "2026-05-31")).toEqual(["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30", "2026-05-31"]);
+    expect(ppmDatesInWindow({ id: 2, lastPpmDate: "2025-08-31", ppmIntervalMonths: 6 }, "2026-01-01", "2027-12-31"))
+      .toEqual(["2026-02-28", "2026-08-31", "2027-02-28", "2027-08-31"]);
+  });
   const a = { id: 7, installDate: "2026-01-15", ppmIntervalMonths: 3 };
   it("lists every due date inside the window", () => {
     expect(ppmDatesInWindow(a, "2026-01-01", "2026-12-31")).toEqual(["2026-04-15", "2026-07-15", "2026-10-15"]);
@@ -120,12 +126,30 @@ describe("event status, warranty and lifecycle", () => {
   });
 });
 
-import { parseScan, roundSummary } from "./rounds";
+import { isLocalOrigin, labelUrl, parseScan, resolveLabel, roundSummary } from "./rounds";
 describe("rounds", () => {
   it("reads a QR URL or a typed tag", () => {
     expect(parseScan("https://pams.example/assets/42?tag=LPH-MON-000123")).toEqual({ assetId: 42, tag: "LPH-MON-000123" });
     expect(parseScan(" lph-mon-000123 ")).toEqual({ tag: "LPH-MON-000123" });
     expect(parseScan("hello world")).toBeNull();
+    expect(parseScan("https://pams.example/assets/42")).toEqual({ assetId: 42, tag: undefined });
+  });
+  it("prints the tag in the label, not the database id (B4)", () => {
+    expect(labelUrl("https://pams.example/", "LPH-MON-000123")).toBe("https://pams.example/scan?tag=LPH-MON-000123");
+    expect(parseScan(labelUrl("https://pams.example", "lph-mon-000123"))).toEqual({ tag: "LPH-MON-000123" });
+  });
+  it("knows when labels would only work on the computer that printed them (B5)", () => {
+    for (const o of ["http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000", "http://0.0.0.0", "not a url"]) expect(isLocalOrigin(o)).toBe(true);
+    for (const o of ["https://pams.hospital.eg", "http://192.168.1.20:3000"]) expect(isLocalOrigin(o)).toBe(false);
+  });
+  it("opens the device the label's tag names, not the one that now has its old id (B4)", () => {
+    const old = { assetId: 42, tag: "LPH-MON-000123" };
+    // After a re-import id 42 is another device and the tagged one is 97.
+    expect(resolveLabel(old, { id: 97, tag: "LPH-MON-000123" }, { id: 42, tag: "LPH-INF-000009" })).toEqual({ id: 97, tagChanged: false });
+    // No device has that tag any more: fall back to the id and say the tag differs.
+    expect(resolveLabel(old, null, { id: 42, tag: "LPH-MON-000999" })).toEqual({ id: 42, tagChanged: true });
+    expect(resolveLabel({ assetId: 42 }, null, { id: 42, tag: "X" })).toEqual({ id: 42, tagChanged: false });
+    expect(resolveLabel({ tag: "LPH-MON-000123" }, null, null)).toBeNull();
   });
   it("summarises a stock-take", () => {
     const s = roundSummary([1, 2, 3], [{ assetId: 1, result: "OK" }, { assetId: 2, result: "FAULT" }, { assetId: 9, result: "FOUND_ELSEWHERE" }]);

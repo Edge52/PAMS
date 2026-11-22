@@ -58,9 +58,11 @@ export function decliningWrittenOff(cost: number, residual: number, lifeYears: n
   let bv = cost, y = 0;
   while (y < years && y < lifeYears && bv > residual) {
     const left = lifeYears - y;
-    const yearDep = Math.min(bv - residual, Math.max(bv * rate, (bv - residual) / Math.max(left, 1e-9)));
+    // The yearly rate: declining, or straight line over what is left when that is more. A last part year (life 2.5 →
+    // half a year) runs at that rate for its length, so the value lands on the residual exactly at the end of the life.
+    const yearRate = Math.max(bv * rate, (bv - residual) / left);
     const part = Math.min(1, years - y, left);
-    bv -= yearDep * part;
+    bv -= Math.min(bv - residual, yearRate * part);
     y += 1;
   }
   return cost - Math.max(bv, residual);

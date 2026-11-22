@@ -88,15 +88,25 @@ export function planMerge(floors: ExistingFloor[], rooms: ExistingRoom[], b: Cad
   return { floorsAdded, floorsUpdated, floorsMissing: floors.filter((f) => !drawn.has(f.level)), changes, counts, newDepartments };
 }
 
-/** Light check that an uploaded file is a building file from the CAD pipeline; returns a reason when it isn't. */
+const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+/** Every point is a pair of finite numbers (audit A14: "12", null or NaN corners used to pass). */
+const isOutline = (poly: unknown): boolean =>
+  Array.isArray(poly) && poly.length >= 3 && poly.every((p) => Array.isArray(p) && p.length === 2 && finite(p[0]) && finite(p[1]));
+const isLines = (v: unknown): boolean => v == null || (Array.isArray(v) && v.every(finite));
+
+/** Check that an uploaded file is a building file from the CAD pipeline; returns a reason when it isn't. */
 export function checkBuilding(v: unknown): string | null {
   const b = v as Partial<CadBuilding> | null;
   if (!b || typeof b !== "object") return "That file isn't a building file.";
   if (!Array.isArray(b.floors) || !b.floors.length) return "The file has no floors.";
-  if (typeof b.unitsPerMetre !== "number" || b.unitsPerMetre <= 0) return "The file doesn't say its scale (unitsPerMetre).";
+  if (!finite(b.unitsPerMetre) || b.unitsPerMetre <= 0) return "The file doesn't say its scale (unitsPerMetre).";
   for (const f of b.floors) {
-    if (typeof f?.level !== "number" || !Array.isArray(f.rooms) || !Array.isArray(f.walls)) return "A floor in the file is missing its level, rooms or walls.";
-    for (const r of f.rooms) if (typeof r?.code !== "string" || !Array.isArray(r.poly) || r.poly.length < 3) return `Room ${r?.code ?? "?"} on level ${f.level} has no code or outline.`;
+    if (!finite(f?.level) || !Array.isArray(f.rooms) || !Array.isArray(f.walls)) return "A floor in the file is missing its level, rooms or walls.";
+    if (![f.walls, f.doors, f.glass, f.columns].every(isLines)) return `The lines of level ${f.level} have a value that isn't a number.`;
+    for (const r of f.rooms) {
+      if (typeof r?.code !== "string" || !Array.isArray(r.poly) || r.poly.length < 3) return `Room ${r?.code ?? "?"} on level ${f.level} has no code or outline.`;
+      if (!isOutline(r.poly)) return `Room ${r.code} on level ${f.level} has an outline point that isn't a pair of numbers.`;
+    }
     const codes = f.rooms.map((r) => r.code.toUpperCase());
     const dup = codes.find((c, i) => codes.indexOf(c) !== i);
     if (dup) return `Room code ${dup} appears twice on level ${f.level}; room codes must be unique per floor.`;

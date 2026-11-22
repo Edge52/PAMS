@@ -7,6 +7,8 @@ from shapely.geometry import Polygon
 d = json.load(open(sys.argv[1])); out = sys.argv[2]
 RES = 50.0  # mm per cell
 rooms = d['rooms']
+if not d.get('segs', {}).get('wall'):  # audit A15: fail with the reason, not an IndexError
+    sys.exit(f"{sys.argv[1]}: no wall lines, so no rooms can be found. Check the floor's wall layer names.")
 xs = [r['x'] for r in rooms]; ys = [r['y'] for r in rooms]
 for s in d['segs']['wall']: xs += [s[0], s[2]]; ys += [s[1], s[3]]
 xs.sort(); ys.sort(); q = lambda a, f: a[int(len(a) * f)]

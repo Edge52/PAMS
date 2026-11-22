@@ -4,12 +4,13 @@ import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { PrintButton } from "@/components/assets/print-button";
 import { parseIds } from "@/lib/assets/filters";
 import { assetsByIds } from "@/lib/assets/queries";
+import { isLocalOrigin, labelUrl } from "@/lib/assets/rounds";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Asset labels" };
 
-/** Printable sheet of asset labels (A4, 3 × 7 = 63.5 × 38.1 mm, the common L7160 layout). QR = asset URL + tag. */
+/** Printable sheet of asset labels (A4, 3 × 7 = 63.5 × 38.1 mm, the common L7160 layout). QR = the scan URL with the tag. */
 export default async function LabelsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const me = await requirePermission("assets.view");
   const sp = await searchParams;
@@ -20,9 +21,12 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
   const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   // APP_URL (e.g. https://pams.hospital.eg) makes printed labels point at the real server, whichever address printed them.
   const origin = (process.env.APP_URL || `${proto}://${host}`).replace(/\/+$/, "");
+  const appUrlSet = !!process.env.APP_URL?.trim();
+  const local = isLocalOrigin(origin);
   const labels = await Promise.all(list.map(async (a) => ({
     a,
-    svg: await QRCode.toString(`${origin}/assets/${a.id}?tag=${encodeURIComponent(a.assetTag)}`, { type: "svg", margin: 0, errorCorrectionLevel: "M" }),
+    // The QR holds the tag only (audit B4): a database id can point at another device after a re-import.
+    svg: await QRCode.toString(labelUrl(origin, a.assetTag), { type: "svg", margin: 0, errorCorrectionLevel: "M" }),
   })));
 
   return (
@@ -41,6 +45,13 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
         <PageHeader title="Asset labels" back={{ href: "/assets", label: "Asset register" }}
           description={list.length ? `${list.length} label${list.length === 1 ? "" : "s"} · A4 sheet, 3 × 7 labels of 63.5 × 38.1 mm. Scan the QR code to open the asset.` : undefined}
           actions={list.length ? <PrintButton label={`Print ${list.length} label${list.length === 1 ? "" : "s"}`} /> : undefined} />
+        {list.length > 0 && (local || !appUrlSet) && (
+          <p role={local ? "alert" : "status"} className={`mb-4 max-w-3xl rounded-[var(--radius-control)] border px-3 py-2 text-sm ${local ? "border-danger bg-danger-soft text-danger" : "border-warn bg-warn-soft text-warn"}`}>
+            {local
+              ? <><b>Labels point to localhost: set APP_URL to the address phones use.</b> Phones can&apos;t open {origin}. Don&apos;t print these labels yet.</>
+              : <>APP_URL is not set, so labels point to {origin}, the address this page was opened on. Set APP_URL if phones use another address.</>}
+          </p>
+        )}
       </div>
       {list.length === 0 ? (
         <EmptyState title="No assets chosen" action={<LinkButton href="/assets" variant="primary">Choose assets in the register</LinkButton>}>

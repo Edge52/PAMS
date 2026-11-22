@@ -50,8 +50,9 @@ export function RoundRunner({ roundId, expected, rooms, finished, finish }: { ro
   const pick = (raw: string) => {
     const s = parseScan(raw);
     if (!s) { setLog((l) => [`✕ “${raw}” isn't a device label`, ...l]); return; }
-    const hit = expected.find((e) => (s.assetId && e.id === s.assetId) || (s.tag && e.tag === s.tag));
-    setCurrent({ assetId: s.assetId ?? hit?.id, tag: s.tag ?? hit?.tag ?? `#${s.assetId}`, label: hit ? `${hit.tag} · ${hit.typeName}${hit.room ? ` · ${hit.room}` : ""}` : `${s.tag ?? `device ${s.assetId}`} (not on this ward's list)` });
+    // The tag wins over an old label's id, which can belong to another device after a re-import (audit B4).
+    const hit = s.tag ? expected.find((e) => e.tag.toUpperCase() === s.tag) : expected.find((e) => e.id === s.assetId);
+    setCurrent({ assetId: hit?.id ?? (s.tag ? undefined : s.assetId), tag: s.tag ?? hit?.tag ?? `#${s.assetId}`, label: hit ? `${hit.tag} · ${hit.typeName}${hit.room ? ` · ${hit.room}` : ""}` : `${s.tag ?? `device ${s.assetId}`} (not on this ward's list)` });
     setNote(""); setRoom(""); setText("");
   };
   const mark = (result: Pending["result"]) => {

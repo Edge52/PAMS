@@ -106,9 +106,18 @@ export default async function StandardSetPage({ params, searchParams }: {
             <EmptyState title="No rules match these filters" action={mayEdit ? <LinkButton href={`${q({ add: "1" })}#rule-form`}>Add a rule here</LinkButton> : undefined}>
               Clear a filter or add a rule for this department type.
             </EmptyState>
-          ) : [...groups.entries()].map(([code, list]) => (
-            // Wave 21: departments fold, so a set with hundreds of rules opens as a short list. One department, or a filter, opens it.
-            <details key={code} id={`rule-${code}`} className="group scroll-mt-4" open={groups.size <= 2 || !!filter || list.some((r) => r.id === editing?.id)}>
+          ) : [...groups.entries()].map(([code, list]) => !(groups.size <= 2 || !!filter || list.some((r) => r.id === editing?.id)) ? (
+            // Wave 36 (audit R6): a folded department is only a link, rendered on the server without its rules. Sending
+            // every rule folded made this page about 4 MB with 20,000 elements.
+            <Link key={code} id={`rule-${code}`} href={`${q({ dept: code })}#rule-${code}`}
+              className="flex min-h-10 scroll-mt-4 items-center gap-2 rounded-[var(--radius-control)] px-1 hover:bg-sunken">
+              <span aria-hidden className="text-muted">›</span>
+              <span className="text-[16px] font-semibold">{list[0].deptName} <span className="font-mono text-xs font-normal text-muted">{code}</span></span>
+              <span className="text-sm text-muted">{list.length} rule{list.length === 1 ? "" : "s"}</span>
+              <span className="ml-auto text-sm font-semibold text-primary">Show rules</span>
+            </Link>
+          ) : (
+            <details key={code} id={`rule-${code}`} className="group scroll-mt-4" open>
               <summary className="mb-2 flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-[var(--radius-control)] px-1 hover:bg-sunken [&::-webkit-details-marker]:hidden">
                 <span aria-hidden className="text-muted transition-transform group-open:rotate-90">›</span>
                 <h2 className="text-[16px] font-semibold">{list[0].deptName} <span className="font-mono text-xs font-normal text-muted">{code}</span></h2>

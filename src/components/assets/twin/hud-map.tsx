@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { TwinFloor, TwinRoom } from "./types";
 import { MapNorth } from "./hud-compass";
 
-type ViewState = { metresPerPixel: number; target: { x: number; z: number }; camera: { x: number; z: number }; floorId: number | null };
+export type ViewState = { metresPerPixel: number; target: { x: number; z: number }; camera: { x: number; z: number }; floorId: number | null };
 type SceneLike = { viewState(): ViewState; lookAt(x: number, z: number): void };
 
 const STEPS = [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500];
@@ -16,6 +16,17 @@ export function scaleBar(metresPerPixel: number): { metres: number; px: number }
   return { metres, px: metres / metresPerPixel };
 }
 
+/**
+ * True when the view moved enough to redraw the map (audit A21): a tenth of a metre, a change of floor or 1 % of zoom.
+ * The map polls the camera; without this it re-rendered and redrew four times a second while nothing moved. Pure.
+ */
+export function viewChanged(a: ViewState | null, b: ViewState): boolean {
+  if (!a) return true;
+  const far = (p: { x: number; z: number }, q: { x: number; z: number }) => Math.abs(p.x - q.x) > 0.1 || Math.abs(p.z - q.z) > 0.1;
+  return a.floorId !== b.floorId || far(a.target, b.target) || far(a.camera, b.camera)
+    || Math.abs(a.metresPerPixel - b.metresPerPixel) > 0.01 * Math.max(a.metresPerPixel, 1e-9);
+}
+
 const W = 168, H = 112, PAD = 6;
 
 export function HudMap({ scene, ready, floors, rooms, light }: { scene: RefObject<SceneLike | null>; ready: boolean; floors: TwinFloor[]; rooms: TwinRoom[]; light: boolean }) {
@@ -23,7 +34,11 @@ export function HudMap({ scene, ready, floors, rooms, light }: { scene: RefObjec
   const [view, setView] = useState<ViewState | null>(null);
   useEffect(() => {
     if (!ready) return;
-    const t = setInterval(() => { if (document.visibilityState === "visible" && scene.current) setView(scene.current.viewState()); }, 250);
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible" || !scene.current) return;
+      const next = scene.current.viewState();
+      setView((prev) => (viewChanged(prev, next) ? next : prev)); // same state = no re-render
+    }, 250);
     return () => clearInterval(t);
   }, [ready, scene]);
   // The floor shown on its own, else the one nearest the ground.
