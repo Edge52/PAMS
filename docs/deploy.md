@@ -62,7 +62,18 @@ container's `pg_restore`; for a PostgreSQL 17 server (Supabase) set `PG_CLIENT_M
 write there once: `mkdir -p backups && sudo chown 1000:1000 backups`. Without Docker, install the PostgreSQL client tools
 (`pg_dump` at least as new as the server) or point `PG_DUMP_PATH` at one; the connection comes from `DATABASE_URL` and
 `DATABASE_SSL`, and the password is never put on the command line. Files made from the page are named like the
-nightly ones (`hpams-YYYYMMDD-HHMM.dump`, UTC time) with the uploads as a `.zip`.
+nightly ones (`hpams-YYYYMMDD-HHMM.dump`, UTC time) with the uploads as a `.zip`. Backup files are readable by
+their owner only (0600); the nightly job hands its files to the app's user (`APP_UID`, default 1000).
+
+**Updates.** On every start the app applies new database migrations. Before it does, it writes a copy of the database
+(`hpams-premigrate-….dump`) to the backup folder, and it takes a lock so two app containers starting together don't
+migrate at the same time. If that copy fails, the app doesn't start and nothing is changed; fix the cause, or set
+`MIGRATE_BACKUP=0` to go on without the copy. Every optional setting in `.env` (assistant key, Microsoft/Google
+sign-in, database SSL and pool size, `ALERTS_DISABLED` on a second instance) is passed to the app container.
+
+**Fonts.** The fonts are downloaded once when the image is built and then served by the app, so the site needs no
+internet at the hospital. The build itself must reach `fonts.googleapis.com` (it already needs the internet for npm and
+apt); without it the build stops with a font error.
 
 Updating: `git pull` (or copy the new folder) and `docker compose up -d --build`. Database changes are applied on start.
 Reference data (device catalogue, BOQ standards, department types) is only added on start, never overwritten, so your
@@ -86,7 +97,8 @@ Test a restore on a spare machine once, before you rely on it.
 
 Node.js 22+ and PostgreSQL 15+: set `DATABASE_URL` in `.env`, then `npm ci && npm run build && npm run db:migrate &&
 npm run db:seed -- --only=none && npm start`, behind a reverse proxy that provides HTTPS (nginx, Caddy, IIS). Set
-`SETUP_CODE`, and `TRUST_PROXY=1` when the proxy sets X-Forwarded-For. Run it as a
+`SETUP_CODE` (required: on a server with PostgreSQL and `NODE_ENV=production`, setup stays locked without it), and
+`TRUST_PROXY=1` when the proxy sets X-Forwarded-For. Run it as a
 service (systemd, PM2 or NSSM on Windows) and schedule `npm run backup`.
 
 After the first sign-in, set *Admin › Settings › Sign-in* to require two-step sign-in at least for administrators.

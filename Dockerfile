@@ -12,6 +12,15 @@ ARG APP_TIME_ZONE=Africa/Cairo
 # NEXT_PUBLIC_* values are compiled into the app, so the time zone is set here, at build time.
 ENV NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_APP_TIME_ZONE=$APP_TIME_ZONE
 RUN npx next build
+# CO-13 (audit wave 30): ship only what running needs. Dev tools (TypeScript, ESLint, Vitest, Playwright, drizzle-kit,
+# the CAD reader…) are pruned after the build. tsx and its esbuild stay: the start command runs scripts/migrate.ts and
+# scripts/seed.ts through tsx, and docs/deploy.md runs other scripts the same way. The build cache goes too.
+# (Next's "standalone" output would be smaller still, but it copies only what the web server uses, so migrate, seed and
+# the CAD loaders would need their own node_modules again.)
+RUN mkdir /tmp/keep && cp -a node_modules/tsx node_modules/esbuild node_modules/@esbuild /tmp/keep/ \
+ && npm prune --omit=dev --no-audit --no-fund \
+ && cp -a /tmp/keep/. node_modules/ && ln -sf ../tsx/dist/cli.mjs node_modules/.bin/tsx \
+ && rm -rf /tmp/keep .next/cache
 
 FROM node:22-bookworm-slim
 WORKDIR /app

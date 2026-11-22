@@ -9,8 +9,8 @@ describe("security headers (wave 25)", () => {
     expect(p).toContain("object-src 'none'");
     expect(p).toContain("form-action 'self'");
     expect(p).not.toContain("unsafe-eval");
-    // The only outside addresses are the two the fonts come from.
-    expect(p.match(/https?:\/\/[^ ;]+/g)).toEqual(["https://fonts.googleapis.com", "https://fonts.gstatic.com"]);
+    // No outside addresses at all: the fonts are served by the app (R4, wave 36).
+    expect(p.match(/https?:\/\/[^ ;]+/g)).toBeNull();
     expect(p.split("; ").find((d) => d.startsWith("script-src"))).not.toContain("unsafe-inline");
   });
   it("allows eval and the reload socket only in development", () => {
@@ -25,5 +25,15 @@ describe("security headers (wave 25)", () => {
   it("loads equipment model files only from the app itself (wave 28)", () => {
     // The 3D view fetches .glb files from /files/equipment_model/… with fetch: connect-src must stay the app's own.
     expect(contentPolicy("n").split("; ").find((d) => d.startsWith("connect-src"))).toBe("connect-src 'self'");
+  });
+});
+
+describe("fonts (R4, wave 36)", () => {
+  it("are not loaded from Google at run time", async () => {
+    const { readFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    for (const f of ["../app/layout.tsx", "../app/globals.css"]) {
+      expect(readFileSync(path.resolve(__dirname, f), "utf8")).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+    }
   });
 });

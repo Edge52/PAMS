@@ -4,6 +4,7 @@
 # Embedded database (laptop): copies the .pglite-data / .pglite folder while the app is stopped.
 # PostgreSQL: needs pg_dump and DATABASE_URL (from .env or the environment).
 set -euo pipefail
+umask 077 # backups hold every record: readable by this user only (S13)
 cd "$(dirname "$0")/.."
 [ -f .env ] && set -a && . ./.env && set +a
 OUT="${BACKUP_DIR:-./backups}"; mkdir -p "$OUT"

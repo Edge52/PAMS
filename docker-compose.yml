@@ -34,6 +34,19 @@ services:
       BACKUP_DIR: /data/backups   # the same folder the nightly job writes to: Administration › Backups lists both
       SMTP_URL: ${SMTP_URL:-}
       MAIL_FROM: ${MAIL_FROM:-}
+      # Optional settings from .env (all listed in .env.example; empty = off or the built-in default). CO-05.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}        # the assistant (then switch it on in Administration › Settings)
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}                  # Microsoft / Google sign-in
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_PROVIDERS: ${SUPABASE_PROVIDERS:-azure,google}
+      DATABASE_SSL: ${DATABASE_SSL:-}                  # only for a hosted database instead of the db service
+      DATABASE_SSL_CA: ${DATABASE_SSL_CA:-}            # a path inside the container: mount the file too
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-}
+      ALERTS_DISABLED: ${ALERTS_DISABLED:-}            # 1 on a second app instance
+      MIGRATE_BACKUP: ${MIGRATE_BACKUP:-}              # 0 = migrate on start without a pg_dump copy first
+      PG_DUMP_PATH: ${PG_DUMP_PATH:-}
+      PG_RESTORE_PATH: ${PG_RESTORE_PATH:-}
     volumes: [uploads:/data/uploads, ./backups:/data/backups]
 
   caddy:
@@ -55,6 +68,7 @@ services:
       PGDATABASE: hpams
       PGPASSWORD: ${POSTGRES_PASSWORD}
       KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      APP_UID: ${APP_UID:-1000}   # backups are written 0600 and handed to the app's user (S13)
     volumes: [./backups:/backups, uploads:/uploads:ro, ./scripts/nightly-backup.sh:/nightly-backup.sh:ro]
     # Every 24 h: a verified database dump + uploads archive. Old backups are removed only after a good run, and the
     # result is written to backups/.nightly-status (shown on Administration › Backups; failures alert administrators).

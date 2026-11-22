@@ -40,9 +40,10 @@
   --color-nav-muted: #8fa39b;
   --color-nav-gold: #d4b483;
 
-  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Fraunces", Georgia, "Times New Roman", serif;   /* page titles and big figures only */
-  --font-arabic: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+  /* The --font-inter/-fraunces/-plex-arabic families are served by the app itself (next/font in layout.tsx). */
+  --font-sans: var(--font-inter), "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-display: var(--font-fraunces), "Fraunces", Georgia, "Times New Roman", serif;   /* page titles and big figures only */
+  --font-arabic: var(--font-plex-arabic), "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
 
   --radius-control: 10px;
   --radius-panel: 16px;

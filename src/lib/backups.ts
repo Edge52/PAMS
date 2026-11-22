@@ -11,7 +11,8 @@ import { execFile } from "node:child_process";
 import { DATABASE_URL, dumpEmbeddedDatabase, isPglite } from "@/db";
 import { dumpError, pgDumpEnv } from "@/lib/backup-env";
 import { UPLOAD_ROOT } from "@/lib/storage";
-import { zip } from "@/lib/zip";
+import { zipEntryCount } from "@/lib/zip";
+import { writeZipFile, type ZipSource } from "@/lib/zip-file";
 import { latestUsableDatabaseBackup, parseNightlyStatus, type NightlyStatus } from "@/lib/backup-health";
 
 const execFileP = promisify(execFile);
@@ -75,6 +76,7 @@ async function writeBackup(stem: string, ext: string, write: (file: string) => P
   const tmp = path.join(/* turbopackIgnore: true */ BACKUP_DIR, `.partial-${name}`);
   try {
     await write(tmp);
+    await fs.chmod(tmp, 0o600); // S13: backups hold every record; only the app's own user may read them (pg_dump makes 0644)
     await fs.rename(tmp, path.join(/* turbopackIgnore: true */ BACKUP_DIR, name));
   } finally {
     await fs.rm(tmp, { force: true });
@@ -95,25 +97,27 @@ export async function backupHealth() {
 
 /** Back up now: the database (embedded: a copy of its folder; PostgreSQL: pg_dump) and the uploaded files. */
 export async function backupNow(): Promise<string[]> {
-  await fs.mkdir(BACKUP_DIR, { recursive: true });
+  await fs.mkdir(BACKUP_DIR, { recursive: true, mode: 0o700 });
   const t = new Date().toISOString().replace(/[-:]/g, "").slice(0, 13).replace("T", "-");
   const made: string[] = [];
   if (isPglite) {
     const blob = await dumpEmbeddedDatabase();
-    if (blob) made.push(await writeBackup(`hpams-db-${t}`, ".tar.gz", async (f) => fs.writeFile(f, Buffer.from(await blob.arrayBuffer()))));
+    if (blob) made.push(await writeBackup(`hpams-db-${t}`, ".tar.gz", async (f) => fs.writeFile(f, Buffer.from(await blob.arrayBuffer()), { mode: 0o600 })));
   } else {
     made.push(await writeBackup(`hpams-${t}`, ".dump", dumpPostgres));
   }
-  const files: { name: string; data: Uint8Array }[] = [];
+  // Uploads: listed first (names only), then written to the zip one file at a time (CO-06: no whole archive in
+  // memory; ZIP64 past 65,535 files or 4 GB).
+  const files: ZipSource[] = [];
   const walk = async (dir: string, rel: string) => {
     for (const e of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {
       const full = path.join(dir, e.name), r = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) await walk(full, r);
-      else if (e.isFile()) files.push({ name: r, data: new Uint8Array(await fs.readFile(full)) });
+      else if (e.isFile()) files.push({ name: r, read: async () => new Uint8Array(await fs.readFile(full)) });
     }
   };
   await walk(UPLOAD_ROOT, "");
-  if (files.length) made.push(await writeBackup(`uploads-${t}`, ".zip", (f) => fs.writeFile(f, zip(files))));
+  if (files.length) made.push(await writeBackup(`uploads-${t}`, ".zip", async (f) => { await writeZipFile(f, files); }));
   return made;
 }
 
@@ -137,9 +141,9 @@ export async function checkBackup(name: string): Promise<{ ok: boolean; detail: 
       return files ? { ok: true, detail: `Opens: ${files} files, ${(tar.length / 1e6).toFixed(1)} MB unpacked.` } : { ok: false, detail: "The archive is empty." };
     }
     if (name.endsWith(".zip")) {
-      const i = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
-      if (i < 0) return { ok: false, detail: "The zip is damaged (no directory)." };
-      return { ok: true, detail: `Opens: ${buf.readUInt16LE(i + 10)} files.` };
+      const n = zipEntryCount(buf.subarray(Math.max(0, buf.length - 66_000)));
+      if (n === null) return { ok: false, detail: "The zip is damaged (no directory)." };
+      return { ok: true, detail: `Opens: ${n} files.` };
     }
     if (name.endsWith(".dump")) return buf.subarray(0, 5).toString() === "PGDMP" ? { ok: true, detail: "A PostgreSQL dump (restore with pg_restore)." } : { ok: false, detail: "Not a PostgreSQL dump." };
     return { ok: false, detail: "Unknown kind of file." };

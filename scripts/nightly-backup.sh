@@ -9,8 +9,14 @@
 #     alert run turns into a notification for administrators (CO-07).
 #
 # Environment: PGHOST/PGUSER/PGDATABASE/PGPASSWORD (or the -h/-U/-d defaults below), KEEP_DAYS (14),
-# BACKUP_DIR (/backups), UPLOAD_SRC (/uploads), RUN_ONCE=1 to make one backup and exit (tests, manual runs).
+# BACKUP_DIR (/backups), UPLOAD_SRC (/uploads), RUN_ONCE=1 to make one backup and exit (tests, manual runs),
+# APP_UID/APP_GID (1000, the app container's user): the files are handed to that user so Administration › Backups can
+# check and restore-test them.
 set -u
+# S13 (audit wave 30): backups hold every record, so they are written readable by their owner only (files 0600).
+umask 077
+APP_UID="${APP_UID:-1000}"; APP_GID="${APP_GID:-1000}"
+own() { chown "$APP_UID:$APP_GID" "$@" 2>/dev/null || true; }
 DIR="${BACKUP_DIR:-/backups}"
 UP="${UPLOAD_SRC:-/uploads}"
 KEEP="${KEEP_DAYS:-14}"
@@ -19,13 +25,14 @@ STATUS="$DIR/.nightly-status"
 
 status() { # ok|failed, message
   now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  printf 'status=%s\nat=%s\nmessage=%s\n' "$1" "$now" "$2" > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
+  printf 'status=%s\nat=%s\nmessage=%s\n' "$1" "$now" "$2" > "$STATUS.tmp" && own "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
   echo "backup $1 at $now: $2"
 }
 
 run_once() {
   t=$(date -u +%Y%m%d-%H%M)
   mkdir -p "$DIR" || { status failed "the backup folder $DIR can't be created"; return 1; }
+  own "$DIR" # the app (user 1000) writes Back up now copies here too
   dump="$DIR/hpams-$t.dump"; dpart="$DIR/.partial-hpams-$t.dump"
   up="$DIR/uploads-$t.tar.gz"; upart="$DIR/.partial-uploads-$t.tar.gz"
   rm -f "$dpart" "$upart"
@@ -34,12 +41,12 @@ run_once() {
   fi
   if [ ! -s "$dpart" ]; then rm -f "$dpart"; status failed "pg_dump wrote an empty file"; return 1; fi
   if ! pg_restore --list "$dpart" >/dev/null 2>&1; then rm -f "$dpart"; status failed "the dump can't be read back by pg_restore"; return 1; fi
-  mv "$dpart" "$dump"
+  own "$dpart"; mv "$dpart" "$dump"
   if [ -d "$UP" ]; then
     if ! tar -czf "$upart" -C "$UP" . 2>/dev/null || [ ! -s "$upart" ]; then
       rm -f "$upart"; status failed "database saved as $(basename "$dump"), but the uploads archive failed"; return 1
     fi
-    mv "$upart" "$up"
+    own "$upart"; mv "$upart" "$up"
   fi
   # Only now, with a verified backup in hand: remove backups older than KEEP days (never the one just made).
   find "$DIR" -maxdepth 1 -type f \( -name 'hpams-*' -o -name 'uploads-*' \) -mtime +"$KEEP" \

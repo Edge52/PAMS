@@ -330,6 +330,13 @@
       "when": 1795290151588,
       "tag": "0046_wave34_invoice_people",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795292597167,
+      "tag": "0047_wave36_indexes_checks",
+      "breakpoints": true
     }
   ]
 }
