@@ -7,6 +7,7 @@ import { requireUser } from "@/lib/auth/session";
 import { CodeForm } from "@/components/two-step-forms";
 import { TwoStepSetup } from "@/components/two-step-setup";
 import { confirmTwoStep } from "@/app/login/actions";
+import { openSecret } from "@/lib/auth/secret-box";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Set up two-step sign-in" };
@@ -19,7 +20,7 @@ export default async function TwoStepPage() {
     <>
       <PageHeader title="Set up two-step sign-in" back={{ href: "/account", label: "Your account" }} />
       <Panel title={u.on ? "Backup codes" : "Three steps"} className="max-w-xl">
-        <div>{!u.on && <TwoStepSetup secret={u.secret} email={me.email} />}</div>
+        <div>{!u.on && <TwoStepSetup secret={openSecret(u.secret) ?? ""} email={me.email} />}</div>
         <CodeForm action={confirmTwoStep} submit="Switch on" alreadyOn={!!u.on} />
       </Panel>
     </>

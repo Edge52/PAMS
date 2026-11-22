@@ -21,6 +21,7 @@ import type { ActionState } from "@/lib/procurement/forms";
 import { safeLocalPath } from "@/lib/safe-path";
 // Relative, not @/: src/lib/auth/sign-in-db.test.ts loads this file and maps each @/ import it knows by hand.
 import { claimFirstAdmin, setupCodeRule } from "../../lib/first-admin";
+import { openSecret, sealSecret } from "@/lib/auth/secret-box";
 
 function safeNext(v: FormDataEntryValue | null): string {
   const s = safeLocalPath(v);
@@ -101,7 +102,7 @@ export async function signInEnrol(_prev: StepState, fd: FormData): Promise<StepS
   if (!c || c.step !== "ENROL" || !c.user.totpSecret || c.user.totpEnabledAt) redirect("/login?error=" + encodeURIComponent("That took too long. Sign in again."));
   const n = await takeTry(c);
   if (n == null) redirect("/login?error=" + encodeURIComponent(LOCKED_MESSAGE));
-  const step = verifyCode(c.user.totpSecret, String(fd.get("code") ?? ""), Date.now());
+  const step = verifyCode(openSecret(c.user.totpSecret) ?? "", String(fd.get("code") ?? ""), Date.now());
   if (step == null) {
     if (await wrongTry(c, n)) redirect("/login?error=" + encodeURIComponent(LOCKED_MESSAGE));
     return { error: "That code isn't right. Scan the square again, or check the clock on your phone is right." };
@@ -129,7 +130,7 @@ export async function startTwoStep(): Promise<void> {
   const me = await getCurrentUser();
   if (!me) redirect("/login");
   const [u] = await db.select({ on: users.totpEnabledAt }).from(users).where(eq(users.id, me.id));
-  if (!u?.on) await db.update(users).set({ totpSecret: newSecret(), totpLastStep: null }).where(eq(users.id, me.id));
+  if (!u?.on) await db.update(users).set({ totpSecret: sealSecret(newSecret()), totpLastStep: null }).where(eq(users.id, me.id));
   redirect("/account/two-step");
 }
 
@@ -138,7 +139,7 @@ export async function confirmTwoStep(_prev: StepState, fd: FormData): Promise<St
   if (!me) redirect("/login");
   const [u] = await db.select().from(users).where(eq(users.id, me.id));
   if (!u?.totpSecret || u.totpEnabledAt) redirect("/account");
-  const step = verifyCode(u.totpSecret, String(fd.get("code") ?? ""), Date.now());
+  const step = verifyCode(openSecret(u.totpSecret) ?? "", String(fd.get("code") ?? ""), Date.now());
   if (step == null) return { error: "That code isn't right. Scan the square again, or check the clock on your phone is right." };
   const codes = await enableTwoStep(me.id, step);
   await destroyAllSessions(me.id, true);

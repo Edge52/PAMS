@@ -51,6 +51,7 @@ vi.mock("@/lib/auth/permissions", () => import("./permissions"));
 vi.mock("@/lib/auth/session", () => import("./session"));
 vi.mock("@/lib/auth/two-step", () => import("./two-step"));
 vi.mock("@/lib/auth/totp", () => import("./totp"));
+vi.mock("@/lib/auth/secret-box", () => import("./secret-box"));
 vi.mock("@/lib/auth/throttle", () => import("./throttle"));
 vi.mock("@/lib/auth/breached", () => ({ breachedProblem: async () => null }));
 vi.mock("@/lib/auth/password", () => ({
@@ -153,6 +154,27 @@ describe("S5: wrong two-step codes count across sign-ins", () => {
     expect(await run(A.signInCode(null, form({ code: codeAt(secret, stepOf(Date.now())) })))).toMatch(/^redirect:\//);
     expect(await sessionsOf(u.id)).toHaveLength(1);
     expect(await d.select().from(loginChallenges).where(eq(loginChallenges.userId, u.id))).toHaveLength(0);
+  });
+
+  it("S13: with APP_SECRET set, a sealed secret signs in and an old plain one is sealed after a right code", async () => {
+    const before = process.env.APP_SECRET;
+    process.env.APP_SECRET = "test-app-secret-that-is-long-enough-123";
+    try {
+      const { sealSecret, isSealed } = await import("./secret-box");
+      const secret = newSecret();
+      const sealedUser = await user("sealed@t.test", { totpSecret: sealSecret(secret), totpEnabledAt: new Date() });
+      expect(await signInAs(sealedUser.email)).toBe("redirect:/login/code");
+      expect(await run(A.signInCode(null, form({ code: codeAt(secret, stepOf(Date.now())) })))).toMatch(/^redirect:\//);
+      const plain = newSecret();
+      const old = await user("plain@t.test", { totpSecret: plain, totpEnabledAt: new Date() });
+      expect(await signInAs(old.email)).toBe("redirect:/login/code");
+      expect(await run(A.signInCode(null, form({ code: codeAt(plain, stepOf(Date.now())) })))).toMatch(/^redirect:\//);
+      const [row] = await d.select({ s: users.totpSecret }).from(users).where(eq(users.id, old.id));
+      expect(isSealed(row.s)).toBe(true);
+      expect(row.s).not.toContain(plain);
+    } finally {
+      if (before === undefined) delete process.env.APP_SECRET; else process.env.APP_SECRET = before;
+    }
   });
 
   it("codes sent in parallel can't share one try", async () => {

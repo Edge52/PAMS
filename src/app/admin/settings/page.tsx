@@ -9,6 +9,7 @@ import { requirePermission } from "@/lib/auth/session";
 import { formatMoney, num } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
 import { saveSettings, savePolicy, togglePolicy } from "./actions";
+import { canSeal } from "@/lib/auth/secret-box";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approval rules & settings" };
@@ -150,6 +151,7 @@ export default async function SettingsPage() {
             <fieldset className="space-y-2">
               <legend className="mb-2 text-sm font-bold">Sign-in</legend>
               <FormGrid cols={3}>
+                {!canSeal() && <p role="note" className="col-span-full text-sm text-warn">Two-step secrets are stored without encryption: set APP_SECRET on the server (32+ characters) to encrypt them.</p>}
                 <Field label="Two-step sign-in" hint="A code from a phone app after the password. Those who must use it set it up the next time they sign in. Anyone may switch it on for themselves.">
                   <Select name="twoStepRequired" defaultValue={s.twoStepRequired} options={[{ value: "off", label: "Each person chooses" }, { value: "admins", label: "Required for administrators" }, { value: "all", label: "Required for everyone" }]} />
                 </Field>

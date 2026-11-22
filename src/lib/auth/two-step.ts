@@ -12,6 +12,7 @@ import { getSetting } from "@/lib/settings";
 import { newBackupCodes, newSecret, normalBackupCode, verifyCode } from "./totp";
 import type { Role } from "./permissions";
 import { SESSION_COOKIE } from "./session";
+import { canSeal, isSealed, openSecret, sealSecret } from "./secret-box";
 
 export const STEP_COOKIE = "hpams_login_step";
 const STEP_MS = 10 * 60_000;
@@ -61,7 +62,7 @@ export async function startChallenge(userId: number, step: "VERIFY" | "ENROL", n
 export async function secondStep(u: { id: number; role: Role | string; totpEnabledAt: Date | null; totpSecret: string | null }, next: string): Promise<"session" | "locked" | "/login/code" | "/login/two-step"> {
   if (u.totpEnabledAt && u.totpSecret) return (await startChallenge(u.id, "VERIFY", next)) ? "/login/code" : "locked";
   if (await twoStepRequiredFor(u.role)) {
-    if (!u.totpSecret) await db.update(users).set({ totpSecret: newSecret() }).where(and(eq(users.id, u.id), isNull(users.totpSecret)));
+    if (!u.totpSecret) await db.update(users).set({ totpSecret: sealSecret(newSecret()) }).where(and(eq(users.id, u.id), isNull(users.totpSecret)));
     return (await startChallenge(u.id, "ENROL", next)) ? "/login/two-step" : "locked";
   }
   return "session";
@@ -148,9 +149,15 @@ export async function endSessionsWithoutTwoStep(rule: "off" | "admins" | "all"):
  * the step is remembered, a backup code is struck off. Returns what matched, or null.
  */
 export async function spendCode(u: { id: number; totpSecret: string | null; totpLastStep: number | null; backupCodeHashes: string[] }, typed: string): Promise<"code" | "backup" | null> {
-  if (!u.totpSecret) return null;
-  const step = verifyCode(u.totpSecret, typed, Date.now(), u.totpLastStep);
-  if (step != null) { await db.update(users).set({ totpLastStep: step }).where(eq(users.id, u.id)); return "code"; }
+  const secret = openSecret(u.totpSecret);
+  if (!secret) return null;
+  const step = verifyCode(secret, typed, Date.now(), u.totpLastStep);
+  if (step != null) {
+    // An old plain secret is sealed now that APP_SECRET is set (audit S13).
+    const reseal = !isSealed(u.totpSecret) && canSeal() ? { totpSecret: sealSecret(secret) } : {};
+    await db.update(users).set({ totpLastStep: step, ...reseal }).where(eq(users.id, u.id));
+    return "code";
+  }
   const h = sha256(normalBackupCode(typed));
   if (normalBackupCode(typed).length === 8 && u.backupCodeHashes.includes(h)) {
     await db.update(users).set({ backupCodeHashes: u.backupCodeHashes.filter((x) => x !== h) }).where(eq(users.id, u.id));

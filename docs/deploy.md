@@ -101,6 +101,9 @@ npm run db:seed -- --only=none && npm start`, behind a reverse proxy that provid
 service (systemd, PM2 or NSSM on Windows) and schedule `npm run backup`.
 
 After the first sign-in, set *Admin › Settings › Sign-in* to require two-step sign-in at least for administrators.
+Set `APP_SECRET` in `.env` first (32+ random characters, e.g. `openssl rand -base64 48`): the two-step secrets are then
+stored encrypted. Keep a copy of it with the database backups and never change it; secrets saved before it was set
+are encrypted the next time each person signs in with a code.
 The app sends its own security headers (content policy, no framing, HSTS when `APP_URL` is https); don't add a
 second `Content-Security-Policy` at the proxy.
 

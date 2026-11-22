@@ -30,6 +30,7 @@ services:
       COOKIE_SECURE: "1"
       TRUST_PROXY: "1"            # Caddy sets X-Forwarded-For
       SETUP_CODE: ${SETUP_CODE:?set SETUP_CODE in .env (asked for when creating the first administrator)}
+      APP_SECRET: ${APP_SECRET:-}   # 32+ characters: encrypts two-step secrets (keep it safe and never change it)
       UPLOAD_DIR: /data/uploads
       BACKUP_DIR: /data/backups   # the same folder the nightly job writes to: Administration › Backups lists both
       SMTP_URL: ${SMTP_URL:-}
