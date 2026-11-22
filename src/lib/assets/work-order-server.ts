@@ -72,7 +72,8 @@ export async function openDownJobStatuses(assetId: number, x: Tx = db): Promise<
 export async function applyAssetEffect(
   event: Parameters<typeof assetStatusAfter>[0],
   wo: { id: number; number: string; assetId: number; deviceDown: boolean },
-  opts: { returnToService?: boolean; actor: string },
+  /** `calibrationHeld` (wave 37): the device's last calibration failed; look it up before the transaction. */
+  opts: { returnToService?: boolean; actor: string; calibrationHeld?: boolean },
   x: Tx = db,
 ): Promise<string | null> {
   const [a] = await x.select({ status: assets.status }).from(assets).where(eq(assets.id, wo.assetId));
@@ -80,7 +81,7 @@ export async function applyAssetEffect(
   const ending = event === "complete" || event === "cancel";
   const others = ending ? await otherDownJobs(wo.assetId, wo.id, x) : 0;
   const disposalPending = ending ? await hasDisposalPending(wo.assetId, x) : false;
-  const next = assetStatusAfter(event, { assetStatus: a.status, deviceDown: wo.deviceDown, returnToService: opts.returnToService, otherDownJobs: others, disposalPending });
+  const next = assetStatusAfter(event, { assetStatus: a.status, deviceDown: wo.deviceDown, returnToService: opts.returnToService, otherDownJobs: others, disposalPending, calibrationHeld: opts.calibrationHeld });
   if (!next) return null;
   await x.update(assets).set({ status: next as typeof a.status }).where(eq(assets.id, wo.assetId));
   await logActivity("asset", wo.assetId, "status_changed",

@@ -21,6 +21,8 @@ import { backupAlert } from "@/lib/backup-health";
 import { notifyUsers, usersWithRole } from "./index";
 import { collectAlerts, CONTRACT_WARN_DAYS, digestAlerts, MAINTENANCE_DUE_DAYS, type AlertData, type AlertWindows } from "./alert-rules";
 import { DOC_NOTIFY_DAYS } from "@/lib/procurement/supplier-docs";
+import { collectSafetyAlerts } from "./safety-alert-rules";
+import { loadSafetyAlertData } from "./safety-alerts";
 
 export type AlertRunResult = {
   startedAt: string; finishedAt: string; ms: number;
@@ -129,7 +131,10 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
     };
     const today = todayISO();
     const names = new Map((await db.select({ id: facilities.id, name: facilities.name }).from(facilities)).map((f) => [f.id, f.name]));
-    const alerts = digestAlerts(collectAlerts(await loadData(today, windows), today, windows), today, windows, (id) => (id == null ? null : names.get(id) ?? null));
+    // Wave 37: recalls still to action, low stock, safety tests, calibration and radiation safety. Loaded on its own so
+    // a failure there never stops the other alerts.
+    const safety = await loadSafetyAlertData(today).then((d) => collectSafetyAlerts(d, today)).catch((e) => { console.error("[alerts] safety alerts skipped:", e); return []; });
+    const alerts = digestAlerts([...collectAlerts(await loadData(today, windows), today, windows), ...safety], today, windows, (id) => (id == null ? null : names.get(id) ?? null));
     candidates = alerts.length;
 
     // One recipient lookup per role and facility per run.

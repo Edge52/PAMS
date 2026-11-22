@@ -133,6 +133,11 @@ describe("asset status effects", () => {
     // A new fault still takes it down.
     expect(assetStatusAfter("report", { assetStatus: "IN_SERVICE", deviceDown: true, otherDownJobs: 0, disposalPending: true })).toBe("OUT_OF_SERVICE");
   });
+  it("wave 37: does not put a device back in service while its last calibration failed", () => {
+    expect(assetStatusAfter("complete", { assetStatus: "OUT_OF_SERVICE", deviceDown: true, returnToService: true, otherDownJobs: 0, calibrationHeld: true })).toBeNull();
+    expect(assetStatusAfter("cancel", { assetStatus: "OUT_OF_SERVICE", deviceDown: true, otherDownJobs: 0, calibrationHeld: true })).toBeNull();
+    expect(assetStatusAfter("start", { assetStatus: "OUT_OF_SERVICE", deviceDown: true, otherDownJobs: 0, calibrationHeld: true })).toBe("UNDER_MAINTENANCE");
+  });
   it("A4: a device on loan stays on loan; the return takes open down jobs into account", () => {
     for (const ev of ["report", "start", "complete", "cancel"] as const) {
       expect(assetStatusAfter(ev, { assetStatus: "ON_LOAN", deviceDown: true, returnToService: true, otherDownJobs: 0 })).toBeNull();

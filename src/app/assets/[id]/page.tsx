@@ -21,6 +21,9 @@ import { Badge, Button, Details, Field, FormGrid, Input, LinkButton, PageHeader,
 import { DocumentsPanel } from "@/components/documents-panel";
 import { AcceptancePanel } from "@/components/assets/acceptance-panel";
 import { SafetyPanel, TestEquipmentForm } from "@/components/assets/safety-panel";
+import { CalibrationPanel } from "@/components/assets/calibration-panel";
+import { RadiationPanel } from "@/components/assets/radiation-panel";
+import { isRadiationType } from "@/lib/assets/radiation";
 import { SecurityPanel } from "@/components/assets/security-panel";
 import { UsagePanel } from "@/components/assets/usage-panel";
 import { LoansPanel } from "@/components/assets/loans-panel";
@@ -290,6 +293,8 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
           </Panel>
 
           {usage && <UsagePanel assetId={x.id} typeCode={a.typeCode} usage={usage} canRecord={canMaint} disposed={x.status === "DISPOSED"} />}
+          <CalibrationPanel assetId={x.id} deviceTypeId={x.deviceTypeId} required={a.requiresCalibration && !x.isTestEquipment} canRecord={canMaint} canEdit={canEdit} disposed={x.status === "DISPOSED"} />
+          {isRadiationType(a.typeCode) && <RadiationPanel assetId={x.id} roomId={x.roomId} facilityId={x.facilityId} />}
           <SafetyPanel assetId={x.id} canTest={canMaint} canReport={canReport} disposed={x.status === "DISPOSED"} />
           <LoansPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />
           <SecurityPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />

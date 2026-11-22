@@ -1,4 +1,6 @@
 "use server";
+import { calibrationHoldProblem } from "@/lib/assets/calibration";
+import { calibrationHeld } from "@/lib/assets/calibration-server";
 import { parseTags } from "@/lib/assets/tags";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -165,6 +167,8 @@ export async function changeStatusAction(_: FormState, fd: FormData): Promise<Fo
   if (a.status === "ON_LOAN" && p.data.status) return { error: "This device is on loan. Record its return on the loan; that sets its status back." };
   const status = a.status === "ON_LOAN" ? a.status : p.data.status ?? a.status, condition = p.data.condition ?? a.condition;
   if (status === a.status && condition === a.condition) return { error: "Nothing changed — pick a different status or condition." };
+  const held = status !== a.status && calibrationHoldProblem(await calibrationHeld(p.data.assetId), status);
+  if (held) return { error: held, fields: { status: held } };
   await db.update(assets).set({ status, condition }).where(eq(assets.id, p.data.assetId));
   const parts = [status !== a.status && `status ${humanize(a.status).toLowerCase()} → ${humanize(status).toLowerCase()}`,
     condition !== a.condition && `condition ${humanize(a.condition).toLowerCase()} → ${humanize(condition).toLowerCase()}`].filter(Boolean);
@@ -232,6 +236,8 @@ export async function logMaintenanceAction(_: FormState, fd: FormData): Promise<
   const status = d.status ?? (d.completedDate ? "COMPLETED" : "SCHEDULED");
   if (status === "COMPLETED" && !d.completedDate) return { error: "Enter the date the work was completed." };
   if (status !== "COMPLETED" && !d.scheduledDate) return { error: "Enter the scheduled date." };
+  const held = calibrationHoldProblem(d.setStatus ? await calibrationHeld(d.assetId) : false, d.setStatus);
+  if (held) return { error: held, fields: { setStatus: held } };
   // Wave 27: test equipment used on completed work must be in calibration on the day.
   const used = status === "COMPLETED" ? await checkInstruments(fd, (await facilityOfAsset(d.assetId))!, d.completedDate!) : { ok: [] };
   if ("problem" in used) return { error: used.problem, fields: { testEquipment: used.problem } };
@@ -267,6 +273,8 @@ export async function completeEventAction(_: FormState, fd: FormData): Promise<F
   if (d.completedDate > todayISO()) return { error: "The completed date cannot be in the future." };
   const [e] = await db.select().from(maintenanceEvents).where(eq(maintenanceEvents.id, d.eventId));
   if (!e) return { error: "That work order no longer exists." };
+  const held = calibrationHoldProblem(d.returnToService ? await calibrationHeld(e.assetId) : false, d.returnToService ? "IN_SERVICE" : null);
+  if (held) return { error: held };
   const used = await checkInstruments(fd, (await facilityOfAsset(e.assetId))!, d.completedDate);
   if ("problem" in used) return { error: used.problem, fields: { testEquipment: used.problem } };
   const meter = await readingAtVisit(fd, e.assetId, d.completedDate, me);

@@ -167,13 +167,15 @@ export function workOrderKpis(rows: KpiRow[], now: Date): WorkOrderKpis {
  *    open jobs to be cancelled first, and that must not put a condemned device back on the ward;
  *  - wave 34 (A4): a device on loan stays ON_LOAN. Only the loan record clears it, and the return then takes any
  *    open down job into account (statusBackFromLoan).
+ *  - wave 37: never back in service while its last calibration failed (`calibrationHeld`): only a passing
+ *    calibration puts it back.
  */
 export function assetStatusAfter(
   event: "report" | "start" | "complete" | "cancel",
-  o: { assetStatus: string; deviceDown: boolean; returnToService?: boolean; otherDownJobs: number; disposalPending?: boolean },
+  o: { assetStatus: string; deviceDown: boolean; returnToService?: boolean; otherDownJobs: number; disposalPending?: boolean; calibrationHeld?: boolean },
 ): string | null {
   if (o.assetStatus === "DISPOSED" || o.assetStatus === "IN_STOCK" || o.assetStatus === "ON_LOAN") return null;
-  if ((event === "complete" || event === "cancel") && o.disposalPending) return null;
+  if ((event === "complete" || event === "cancel") && (o.disposalPending || o.calibrationHeld)) return null;
   if (event === "report") return o.deviceDown && o.assetStatus !== "OUT_OF_SERVICE" ? "OUT_OF_SERVICE" : null;
   if (event === "start") return o.deviceDown && o.assetStatus !== "UNDER_MAINTENANCE" ? "UNDER_MAINTENANCE" : null;
   const wasDown = o.assetStatus === "OUT_OF_SERVICE" || o.assetStatus === "UNDER_MAINTENANCE";

@@ -2195,3 +2195,5 @@ export const trainingAttendees = pgTable("training_attendees", {
 /* ── Wave 28: 3D view (north arrow, own model files with licence and credit) ── */
 // No new tables: buildings.north_deg and equipment_models.glb_licence / glb_credit / glb_source / glb_bytes above.
 export * from "./schema-wave37-j";
+
+export * from "./schema-wave37-k";

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TypeCalibrationPanel } from "@/components/assets/calibration-panel";
 import { TypeDepreciationForm } from "@/components/assets/book-value-panel";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
@@ -147,6 +148,7 @@ export default async function DeviceTypePage({ params, searchParams }: { params:
               { label: "GMDN code", value: dt.gmdnCode },
             ]} />
           </Panel>
+          <TypeCalibrationPanel deviceTypeId={dt.id} code={dt.code} required={dt.requiresCalibration} canEdit={can(me.role, "catalogue.edit")} />
           <UsageIntervalPanel code={dt.code} interval={dt.usageInterval} unit={dt.usageUnit} canEdit={can(me.role, "catalogue.edit")} />
           <Panel title="Depreciation">
             <p className="mb-3 text-sm text-muted">Straight-line book value for devices of this type: useful life {dt.lifeExpectancyYears ? `${dt.lifeExpectancyYears} years` : "not set"}, residual value {dt.residualPct ?? 0} % of the cost. A device can have its own figures on its page.</p>

@@ -538,3 +538,40 @@ These pages show supplier prices, so only Administrator, Director, Procurement a
   the **lowest landed cost**. The TCO table shows both the net and the landed price.
 - **Rank prices by** (settings) is **Net price** by default. Switching to **Landed cost** makes the financial scores
   and ranks use the landed cost; scores of tenders still being evaluated are refreshed when you save.
+## Wave 37: calibration and radiation safety
+
+### Calibration of clinical devices
+- Devices whose device type is marked **Needs calibration** (Catalogue › type › Edit codes and classification) are on
+  *Maintenance › Calibration*: due, failed, never calibrated, all, and a table **By department**.
+- **Compliance** is the share of those devices (installed, in service, under maintenance, out of service or on loan)
+  whose last calibration passed and is not past its next due date.
+- **Record a calibration** on a device's page: date, result (passed as found, adjusted, failed), who did it, the
+  company, the certificate number. It also completes an open calibration visit, or adds one to the maintenance
+  history. Attach the certificate on the next page.
+- The interval is the device's own (Calibration › Change this device's interval), else the type's (Catalogue ›
+  type › Calibration interval), else 12 months.
+- **A failed calibration takes the device out of service.** It stays out until a passing calibration is recorded:
+  finishing a work order, the status form and Record maintenance can't put it back in service. A pass puts it back
+  to the status it had, unless an open job or a disposal still keeps it down.
+- Safety analysers and other test equipment keep their calibration date on their own page (Safety tests › Test
+  equipment), as before.
+
+### Radiation safety (X-ray, CT, C-arm and other radiation rooms)
+- *Maintenance › Radiation safety*, one hospital at a time. Devices count when their type uses ionising radiation:
+  X-ray, CT, C-arm and fluoroscopy, mammography, angiography, nuclear medicine, DXA, dental X-ray, radiotherapy.
+- **Rooms**: each room with such a device, a licence or protective equipment, and what needs doing (no valid ENRRA
+  licence, QC failed or overdue, aprons failed or overdue). A device not in a room is listed under the table.
+- **ENRRA licences**: number, room or device, scope, issue and expiry date. Open a licence to attach the scan, or to
+  renew it (change the dates). Warnings start 90 days before expiry.
+- **Physicist QC**: test, date, physicist, pass or fail and when the next one is due (12 months unless you say).
+- **Dosimetry**: one badge reading per person and period, with a name and a role only (no ID numbers). Each reading
+  is compared with the period's share of 20 mSv a year; 30 % of that is the investigation level.
+- **Protective equipment**: list each apron, collar and shield with its number, then record its checks.
+- The device page has a **Radiation safety** panel (its licence and QC); the room data sheet links to the page.
+
+### More alerts
+The hourly alert run now also tells the biomedical team about: recalls with devices still to action (daily),
+spare parts at or below their reorder level (daily, same alert as when stock drops), safety tests and calibrations
+due within 30 days or overdue (technicians too), test equipment whose calibration runs out, ENRRA licences expiring
+within 90 days or expired, physicist QC and protective checks due or overdue, and flagged dose readings. More than
+three of one kind in a hospital come as one summary.
