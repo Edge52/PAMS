@@ -15,6 +15,7 @@ import { Columns, PairColumns } from "@/components/ui/charts";
 import { direction, monthKeys, monthLabel, onMonths, onTimeShare } from "@/lib/trends";
 import { DEFAULT_PPM_GRACE_DAYS } from "@/lib/reports/calc";
 import { addDaysISO, addMonthsISO, daysUntil, formatDate, formatMoney, formatNumber, num, todayISO } from "@/lib/format";
+import { seesPrices } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
 
@@ -287,7 +288,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
 
         <div className="space-y-5 xl:col-span-2">
-          <Panel title="Open purchase orders">
+          {seesPrices(me.role) && <Panel title="Open purchase orders">
             {openPoValue.length === 0 ? <p className="text-sm text-muted">No open purchase orders.</p> : (
               <ul className="space-y-1 text-sm">
                 {openPoValue.map((r) => (
@@ -297,7 +298,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               </ul>
             )}
             <Link href="/procurement/purchase-orders" className="mt-3 inline-block text-sm text-primary hover:underline">Track deliveries</Link>
-          </Panel>
+          </Panel>}
 
           <Panel title="Recent activity" padded={false}>
             {recent.length === 0 ? <p className="p-4 text-sm text-muted">Changes to projects, offers, orders and assets appear here.</p> : (

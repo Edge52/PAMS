@@ -24,7 +24,7 @@ import { supplierExpiryWarning } from "@/lib/procurement/supplier-docs-server";
 export const dynamic = "force-dynamic";
 
 export default async function OfferPage({ params }: { params: Promise<{ id: string }> }) {
-  const me = await requirePermission("procurement.view");
+  const me = await requirePermission("prices.view"); // audit R9: offers, prices and invoices
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const [row] = await db.select({ offer: offers, supplier: suppliers, project: projects, rfq: { id: rfqs.id, number: rfqs.number } })

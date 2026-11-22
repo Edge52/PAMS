@@ -6,6 +6,7 @@ import { ppmComplianceReport } from "./ppm-compliance";
 import { openPurchaseOrdersReport } from "./purchase-orders";
 import { tenderStatusReport } from "./tenders";
 import type { FilterKind, ReportContext, ReportFilters, ReportResult } from "./types";
+import type { Permission } from "@/lib/auth/permissions";
 import { warrantyExpiryReport } from "./warranty";
 import { workOrdersReport } from "./work-orders";
 import { incidentsReport } from "./incidents";
@@ -23,6 +24,8 @@ export type ReportDef = {
   dateLabel?: string;
   defaults?: (today: string) => Partial<ReportFilters>;
   load: (ctx: ReportContext) => Promise<ReportResult>;
+  /** Extra permission beyond reports.view (audit R9: order values are for those who may see prices). */
+  need?: Permission;
 };
 
 export const REPORTS: ReportDef[] = [
@@ -35,7 +38,7 @@ export const REPORTS: ReportDef[] = [
   {
     slug: "open-purchase-orders", title: "Open purchase orders",
     description: "Orders not yet delivered or closed: value in their own currency and in EGP, quantities ordered and received, and how late each one is.",
-    filters: ["facility", "dateRange"], dateLabel: "Expected delivery",
+    filters: ["facility", "dateRange"], dateLabel: "Expected delivery", need: "prices.view",
     load: openPurchaseOrdersReport,
   },
   {

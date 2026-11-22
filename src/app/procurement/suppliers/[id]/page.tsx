@@ -9,7 +9,7 @@ import { ActionForm, SubmitButton } from "@/components/procurement/action-form";
 import { ActivityPanel, Progress } from "@/components/procurement/bits";
 import { OffersTable } from "@/components/procurement/offers-table";
 import { Stars } from "@/components/procurement/stars";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { offerListRows, poTotals, sumInCurrency } from "@/lib/procurement/server";
 import { toggleSupplierActive } from "../actions";
 import { supplierScorecard } from "@/lib/procurement/money-server";
@@ -17,11 +17,13 @@ import { SupplierContacts } from "@/components/procurement/supplier-contacts";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
+import { seesPrices, shownMoney } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
 
 export default async function SupplierPage({ params }: { params: Promise<{ id: string }> }) {
   const me = await requirePermission("procurement.view");
+  const prices = seesPrices(me.role); // audit R9
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const [s] = await db.select().from(suppliers).where(eq(suppliers.id, id));
@@ -67,8 +69,8 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
       />
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Total ordered" value={livePos.length ? formatMoney(ordered.total ?? ordered.partial, "EGP", { compact: true }) : "—"}
-          hint={livePos.length ? `${orderedUsd.total != null ? formatMoney(orderedUsd.total, "USD", { compact: true }) : "USD rate missing"} · ${livePos.length} PO${livePos.length === 1 ? "" : "s"}` : "No purchase orders yet"} />
+        <Stat label="Total ordered" value={livePos.length ? shownMoney(prices, ordered.total ?? ordered.partial, "EGP", { compact: true }) : "—"}
+          hint={livePos.length ? `${orderedUsd.total != null ? shownMoney(prices, orderedUsd.total, "USD", { compact: true }) : "USD rate missing"} · ${livePos.length} PO${livePos.length === 1 ? "" : "s"}` : "No purchase orders yet"} />
         <Stat label="Offers submitted" value={offerRows.length} hint={winRate != null ? `${awarded} awarded (${winRate}%)` : undefined} />
         <Stat label="RFQ invitations" value={invites.length} hint={invites.length ? `${invites.filter((i) => i.responded).length} responded` : undefined} />
         <Stat label="Assets supplied" value={assetCount} />
@@ -106,7 +108,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
           <section>
             <h2 className="mb-2 text-[15px] font-semibold">Offers</h2>
             {offerRows.length === 0 ? <p className="text-sm text-muted">No offers from this supplier yet.</p>
-              : <OffersTable rows={offerList} />}
+              : prices ? <OffersTable rows={offerList} /> : <p className="text-sm text-muted">{offerRows.length} offer{offerRows.length === 1 ? "" : "s"}. Details and prices are only shown to procurement, finance, the director and administrators.</p>}
           </section>
 
           <section>
@@ -123,7 +125,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
                         <Td>{p.projectId ? <Link href={`/procurement/${p.projectId}`} className="hover:text-primary">{p.project}</Link> : "—"}</Td>
                         <Td className="whitespace-nowrap">{formatDate(p.issueDate)}</Td>
                         <Td><StatusBadge value={p.status} /></Td>
-                        <Td align="right" className="whitespace-nowrap">{formatMoney(t?.value ?? 0, p.currency)}</Td>
+                        <Td align="right" className="whitespace-nowrap">{shownMoney(prices, t?.value ?? 0, p.currency)}</Td>
                         <Td><Progress pct={t?.ordered ? Math.round((t.received / t.ordered) * 100) : 0} /></Td>
                       </tr>
                     );

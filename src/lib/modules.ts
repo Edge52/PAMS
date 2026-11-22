@@ -28,15 +28,15 @@ export const MODULES: AppModule[] = [
   { id: "procurement", name: "Procurement", description: "Tenders under Law 182/2018, from specifications to award and purchase order.", links: [
     { href: "/procurement", label: "Projects & tenders", need: "procurement.view" },
     { href: "/procurement/rfqs", label: "RFQs", need: "procurement.view" },
-    { href: "/procurement/offers", label: "Offers", need: "procurement.view" },
+    { href: "/procurement/offers", label: "Offers", need: "prices.view" },
     { href: "/procurement/purchase-orders", label: "Purchase orders", need: "procurement.view" },
     { href: "/procurement/suppliers", label: "Suppliers", need: "procurement.view" },
     { href: "/procurement/suppliers/documents", label: "Supplier documents", need: "procurement.view" },
   ] },
   { id: "finance", name: "Finance", description: "Budgets, invoices with three-way match, framework agreements and exchange rates.", links: [
-    { href: "/procurement/budgets", label: "Budgets", need: "procurement.view" },
-    { href: "/procurement/invoices", label: "Invoices", need: "procurement.view" },
-    { href: "/procurement/frameworks", label: "Framework agreements", need: "procurement.view" },
+    { href: "/procurement/budgets", label: "Budgets", need: "prices.view" },
+    { href: "/procurement/invoices", label: "Invoices", need: "prices.view" },
+    { href: "/procurement/frameworks", label: "Framework agreements", need: "prices.view" },
     { href: "/procurement/exchange-rates", label: "Exchange rates", need: "procurement.view" },
   ] },
   { id: "assets", name: "Assets", description: "The equipment register, labels, requests, rounds and disposals.", links: [
@@ -76,7 +76,7 @@ export const MODULES: AppModule[] = [
   ] },
   { id: "reports", name: "Reports", description: "Standard reports and the executive summary, to print or export.", links: [
     { href: "/reports", label: "Reports", need: "reports.view" },
-    { href: "/reports/executive", label: "Executive summary", need: "reports.view" },
+    { href: "/reports/executive", label: "Executive summary", need: "prices.view" },
   ] },
   { id: "admin", name: "Administration", description: "Users and roles, approval rules, settings, the audit log and backups.", links: [
     { href: "/admin/users", label: "Users", need: "users.manage" },

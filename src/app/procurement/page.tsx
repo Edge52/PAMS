@@ -11,6 +11,7 @@ import { DaysLeft } from "@/components/procurement/bits";
 import { formatMoney } from "@/lib/format";
 import { options, PROJECT_STATUSES, type ProjectStatus } from "@/lib/procurement/labels";
 import { projectPoValues } from "@/lib/procurement/server";
+import { HIDDEN_PRICE, seesPrices } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Projects & tenders" };
@@ -19,6 +20,7 @@ const OPEN: ProjectStatus[] = ["PLANNING", "SPECIFICATION", "RFQ", "EVALUATION",
 
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
   const me = await requirePermission("procurement.view");
+  const prices = seesPrices(me.role); // audit R9
   const sp = await searchParams;
   const status = sp.status ?? "open";
   const q = sp.q?.trim() ?? "";
@@ -96,6 +98,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                   <Td align="right">{r.offerCount}</Td>
                   <Td align="right" className="whitespace-nowrap">
                     {!po || po.count === 0 ? <span className="text-faint">—</span>
+                      : !prices ? HIDDEN_PRICE
                       : po.total == null ? <span title="An exchange rate is missing">{formatMoney(po.partial, r.currency)}*</span>
                       : formatMoney(po.total, r.currency)}
                     {po && po.count > 0 && <span className="block text-xs text-muted">{po.count} PO{po.count === 1 ? "" : "s"}</span>}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Input, PageHeader } from "@/components/ui";
 import { requirePermission } from "@/lib/auth/session";
 import { REPORTS } from "@/lib/reports/registry";
+import { can } from "@/lib/auth/permissions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Reports" };
@@ -31,7 +32,8 @@ export default async function ReportsIndex({ searchParams }: { searchParams: Pro
   const groups = [...GROUPS].sort((a, b) => Number(b.id === first) - Number(a.id === first))
     .map((g) => ({
       ...g,
-      cards: (g.id === "summary" ? [EXEC] : g.slugs.map((slug) => REPORTS.find((r) => r.slug === slug)).filter((r) => !!r)
+      // Audit R9: reports with spend or order values only for those who may see prices.
+      cards: (g.id === "summary" ? (can(me.role, "prices.view") ? [EXEC] : []) : g.slugs.map((slug) => REPORTS.find((r) => r.slug === slug)).filter((r): r is NonNullable<typeof r> => !!r && (!r.need || can(me.role, r.need)))
         .map((r) => ({ href: `/reports/${r.slug}`, title: r.title, description: r.description })))
         .filter((c) => !q || `${c.title} ${c.description} ${g.title}`.toLowerCase().includes(q)),
     })).filter((g) => g.cards.length);

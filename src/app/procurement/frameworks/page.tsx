@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Framework agreements" };
 
 export default async function FrameworksPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const me = await requirePermission("procurement.view");
+  const me = await requirePermission("prices.view"); // audit R9
   const scope = await facilityScope(me);
   const sp = await searchParams;
   const rows = await db.select({ f: frameworks, supplier: suppliers.name, facility: facilities.name }).from(frameworks).innerJoin(suppliers, eq(suppliers.id, frameworks.supplierId))

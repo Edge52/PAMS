@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Offers" };
 
 export default async function OffersPage({ searchParams }: { searchParams: Promise<{ status?: string; supplierId?: string; expiring?: string; projectId?: string; q?: string }> }) {
-  const me = await requirePermission("procurement.view");
+  const me = await requirePermission("prices.view"); // audit R9: offers, prices and invoices
   const sp = await searchParams;
   const where: SQL[] = [];
   const scope = scopeWhere(projects.facilityId, await facilityScope(me));

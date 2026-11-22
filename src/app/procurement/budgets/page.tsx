@@ -21,7 +21,7 @@ const TONE = { OK: "ok", WARN: "warn", OVER: "danger" } as const;
 
 /** Budgets and commitments (wave 10): each line's amount against POs committed and invoices spent. */
 export default async function BudgetsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const me = await requirePermission("procurement.view");
+  const me = await requirePermission("prices.view"); // audit R9
   const scope = await facilityScope(me);
   const sp = await searchParams;
   const facs = await db.select({ id: facilities.id, name: facilities.name }).from(facilities).where(scopeWhere(facilities.id, scope)).orderBy(asc(facilities.name));

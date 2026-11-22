@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { projects, purchaseOrders, suppliers } from "@/db/schema";
 import { EmptyState, Input, LinkButton, PageHeader, Select, StatusBadge, Table, Td, THead } from "@/components/ui";
 import { DaysLeft, Progress } from "@/components/procurement/bits";
-import { formatMoney } from "@/lib/format";
+
 import { rateToEgp } from "@/lib/server-utils";
 import { options } from "@/lib/procurement/labels";
 import { PO_STATUSES, type PoStatus } from "@/lib/procurement/po-status";
@@ -16,6 +16,7 @@ import { parseSort, sortRows } from "@/lib/list";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
+import { seesPrices, shownMoney } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Purchase orders" };
@@ -24,6 +25,7 @@ const OPEN: PoStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "ISSUED", "AC
 
 export default async function PurchaseOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; supplierId?: string; q?: string; sort?: string; dir?: string }> }) {
   const me = await requirePermission("procurement.view");
+  const prices = seesPrices(me.role); // audit R9
   const sp = await searchParams;
   const status = sp.status ?? "open";
   const scope = await facilityScope(me);
@@ -98,7 +100,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
                   <Td><Link href={`/procurement/suppliers/${r.supplierId}`} className="hover:text-primary">{r.supplier}</Link></Td>
                   <Td>{r.projectId ? <Link href={`/procurement/${r.projectId}`} className="hover:text-primary">{r.project}</Link> : "—"}</Td>
                   <Td><StatusBadge value={r.status} /></Td>
-                  <Td align="right" className="whitespace-nowrap">{formatMoney(t?.value ?? 0, r.currency)}</Td>
+                  <Td align="right" className="whitespace-nowrap">{shownMoney(prices, t?.value ?? 0, r.currency)}</Td>
                   <Td className="whitespace-nowrap">{r.expectedDelivery ? <DaysLeft date={r.expectedDelivery} closedLabel={open ? undefined : "—"} /> : "—"}</Td>
                   <Td><Progress pct={t && t.ordered ? Math.round((t.received / t.ordered) * 100) : 0} />
                     <span className="text-xs text-muted">{t?.received ?? 0} of {t?.ordered ?? 0} units</span></Td>
@@ -111,13 +113,13 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
         {(() => {
           const by = new Map<string, number>();
           for (const r of rows) by.set(r.currency, (by.get(r.currency) ?? 0) + (totals.get(r.id)?.value ?? 0));
-          const parts = [...by].map(([c, v]) => formatMoney(v, c));
+          const parts = [...by].map(([c, v]) => shownMoney(prices, v, c));
           const missing = [...by.keys()].filter((c) => egpRate.get(c) == null);
           const egp = [...by].reduce((t, [c, v]) => t + v * (egpRate.get(c) ?? 0), 0);
           return (
             <p className="mt-2 text-right text-sm text-muted">
               {rows.length} order{rows.length === 1 ? "" : "s"}: {parts.join(" + ")}
-              {by.size > 1 || !by.has("EGP") ? <> · <b className="text-ink">{formatMoney(egp, "EGP")}</b> at the latest saved exchange rates{missing.length ? ` (no rate for ${missing.join(", ")})` : ""}</> : null}
+              {by.size > 1 || !by.has("EGP") ? <> · <b className="text-ink">{shownMoney(prices, egp, "EGP")}</b> at the latest saved exchange rates{missing.length ? ` (no rate for ${missing.join(", ")})` : ""}</> : null}
             </p>
           );
         })()}

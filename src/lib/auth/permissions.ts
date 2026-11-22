@@ -27,6 +27,8 @@ export const PERMISSIONS = [
   "procurement.edit", "specs.edit", "suppliers.edit", "offers.edit", "award.recommend", "po.create", "po.issue", "goods.receive",
   // money (wave 10)
   "budgets.edit", "invoices.edit", "invoices.approve",
+  // supplier prices, offers and invoices (audit R9): only for those who buy, approve and pay
+  "prices.view",
   // assets
   "assets.edit", "assets.move", "maintenance.edit", "facilities.edit", "catalogue.edit",
   // work orders (wave 3): anyone signed in can report a fault; assigning and signing off is for the biomedical lead
@@ -42,9 +44,9 @@ const VIEW: Permission[] = ["boq.view", "procurement.view", "assets.view", "repo
 
 const MATRIX: Record<Role, readonly Permission[]> = {
   ADMIN: PERMISSIONS,
-  DIRECTOR: [...VIEW, "boq.approve"],
-  PROCUREMENT: [...VIEW, "procurement.edit", "specs.edit", "suppliers.edit", "offers.edit", "award.recommend", "po.create", "po.issue", "goods.receive", "contracts.edit", "invoices.edit"],
-  FINANCE: [...VIEW, "budgets.edit", "invoices.edit", "invoices.approve"],
+  DIRECTOR: [...VIEW, "boq.approve", "prices.view"],
+  PROCUREMENT: [...VIEW, "procurement.edit", "specs.edit", "suppliers.edit", "offers.edit", "award.recommend", "po.create", "po.issue", "goods.receive", "contracts.edit", "invoices.edit", "prices.view"],
+  FINANCE: [...VIEW, "budgets.edit", "invoices.edit", "invoices.approve", "prices.view"],
   PLANNER: [...VIEW, "boq.edit", "standards.edit", "flows.edit"],
   BIOMEDICAL: [...VIEW, "boq.edit", "flows.edit", "specs.edit", "goods.receive", "assets.edit", "assets.move", "maintenance.edit", "facilities.edit", "catalogue.edit", "workorders.assign", "contracts.edit", "parts.edit", "recalls.edit", "assets.dispose", "incidents.manage"],
   TECHNICIAN: [...VIEW, "assets.move", "maintenance.edit"],
@@ -70,7 +72,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "procurement.edit": "edit projects and RFQs", "specs.edit": "edit technical specifications", "suppliers.edit": "edit suppliers",
   "offers.edit": "record and evaluate offers", "award.recommend": "submit award recommendations", "po.create": "create purchase orders",
   "po.issue": "issue purchase orders", "goods.receive": "receive goods",
-  "budgets.edit": "manage budgets", "invoices.edit": "record supplier invoices", "invoices.approve": "approve supplier invoices",
+  "budgets.edit": "manage budgets", "invoices.edit": "record supplier invoices", "invoices.approve": "approve supplier invoices", "prices.view": "see supplier offers, prices and invoices",
   "assets.edit": "edit assets", "assets.move": "move assets", "maintenance.edit": "record maintenance",
   "facilities.edit": "edit facilities and rooms", "catalogue.edit": "edit the device catalogue",
   "workorders.report": "report faults", "workorders.assign": "assign and sign off work orders", "contracts.edit": "manage service contracts", "parts.edit": "manage spare parts stock", "recalls.edit": "record and track recalls", "assets.dispose": "propose and record device disposals",

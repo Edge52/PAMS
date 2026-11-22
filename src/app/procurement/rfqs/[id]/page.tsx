@@ -7,18 +7,20 @@ import { Badge, Details, EmptyState, Field, FormGrid, Input, LinkButton, PageHea
 import { DocumentsPanel } from "@/components/documents-panel";
 import { ActionForm, SubmitButton } from "@/components/procurement/action-form";
 import { ActivityPanel, DaysLeft } from "@/components/procurement/bits";
-import { formatDate, formatMoney, formatNumber } from "@/lib/format";
+import { formatDate, formatNumber } from "@/lib/format";
 import { offerTotals, rfqLines, splitRfqNotes } from "@/lib/procurement/server";
 import { pricesSealed, SEALED } from "@/lib/procurement/sealed";
 import { inviteSuppliers, setRfqStatus, updateInvitation, updateRfqNotes } from "../actions";
 
 import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
+import { seesPrices, shownMoney } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
 
 export default async function RfqPage({ params }: { params: Promise<{ id: string }> }) {
   const me = await requirePermission("procurement.view");
+  const prices = seesPrices(me.role); // audit R9
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const [row] = await db.select({ rfq: rfqs, project: projects, boq: { id: boqs.id, name: boqs.name } }).from(rfqs)
@@ -122,7 +124,7 @@ export default async function RfqPage({ params }: { params: Promise<{ id: string
                       <Td><Link href={`/procurement/offers/${o.id}`} className="font-semibold text-primary hover:underline">{o.reference}</Link></Td>
                       <Td className="whitespace-nowrap">{formatDate(o.offerDate)}</Td>
                       <Td><StatusBadge value={o.status} /></Td>
-                      <Td align="right">{sealed ? <span className="text-muted">{SEALED}</span> : formatMoney(totals.get(o.id) ?? 0, o.currency)}</Td>
+                      <Td align="right">{sealed ? <span className="text-muted">{SEALED}</span> : shownMoney(prices, totals.get(o.id) ?? 0, o.currency)}</Td>
                     </tr>
                   ))}
                 </tbody>

@@ -7,7 +7,7 @@ import { Badge, Details, Field, FormGrid, Input, LinkButton, PageHeader, Panel, 
 import { DocumentsPanel } from "@/components/documents-panel";
 import { ActionForm, SubmitButton } from "@/components/procurement/action-form";
 import { ActivityPanel, DaysLeft, Notice, Progress } from "@/components/procurement/bits";
-import { formatDate, formatMoney, formatNumber, round2 } from "@/lib/format";
+import { formatDate, formatNumber, round2 } from "@/lib/format";
 import { INCOTERM_LABELS, incotermOptions, type Incoterm } from "@/lib/procurement/labels";
 import { allowedTransitions, canReceive, canSubmit, isEditable, PO_WORKFLOW, receivedPct, transitionPermission, type PoStatus } from "@/lib/procurement/po-status";
 import { can } from "@/lib/auth/permissions";
@@ -17,6 +17,7 @@ import { ApprovalPanel } from "@/components/approvals/approval-panel";
 import { missingAssetCount } from "@/lib/procurement/receiving";
 import { facilityDepartments } from "@/lib/procurement/server";
 import { retryAssets, setPoStatus, submitPurchaseOrder, updatePurchaseOrder, withdrawPurchaseOrder } from "../actions";
+import { seesPrices, shownMoney } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function PoPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ received?: string; assets?: string; assetError?: string; created?: string; submitted?: string; submitError?: string }>;
 }) {
   const me = await requirePermission("procurement.view");
+  const prices = seesPrices(me.role); // audit R9
   const id = Number((await params).id);
   const sp = await searchParams;
   if (!Number.isInteger(id) || id <= 0) notFound();
@@ -97,7 +99,7 @@ export default async function PoPage({ params, searchParams }: {
         <div className="space-y-5 xl:col-span-2">
           <Panel title="Order">
             <Details items={[
-              { label: "Value", value: <strong>{formatMoney(value, po.currency)}</strong> },
+              { label: "Value", value: <strong>{shownMoney(prices, value, po.currency)}</strong> },
               { label: "Issue date", value: po.issueDate ? formatDate(po.issueDate) : null },
               { label: "Expected delivery", value: po.expectedDelivery ? <DaysLeft date={po.expectedDelivery} closedLabel={["DELIVERED", "CLOSED", "CANCELLED"].includes(status) ? "—" : undefined} /> : null },
               { label: "Received", value: <Progress pct={receivedPct(qtys)} /> },
@@ -125,14 +127,14 @@ export default async function PoPage({ params, searchParams }: {
                       <Td align="right">{formatNumber(l.line.quantity)}</Td>
                       <Td align="right">{formatNumber(l.line.receivedQty)}</Td>
                       <Td align="right">{out ? <Badge tone="warn">{out}</Badge> : <Badge tone="ok">0</Badge>}</Td>
-                      <Td align="right" className="whitespace-nowrap">{formatMoney(l.line.unitPrice, po.currency)}</Td>
-                      <Td align="right" className="whitespace-nowrap font-semibold">{formatMoney(l.line.quantity * Number(l.line.unitPrice), po.currency)}</Td>
+                      <Td align="right" className="whitespace-nowrap">{shownMoney(prices, l.line.unitPrice, po.currency)}</Td>
+                      <Td align="right" className="whitespace-nowrap font-semibold">{shownMoney(prices, l.line.quantity * Number(l.line.unitPrice), po.currency)}</Td>
                       <Td align="right">{assetsByLine.get(l.line.id) ? <Link href={`/assets?poId=${id}`} className="text-primary hover:underline">{assetsByLine.get(l.line.id)}</Link> : "—"}</Td>
                     </tr>
                   );
                 })}
               </tbody>
-              <tfoot><tr><Td colSpan={7} align="right" className="font-semibold">Total</Td><Td align="right" className="whitespace-nowrap font-bold">{formatMoney(value, po.currency)}</Td><Td /></tr></tfoot>
+              <tfoot><tr><Td colSpan={7} align="right" className="font-semibold">Total</Td><Td align="right" className="whitespace-nowrap font-bold">{shownMoney(prices, value, po.currency)}</Td><Td /></tr></tfoot>
             </Table>
           </Panel>
 
@@ -231,7 +233,7 @@ export default async function PoPage({ params, searchParams }: {
                 <SubmitButton variant="secondary">Withdraw to make changes</SubmitButton>
               </ActionForm>
             ) : undefined} />
-          <PoMoney po={po} me={me} />
+          {prices && <PoMoney po={po} me={me} />}
           <DocumentsPanel entityType="po" entityId={id} returnPath={`/procurement/purchase-orders/${id}`} title="Signed PO, invoices, delivery notes" />
           <ActivityPanel entityType="po" entityId={id} />
         </div>

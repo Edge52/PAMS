@@ -19,7 +19,7 @@ const TABS = [
 ] as const;
 
 export default async function InvoicesPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const me = await requirePermission("procurement.view");
+  const me = await requirePermission("prices.view"); // audit R9: offers, prices and invoices
   const scope = await facilityScope(me);
   const sp = await searchParams;
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];

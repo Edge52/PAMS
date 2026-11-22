@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Executive summary" };
 
 export default async function ExecutiveSummaryPage({ searchParams }: { searchParams: Promise<{ facilityId?: string }> }) {
-  const me = await requirePermission("reports.view");
+  const me = await requirePermission("prices.view"); // audit R9: spend, budgets and order values
   const scope = await facilityScope(me);
   const facs = await listFacilities(scope);
   if (!facs.length) return <><PageHeader title="Executive summary" /><EmptyState title="No hospital linked to your account">Ask an administrator for access to a hospital.</EmptyState></>;

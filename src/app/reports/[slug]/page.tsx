@@ -1,3 +1,4 @@
+import { can } from "@/lib/auth/permissions";
 import { notFound, redirect } from "next/navigation";
 import { PageHeader } from "@/components/ui";
 import { PrintButton } from "@/components/reports/print";
@@ -24,6 +25,7 @@ export default async function ReportPage({ params, searchParams }: { params: Pro
   const { slug } = await params;
   const def = findReport(slug);
   if (!def) notFound();
+  if (def.need && !can(me.role, def.need)) redirect(`/forbidden?need=${def.need}`);
   const run = await runReport(def, await searchParams, me);
   if (run.forbidden) redirect("/forbidden?need=facility");
   const { filters, result, lines, facilities } = run;

@@ -11,7 +11,7 @@ import { ActionForm } from "@/components/assets/action-form";
 import { NativeSelect } from "@/components/assets/bits";
 import { can } from "@/lib/auth/permissions";
 import type { CurrentUser } from "@/lib/auth/session";
-import { CURRENCIES, formatDate, formatDateTime, formatMoney, num, todayISO } from "@/lib/format";
+import { CURRENCIES, formatDate, formatDateTime, num, todayISO } from "@/lib/format";
 import { convert } from "@/lib/server-utils";
 import { bondCover } from "@/lib/procurement/bond-cover";
 import { EXCLUDED_OFFER_STATUSES } from "@/lib/procurement/labels";
@@ -19,11 +19,13 @@ import { BOND_RATE, requiredBond } from "@/lib/procurement/money";
 import { poValues } from "@/lib/procurement/money-server";
 import { offerTotals } from "@/lib/procurement/server";
 import { addBondAction, openEnvelopesAction, setBondStatusAction, setEnvelopesAction } from "../../tender-actions";
+import { seesPrices, shownMoney } from "@/lib/auth/prices";
 
 type Project = typeof projects.$inferSelect;
 
 export async function TenderTab({ project: p, me }: { project: Project; me: CurrentUser }) {
   const canEdit = can(me.role, "procurement.edit");
+  const prices = seesPrices(me.role); // audit R9
   const [offs, pos, bs] = await Promise.all([
     db.select({ id: offers.id, ref: offers.reference, status: offers.status, currency: offers.currency, ts: offers.technicalScore, validUntil: offers.validUntil, supplier: suppliers.name, supplierId: offers.supplierId })
       .from(offers).innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).where(eq(offers.projectId, p.id)).orderBy(asc(offers.id)),
@@ -50,9 +52,9 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
     const c = bondCover(h.map((x) => ({ amount: num(x.b.amount), currency: x.b.currency })), req, cur,
       Object.fromEntries(h.map((x) => [x.b.currency, rate.get(`${x.b.currency}>${cur}`)])));
     if (c.missing.length) {
-      return <>{h.map((x) => formatMoney(x.b.amount, x.b.currency)).join(" + ")}<span className="block text-xs text-warn">No exchange rate from {c.missing.join(", ")} to {cur}, so not checked</span></>;
+      return <>{h.map((x) => shownMoney(prices, x.b.amount, x.b.currency)).join(" + ")}<span className="block text-xs text-warn">No exchange rate from {c.missing.join(", ")} to {cur}, so not checked</span></>;
     }
-    return <>{formatMoney(c.total, cur)} {c.short && <Badge tone="danger">short</Badge>}{c.converted && <span className="block text-xs text-muted">Converted to {cur} at today&apos;s rate</span>}</>;
+    return <>{shownMoney(prices, c.total, cur)} {c.short && <Badge tone="danger">short</Badge>}{c.converted && <span className="block text-xs text-muted">Converted to {cur} at today&apos;s rate</span>}</>;
   };
   const m = (href: string, label: string) => <Link href={href} target="_blank" className="text-primary hover:underline">{label}</Link>;
 
@@ -91,7 +93,7 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
                 <tr key={`o${o.id}`} className="border-t border-line">
                   <td className="px-3 py-2">{o.supplier}<div className="text-xs text-muted">offer {o.ref}{o.validUntil ? ` · valid to ${formatDate(o.validUntil)} · ` : " · "}<Link href={`/procurement/offers/${o.id}/extension-letter`} target="_blank" className="text-primary hover:underline">validity extension letter</Link></div></td>
                   <td className="px-3 py-2">Bid bond ({BOND_RATE.BID * 100} %)</td>
-                  <td className="px-3 py-2 text-right">{req != null ? formatMoney(req, o.currency) : <span className="text-muted">sealed</span>}</td>
+                  <td className="px-3 py-2 text-right">{req != null ? shownMoney(prices, req, o.currency) : <span className="text-muted">sealed</span>}</td>
                   <td className="px-3 py-2">{heldCell(h, req, o.currency)}</td>
                   <td className="px-3 py-2">{h.map((x) => <span key={x.b.id} className={soon(x.b.expiryDate) || (x.b.expiryDate && x.b.expiryDate < today) ? "text-danger" : ""}>{formatDate(x.b.expiryDate)} </span>)}</td>
                 </tr>
@@ -102,7 +104,7 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
               return (
                 <tr key={`p${x.id}`} className="border-t border-line">
                   <td className="px-3 py-2">{x.supplier}<div className="text-xs text-muted">{x.number}</div></td><td className="px-3 py-2">Performance bond ({BOND_RATE.PERFORMANCE * 100} %)</td>
-                  <td className="px-3 py-2 text-right">{formatMoney(req, x.currency)}</td>
+                  <td className="px-3 py-2 text-right">{shownMoney(prices, req, x.currency)}</td>
                   <td className="px-3 py-2">{heldCell(h, req, x.currency)}</td>
                   <td className="px-3 py-2">{h.map((y) => <span key={y.b.id} className={soon(y.b.expiryDate) || (y.b.expiryDate && y.b.expiryDate < today) ? "text-danger" : ""}>{formatDate(y.b.expiryDate)} </span>)}</td>
                 </tr>
@@ -113,7 +115,7 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
         {bs.length > 0 && (
           <ul className="divide-y divide-line border-t border-line text-sm">{bs.map((x) => (
             <li key={x.b.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-              <span>{x.supplier}: {x.b.kind.toLowerCase().replace("_", " ")} bond {formatMoney(x.b.amount, x.b.currency)}{x.b.bank ? ` · ${x.b.bank}` : ""}{x.b.reference ? ` · ${x.b.reference}` : ""}{x.b.expiryDate ? ` · expires ${formatDate(x.b.expiryDate)}` : ""}</span>
+              <span>{x.supplier}: {x.b.kind.toLowerCase().replace("_", " ")} bond {shownMoney(prices, x.b.amount, x.b.currency)}{x.b.bank ? ` · ${x.b.bank}` : ""}{x.b.reference ? ` · ${x.b.reference}` : ""}{x.b.expiryDate ? ` · expires ${formatDate(x.b.expiryDate)}` : ""}</span>
               <span className="flex items-center gap-2"><StatusBadge value={x.b.status} />
                 {canEdit && x.b.status === "HELD" && (["RELEASED", "CALLED"] as const).map((s) => (
                   <ActionForm key={s} action={setBondStatusAction}><input type="hidden" name="projectId" value={p.id} /><input type="hidden" name="bondId" value={x.b.id} /><input type="hidden" name="status" value={s} />

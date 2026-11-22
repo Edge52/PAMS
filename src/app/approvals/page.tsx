@@ -3,6 +3,7 @@ import { Badge, EmptyState, PageHeader, Panel, Table, Td, Th, THead, type Tone }
 import { requireUser } from "@/lib/auth/session";
 import { pendingForUser, recentDecisions, requestedBy } from "@/lib/approvals/server";
 import { formatDate, formatMoney } from "@/lib/format";
+import { HIDDEN_PRICE, seesPrices } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approvals" };
@@ -33,7 +34,7 @@ export default async function ApprovalsPage() {
                   <Td className="min-w-56"><Link href={r.href} className="font-semibold text-primary hover:underline">{r.title}</Link></Td>
                   <Td>{KIND[r.entity]}</Td>
                   <Td>{step.label}{mode === "paper" && <span className="block text-xs text-muted">Record the signature from the signed minutes</span>}</Td>
-                  <Td align="right" className="whitespace-nowrap">{r.amountEgp != null ? formatMoney(r.amountEgp, "EGP") : "—"}</Td>
+                  <Td align="right" className="whitespace-nowrap">{r.amountEgp == null ? "—" : seesPrices(me.role) ? formatMoney(r.amountEgp, "EGP") : HIDDEN_PRICE}</Td>
                   <Td className="whitespace-nowrap">{formatDate(r.requestedAt)}</Td>
                   <Td><Link href={r.href} className="whitespace-nowrap text-sm font-semibold text-primary hover:underline">{mode === "paper" ? "Record signature" : "Review and decide"}</Link></Td>
                 </tr>

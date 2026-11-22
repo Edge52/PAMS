@@ -15,6 +15,8 @@ import { TenderTab } from "./_tabs/tender";
 import { CommissioningTab } from "./_tabs/commissioning";
 import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
+import { seesPrices } from "@/lib/auth/prices";
+import { Notice } from "@/components/procurement/bits";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +69,10 @@ export default async function ProjectPage({ params, searchParams }: {
     .where(and(eq(offers.projectId, id), eq(offers.status, "AWARDED"), sql`${offers.awardApprovedOn} is not null`));
 
   const label = (k: string, n?: number) => `${TABS.find((t) => t.key === k)!.label}${n ? ` (${n})` : ""}`;
-  const tabs = TABS.map((t) => ({
+  // Audit R9: offers and their comparison are for those who may see supplier prices.
+  const prices = seesPrices(me.role);
+  const PRICE_TABS = ["offers", "comparison"];
+  const tabs = TABS.filter((t) => prices || !PRICE_TABS.includes(t.key)).map((t) => ({
     key: t.key,
     href: `/procurement/${id}${t.key === "overview" ? "" : `?tab=${t.key}`}`,
     label: t.key === "specs" ? label(t.key, counts.specs) : t.key === "rfqs" ? label(t.key, counts.rfqs)
@@ -84,15 +89,16 @@ export default async function ProjectPage({ params, searchParams }: {
           {can(me.role, "offers.edit") && <LinkButton href={`/procurement/offers/new?projectId=${id}`}>Register offer</LinkButton>}
           {awarded.length > 0 && can(me.role, "po.create")
             ? <LinkButton href={`/procurement/purchase-orders/new?offerId=${awarded[0].id}`} variant="primary">Create purchase order</LinkButton>
-            : <LinkButton href={`/procurement/${id}?tab=comparison`} variant="primary">Compare offers</LinkButton>}
+            : prices && <LinkButton href={`/procurement/${id}?tab=comparison`} variant="primary">Compare offers</LinkButton>}
         </>}
       />
       <TabLinks tabs={tabs} active={tab} />
       {tab === "overview" && <OverviewTab project={project} facility={facility} counts={counts} me={me} />}
       {tab === "specs" && <SpecsTab project={project} me={me} />}
       {tab === "rfqs" && <RfqsTab project={project} me={me} />}
-      {tab === "offers" && <OffersTab project={project} me={me} />}
-      {tab === "comparison" && <ComparisonTab project={project} tw={sp.tw} me={me} tcoYears={sp.tcoYears} tcoDown={sp.tcoDown} />}
+      {!prices && PRICE_TABS.includes(tab) && <Notice tone="info">Offers and their prices are only shown to procurement, finance, the director and administrators.</Notice>}
+      {prices && tab === "offers" && <OffersTab project={project} me={me} />}
+      {prices && tab === "comparison" && <ComparisonTab project={project} tw={sp.tw} me={me} tcoYears={sp.tcoYears} tcoDown={sp.tcoDown} />}
       {tab === "committees" && <CommitteesTab project={project} me={me} />}
       {tab === "tender" && <TenderTab project={project} me={me} />}
       {tab === "pos" && <PurchaseOrdersTab project={project} me={me} />}

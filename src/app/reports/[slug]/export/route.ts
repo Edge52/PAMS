@@ -1,3 +1,4 @@
+import { can } from "@/lib/auth/permissions";
 import { routeGuard } from "@/lib/auth/route-guard";
 import { getCurrentUser } from "@/lib/auth/session";
 import { APP_TIME_ZONE } from "@/lib/format";
@@ -15,6 +16,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   if (!me) return new Response("Sign in first.", { status: 401 });
   const def = findReport((await params).slug);
   if (!def) return new Response("No such report.", { status: 404 });
+  if (def.need && !can(me.role, def.need)) return new Response("This report is for people who may see supplier prices.", { status: 403 });
 
   const run = await runReport(def, new URL(request.url).searchParams, me);
   if (run.forbidden) return new Response("You can't see that facility.", { status: 403 });

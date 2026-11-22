@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { offers, projects, purchaseOrders, suppliers } from "@/db/schema";
 import { EmptyState, LinkButton, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
 import { DaysLeft, Progress } from "@/components/procurement/bits";
-import { formatMoney } from "@/lib/format";
+import { seesPrices, shownMoney } from "@/lib/auth/prices";
 import { poTotals } from "@/lib/procurement/server";
 import { sql } from "drizzle-orm";
 import type { CurrentUser } from "@/lib/auth/session";
@@ -14,6 +14,7 @@ import { can } from "@/lib/auth/permissions";
 type Project = typeof projects.$inferSelect;
 
 export async function PurchaseOrdersTab({ project, me }: { project: Project; me: CurrentUser }) {
+  const prices = seesPrices(me.role); // audit R9
   const [rows, awardedOffers] = await Promise.all([
     db.select({
       id: purchaseOrders.id, number: purchaseOrders.number, status: purchaseOrders.status, currency: purchaseOrders.currency,
@@ -51,7 +52,7 @@ export async function PurchaseOrdersTab({ project, me }: { project: Project; me:
                   <Td><Link href={`/procurement/purchase-orders/${r.id}`} className="font-semibold text-primary hover:underline">{r.number}</Link></Td>
                   <Td>{r.supplier}</Td>
                   <Td><StatusBadge value={r.status} /></Td>
-                  <Td align="right" className="whitespace-nowrap">{formatMoney(t?.value ?? 0, r.currency)}</Td>
+                  <Td align="right" className="whitespace-nowrap">{shownMoney(prices, t?.value ?? 0, r.currency)}</Td>
                   <Td className="whitespace-nowrap"><DaysLeft date={r.expectedDelivery} closedLabel={["DELIVERED", "CLOSED", "CANCELLED"].includes(r.status) ? "—" : undefined} /></Td>
                   <Td><Progress pct={t && t.ordered ? Math.round((t.received / t.ordered) * 100) : 0} /></Td>
                 </tr>

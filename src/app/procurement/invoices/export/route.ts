@@ -9,7 +9,7 @@ import { facilityScope, requirePermission } from "@/lib/auth/session";
 const cell = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) || /^[=+\-@]/.test(s) ? `"${s.replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"` : s; };
 
 export async function GET() {
-  const me = await requirePermission("procurement.view");
+  const me = await requirePermission("prices.view");
   const scope = await facilityScope(me);
   const rows = await db.select({ i: invoices, po: purchaseOrders.number, supplier: suppliers.name, taxId: suppliers.taxId, facility: facilities.name,
     total: sql<string>`(select sum(${invoiceLines.quantity} * ${invoiceLines.unitPrice}) from ${invoiceLines} where ${invoiceLines.invoiceId} = ${invoices.id})` })

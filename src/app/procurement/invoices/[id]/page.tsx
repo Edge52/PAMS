@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Invoice" };
 
 export default async function InvoicePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
-  const me = await requirePermission("procurement.view");
+  const me = await requirePermission("prices.view"); // audit R9: offers, prices and invoices
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const [row] = await db.select({ i: invoices, po: purchaseOrders, supplier: suppliers.name }).from(invoices).innerJoin(purchaseOrders, eq(purchaseOrders.id, invoices.poId))
