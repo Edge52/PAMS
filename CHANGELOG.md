@@ -1,5 +1,48 @@
 # Changelog
 
+## Wave 37 — missing features from the audit, and the last two security items (not merged yet)
+
+Missing features 2–9 of the wave 30 audit, plus S13 and S15. Two migrations: 0048 (Microsoft/Google account link) and
+0049 (tender file, calibration, radiation safety, delay penalties, landed cost).
+
+**Procurement**
+- **Letters to bidders and the comparison in Excel.** Award and regret letters from an awarded tender (the regret
+  reason comes from the evaluation), and "Download comparison (Excel)" on the comparison tab. Only for people who may
+  see prices; a sealed tender exports quantities and compliance only.
+- **Late-delivery penalties (Law 182).** A rate per week of delay (default 1 %) capped (default 15 %) of the value of
+  the late items, set per order. The PO page shows the penalty; Finance deducts it on the invoice, which then shows
+  "Amount payable".
+- **Landed cost by Incoterm.** Offers can carry freight, insurance, duty, clearance and local delivery costs (or use
+  defaults by Incoterm from settings). The comparison and TCO tabs show the landed total next to the net price; the
+  setting "Rank prices by" (net price by default, or landed cost) decides the ranking.
+- **Procurement method and tender timetable.** The Law 182 method (public, limited, local, two-stage tender, public or
+  limited practice, direct agreement, framework call-off), with a reason for anything but a public tender; a planned
+  and actual date for each step, filled from the app where it knows them; checks on minimum periods; overdue steps
+  alert procurement. The minimum days per method are planning figures to confirm with your legal adviser.
+- **Clarifications and addenda register** on each RFQ: bidder questions and answers, numbered addenda that can move
+  the closing date, and a printable "Notice to all bidders" that never names who asked (emailed when email is on).
+
+**Assets**
+- **Calibration of clinical devices.** Interval per device type, overridable per device; records with certificate and
+  result; due, failed and never-calibrated lists and a compliance figure (Maintenance › Calibration). A failed
+  calibration keeps the device out of service until a passing one is recorded.
+- **Radiation safety** (Maintenance › Radiation safety) per hospital: ENRRA licences per room or device, physicist QC
+  tests, staff dosimetry badge readings (name and role only) against the dose limit, and lead apron and other
+  protective checks; each room shows "In order", "Due soon" or "Action needed". Limits and intervals are the usual
+  figures: the radiation protection officer should confirm them against the licence conditions.
+- **Wider alerts:** recalls pending, parts at reorder level, safety tests and calibrations due, test equipment
+  calibration, licence and QC expiries, protective checks and high dose readings.
+
+**Security**
+- Two-step secrets are stored encrypted when `APP_SECRET` is set (32+ characters); old ones are encrypted at the next
+  sign-in with a code (S13).
+- Microsoft and Google sign-in link the account to the provider's own id at the first sign-in; a different account
+  with the same email can't open it later (S15).
+
+- Settings to set: `APP_SECRET` on the server; Admin › Settings › Delivery penalties and landed cost (placeholder
+  figures) and Tender timetable (minimum days).
+- Checked: typecheck, lint, 1,007 tests, page check as three accounts on the demo.
+
 ## Wave 36 — the rest of the wave 30 audit (not merged yet)
 
 Medium and low findings left after waves 32–35. One migration (0047: indexes and data checks).
