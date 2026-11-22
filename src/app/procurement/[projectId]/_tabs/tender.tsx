@@ -20,6 +20,7 @@ import { poValues } from "@/lib/procurement/money-server";
 import { offerTotals } from "@/lib/procurement/server";
 import { addBondAction, openEnvelopesAction, setBondStatusAction, setEnvelopesAction } from "../../tender-actions";
 import { seesPrices, shownMoney } from "@/lib/auth/prices";
+import { ResultLetters } from "@/components/procurement/result-letters";
 
 type Project = typeof projects.$inferSelect;
 
@@ -82,6 +83,8 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
           </div>
         )}
       </Panel>
+
+      {prices && <ResultLetters projectId={p.id} />}
 
       <Panel title="Bonds and guarantees" padded={false}>
         <div className="overflow-x-auto"><table className="w-full text-sm">

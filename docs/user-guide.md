@@ -481,3 +481,42 @@ hour patients arrived.
 - **Service cost by company**: *Reports › Service cost and COSR* › *By who did the work*.
 - **Simulation**: above *Shifts*, *Closed hours* and *Leaving*, choose *The what-if* to set them differently for the
   what-if run. *Also in later queues* lets patients give up while waiting for a later step.
+
+## Wave 37: letters to bidders, comparison in Excel, delay penalties and landed cost
+
+These pages show supplier prices, so only Administrator, Director, Procurement and Finance see them.
+
+### Award and regret letters
+- Once the competent authority approves an award, the project's **Committees** and **Tender** tabs show **Letters to
+  bidders**, and each offer page has a link to its letter.
+- **Award letter** (winning offer): the items, quantities, unit prices and the total awarded value, the committee's
+  recommendation and the approval date, the complaint period (Law 182 art. 39) and the performance bond amount.
+- **Regret letter** (every other bidder, except withdrawn offers): the items it quoted, the winner, the reason and
+  the date complaints close. The reason comes from the evaluation (a failed mandatory item, a partial bid, or its
+  rank); change it in the box above the letter before printing. No prices are shown.
+- Print on the hospital's letterhead, sign and send.
+
+### Comparison in Excel
+- On the **Comparison** tab, **Download comparison (Excel)** gives one sheet: a row per required item, and for each
+  offer the unit price, quantity, total (in the tender currency at the price date) and compliance; then net and
+  landed totals, scores and ranks.
+- For a two-envelope tender whose financial envelopes are still sealed, the file has quantities and compliance only.
+
+### Late delivery penalties
+- A purchase order's page shows **Late delivery penalty**: by default 1 % of the value of the late items for each
+  week of delay or part of a week, at most 15 %. Only late units count; each late delivery is counted on its own,
+  and units not delivered yet keep adding up (marked "so far") until they arrive.
+- Change the rate and the cap for one order under **Change this order's penalty terms**. The hospital defaults are
+  under **Approval rules & settings › Delivery penalties and landed cost**.
+- **Finance** deducts it on the invoice before approving it: **Deduct delay penalty**. The calculation is kept on
+  the invoice, and the invoice shows the amount payable. A penalty is never deducted twice across invoices of the
+  same order; enter 0 to remove a deduction. The invoice CSV has the penalty and the amount payable.
+
+### Landed cost by Incoterm
+- An offer can carry freight, insurance, customs and duty (%), clearance and local delivery, in the offer currency
+  (**Costs on top of the price** on the offer form). Blank means "use the hospital default for the Incoterm"; enter 0
+  when a cost doesn't apply.
+- The comparison shows a **Landed total** (DDP equivalent) under the net total, with what was added, and a card for
+  the **lowest landed cost**. The TCO table shows both the net and the landed price.
+- **Rank prices by** (settings) is **Net price** by default. Switching to **Landed cost** makes the financial scores
+  and ranks use the landed cost; scores of tenders still being evaluated are refreshed when you save.

@@ -13,6 +13,7 @@ import { allowedTransitions, canReceive, canSubmit, isEditable, PO_WORKFLOW, rec
 import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { PoMoney } from "@/components/procurement/po-money";
+import { DelayPenaltyPanel } from "@/components/procurement/delay-penalty-panel";
 import { ApprovalPanel } from "@/components/approvals/approval-panel";
 import { missingAssetCount } from "@/lib/procurement/receiving";
 import { facilityDepartments } from "@/lib/procurement/server";
@@ -233,6 +234,7 @@ export default async function PoPage({ params, searchParams }: {
                 <SubmitButton variant="secondary">Withdraw to make changes</SubmitButton>
               </ActionForm>
             ) : undefined} />
+          {prices && <DelayPenaltyPanel po={po} me={me} />}
           {prices && <PoMoney po={po} me={me} />}
           <DocumentsPanel entityType="po" entityId={id} returnPath={`/procurement/purchase-orders/${id}`} title="Signed PO, invoices, delivery notes" />
           <ActivityPanel entityType="po" entityId={id} />

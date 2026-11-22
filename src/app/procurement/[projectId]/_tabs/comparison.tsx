@@ -9,6 +9,7 @@ import { formatDate, formatMoney, formatNumber } from "@/lib/format";
 import type { OfferStatus } from "@/lib/procurement/labels";
 import { normalizeWeights, type CellResult } from "@/lib/procurement/scoring";
 import { loadComparison } from "@/lib/procurement/server";
+import { COST_LABELS, PRICE_BASIS_PHRASE } from "@/lib/procurement/landed-cost";
 import { TcoPanel } from "./tco";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
@@ -25,7 +26,7 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
   const weights = normalizeWeights(tw);
   const data = await loadComparison(project.id, weights);
   if (!data) return null;
-  const { offers, excluded, types, specs, required, evaluation, lineById, fx, priceDate } = data;
+  const { offers, excluded, types, specs, required, evaluation, netEvaluation, lineById, fx, priceDate, priceBasis, landed, landedTotals } = data;
   const cur = project.currency;
 
   if (offers.length === 0) {
@@ -56,7 +57,10 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
             })}</tbody>
           </table>
         </div>
-        <Link href={`/procurement/${project.id}/evaluation-sheet`} className="text-sm font-semibold text-primary hover:underline">Technical evaluation sheet (printable)</Link>
+        <p className="flex flex-wrap gap-4 text-sm">
+          <Link href={`/procurement/${project.id}/evaluation-sheet`} className="font-semibold text-primary hover:underline">Technical evaluation sheet (printable)</Link>
+          <a href={`/procurement/${project.id}/comparison/export`} className="font-semibold text-primary hover:underline">Download comparison (Excel, no prices)</a>
+        </p>
       </div>
     );
   }
@@ -75,9 +79,15 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
   }, 0);
   // Compared at the required quantities (audit DL-03), so 2 units at 150 don't beat 10 at 100.
   const lowestCompliantTotal = Math.min(...offers.map((o) => {
-    const s = evaluation.offers.get(o.id);
+    const s = netEvaluation.offers.get(o.id);
     return s && s.complete && s.nonResponsiveRows === 0 && s.awardTotal != null ? s.awardTotal : Infinity;
   }));
+  // Wave 37: the same, on landed cost (DDP equivalent).
+  const compliantLanded = offers.map((o) => {
+    const s = netEvaluation.offers.get(o.id), t = landedTotals.get(o.id)?.awardTotal;
+    return { o, t: s && s.complete && s.nonResponsiveRows === 0 && t != null ? t : Infinity };
+  }).sort((a, b) => a.t - b.t)[0];
+  const landedBasis = priceBasis === "LANDED";
   const noSpec = types.filter((t) => !specs.get(t.id)?.items.length);
   const head = (o: (typeof offers)[number]) => o.supplierName;
 
@@ -86,7 +96,11 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <WeightControl projectId={project.id} technical={weights.technical} />
-          <p className="text-xs text-muted">Prices converted to {cur} after discounts, at the exchange rates of {formatDate(priceDate.date)} ({priceDate.basis}){priceDate.fixed ? "" : ": provisional until the envelopes are opened"}.</p>
+          <div className="space-y-1 text-right">
+            <p className="text-xs text-muted">Prices converted to {cur} after discounts, at the exchange rates of {formatDate(priceDate.date)} ({priceDate.basis}){priceDate.fixed ? "" : ": provisional until the envelopes are opened"}.</p>
+            <p className="text-xs text-muted">Ranked by <strong className="text-ink">{PRICE_BASIS_PHRASE[priceBasis]}</strong>{landedBasis ? ": prices in the table include the costs the hospital pays on top under each Incoterm" : ""} (set under Approval rules &amp; settings).</p>
+            <a href={`/procurement/${project.id}/comparison/export${weights.technical !== 70 ? `?tw=${weights.technical}` : ""}`} className="inline-block text-sm font-semibold text-primary hover:underline">Download comparison (Excel)</a>
+          </div>
         </div>
       </Panel>
 
@@ -100,7 +114,7 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
         </Notice>
       )}
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3">
           <p className="text-sm text-muted">Highest combined score, fully responsive</p>
           {top ? (
@@ -113,7 +127,12 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
         <div className="rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3">
           <p className="text-sm text-muted">Lowest fully compliant single award</p>
           <p className="mt-1 text-lg font-bold">{Number.isFinite(lowestCompliantTotal) ? formatMoney(lowestCompliantTotal, cur) : "None"}</p>
-          <p className="text-xs text-muted">One supplier quoting every required item, no mandatory failures, at the required quantities</p>
+          <p className="text-xs text-muted">One supplier quoting every required item, no mandatory failures, at the required quantities, net price</p>
+        </div>
+        <div className="rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3">
+          <p className="text-sm text-muted">Lowest landed cost, fully compliant</p>
+          <p className="mt-1 text-lg font-bold">{compliantLanded && Number.isFinite(compliantLanded.t) ? formatMoney(compliantLanded.t, cur) : "None"}</p>
+          <p className="text-xs text-muted">{compliantLanded && Number.isFinite(compliantLanded.t) ? `${compliantLanded.o.supplierName} · ` : ""}price plus freight, insurance, customs, clearance and delivery to site (DDP equivalent)</p>
         </div>
         <div className="rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3">
           <p className="text-sm text-muted">Best value per item (split award)</p>
@@ -160,9 +179,16 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
             })}
           </tbody>
           <tfoot className="text-[13px]">
-            <SummaryRow label={`Total (${cur})`} strong offers={offers} render={(o) => {
-              const s = evaluation.offers.get(o.id)!;
+            <SummaryRow label={`Net total (${cur})`} strong offers={offers} render={(o) => {
+              const s = netEvaluation.offers.get(o.id)!;
               return s.total == null ? <span className="text-warn">Rate missing</span> : formatMoney(s.total, cur);
+            }} />
+            <SummaryRow label={`Landed total (${cur})`} strong={landedBasis} offers={offers} render={(o) => {
+              const t = landedTotals.get(o.id)?.total, l = landed.get(o.id);
+              if (t == null) return <span className="text-warn">Rate missing</span>;
+              return <>{formatMoney(t, cur)}
+                <span className="block text-xs font-normal text-muted">{o.incoterm ?? "No Incoterm"}{l && l.extra > 0 ? ` · +${((l.factor - 1) * 100).toFixed(1)} %: ${l.parts.filter((p) => p.amount > 0).map((p) => `${COST_LABELS[p.part].toLowerCase()}${p.source === "default" ? " (default)" : ""}`).join(", ")}` : " · nothing added"}</span>
+                {l?.termMissing && <span className="block text-xs font-normal text-warn">Incoterm not stated: only costs typed on the offer added</span>}</>;
             }} />
             <SummaryRow label="Items quoted" offers={offers} render={(o) => {
               const s = evaluation.offers.get(o.id)!;
@@ -187,6 +213,8 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
         the line technically non-responsive: it gets no financial or combined score and cannot be best value. Financial score = lowest responsive price ÷
         this price × 100. Highlighted cells are the best combined score per item (ties go to the lower price). Several lines of one device type in an
         offer are added up. An offer that misses a required item gets no overall financial or combined score while another offer quotes every item.
+        Landed total = net total plus what the hospital pays on top under the offer&apos;s Incoterm (freight, insurance, customs and duty, clearance,
+        delivery to site), from the offer where stated, else the hospital defaults.
       </p>
 
       <TcoPanel data={data} projectId={project.id} years={tcoYears === "10" ? 10 : 5} downtimeCostPerDay={tcoDown && Number(tcoDown) >= 0 ? Number(tcoDown) : null} />

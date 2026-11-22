@@ -33,6 +33,9 @@ const headerSchema = z.object({
   tcoServiceAnnual: optNum("Service a year must be an amount"), tcoConsumablesAnnual: optNum("Consumables a year must be an amount"),
   tcoEnergyAnnual: optNum("Energy a year must be an amount"), tcoOtherAnnual: optNum("Other running costs must be an amount"),
   tcoUptimePct: optNum("Uptime must be a percentage", 50, 100),
+  freightCost: optNum("Freight must be an amount"), insuranceCost: optNum("Insurance must be an amount"),
+  dutyPct: optNum("Customs and duty must be a percentage from 0 to 100", 0, 100),
+  clearanceCost: optNum("Clearance must be an amount"), localDeliveryCost: optNum("Local delivery must be an amount"),
   paymentTerms: optStr(500),
   notes: optStr(4000),
 });
@@ -78,6 +81,9 @@ const headerValues = (d: z.infer<typeof headerSchema>) => ({
   tcoServiceAnnual: d.tcoServiceAnnual != null ? String(d.tcoServiceAnnual) : null, tcoConsumablesAnnual: d.tcoConsumablesAnnual != null ? String(d.tcoConsumablesAnnual) : null,
   tcoEnergyAnnual: d.tcoEnergyAnnual != null ? String(d.tcoEnergyAnnual) : null, tcoOtherAnnual: d.tcoOtherAnnual != null ? String(d.tcoOtherAnnual) : null,
   tcoUptimePct: d.tcoUptimePct ?? null,
+  freightCost: d.freightCost != null ? String(d.freightCost) : null, insuranceCost: d.insuranceCost != null ? String(d.insuranceCost) : null,
+  dutyPct: d.dutyPct ?? null, clearanceCost: d.clearanceCost != null ? String(d.clearanceCost) : null,
+  localDeliveryCost: d.localDeliveryCost != null ? String(d.localDeliveryCost) : null,
 });
 
 export async function createOffer(_prev: ActionState, fd: FormData): Promise<ActionState> {

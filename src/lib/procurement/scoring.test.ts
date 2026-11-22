@@ -377,3 +377,16 @@ describe("wave 33 audit fixes", () => {
     expect(ev.offers.get(2)!.awardTotal).toBe(1010);
   });
 });
+
+describe("price factor (wave 37: ranking by landed cost)", () => {
+  it("multiplies the compared price and leaves unset factors at the net price", () => {
+    const row = { key: 1, specItems: [] as SpecItemForScoring[], candidates: [cand({ offerId: 1, unitPrice: 100 }), cand({ offerId: 2, unitPrice: 105 })] };
+    const net = evaluateRow(row, { USD: 1 }, normalizeWeights("0"));
+    expect(net.bestOfferIds).toEqual([1]);
+    // Offer 1 is EXW and lands at +10 %, offer 2 is DDP: 110 vs 105, so offer 2 is now cheaper.
+    const landed = evaluateRow({ ...row, candidates: [cand({ offerId: 1, unitPrice: 100, priceFactor: 1.1 }), cand({ offerId: 2, unitPrice: 105, priceFactor: 1 })] }, { USD: 1 }, normalizeWeights("0"));
+    expect(landed.bestOfferIds).toEqual([2]);
+    expect(landed.cells.find((c) => c.offerId === 1)!.unitPrice).toBeCloseTo(110);
+    expect(landed.cells.find((c) => c.offerId === 1)!.netUnitPrice).toBe(100);
+  });
+});

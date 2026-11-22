@@ -11,6 +11,9 @@ import {
 } from "@/db/schema";
 import { lineTotal, num, round2, todayISO } from "@/lib/format";
 import { tenderPriceDate } from "./price-date";
+import { landedCost, type LandedDefaults, type LandedResult, type PriceBasis } from "./landed-cost";
+import type { Incoterm } from "./labels";
+import { getSettings, type Settings } from "../settings";
 import { sealOfferRows, type SealedRow } from "./sealed";
 import { convert, logActivity } from "@/lib/server-utils";
 import { advanceTo, EXCLUDED_OFFER_STATUSES, humanizeEnum } from "./labels";
@@ -244,6 +247,11 @@ export async function projectPoValues(projectRows: { id: number; currency: strin
 
 /* ───────────── Comparison ───────────── */
 
+/** The hospital's landed-cost defaults from settings. */
+export function landedDefaults(s: Settings): LandedDefaults {
+  return { freightPct: s.landedFreightPct, insurancePct: s.landedInsurancePct, dutyPct: s.landedDutyPct, clearancePct: s.landedClearancePct, localDeliveryPct: s.landedLocalDeliveryPct };
+}
+
 export type ComparisonData = Awaited<ReturnType<typeof loadComparison>>;
 
 export async function loadComparison(projectId: number, weights: Weights = normalizeWeights(undefined)) {
@@ -256,6 +264,8 @@ export async function loadComparison(projectId: number, weights: Weights = norma
     supplierId: offers.supplierId, supplierName: suppliers.name,
     tcoServiceAnnual: offers.tcoServiceAnnual, tcoConsumablesAnnual: offers.tcoConsumablesAnnual, tcoEnergyAnnual: offers.tcoEnergyAnnual,
     tcoOtherAnnual: offers.tcoOtherAnnual, tcoUptimePct: offers.tcoUptimePct,
+    freightCost: offers.freightCost, insuranceCost: offers.insuranceCost, dutyPct: offers.dutyPct, clearanceCost: offers.clearanceCost,
+    localDeliveryCost: offers.localDeliveryCost,
   }).from(offers).innerJoin(suppliers, eq(suppliers.id, offers.supplierId))
     .where(eq(offers.projectId, projectId)).orderBy(asc(offers.id));
   const competing = offerRows.filter((o) => !EXCLUDED_OFFER_STATUSES.includes(o.status));
@@ -292,6 +302,19 @@ export async function loadComparison(projectId: number, weights: Weights = norma
   }
   const offerById = new Map(competing.map((o) => [o.id, o]));
 
+  // Wave 37: landed (DDP-equivalent) cost per offer, from its own lines in its own currency, and the ranking basis.
+  const settings = await getSettings();
+  const defaults = landedDefaults(settings);
+  const landed = new Map<number, LandedResult>();
+  for (const o of competing) {
+    const net = lines.filter((l) => l.offerId === o.id && !l.isOptional).reduce((s, l) => s + lineTotal(l.quantity, l.unitPrice, l.discountPct), 0);
+    landed.set(o.id, landedCost(o.incoterm as Incoterm | null, net, {
+      freight: o.freightCost == null ? null : num(o.freightCost), insurance: o.insuranceCost == null ? null : num(o.insuranceCost), dutyPct: o.dutyPct,
+      clearance: o.clearanceCost == null ? null : num(o.clearanceCost), localDelivery: o.localDeliveryCost == null ? null : num(o.localDeliveryCost),
+    }, defaults));
+  }
+  const priceBasis: PriceBasis = settings.priceBasis === "LANDED" ? "LANDED" : "NET";
+
   const rows: RowInput[] = types.map((t) => ({
     key: t.id,
     required: required.get(t.id),
@@ -302,10 +325,19 @@ export async function loadComparison(projectId: number, weights: Weights = norma
     })),
   }));
 
-  const evaluation = evaluateProject(rows, fx, weights, competing.map((o) => o.id));
+  // Scores and ranks follow the "Rank prices by" setting; the net evaluation is kept for the net totals.
+  const netEvaluation = evaluateProject(rows, fx, weights, competing.map((o) => o.id));
+  const evaluation = priceBasis === "LANDED"
+    ? evaluateProject(rows.map((r) => ({ ...r, candidates: r.candidates.map((c) => ({ ...c, priceFactor: landed.get(c.offerId)?.factor ?? 1 })) })), fx, weights, competing.map((o) => o.id))
+    : netEvaluation;
+  /** Landed totals in the project currency: the net totals × each offer's landed factor. */
+  const landedTotals = new Map(competing.map((o) => {
+    const s = netEvaluation.offers.get(o.id), f = landed.get(o.id)?.factor ?? 1;
+    return [o.id, { total: s?.total == null ? null : round2(s.total * f), awardTotal: s?.awardTotal == null ? null : round2(s.awardTotal * f) }];
+  }));
   return {
-    project, weights, offers: competing, excluded, lines, types, specs, required, fx, priceDate, evaluation,
-    lineById: new Map(lines.map((l) => [l.id, l])),
+    project, weights, offers: competing, excluded, lines, types, specs, required, fx, priceDate, evaluation, netEvaluation,
+    priceBasis, landed, landedTotals, lineById: new Map(lines.map((l) => [l.id, l])),
   };
 }
 

@@ -46,6 +46,9 @@ vi.mock("@/lib/procurement/po-status", () => import("./po-status"));
 vi.mock("@/lib/procurement/receipt", () => import("./receipt"));
 vi.mock("@/lib/procurement/money", () => import("./money"));
 vi.mock("@/lib/procurement/money-server", () => import("./money-server"));
+vi.mock("@/lib/procurement/delay-penalty", () => import("./delay-penalty"));
+vi.mock("@/lib/procurement/penalty-server", () => import("./penalty-server"));
+vi.mock("@/lib/settings", () => import("../settings"));
 vi.mock("@/lib/procurement/receiving", () => import("./receiving"));
 vi.mock("@/lib/procurement/scoring", () => import("./scoring"));
 

@@ -16,7 +16,7 @@ export async function GET() {
     .from(invoices).innerJoin(purchaseOrders, eq(purchaseOrders.id, invoices.poId)).innerJoin(suppliers, eq(suppliers.id, invoices.supplierId))
     .leftJoin(facilities, eq(facilities.id, purchaseOrders.facilityId))
     .where(and(inArray(invoices.status, ["APPROVED", "PAID"]), scopeWhere(purchaseOrders.facilityId, scope))).orderBy(asc(invoices.invoiceDate));
-  const head = ["Invoice", "Supplier invoice no", "Supplier", "Supplier tax ID", "Hospital", "PO", "Invoice date", "Due date", "Currency", "Amount", "Status", "Approved by", "Paid on", "Payment reference"];
-  const body = rows.map((r) => [r.i.number, r.i.supplierInvoiceNo, r.supplier, r.taxId, r.facility, r.po, r.i.invoiceDate, r.i.dueDate, r.i.currency, Number(r.total ?? 0).toFixed(2), r.i.status, r.i.approvedByName, r.i.paidAt, r.i.paymentReference]);
+  const head = ["Invoice", "Supplier invoice no", "Supplier", "Supplier tax ID", "Hospital", "PO", "Invoice date", "Due date", "Currency", "Amount", "Delay penalty", "Payable", "Status", "Approved by", "Paid on", "Payment reference"];
+  const body = rows.map((r) => [r.i.number, r.i.supplierInvoiceNo, r.supplier, r.taxId, r.facility, r.po, r.i.invoiceDate, r.i.dueDate, r.i.currency, Number(r.total ?? 0).toFixed(2), Number(r.i.delayPenalty ?? 0).toFixed(2), Math.max(0, Number(r.total ?? 0) - Number(r.i.delayPenalty ?? 0)).toFixed(2), r.i.status, r.i.approvedByName, r.i.paidAt, r.i.paymentReference]);
   return new Response(toCsv(head, body), { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="invoices-${todayISO()}.csv"` } });
 }

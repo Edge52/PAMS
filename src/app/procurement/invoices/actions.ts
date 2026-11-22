@@ -16,6 +16,9 @@ import { budgetRows, matchLinesFor, poValues } from "@/lib/procurement/money-ser
 import { fxFactors } from "@/lib/procurement/server";
 import { logActivity, nextNumber } from "@/lib/server-utils";
 import { changeSummary, diff } from "@/lib/audit-diff";
+import { formatMoney } from "@/lib/format";
+import { deductionProblem, penaltyLeft, penaltyNote } from "@/lib/procurement/delay-penalty";
+import { poDelayPenalty } from "@/lib/procurement/penalty-server";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const go = (path: string, msg: string): never => redirect(`${path}${path.includes("?") ? "&" : "?"}notice=${encodeURIComponent(msg)}`);
@@ -163,4 +166,40 @@ export async function markPaidAction(_: FormState, fd: FormData): Promise<FormSt
   await logActivity("po", inv.i.poId, "invoice paid", `${inv.i.number} paid ${paidAt}${ref ? ` (${ref})` : ""}`, me.name);
   revalidatePath(`/procurement/invoices/${id}`);
   return { ok: "Payment recorded." };
+}
+
+/* ── Wave 37: late-delivery penalty deducted on an invoice ── */
+
+/**
+ * Finance deducts the order's delay penalty (or part of it) from an invoice before deciding it. The calculation is
+ * redone on the server and stored as the deduction note; an amount of 0 removes the deduction. Never more than the
+ * invoice total, nor more than the penalty not yet deducted on the order's other invoices.
+ */
+export async function setInvoicePenaltyAction(_: FormState, fd: FormData): Promise<FormState> {
+  const me = await requirePermission("invoices.approve");
+  const id = Number(fd.get("invoiceId"));
+  const raw = str(fd, "delayPenalty", 20).replace(/,/g, "");
+  const amount = raw === "" ? NaN : Number(raw);
+  const [inv] = await db.select({ i: invoices, po: purchaseOrders }).from(invoices).innerJoin(purchaseOrders, eq(purchaseOrders.id, invoices.poId)).where(eq(invoices.id, id));
+  if (!inv) return { error: "That invoice no longer exists." };
+  await requireFacilityAccess(inv.po.facilityId, me);
+  if (!["RECEIVED", "MATCHED", "EXCEPTION"].includes(inv.i.status)) return { error: "The penalty is deducted before the invoice is approved. This one is already decided." };
+  const p = await poDelayPenalty(inv.po.id, { exceptInvoiceId: id });
+  if (!p) return { error: "The purchase order no longer exists." };
+  const lines = await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, id));
+  const total = lines.reduce((s, l) => s + l.quantity * Number(l.unitPrice), 0);
+  const left = penaltyLeft(p.amount, p.deducted);
+  const problem = deductionProblem(amount, total, left);
+  if (problem) return { error: problem, fields: { delayPenalty: problem } };
+  const cur = inv.i.currency;
+  const before = { delayPenalty: inv.i.delayPenalty == null ? null : Number(inv.i.delayPenalty) };
+  const value = amount > 0 ? amount.toFixed(2) : null;
+  const note = amount > 0 ? `${penaltyNote(p, (n) => formatMoney(n, cur))}${p.deducted > 0 ? `\nAlready deducted on other invoices: ${formatMoney(p.deducted, cur)}.` : ""}${Math.abs(amount - left) > 0.005 ? `\nDeducted here: ${formatMoney(amount, cur)}.` : ""}` : null;
+  const changes = diff(before, { delayPenalty: value == null ? null : Number(value) });
+  if (!changes) return { ok: "Nothing changed." };
+  await db.update(invoices).set({ delayPenalty: value, delayPenaltyNote: note }).where(eq(invoices.id, id));
+  await logActivity("po", inv.po.id, "delay penalty", amount > 0 ? `${inv.i.number}: delay penalty of ${formatMoney(amount, cur)} deducted` : `${inv.i.number}: delay penalty deduction removed`, me.name, db, changes);
+  revalidatePath(`/procurement/invoices/${id}`);
+  revalidatePath(`/procurement/purchase-orders/${inv.po.id}`);
+  return { ok: amount > 0 ? `Delay penalty of ${formatMoney(amount, cur)} deducted.` : "Delay penalty deduction removed." };
 }

@@ -120,6 +120,11 @@ export type OfferLineCandidate = {
   quantity: number;
   isOptional: boolean;
   compliance: ComplianceMap;
+  /**
+   * Wave 37: multiplier on the price for ranking, e.g. the offer's landed-cost factor when the hospital ranks prices
+   * by landed cost (see ./landed-cost). Unset = 1, the net price as before.
+   */
+  priceFactor?: number;
 };
 
 export type RowInput = {
@@ -191,7 +196,9 @@ export function evaluateRow(row: RowInput, fx: FxFactors, weights: Weights): Row
     const netTotal = bid.reduce((s, l) => s + netUnitPrice(l.unitPrice, l.discountPct) * l.quantity, 0);
     // Unit price shown and compared = bid total ÷ bid quantity (the cheapest line's price when the quantities are 0).
     const net = quantity > 0 ? netTotal / quantity : netUnitPrice(line.unitPrice, line.discountPct);
-    const unitPrice = toProjectCurrency(net, line.currency, fx);
+    const converted = toProjectCurrency(net, line.currency, fx);
+    const f = line.priceFactor != null && Number.isFinite(line.priceFactor) && line.priceFactor > 0 ? line.priceFactor : 1;
+    const unitPrice = converted == null ? null : converted * f;
     return {
       offerId,
       lineId: line.lineId,

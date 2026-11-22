@@ -14,13 +14,15 @@ import { fxFactors, type ComparisonData } from "@/lib/procurement/server";
 type Data = NonNullable<ComparisonData>;
 
 export async function TcoPanel({ data, projectId, years, downtimeCostPerDay }: { data: Data; projectId: number; years: 5 | 10; downtimeCostPerDay: number | null }) {
-  const { offers, evaluation, lines, project } = data;
+  const { offers, netEvaluation, landedTotals, priceBasis, lines, project } = data;
   const cur = project.currency;
   const fx = await fxFactors(offers.map((o) => o.currency), cur, data.priceDate.date); // the tender's price date (B2)
   const amt = (v: string | null, c: string) => (v == null ? null : fx[c] != null ? num(v) * fx[c]! : null);
   const rows = offers.map((o) => {
-    const capex = evaluation.offers.get(o.id)?.total ?? null;
-    return { o, capex, t: capex == null ? null : tco({ capex, years, warrantyMonths: o.warrantyMonths, serviceAnnual: amt(o.tcoServiceAnnual, o.currency), consumablesAnnual: amt(o.tcoConsumablesAnnual, o.currency),
+    // Wave 37: the price counted follows "Rank prices by": net price, or landed cost (DDP equivalent).
+    const net = netEvaluation.offers.get(o.id)?.total ?? null, landed = landedTotals.get(o.id)?.total ?? null;
+    const capex = priceBasis === "LANDED" ? landed : net;
+    return { o, net, landed, capex, t: capex == null ? null : tco({ capex, years, warrantyMonths: o.warrantyMonths, serviceAnnual: amt(o.tcoServiceAnnual, o.currency), consumablesAnnual: amt(o.tcoConsumablesAnnual, o.currency),
       energyAnnual: amt(o.tcoEnergyAnnual, o.currency), otherAnnual: amt(o.tcoOtherAnnual, o.currency), uptimePct: o.tcoUptimePct, downtimeCostPerDay }) };
   });
   // Our own history: maintenance and repair spend a year per unit of the same make and model, last three years.
@@ -61,13 +63,14 @@ export async function TcoPanel({ data, projectId, years, downtimeCostPerDay }: {
           <input name="tcoDown" type="number" min={0} defaultValue={downtimeCostPerDay ?? ""} placeholder="e.g. lost exams × tariff" className="w-48 rounded border border-line bg-surface px-2 py-1" /></label>
         <button className="rounded border border-line px-3 py-1">Apply</button>
       </form>
-      <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-[13px]">
-        <thead className="text-left text-muted"><tr><th className="py-1">Offer</th><th className="text-right">Price</th><th className="text-right">Service after warranty</th><th className="text-right">Running</th><th className="text-right">Downtime</th><th className="text-right">Total</th><th>Our history, same model</th></tr></thead>
-        <tbody>{rows.map(({ o, capex, t }) => (
+      <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-[13px] [&_td]:px-2 [&_th]:px-2">
+        <thead className="text-left text-muted"><tr><th className="py-1">Offer</th><th className="text-right">Net price</th><th className="text-right">Landed</th><th className="text-right">Service after warranty</th><th className="text-right">Running</th><th className="text-right">Downtime</th><th className="text-right">Total</th><th>Our history, same model</th></tr></thead>
+        <tbody>{rows.map(({ o, net, landed, t }) => (
           <tr key={o.id} className="border-t border-line align-top">
             <td className="py-1.5"><Link href={`/procurement/offers/${o.id}`} className="font-semibold text-primary hover:underline">{o.supplierName}</Link>
               {t?.missing.length ? <span className="block text-xs text-warn">Not stated: {t.missing.join(", ")}</span> : null}</td>
-            <td className="text-right">{money(capex)}</td>
+            <td className={`text-right ${priceBasis === "NET" ? "font-semibold" : ""}`}>{money(net)}</td>
+            <td className={`text-right ${priceBasis === "LANDED" ? "font-semibold" : ""}`}>{money(landed)}{o.incoterm ? <span className="block text-xs text-muted">{o.incoterm}</span> : null}</td>
             <td className="text-right">{t ? money(t.service) : "—"}{t && t.serviceYears > 0 ? <span className="block text-xs text-muted">{t.serviceYears.toFixed(1)} years</span> : null}</td>
             <td className="text-right">{t ? money(t.running) : "—"}</td>
             <td className="text-right">{t?.downtime != null ? money(t.downtime) : <span className="text-muted">{o.tcoUptimePct == null ? "no guarantee" : "set day cost"}</span>}</td>
@@ -76,7 +79,7 @@ export async function TcoPanel({ data, projectId, years, downtimeCostPerDay }: {
           </tr>
         ))}</tbody>
       </table></div>
-      <p className="mt-2 text-xs text-muted">Running costs and uptime come from each offer&apos;s commercial terms (edit the offer to add them); downtime is the days a year the guarantee allows × the day cost. Our history is what similar registered units cost to maintain and repair a year over the last three years.</p>
+      <p className="mt-2 text-xs text-muted">The total counts the {priceBasis === "LANDED" ? "landed cost (price plus freight, insurance, customs, clearance and delivery to site)" : "net price"}, as set under “Rank prices by”. Running costs and uptime come from each offer&apos;s commercial terms (edit the offer to add them); downtime is the days a year the guarantee allows × the day cost. Our history is what similar registered units cost to maintain and repair a year over the last three years.</p>
     </Panel>
   );
 }

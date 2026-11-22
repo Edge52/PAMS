@@ -40,6 +40,9 @@ vi.mock("@/lib/procurement/server", serverStub);
 vi.mock("./server", serverStub);
 vi.mock("@/lib/procurement/money", () => import("./money"));
 vi.mock("@/lib/procurement/money-server", () => import("./money-server"));
+vi.mock("@/lib/procurement/delay-penalty", () => import("./delay-penalty"));
+vi.mock("@/lib/procurement/penalty-server", () => import("./penalty-server"));
+vi.mock("@/lib/settings", () => import("../settings"));
 
 const { addFrameworkItemAction, removeFrameworkItemAction } = await import("../../app/procurement/frameworks/actions");
 const { createInvoiceAction, decideInvoiceAction, markPaidAction } = await import("../../app/procurement/invoices/actions");

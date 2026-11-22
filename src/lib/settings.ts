@@ -35,6 +35,17 @@ export type Settings = {
   depreciationMethod: "STRAIGHT" | "DECLINING";
   /** Wave 29: check new passwords against known data leaks (needs internet; off by default). */
   breachedPasswordCheck: boolean;
+  /** Wave 37: Law 182 delay fine defaults for purchase orders: % per week of delay (or part), capped (lib/procurement/delay-penalty). */
+  delayPenaltyRatePct: number;
+  delayPenaltyCapPct: number;
+  /** Wave 37: rank offer prices by net price (as before) or landed cost (lib/procurement/landed-cost). */
+  priceBasis: "NET" | "LANDED";
+  /** Wave 37: landed-cost defaults when an offer doesn't state them, % of the net price (duty: % of the CIF value). */
+  landedFreightPct: number;
+  landedInsurancePct: number;
+  landedDutyPct: number;
+  landedClearancePct: number;
+  landedLocalDeliveryPct: number;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -56,6 +67,14 @@ export const DEFAULT_SETTINGS: Settings = {
   trainingValidMonths: 24,
   depreciationMethod: "STRAIGHT",
   breachedPasswordCheck: false,
+  delayPenaltyRatePct: 1,
+  delayPenaltyCapPct: 15,
+  priceBasis: "NET",
+  landedFreightPct: 6,
+  landedInsurancePct: 0.5,
+  landedDutyPct: 5,
+  landedClearancePct: 1.5,
+  landedLocalDeliveryPct: 1,
 };
 
 export async function getSettings(): Promise<Settings> {
