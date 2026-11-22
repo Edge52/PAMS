@@ -20,6 +20,7 @@ import { poValues } from "@/lib/procurement/money-server";
 import { offerTotals } from "@/lib/procurement/server";
 import { addBondAction, openEnvelopesAction, setBondStatusAction, setEnvelopesAction } from "../../tender-actions";
 import { seesPrices, shownMoney } from "@/lib/auth/prices";
+import { MethodAndTimetable } from "@/components/procurement/timetable-panel";
 
 type Project = typeof projects.$inferSelect;
 
@@ -60,6 +61,7 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
 
   return (
     <div className="space-y-5">
+      <MethodAndTimetable project={p} canEdit={canEdit} />
       <Panel title="Envelopes" actions={<Badge tone={p.twoEnvelope ? "info" : "neutral"}>{p.twoEnvelope ? "Two envelopes" : "Single envelope"}</Badge>}>
         <ol className="space-y-3 text-sm">
           <li><b>1. Technical envelopes</b> — {p.technicalOpenedAt ? `opened ${formatDateTime(p.technicalOpenedAt)}. ` : "not opened yet. "}

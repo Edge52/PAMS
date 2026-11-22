@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { boqs, offers, projects, rfqs, rfqSuppliers } from "@/db/schema";
+import { boqs, offers, projects, rfqs, rfqSuppliers, tenderAddenda, tenderClarifications } from "@/db/schema";
 import { EmptyState, LinkButton, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
 import { DaysLeft } from "@/components/procurement/bits";
 import { formatDate } from "@/lib/format";
@@ -18,6 +18,8 @@ export async function RfqsTab({ project, me }: { project: Project; me: CurrentUs
     boqId: rfqs.boqId, boqName: boqs.name,
     invited: sql<number>`(select count(*)::int from ${rfqSuppliers} where ${rfqSuppliers.rfqId} = ${rfqs.id})`,
     offers: sql<number>`(select count(*)::int from ${offers} where ${offers.rfqId} = ${rfqs.id})`,
+    questions: sql<number>`(select count(*)::int from ${tenderClarifications} where ${tenderClarifications.rfqId} = ${rfqs.id})`,
+    addenda: sql<number>`(select count(*)::int from ${tenderAddenda} where ${tenderAddenda.rfqId} = ${rfqs.id})`,
   }).from(rfqs).leftJoin(boqs, eq(boqs.id, rfqs.boqId)).where(eq(rfqs.projectId, project.id)).orderBy(desc(rfqs.id));
 
   return (
@@ -29,7 +31,7 @@ export async function RfqsTab({ project, me }: { project: Project; me: CurrentUs
         </EmptyState>
       ) : (
         <Table>
-          <THead><tr><Th>Number</Th><Th>Title</Th><Th>Status</Th><Th>Source</Th><Th>Issued</Th><Th>Closing</Th><Th align="right">Invited</Th><Th align="right">Offers</Th></tr></THead>
+          <THead><tr><Th>Number</Th><Th>Title</Th><Th>Status</Th><Th>Source</Th><Th>Issued</Th><Th>Closing</Th><Th align="right">Invited</Th><Th align="right">Offers</Th><Th align="right">Questions</Th><Th align="right">Addenda</Th></tr></THead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
@@ -41,6 +43,8 @@ export async function RfqsTab({ project, me }: { project: Project; me: CurrentUs
                 <Td className="whitespace-nowrap"><DaysLeft date={r.closingDate} closedLabel={r.status === "ISSUED" || r.status === "DRAFT" ? undefined : "closed"} /></Td>
                 <Td align="right">{r.invited}</Td>
                 <Td align="right">{r.offers}</Td>
+                <Td align="right">{r.questions}</Td>
+                <Td align="right">{r.addenda}</Td>
               </tr>
             ))}
           </tbody>

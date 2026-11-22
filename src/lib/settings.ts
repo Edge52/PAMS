@@ -35,6 +35,9 @@ export type Settings = {
   depreciationMethod: "STRAIGHT" | "DECLINING";
   /** Wave 29: check new passwords against known data leaks (needs internet; off by default). */
   breachedPasswordCheck: boolean;
+  /** Wave 37: minimum days from announcement to bid submission per procurement method (read with cleanMinDays in
+   *  lib/procurement/timetable.ts; missing methods use its DEFAULT_MIN_DAYS). */
+  tenderMinDays: Record<string, number>;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -56,6 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
   trainingValidMonths: 24,
   depreciationMethod: "STRAIGHT",
   breachedPasswordCheck: false,
+  tenderMinDays: {},
 };
 
 export async function getSettings(): Promise<Settings> {

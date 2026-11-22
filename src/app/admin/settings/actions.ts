@@ -111,9 +111,9 @@ export async function saveSettings(_prev: ActionState, fd: FormData): Promise<Ac
   const me = await requirePermission("settings.manage");
   const p = settingsSchema.safeParse(formObject(fd));
   if (!p.success) return zodFail(p.error);
-  const next: Settings = { ...p.data, emailEnabled: fd.get("emailEnabled") === "on", assistantEnabled: fd.get("assistantEnabled") === "on", demoAccounts: fd.get("demoAccounts") === "on", breachedPasswordCheck: fd.get("breachedPasswordCheck") === "on" };
-  if (next.stateCouncilFromEgp < next.mofRepFromEgp) return fail("The State Council threshold is normally at or above the Ministry of Finance threshold. Check the amounts.");
   const before = await getSettings();
+  const next: Settings = { ...p.data, tenderMinDays: before.tenderMinDays, emailEnabled: fd.get("emailEnabled") === "on", assistantEnabled: fd.get("assistantEnabled") === "on", demoAccounts: fd.get("demoAccounts") === "on", breachedPasswordCheck: fd.get("breachedPasswordCheck") === "on" };
+  if (next.stateCouncilFromEgp < next.mofRepFromEgp) return fail("The State Council threshold is normally at or above the Ministry of Finance threshold. Check the amounts.");
   const changed = (Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]).filter((k) => before[k] !== next[k]);
   for (const k of changed) await setSetting(k, next[k] as never);
   if (changed.length) await logActivity("settings", 0, "updated", `Settings changed: ${changed.map((k) => `${k} ${String(before[k])} → ${String(next[k])}`).join("; ")}`, me.name);
