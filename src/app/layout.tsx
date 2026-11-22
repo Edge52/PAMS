@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Fraunces, IBM_Plex_Sans_Arabic, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { SideNav } from "@/components/side-nav";
 import { TopBar } from "@/components/shell/top-bar";
@@ -14,13 +14,15 @@ export const metadata: Metadata = {
 };
 
 /**
- * Fonts (R4, audit wave 30): next/font downloads them once at build time and serves them from the app, so pages look
- * the same on a hospital network without internet. The build itself needs internet (Docker build, or the launcher's
- * first build); without it the build stops with a font error.
+ * Fonts (R4, audit wave 30): the font files are in src/app/fonts (from Fontsource, SIL Open Font License; licences
+ * beside them) and served by the app, so neither the pages nor the build need internet.
  */
-const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-inter", display: "swap" });
-const fraunces = Fraunces({ subsets: ["latin"], axes: ["opsz"], variable: "--font-fraunces", display: "swap" });
-const plexArabic = IBM_Plex_Sans_Arabic({ subsets: ["arabic"], weight: ["400", "600"], variable: "--font-plex-arabic", display: "swap", preload: false });
+const inter = localFont({ src: "./fonts/inter-latin-wght-normal.woff2", weight: "100 900", variable: "--font-inter", display: "swap" });
+const fraunces = localFont({ src: "./fonts/fraunces-latin-full-normal.woff2", weight: "100 900", variable: "--font-fraunces", display: "swap" });
+const plexArabic = localFont({
+  src: [{ path: "./fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2", weight: "400" }, { path: "./fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2", weight: "600" }],
+  variable: "--font-plex-arabic", display: "swap", preload: false,
+});
 
 /** Phone browser bar in the menu colour (wave 26). */
 export const viewport: Viewport = { themeColor: "#0c1f1a", width: "device-width", initialScale: 1 };

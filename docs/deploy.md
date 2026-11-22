@@ -71,9 +71,8 @@ migrate at the same time. If that copy fails, the app doesn't start and nothing 
 `MIGRATE_BACKUP=0` to go on without the copy. Every optional setting in `.env` (assistant key, Microsoft/Google
 sign-in, database SSL and pool size, `ALERTS_DISABLED` on a second instance) is passed to the app container.
 
-**Fonts.** The fonts are downloaded once when the image is built and then served by the app, so the site needs no
-internet at the hospital. The build itself must reach `fonts.googleapis.com` (it already needs the internet for npm and
-apt); without it the build stops with a font error.
+**Fonts.** The font files ship with the app (`src/app/fonts`) and are served by it, so neither the site nor the build
+needs to reach Google.
 
 Updating: `git pull` (or copy the new folder) and `docker compose up -d --build`. Database changes are applied on start.
 Reference data (device catalogue, BOQ standards, department types) is only added on start, never overwritten, so your

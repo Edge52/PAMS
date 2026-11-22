@@ -36,4 +36,11 @@ describe("fonts (R4, wave 36)", () => {
       expect(readFileSync(path.resolve(__dirname, f), "utf8")).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
     }
   });
+  it("ship with the app, so the build needs no internet either", async () => {
+    const { existsSync, readFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    const layout = readFileSync(path.resolve(__dirname, "../app/layout.tsx"), "utf8");
+    expect(layout).not.toMatch(/next\/font\/google/);
+    for (const m of layout.matchAll(/"\.\/(fonts\/[^"]+\.woff2)"/g)) expect(existsSync(path.resolve(__dirname, "../app", m[1]))).toBe(true);
+  });
 });
