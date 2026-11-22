@@ -8,6 +8,7 @@ import { ROLES, ROLE_LABELS, type Role } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { formatMoney, num } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
+import { PRICE_BASIS_LABELS } from "@/lib/procurement/landed-cost";
 import { saveSettings, savePolicy, togglePolicy } from "./actions";
 import { canSeal } from "@/lib/auth/secret-box";
 import { TenderDaysSettings } from "@/components/procurement/tender-days-settings";
@@ -108,6 +109,29 @@ export default async function SettingsPage() {
                 </Field>
               </FormGrid>
               <p className="text-xs text-muted">Defaults follow the law&apos;s English translation (EGP 300,000; 1,000,000; 2,000,000; 7 and 2 days). Change them only if the law or your regulations change.</p>
+            </fieldset>
+
+            <fieldset className="space-y-3">
+              <legend className="mb-2 text-sm font-bold">Delivery penalties and landed cost</legend>
+              <FormGrid cols={3}>
+                <Field label="Delay penalty a week (%)" hint="Of the value of the late items, for each week of delay or part of a week. Each purchase order can set its own.">
+                  <Input type="number" min={0} max={100} step="0.1" name="delayPenaltyRatePct" defaultValue={s.delayPenaltyRatePct} />
+                </Field>
+                <Field label="Delay penalty at most (%)" hint="Cap, as a share of the value of the late items.">
+                  <Input type="number" min={0} max={100} step="0.1" name="delayPenaltyCapPct" defaultValue={s.delayPenaltyCapPct} />
+                </Field>
+                <Field label="Rank prices by" hint="Net price is the offer price after discounts. Landed cost adds freight, insurance, customs, clearance and local delivery the hospital pays under the offer's Incoterm. Changes the financial scores of every open tender.">
+                  <Select name="priceBasis" defaultValue={s.priceBasis} options={(["NET", "LANDED"] as const).map((v) => ({ value: v, label: PRICE_BASIS_LABELS[v] }))} />
+                </Field>
+              </FormGrid>
+              <p className="text-sm text-muted">Landed cost defaults, used when an offer doesn&apos;t state the cost. Each applies only where the offer&apos;s Incoterm leaves it to the hospital.</p>
+              <FormGrid cols={3}>
+                <Field label="Freight (% of price)" hint="EXW, FCA, FOB."><Input type="number" min={0} max={100} step="0.1" name="landedFreightPct" defaultValue={s.landedFreightPct} /></Field>
+                <Field label="Insurance (% of price)" hint="EXW, FCA, FOB, CFR, CPT."><Input type="number" min={0} max={100} step="0.1" name="landedInsurancePct" defaultValue={s.landedInsurancePct} /></Field>
+                <Field label="Customs and duty (%)" hint="Of price + freight + insurance. Every term except DDP."><Input type="number" min={0} max={100} step="0.1" name="landedDutyPct" defaultValue={s.landedDutyPct} /></Field>
+                <Field label="Clearance (% of price)" hint="Every term except DDP."><Input type="number" min={0} max={100} step="0.1" name="landedClearancePct" defaultValue={s.landedClearancePct} /></Field>
+                <Field label="Local delivery (% of price)" hint="Port or airport to the hospital. Not for DAP, DPU, DDP."><Input type="number" min={0} max={100} step="0.1" name="landedLocalDeliveryPct" defaultValue={s.landedLocalDeliveryPct} /></Field>
+              </FormGrid>
             </fieldset>
 
             <fieldset className="space-y-3">

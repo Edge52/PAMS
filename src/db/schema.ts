@@ -626,6 +626,13 @@ export const offers = pgTable("offers", {
   tcoEnergyAnnual: money("tco_energy_annual"),
   tcoOtherAnnual: money("tco_other_annual"),
   tcoUptimePct: real("tco_uptime_pct"),
+  /** Wave 37: costs on top of the price for the landed (DDP-equivalent) cost, in the offer's currency; duty as a %.
+   *  Null = not stated (the hospital default for the Incoterm applies, lib/procurement/landed-cost). */
+  freightCost: money("freight_cost"),
+  insuranceCost: money("insurance_cost"),
+  dutyPct: real("duty_pct"),
+  clearanceCost: money("clearance_cost"),
+  localDeliveryCost: money("local_delivery_cost"),
   paymentTerms: text("payment_terms"),
   status: offerStatus("status").notNull().default("RECEIVED"),
   technicalScore: real("technical_score"),   // 0–100, computed from compliance
@@ -638,7 +645,9 @@ export const offers = pgTable("offers", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [index("offers_project_idx").on(t.projectId), index("offers_rfq_idx").on(t.rfqId), index("offers_supplier_idx").on(t.supplierId)]);
+}, (t) => [index("offers_project_idx").on(t.projectId), index("offers_rfq_idx").on(t.rfqId), index("offers_supplier_idx").on(t.supplierId),
+  check("offers_landed_costs_check", sql`coalesce(${t.freightCost}, 0) >= 0 and coalesce(${t.insuranceCost}, 0) >= 0 and coalesce(${t.clearanceCost}, 0) >= 0 and coalesce(${t.localDeliveryCost}, 0) >= 0`),
+  check("offers_duty_pct_check", sql`${t.dutyPct} is null or (${t.dutyPct} >= 0 and ${t.dutyPct} <= 100)`)]);
 
 export const offerLines = pgTable("offer_lines", {
   id: serial("id").primaryKey(),
@@ -692,10 +701,15 @@ export const purchaseOrders = pgTable("purchase_orders", {
   /** The budget line it commits against, and the framework agreement it calls off (wave 10). */
   budgetLineId: integer("budget_line_id").references((): AnyPgColumn => budgetLines.id, { onDelete: "set null" }),
   frameworkId: integer("framework_id").references((): AnyPgColumn => frameworks.id, { onDelete: "set null" }),
+  /** Wave 37: Law 182 delay fine, % of the late items' value per week of delay (or part), and its cap. Null = the
+   *  hospital default (settings delayPenaltyRatePct / delayPenaltyCapPct; lib/procurement/delay-penalty). */
+  delayPenaltyRatePct: real("delay_penalty_rate_pct"),
+  delayPenaltyCapPct: real("delay_penalty_cap_pct"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [index("purchase_orders_project_idx").on(t.projectId), index("purchase_orders_supplier_idx").on(t.supplierId),
-  index("purchase_orders_offer_idx").on(t.offerId), index("purchase_orders_facility_idx").on(t.facilityId)]);
+  index("purchase_orders_offer_idx").on(t.offerId), index("purchase_orders_facility_idx").on(t.facilityId),
+  check("purchase_orders_delay_penalty_check", sql`(${t.delayPenaltyRatePct} is null or (${t.delayPenaltyRatePct} >= 0 and ${t.delayPenaltyRatePct} <= 100)) and (${t.delayPenaltyCapPct} is null or (${t.delayPenaltyCapPct} >= 0 and ${t.delayPenaltyCapPct} <= 100))`)]);
 
 export const poLines = pgTable("po_lines", {
   id: serial("id").primaryKey(),
@@ -1499,13 +1513,17 @@ export const invoices = pgTable("invoices", {
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   paidAt: date("paid_at"),
   paymentReference: text("payment_reference"),
+  /** Wave 37: late-delivery penalty deducted from this invoice (invoice currency) and how it was worked out. */
+  delayPenalty: money("delay_penalty"),
+  delayPenaltyNote: text("delay_penalty_note"),
   notes: text("notes"),
   createdByName: text("created_by_name"),
   /** Wave 34 (S7): the account that recorded it; it may not also approve it or record its payment. */
   createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [index("invoices_po_idx").on(t.poId), uniqueIndex("invoices_supplier_no_uq").on(t.supplierId, t.supplierInvoiceNo)]);
+}, (t) => [index("invoices_po_idx").on(t.poId), uniqueIndex("invoices_supplier_no_uq").on(t.supplierId, t.supplierInvoiceNo),
+  check("invoices_delay_penalty_check", sql`${t.delayPenalty} is null or ${t.delayPenalty} >= 0`)]);
 
 export const invoiceLines = pgTable("invoice_lines", {
   id: serial("id").primaryKey(),

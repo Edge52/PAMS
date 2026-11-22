@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { boqDepartments, boqLines, deviceTypes, offerCompliance, offerLines, offers, projects, purchaseOrders, rfqs, suppliers } from "@/db/schema";
 import { Badge, Details, LinkButton, PageHeader, Panel, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
@@ -19,6 +19,7 @@ import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { pendingRequest } from "@/lib/approvals/server";
 import { ApprovalPanel } from "@/components/approvals/approval-panel";
 import { AwardTimeline } from "@/components/procurement/award-timeline";
+import { letterFor } from "@/lib/procurement/award-letters";
 import { supplierExpiryWarning } from "@/lib/procurement/supplier-docs-server";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +66,10 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
     return [l.line.id, spec ? technicalEvaluation(spec.items.map((i) => ({ id: i.id, mandatory: i.mandatory, weight: i.weight })), answers) : null];
   }));
   const failing = lines.filter((l) => evals.get(l.line.id)?.responsive === false);
+  // Wave 37: once the award is approved, the winner gets an award letter and the other bidders a regret letter.
+  const [awardedOffer] = await db.select({ id: offers.id }).from(offers)
+    .where(and(eq(offers.projectId, project.id), eq(offers.status, "AWARDED"), sql`${offers.awardApprovedOn} is not null`)).limit(1);
+  const letter = letterFor(offer, awardedOffer?.id ?? null);
 
   return (
     <>
@@ -196,6 +201,10 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
         <div className="space-y-5">
           <Panel title="Evaluation decision">
             <OfferStatusActions offerId={id} status={offer.status as OfferStatus} allow={{ edit: mayEdit, recommend: mayRecommend }} awardPending={awardPending} />
+            {letter && (
+              <p className="mt-3 text-sm"><Link href={`/procurement/offers/${id}/${letter}-letter`} target="_blank" className="font-semibold text-primary hover:underline">{letter === "award" ? "Award letter" : "Regret letter"}</Link>
+                <span className="text-muted"> — {letter === "award" ? "notice of award with the items and value" : "the result and the reason, with the complaint period"}</span></p>
+            )}
             <p className="mt-3 text-xs text-muted">Compare against the other offers on the <Link href={`/procurement/${project.id}?tab=comparison`} className="text-primary hover:underline">comparison</Link> before recommending an award. The committee is set up on the project&apos;s <Link href={`/procurement/${project.id}?tab=committees`} className="text-primary hover:underline">Committees</Link> tab.</p>
             {pos.length > 0 && (
               <ul className="mt-3 space-y-1 border-t border-line pt-3 text-sm">

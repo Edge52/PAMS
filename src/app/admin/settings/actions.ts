@@ -1,10 +1,10 @@
 "use server";
 import { endSessionsWithoutTwoStep } from "@/lib/auth/two-step";
 import { revalidatePath } from "next/cache";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { approvalPolicies, facilities } from "@/db/schema";
+import { approvalPolicies, facilities, projects } from "@/db/schema";
 import { ROLES, ROLE_LABELS } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { formatMoney } from "@/lib/format";
@@ -105,6 +105,15 @@ const settingsSchema = z.object({
   depreciationMethod: z.enum(["STRAIGHT", "DECLINING"], { error: "Choose how book value is written off" }),
   assistantHourlyLimit: num("Questions per hour must be between 0 and 1,000", 0, 1000).int("Questions per hour must be a whole number"),
   assistantModel: z.string().trim().regex(/^[a-z0-9][a-z0-9.\-]{2,63}$/, "Enter a model name such as claude-sonnet-5-5"),
+  // Wave 37: delay penalties and landed cost
+  delayPenaltyRatePct: num("The delay penalty rate must be between 0 and 100 % a week", 0, 100),
+  delayPenaltyCapPct: num("The delay penalty cap must be between 0 and 100 %", 0, 100),
+  priceBasis: z.enum(["NET", "LANDED"], { error: "Choose how prices are ranked" }),
+  landedFreightPct: num("Freight must be between 0 and 100 % of the price", 0, 100),
+  landedInsurancePct: num("Insurance must be between 0 and 100 % of the price", 0, 100),
+  landedDutyPct: num("Customs and duty must be between 0 and 100 %", 0, 100),
+  landedClearancePct: num("Clearance must be between 0 and 100 % of the price", 0, 100),
+  landedLocalDeliveryPct: num("Local delivery must be between 0 and 100 % of the price", 0, 100),
 });
 
 export async function saveSettings(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -114,9 +123,17 @@ export async function saveSettings(_prev: ActionState, fd: FormData): Promise<Ac
   const before = await getSettings();
   const next: Settings = { ...p.data, tenderMinDays: before.tenderMinDays, emailEnabled: fd.get("emailEnabled") === "on", assistantEnabled: fd.get("assistantEnabled") === "on", demoAccounts: fd.get("demoAccounts") === "on", breachedPasswordCheck: fd.get("breachedPasswordCheck") === "on" };
   if (next.stateCouncilFromEgp < next.mofRepFromEgp) return fail("The State Council threshold is normally at or above the Ministry of Finance threshold. Check the amounts.");
+  if (next.delayPenaltyCapPct < next.delayPenaltyRatePct) return fail("The delay penalty cap is normally at or above the weekly rate. Check the two figures.");
   const changed = (Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]).filter((k) => before[k] !== next[k]);
   for (const k of changed) await setSetting(k, next[k] as never);
   if (changed.length) await logActivity("settings", 0, "updated", `Settings changed: ${changed.map((k) => `${k} ${String(before[k])} → ${String(next[k])}`).join("; ")}`, me.name);
+  // Wave 37: the price basis or a landed-cost default changed: refresh the stored scores of tenders still being
+  // evaluated (awarded and closed tenders keep the scores they were decided on).
+  if (changed.some((k) => k === "priceBasis" || k.startsWith("landed"))) {
+    const { recomputeOfferScores } = await import("@/lib/procurement/server");
+    const open = await db.select({ id: projects.id }).from(projects).where(inArray(projects.status, ["PLANNING", "SPECIFICATION", "RFQ", "EVALUATION"]));
+    for (const p of open) await recomputeOfferScores(p.id);
+  }
   // Audit S14: two-step became required — sign out the people it now applies to who haven't set it up, so they
   // set it up when they next sign in. Your own session stays.
   let signedOut = 0;

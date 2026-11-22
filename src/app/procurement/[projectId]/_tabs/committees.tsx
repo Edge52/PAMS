@@ -6,6 +6,7 @@ import { approvalRequests, offers, projects, suppliers, users } from "@/db/schem
 import { Badge, Field, FormGrid, Input, Panel, Select, Table, Td, Textarea, Th, THead } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/procurement/action-form";
 import { AwardTimeline } from "@/components/procurement/award-timeline";
+import { ResultLetters } from "@/components/procurement/result-letters";
 import { can, ROLE_LABELS, type Role } from "@/lib/auth/permissions";
 import type { CurrentUser } from "@/lib/auth/session";
 import { formatDate, formatMoney } from "@/lib/format";
@@ -174,6 +175,7 @@ export async function CommitteesTab({ project, me }: { project: Project; me: Cur
             </Table>
           )}
           {approved.map((o) => <AwardTimeline key={o.offer.id} offer={o.offer} supplier={o.supplier} canRecord={can(me.role, "award.recommend")} linkOffer={seesPrices(me.role)} />)}
+          {approved.length > 0 && seesPrices(me.role) && <ResultLetters projectId={project.id} />}
         </section>
       )}
 

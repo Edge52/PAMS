@@ -393,3 +393,32 @@ export async function retryAssets(_prev: ActionState, fd: FormData): Promise<Act
   revalidatePath(`/procurement/purchase-orders/${poId}`);
   return { message: n ? `Registered ${n} asset${n === 1 ? "" : "s"}.` : "Every received unit already has an asset." };
 }
+
+/* ── Wave 37: late-delivery penalty terms ── */
+
+const penaltySchema = z.object({
+  poId: idParam("Choose a purchase order"),
+  delayPenaltyRatePct: z.preprocess(blankToUndef, z.coerce.number({ error: "Enter the rate a week as a percentage" }).min(0, "The rate can't be below 0 %").max(100, "The rate is at most 100 %").optional()),
+  delayPenaltyCapPct: z.preprocess(blankToUndef, z.coerce.number({ error: "Enter the cap as a percentage" }).min(0, "The cap can't be below 0 %").max(100, "The cap is at most 100 %").optional()),
+});
+
+/** Set this order's own delay penalty rate and cap (blank = the hospital default). */
+export async function setDelayPenaltyTermsAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const me = await requirePermission("po.create");
+  const parsed = penaltySchema.safeParse(formObject(fd));
+  if (!parsed.success) return zodFail(parsed.error);
+  const d = parsed.data;
+  const po = await loadPoForAction(d.poId, me);
+  if (!po) return fail("This purchase order no longer exists.");
+  if (po.status === "CANCELLED") return fail("A cancelled purchase order can't be changed.");
+  if (d.delayPenaltyRatePct != null && d.delayPenaltyCapPct != null && d.delayPenaltyCapPct < d.delayPenaltyRatePct) {
+    return { errors: ["The cap is normally at or above the weekly rate."], fields: { delayPenaltyCapPct: "The cap is normally at or above the weekly rate." } };
+  }
+  const next = { delayPenaltyRatePct: d.delayPenaltyRatePct ?? null, delayPenaltyCapPct: d.delayPenaltyCapPct ?? null };
+  const changes = diff(po, next);
+  if (!changes) return { message: "Nothing changed." };
+  await db.update(purchaseOrders).set(next).where(eq(purchaseOrders.id, po.id));
+  await logActivity("po", po.id, "penalty_terms", `Delay penalty terms changed. ${changeSummary(changes)}`, me.name, db, changes);
+  revalidatePath(`/procurement/purchase-orders/${po.id}`);
+  return { message: "Penalty terms saved." };
+}

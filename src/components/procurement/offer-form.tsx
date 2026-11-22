@@ -10,6 +10,7 @@ export type OfferHeader = {
   supplierId?: number | null; reference?: string; offerDate?: string; validUntil?: string | null; currency?: string;
   incoterm?: string | null; deliveryWeeks?: number | null; warrantyMonths?: number | null; paymentTerms?: string | null; notes?: string | null;
   tcoServiceAnnual?: string | null; tcoConsumablesAnnual?: string | null; tcoEnergyAnnual?: string | null; tcoOtherAnnual?: string | null; tcoUptimePct?: number | null;
+  freightCost?: string | null; insuranceCost?: string | null; dutyPct?: number | null; clearanceCost?: string | null; localDeliveryCost?: string | null;
 };
 
 export function OfferForm({ action, projectId, rfqId, header, lines, suppliers, deviceTypes, boqLines, submitLabel }: {
@@ -54,6 +55,16 @@ export function OfferForm({ action, projectId, rfqId, header, lines, suppliers, 
           <Field label="Energy a year"><Input type="number" min={0} step="0.01" name="tcoEnergyAnnual" defaultValue={header.tcoEnergyAnnual ?? ""} /></Field>
           <Field label="Other a year" hint="Helium, licences…"><Input type="number" min={0} step="0.01" name="tcoOtherAnnual" defaultValue={header.tcoOtherAnnual ?? ""} /></Field>
           <Field label="Uptime guarantee (%)"><Input type="number" min={50} max={100} step="0.1" name="tcoUptimePct" defaultValue={header.tcoUptimePct ?? ""} /></Field>
+        </FormGrid>
+      </Panel>
+      <Panel title="Costs on top of the price (landed cost)">
+        <p className="mb-3 text-sm text-muted">What the hospital still pays to get the goods delivered, cleared and to site under the offer&apos;s Incoterm, in the offer currency. Leave blank to use the hospital defaults for that Incoterm; enter 0 when a cost doesn&apos;t apply.</p>
+        <FormGrid cols={4}>
+          <Field label="Freight"><Input type="number" min={0} step="0.01" name="freightCost" defaultValue={header.freightCost ?? ""} /></Field>
+          <Field label="Insurance"><Input type="number" min={0} step="0.01" name="insuranceCost" defaultValue={header.insuranceCost ?? ""} /></Field>
+          <Field label="Customs and duty (%)" hint="Of price + freight + insurance"><Input type="number" min={0} max={100} step="0.01" name="dutyPct" defaultValue={header.dutyPct ?? ""} /></Field>
+          <Field label="Clearance"><Input type="number" min={0} step="0.01" name="clearanceCost" defaultValue={header.clearanceCost ?? ""} /></Field>
+          <Field label="Local delivery" hint="Port or airport to the hospital"><Input type="number" min={0} step="0.01" name="localDeliveryCost" defaultValue={header.localDeliveryCost ?? ""} /></Field>
         </FormGrid>
       </Panel>
       <Panel title="Lines">

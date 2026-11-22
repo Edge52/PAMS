@@ -10,7 +10,7 @@
  * Runs after facility → boq. Links the ICU RFQ and offer lines to the demo BOQ when one exists, otherwise skips linking.
  */
 import { createRequire } from "node:module";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { DB } from "../../src/db";
 import {
   activityLog, boqLines, boqs, departments, deviceTypes, facilities, offerCompliance, offerLines, offers, poLines, projects,
@@ -122,6 +122,37 @@ const RAD_OFFERS: OfferSpec[] = [
 ];
 
 export default async function seed(db: DB) {
+  await seedBase(db);
+  await seedWave37(db);
+}
+
+/**
+ * Wave 37 demo data, also for demo databases made before it (idempotent):
+ * - landed-cost figures on two offers (the rest use the hospital defaults for their Incoterm);
+ * - PO-2026-0001 due on 15 Oct, so its first delivery (20 Oct) was a week late and the units still outstanding run
+ *   up a delay penalty — only while the order still has the seed's original date and no penalty terms of its own.
+ */
+async function seedWave37(db: DB) {
+  const landed: Record<string, { dutyPct?: number; clearanceCost?: string; localDeliveryCost?: string }> = {
+    "DBT-ICU-26-114": { dutyPct: 2, clearanceCost: "1500.00", localDeliveryCost: "900.00" },
+    "SID-Q-2026-1102": { clearanceCost: "2500.00" },
+  };
+  let n = 0;
+  for (const [reference, v] of Object.entries(landed)) {
+    const r = await db.update(offers).set(v).where(and(eq(offers.reference, reference), isNull(offers.freightCost), isNull(offers.insuranceCost),
+      isNull(offers.dutyPct), isNull(offers.clearanceCost), isNull(offers.localDeliveryCost))).returning({ id: offers.id });
+    n += r.length;
+  }
+  const late = await db.update(purchaseOrders).set({ expectedDelivery: "2026-10-15", delayPenaltyRatePct: 1, delayPenaltyCapPct: 15 })
+    .where(and(eq(purchaseOrders.number, "PO-2026-0001"), eq(purchaseOrders.expectedDelivery, "2026-12-03"), isNull(purchaseOrders.delayPenaltyRatePct)))
+    .returning({ id: purchaseOrders.id });
+  for (const po of late) {
+    await db.insert(activityLog).values({ entityType: "po", entityId: po.id, action: "penalty_terms", summary: "Demo: expected delivery 15 Oct 2026; delay penalty 1 % a week, at most 15 %", actor: "Demo seed" });
+  }
+  if (n || late.length) console.log(`  procurement: wave 37 demo data (${n} offers with landed costs${late.length ? ", PO-2026-0001 delivered late" : ""})`);
+}
+
+async function seedBase(db: DB) {
   const [fac] = await db.select().from(facilities).where(eq(facilities.code, "DGH"));
   if (!fac) { console.log("  procurement: facility DGH not found, skipped"); return; }
   const exists = await db.select({ id: projects.id }).from(projects).where(inArray(projects.code, ["UPA-2026-ICU-031", "UHI-2026-RAD-007"]));
