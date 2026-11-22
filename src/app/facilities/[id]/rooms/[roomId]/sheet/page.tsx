@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isRadiationType } from "@/lib/assets/radiation";
 import { notFound } from "next/navigation";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
@@ -42,7 +43,7 @@ export default async function RoomSheet({ params, searchParams }: { params: Prom
   const k = r.floor.unitsPerMetre ?? 10;
   const poly = r.room.polygon && r.room.polygon.length >= 3 ? r.room.polygon : null;
   const m2 = (poly ? area(poly) : r.room.w * r.room.h) / (k * k);
-  const installed = await db.select({ id: assets.id, tag: assets.assetTag, type: deviceTypes.name, status: assets.status, model: assets.model })
+  const installed = await db.select({ id: assets.id, tag: assets.assetTag, type: deviceTypes.name, typeCode: deviceTypes.code, status: assets.status, model: assets.model })
     .from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).where(and(eq(assets.roomId, roomId), sql`${assets.status} <> 'DISPOSED'`)).orderBy(asc(deviceTypes.name));
   const look = roomLook(r.room.name, r.room.type, (await loadKits()).kits);
   const plans = r.room.departmentId ? await plansForFacility(facilityId) : [];
@@ -67,7 +68,8 @@ export default async function RoomSheet({ params, searchParams }: { params: Prom
       <ReportPrintStyles />
       <div className="no-print mb-4 flex flex-wrap items-center gap-3">
         <Link href={`/assets/3d?facilityId=${facilityId}&roomId=${roomId}`} className="text-sm text-primary hover:underline">← Room in 3D</Link>
-        <Link href={`/assets/map?roomId=${roomId}`} className="text-sm text-primary hover:underline">Floor map</Link><PrintButton />
+        <Link href={`/assets/map?roomId=${roomId}`} className="text-sm text-primary hover:underline">Floor map</Link>
+        {installed.some((d) => isRadiationType(d.typeCode)) && <Link href={`/assets/radiation?facilityId=${facilityId}`} className="text-sm text-primary hover:underline">Radiation safety</Link>}<PrintButton />
       </div>
       <Notice sp={sp} />
       <article className="mx-auto max-w-3xl rounded border border-line bg-surface p-6 text-sm print:border-0 print:p-0">

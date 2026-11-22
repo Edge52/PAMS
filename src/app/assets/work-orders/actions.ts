@@ -13,6 +13,7 @@ import { assets, deviceTypes, documents, maintenanceEvents, recallAssets, twinNo
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { firstError, formObject, isoDate, num, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
+import { calibrationHeld } from "@/lib/assets/calibration-server";
 import { applyAssetEffect, assignableUsers, checklistForType, coverForAsset, notifyAssigners } from "@/lib/assets/work-order-server";
 import { blankResults, CHECKLIST_TYPES, checklistSummary, fillChecklist, type Answer } from "@/lib/assets/checklists";
 import { CLAIM_STATUSES } from "@/lib/assets/contracts";
@@ -235,6 +236,7 @@ export async function completeWorkOrderAction(_: FormState, fd: FormData): Promi
   if ("problem" in meter) return { error: meter.problem, fields: { meterReading: meter.problem } };
   const [assignee] = wo.assignedToId ? await db.select({ name: users.name }).from(users).where(eq(users.id, wo.assignedToId)) : [];
   const currency = d.cost != null ? (d.currency ?? "EGP").toUpperCase() : null;
+  const held = await calibrationHeld(wo.assetId); // wave 37: a failed calibration keeps it out of service
   const ok = await db.transaction(async (tx) => {
     const downtimeEnd = wo.deviceDown && d.returnToService ? now : wo.downtimeEnd;
     if (!(await guardedUpdate(tx, wo, {
@@ -260,14 +262,14 @@ export async function completeWorkOrderAction(_: FormState, fd: FormData): Promi
       .where(and(eq(recallAssets.workOrderId, wo.id), eq(recallAssets.status, "PENDING")));
     await logActivity("work_order", wo.id, "completed", `Completed by ${me.name}: ${resolution.slice(0, 200)}${failed ? ` — ${failed} checklist item${failed === 1 ? "" : "s"} failed` : ""}${wo.deviceDown ? (d.returnToService ? " — back in service" : " — still out of use") : ""}`, me.name, tx);
     await logActivity("asset", wo.assetId, "maintenance", `${wo.number} completed — ${resolution.slice(0, 120)}`, me.name, tx);
-    await applyAssetEffect("complete", wo, { returnToService: d.returnToService, actor: me.name }, tx);
+    await applyAssetEffect("complete", wo, { returnToService: d.returnToService, actor: me.name, calibrationHeld: held }, tx);
     return true;
   });
   if (!ok) return { error: RACE };
   if (wo.reportedById && wo.reportedById !== me.id) {
     await notifyUsers([wo.reportedById], {
       kind: "work_order_completed", title: `${wo.number} is fixed: ${wo.title}`.slice(0, 200),
-      body: d.returnToService || !wo.deviceDown ? "The device is back in service." : "The job is done but the device is still out of use.", href: path(wo.id),
+      body: held && wo.deviceDown ? "The job is done. The device stays out of service until a passing calibration is recorded." : d.returnToService || !wo.deviceDown ? "The device is back in service." : "The job is done but the device is still out of use.", href: path(wo.id),
       dedupeKey: `wo_completed:${wo.id}:${now.getTime()}`,
     });
   }
@@ -332,13 +334,14 @@ export async function cancelWorkOrderAction(_: FormState, fd: FormData): Promise
   if ("error" in r) return { error: r.error };
   const { wo, next } = r;
   const now = new Date();
+  const held = await calibrationHeld(wo.assetId);
   const ok = await db.transaction(async (tx) => {
     // A cancelled PPM job lets go of its scheduled visit, so a new job can be raised for it.
     if (!(await guardedUpdate(tx, wo, { status: next, closedAt: now, downtimeEnd: wo.deviceDown ? wo.downtimeEnd ?? now : wo.downtimeEnd, plannedEventId: null }))) return false;
     await logActivity("work_order", wo.id, "cancelled", `Cancelled by ${me.name} — ${p.data.reason}`, me.name, tx);
     // A cancelled recall job lets go of the device, so a new job can be raised for it.
     await tx.update(recallAssets).set({ workOrderId: null }).where(and(eq(recallAssets.workOrderId, wo.id), eq(recallAssets.status, "PENDING")));
-    await applyAssetEffect("cancel", wo, { actor: me.name }, tx);
+    await applyAssetEffect("cancel", wo, { actor: me.name, calibrationHeld: held }, tx);
     return true;
   });
   if (!ok) return { error: RACE };

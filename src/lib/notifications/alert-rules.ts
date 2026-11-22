@@ -289,6 +289,16 @@ const DIGEST_KINDS: Record<string, { word: (n: number) => string; href: (facilit
   },
   maintenance_overdue: { word: (n) => `${plural(n, "maintenance job")} overdue`, href: () => "/assets/maintenance?tab=due" },
   maintenance_due: { word: (n) => `${plural(n, "maintenance job")} due this week`, href: () => "/assets/maintenance?tab=due" },
+  // Wave 37
+  calibration_due: { word: (n) => `${plural(n, "calibration")} due within 30 days`, href: (f) => `/assets/calibration?tab=due${f ? `&facilityId=${f}` : ""}` },
+  calibration_overdue: { word: (n) => `${plural(n, "calibration")} overdue`, href: (f) => `/assets/calibration?tab=due${f ? `&facilityId=${f}` : ""}` },
+  safety_test_due: { word: (n) => `${plural(n, "safety test")} due within 30 days`, href: () => "/assets/safety-tests?tab=due" },
+  safety_test_overdue: { word: (n) => `${plural(n, "safety test")} overdue`, href: () => "/assets/safety-tests?tab=due" },
+  part_low_stock: { word: (n) => `${plural(n, "spare part")} at or below the reorder level`, href: () => "/assets/parts?tab=low" },
+  radiation_qc_due: { word: (n) => `${plural(n, "physicist QC test")} due within 30 days`, href: (f) => `/assets/radiation?tab=qc${f ? `&facilityId=${f}` : ""}` },
+  radiation_qc_overdue: { word: (n) => `${plural(n, "physicist QC test")} overdue`, href: (f) => `/assets/radiation?tab=qc${f ? `&facilityId=${f}` : ""}` },
+  protective_check_due: { word: (n) => `${plural(n, "protective item check")} due within 30 days`, href: (f) => `/assets/radiation?tab=protective${f ? `&facilityId=${f}` : ""}` },
+  protective_check_overdue: { word: (n) => `${plural(n, "protective item check")} overdue`, href: (f) => `/assets/radiation?tab=protective${f ? `&facilityId=${f}` : ""}` },
 };
 
 /** ISO week label (2026-W44): summaries repeat at most weekly for warranties and daily for maintenance. */

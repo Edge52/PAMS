@@ -2166,3 +2166,5 @@ export const trainingAttendees = pgTable("training_attendees", {
 // sessions.ip (above) and the short browser label in sessions.user_agent; no new tables.
 /* ── Wave 28: 3D view (north arrow, own model files with licence and credit) ── */
 // No new tables: buildings.north_deg and equipment_models.glb_licence / glb_credit / glb_source / glb_bytes above.
+
+export * from "./schema-wave37-k";

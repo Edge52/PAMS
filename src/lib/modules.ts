@@ -59,6 +59,8 @@ export const MODULES: AppModule[] = [
     { href: "/assets/recalls", label: "Recalls", need: "assets.view" },
     { href: "/assets/incidents", label: "Incidents", need: "assets.view" },
     { href: "/assets/safety-tests", label: "Safety tests", need: "assets.view" },
+    { href: "/assets/calibration", label: "Calibration", need: "assets.view" },
+    { href: "/assets/radiation", label: "Radiation safety", need: "assets.view" },
     { href: "/assets/training", label: "User training", need: "assets.view" },
     { href: "/assets/security", label: "Device security", need: "assets.view" },
     { href: "/assets/maintenance/strategy", label: "Risk and strategy", need: "assets.view" },
