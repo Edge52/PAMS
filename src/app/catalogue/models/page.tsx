@@ -11,10 +11,12 @@ import { deviceTypeOptions } from "@/lib/assets/queries";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatMoney, todayISO } from "@/lib/format";
+import { shownNote } from "@/lib/list";
 import { buildModelsFromRegisterAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Makes and models" };
+const MAX_ROWS = 500;
 
 export default async function ModelsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const me = await requirePermission("assets.view");
@@ -26,14 +28,19 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
   const units = sql<number>`(select count(*) from ${assets} where ${assets.deviceTypeId} = ${deviceModels.deviceTypeId}
     and lower(trim(${assets.manufacturer})) = lower(${deviceModels.manufacturer}) and lower(trim(${assets.model})) = lower(${deviceModels.model})
     and ${assets.status} <> 'DISPOSED' and ${scopeWhere(assets.facilityId, scope) ?? sql`true`})::int`;
-  const rows = await db.select({ m: deviceModels, typeName: deviceTypes.name, typeCode: deviceTypes.code, units }).from(deviceModels)
-    .innerJoin(deviceTypes, eq(deviceTypes.id, deviceModels.deviceTypeId))
-    .where(and(
-      show === "retired" ? eq(deviceModels.active, false) : eq(deviceModels.active, true),
-      type ? eq(deviceTypes.code, type) : undefined,
-      q ? sql`(${deviceModels.manufacturer} ilike ${`%${q}%`} or ${deviceModels.model} ilike ${`%${q}%`} or ${deviceTypes.name} ilike ${`%${q}%`})` : undefined,
-    ))
-    .orderBy(asc(deviceTypes.name), asc(deviceModels.manufacturer), asc(deviceModels.model)).limit(500);
+  const where = and(
+    show === "retired" ? eq(deviceModels.active, false) : eq(deviceModels.active, true),
+    type ? eq(deviceTypes.code, type) : undefined,
+    q ? sql`(${deviceModels.manufacturer} ilike ${`%${q}%`} or ${deviceModels.model} ilike ${`%${q}%`} or ${deviceTypes.name} ilike ${`%${q}%`})` : undefined,
+  );
+  const [rows, [{ n: matching }]] = await Promise.all([
+    db.select({ m: deviceModels, typeName: deviceTypes.name, typeCode: deviceTypes.code, units }).from(deviceModels)
+      .innerJoin(deviceTypes, eq(deviceTypes.id, deviceModels.deviceTypeId)).where(where)
+      .orderBy(asc(deviceTypes.name), asc(deviceModels.manufacturer), asc(deviceModels.model)).limit(MAX_ROWS),
+    db.select({ n: sql<number>`count(*)::int` }).from(deviceModels).innerJoin(deviceTypes, eq(deviceTypes.id, deviceModels.deviceTypeId)).where(where),
+  ]);
+  // B6: say so when the list is cut.
+  const cutNote = shownNote(rows.length, matching, "makes and models");
   const today = todayISO();
   const list = show === "support" ? rows.filter((r) => ["ending", "unsupported"].includes(supportState(r.m, today))) : rows;
   const canEdit = can(me.role, "catalogue.edit");
@@ -83,7 +90,7 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
           </tbody>
         </Table>
       )}
-      {rows.length === 500 && <p className="mt-2 text-xs text-muted">Showing the first 500; search to narrow the list.</p>}
+      {cutNote && <p className="mt-2 text-xs text-muted">{cutNote}</p>}
     </>
   );
 }

@@ -105,15 +105,19 @@ export async function createInvoiceAction(_: FormState, fd: FormData): Promise<F
   const poLinesOf = await matchLinesFor(po.id, entered);
   // DL-08: every invoiced line must be a line of this PO.
   if ([...entered.keys()].some((id) => !poLinesOf.some((l) => l.poLineId === id))) return { error: `Every invoice line must be a line of ${po.number}. Reload the page and enter the invoice again.` };
-  const match = matchInvoice(poLinesOf.filter((l) => l.quantity > 0));
   const inv = await db.transaction(async (tx) => {
+    // DL-15: lock the order and match against what is invoiced now, so two invoices saved at once can't both pass
+    // as matching when together they invoice more than was ordered or received.
+    await tx.select({ id: purchaseOrders.id }).from(purchaseOrders).where(eq(purchaseOrders.id, po.id)).for("update");
+    const match = matchInvoice((await matchLinesFor(po.id, entered, undefined, tx)).filter((l) => l.quantity > 0));
     const number = await nextNumber("INV", invoices, invoices.number, tx);
     const [row] = await tx.insert(invoices).values({ number, supplierInvoiceNo, poId: po.id, supplierId: po.supplierId, invoiceDate, dueDate, currency: po.currency,
       status: match.ok ? "MATCHED" : "EXCEPTION", notes: str(fd, "notes", 2000) || null, createdByName: me.name, createdById: me.id }).returning({ id: invoices.id, number: invoices.number });
     await tx.insert(invoiceLines).values([...entered].map(([poLineId, l]) => ({ invoiceId: row.id, poLineId, quantity: l.quantity, unitPrice: l.unitPrice.toFixed(2) })));
     await logActivity("po", po.id, "invoice", `${row.number} (supplier's ${supplierInvoiceNo}) recorded: ${match.ok ? "matches" : "differs from"} the PO and goods received`, me.name, tx);
-    return row;
+    return { ...row, match };
   });
+  const { match } = inv;
   await notifyRole("FINANCE", { kind: "invoice_received", title: `${inv.number} from ${po.number}: ${match.ok ? "ready to approve" : "differences to check"}`, href: `/procurement/invoices/${inv.id}`, dedupeKey: `invoice:${inv.id}` }, po.facilityId);
   revalidatePath("/procurement/invoices");
   return go(`/procurement/invoices/${inv.id}`, match.ok ? `${inv.number} recorded. It matches the PO and goods received.` : `${inv.number} recorded with differences: check them before approving.`);

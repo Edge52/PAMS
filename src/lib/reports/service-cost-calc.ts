@@ -61,21 +61,25 @@ export type ProviderRollup = { key: string; label: string; supplierId: number | 
 
 /**
  * Service cost by the company that did the work (wave 29). Each provider's ratio is its cost against the purchase
- * cost of the devices it served (each device counted once per provider). Lines without a provider are grouped as
- * "Not recorded".
+ * cost of the devices it served (each device counted once per provider). Devices without a purchase cost in EGP stay
+ * in the cost but out of the ratio. Lines without a provider are grouped as "Not recorded".
  */
 export function byProvider(lines: CostLine[], acquisitionOf: (assetId: number) => number | null, days: number): ProviderRollup[] {
-  const groups = new Map<string, { key: string; label: string; supplierId: number | null; assets: Set<number>; jobs: number; cost: number }>();
+  const groups = new Map<string, { key: string; label: string; supplierId: number | null; assets: Set<number>; jobs: number; cost: number; costs: { assetId: number; amount: number }[] }>();
   for (const l of lines) {
     if (!Number.isFinite(l.amount) || l.amount === 0) continue;
     const p = l.provider ?? { key: "unknown", label: "Not recorded", supplierId: null };
-    const g = groups.get(p.key) ?? { ...p, assets: new Set<number>(), jobs: 0, cost: 0 };
-    g.assets.add(l.assetId); g.jobs += 1; g.cost += l.amount;
+    const g = groups.get(p.key) ?? { ...p, assets: new Set<number>(), jobs: 0, cost: 0, costs: [] };
+    g.assets.add(l.assetId); g.jobs += 1; g.cost += l.amount; g.costs.push({ assetId: l.assetId, amount: l.amount });
     groups.set(p.key, g);
   }
   return [...groups.values()].map((g) => {
-    const acquisition = [...g.assets].reduce((a, id) => a + (acquisitionOf(id) ?? 0), 0);
-    const cosr = cosrPct(g.cost, acquisition);
+    // B7: a device without a purchase cost in EGP (none recorded, or no exchange rate) is left out of the ratio,
+    // its cost as well as its price, as in rollUp; counting its price as 0 would inflate the ratio.
+    const priced = [...g.assets].filter((id) => (acquisitionOf(id) ?? 0) > 0);
+    const acquisition = priced.reduce((a, id) => a + acquisitionOf(id)!, 0);
+    const pricedCost = g.costs.filter((c) => priced.includes(c.assetId)).reduce((a, c) => a + c.amount, 0);
+    const cosr = cosrPct(pricedCost, acquisition);
     return { key: g.key, label: g.label, supplierId: g.supplierId, devices: g.assets.size, jobs: g.jobs, cost: Math.round(g.cost * 100) / 100, acquisition, cosr, cosrYear: yearlyCosr(cosr, days) };
   }).sort((a, b) => b.cost - a.cost);
 }

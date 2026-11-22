@@ -103,6 +103,7 @@ const settingsSchema = z.object({
   trainingValidMonths: num("Training stays valid for 1 to 120 months", 1, 120).int("Training stays valid for a whole number of months"),
   twoStepRequired: z.enum(["off", "admins", "all"], { error: "Choose who must use two-step sign-in" }),
   depreciationMethod: z.enum(["STRAIGHT", "DECLINING"], { error: "Choose how book value is written off" }),
+  assistantHourlyLimit: num("Questions per hour must be between 0 and 1,000", 0, 1000).int("Questions per hour must be a whole number"),
   assistantModel: z.string().trim().regex(/^[a-z0-9][a-z0-9.\-]{2,63}$/, "Enter a model name such as claude-sonnet-5-5"),
 });
 

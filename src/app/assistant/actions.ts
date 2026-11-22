@@ -14,7 +14,7 @@ export async function askAction(history: ChatTurn[], chatId: number | null = nul
   if (!s.assistantEnabled) return { error: "The assistant is switched off. An administrator can switch it on in settings." };
   if (!Array.isArray(history)) return { error: "Ask a question first." };
   const clean = history.filter((t) => t && (t.role === "user" || t.role === "assistant") && typeof t.text === "string").map((t) => ({ role: t.role, text: t.text }));
-  const r = await ask(me, clean, s.assistantModel);
+  const r = await ask(me, clean, s.assistantModel, s.assistantHourlyLimit);
   // The audit trail records who used it and which look-ups ran, not what was asked.
   await logActivity("assistant", me.id, "asked", "error" in r ? `Assistant: ${r.error}` : `Assistant answered${r.used.length ? ` (looked up: ${[...new Set(r.used)].join(", ")})` : ""}`, me.name);
   if ("error" in r) return r;

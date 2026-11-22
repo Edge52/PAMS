@@ -7,9 +7,11 @@ import { Notice } from "@/components/assets/bits";
 import { scopeWhere } from "@/lib/assets/access";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatMoney, todayISO } from "@/lib/format";
+import { pageFor, pagingNote } from "@/lib/list";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Supplier invoices" };
+const PAGE_SIZE = 100;
 
 const TABS = [
   { key: "decide", label: "To decide", statuses: ["MATCHED", "EXCEPTION"] },
@@ -23,9 +25,15 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const scope = await facilityScope(me);
   const sp = await searchParams;
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
+  const where = and(inArray(invoices.status, [...tab.statuses]), scopeWhere(purchaseOrders.facilityId, scope));
+  // B6: paged instead of stopping at 300 rows without a word.
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(invoices).innerJoin(purchaseOrders, eq(purchaseOrders.id, invoices.poId)).where(where);
+  const paging = pageFor(sp, n, PAGE_SIZE);
   const rows = await db.select({ i: invoices, po: purchaseOrders.number, supplier: suppliers.name, total: sql<string>`(select sum(${invoiceLines.quantity} * ${invoiceLines.unitPrice}) from ${invoiceLines} where ${invoiceLines.invoiceId} = ${invoices.id})` })
     .from(invoices).innerJoin(purchaseOrders, eq(purchaseOrders.id, invoices.poId)).innerJoin(suppliers, eq(suppliers.id, invoices.supplierId))
-    .where(and(inArray(invoices.status, [...tab.statuses]), scopeWhere(purchaseOrders.facilityId, scope))).orderBy(desc(invoices.invoiceDate)).limit(300);
+    .where(where).orderBy(desc(invoices.invoiceDate), desc(invoices.id)).limit(PAGE_SIZE).offset(paging.offset);
+  const pageHref = (page: number) => `/procurement/invoices?tab=${tab.key}${page > 1 ? `&page=${page}` : ""}`;
+  const note = pagingNote(paging, "invoices");
   const today = todayISO();
   return (
     <>
@@ -46,6 +54,13 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
               </tr>
             ))}</tbody>
           </table></div>
+          {note && (
+            <nav aria-label="Pages" className="flex flex-wrap items-center gap-3 border-t border-line px-3 py-2 text-sm">
+              <span className="text-muted">{note}</span>
+              {paging.page > 1 && <Link href={pageHref(paging.page - 1)} className="font-semibold text-primary hover:underline">Previous page</Link>}
+              {paging.page < paging.pages && <Link href={pageHref(paging.page + 1)} className="font-semibold text-primary hover:underline">Next page</Link>}
+            </nav>
+          )}
         </Panel>
       )}
     </>
