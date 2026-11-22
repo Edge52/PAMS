@@ -10,11 +10,11 @@ export function contentPolicy(nonce: string, dev = false): string {
     "default-src 'self'",
     // 'strict-dynamic': scripts our own scripts load are trusted too. Dev mode needs eval for hot reload.
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
-    // Inline style attributes are used for sizes and colours throughout. The two Google addresses are the fonts
-    // (Inter, Fraunces), the only thing the app loads from another site.
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    // Inline style attributes are used for sizes and colours throughout. Nothing loads from another site: the fonts
+    // are served by the app itself (next/font, wave 36).
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
-    "font-src 'self' data: https://fonts.gstatic.com",
+    "font-src 'self' data:",
     `connect-src 'self'${dev ? " ws: wss:" : ""}`,
     "worker-src 'self' blob:", // the 3D view's route finder runs in a worker built in the page
     "media-src 'self' blob:",

@@ -19,6 +19,8 @@ import { clearTwoStep, currentChallenge, enableTwoStep, endChallenge, freshBacku
 import { logActivity } from "@/lib/server-utils";
 import type { ActionState } from "@/lib/procurement/forms";
 import { safeLocalPath } from "@/lib/safe-path";
+// Relative, not @/: src/lib/auth/sign-in-db.test.ts loads this file and maps each @/ import it knows by hand.
+import { claimFirstAdmin, setupCodeRule } from "../../lib/first-admin";
 
 function safeNext(v: FormDataEntryValue | null): string {
   const s = safeLocalPath(v);
@@ -167,6 +169,7 @@ export async function newBackupCodeSet(_prev: StepState, fd: FormData): Promise<
 }
 
 // Verifying against a fixed hash when the email is unknown keeps response times similar (no account probing).
+const SETUP_LOCKED = "Setup is locked: set SETUP_CODE in the server's .env file, restart the app, then try again.";
 const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
 export async function signOut(): Promise<void> {
@@ -174,9 +177,12 @@ export async function signOut(): Promise<void> {
   redirect("/login");
 }
 
-/** True until the first administrator with a password exists. */
+/** Whether setup asks for SETUP_CODE, or is locked because a server has none set (S10). */
 export async function setupNeedsCode(): Promise<boolean> {
-  return !!process.env.SETUP_CODE;
+  return setupCodeRule(process.env).ask;
+}
+export async function setupLocked(): Promise<boolean> {
+  return setupCodeRule(process.env).locked;
 }
 
 export async function needsSetup(): Promise<boolean> {
@@ -194,9 +200,11 @@ const setupSchema = z.object({
 export async function createFirstAdmin(_prev: ActionState, fd: FormData): Promise<ActionState> {
   if (!(await needsSetup())) redirect("/login");
   // On a server, whoever reached /setup first would become administrator; SETUP_CODE (from the server's .env)
-  // makes setup need a code only the installer knows.
+  // makes setup need a code only the installer knows. A server without one is locked (S10, see first-admin.ts).
+  const rule = setupCodeRule(process.env);
+  if (rule.locked) return { errors: [SETUP_LOCKED] };
   const code = process.env.SETUP_CODE;
-  if (code && !safeEqual(String(fd.get("setupCode") ?? ""), code)) return { errors: ["That setup code isn't right. It's the SETUP_CODE in the server's .env file."] };
+  if (rule.ask && code && !safeEqual(String(fd.get("setupCode") ?? ""), code)) return { errors: ["That setup code isn't right. It's the SETUP_CODE in the server's .env file."] };
   const p = setupSchema.safeParse(Object.fromEntries(fd));
   if (!p.success) return { errors: [...new Set(p.error.issues.map((i) => i.message))] };
   const { name, email, password, confirm } = p.data;
@@ -204,14 +212,9 @@ export async function createFirstAdmin(_prev: ActionState, fd: FormData): Promis
   if (problem) return { errors: [problem], fields: { password: problem } };
   if (password !== confirm) return { errors: ["The two passwords don't match."] };
   const passwordHash = await hashPassword(password);
-  const [existing] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${email}`);
-  let id: number;
-  if (existing) {
-    await db.update(users).set({ name, role: "ADMIN", active: true, passwordHash }).where(eq(users.id, existing.id));
-    id = existing.id;
-  } else {
-    [{ id }] = await db.insert(users).values({ name, email, role: "ADMIN", passwordHash }).returning({ id: users.id });
-  }
+  // Checked again and written in one locked transaction: two setups at once make one administrator (S10).
+  const id = await claimFirstAdmin(db, { name, email, passwordHash });
+  if (id === null) redirect("/login");
   await createSession(id);
   await logActivity("user", id, "created", "First administrator set up", name);
   redirect("/admin/users");

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Fraunces, IBM_Plex_Sans_Arabic, Inter } from "next/font/google";
 import "./globals.css";
 import { SideNav } from "@/components/side-nav";
 import { TopBar } from "@/components/shell/top-bar";
@@ -12,6 +13,15 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "PAMS", statusBarStyle: "black-translucent" },
 };
 
+/**
+ * Fonts (R4, audit wave 30): next/font downloads them once at build time and serves them from the app, so pages look
+ * the same on a hospital network without internet. The build itself needs internet (Docker build, or the launcher's
+ * first build); without it the build stops with a font error.
+ */
+const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-inter", display: "swap" });
+const fraunces = Fraunces({ subsets: ["latin"], axes: ["opsz"], variable: "--font-fraunces", display: "swap" });
+const plexArabic = IBM_Plex_Sans_Arabic({ subsets: ["arabic"], weight: ["400", "600"], variable: "--font-plex-arabic", display: "swap", preload: false });
+
 /** Phone browser bar in the menu colour (wave 26). */
 export const viewport: Viewport = { themeColor: "#0c1f1a", width: "device-width", initialScale: 1 };
 
@@ -19,16 +29,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const user = await getCurrentUser();
   const assistant = user ? await getSetting("assistantEnabled") : false;
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500&family=IBM+Plex+Sans+Arabic:wght@400;600&display=swap"
-        />
-      </head>
+    <html lang="en" className={`${inter.variable} ${fraunces.variable} ${plexArabic.variable}`}>
       <body className="min-h-screen">
         <a href="#content" className="skip-link">Skip to content</a>
         {user ? (

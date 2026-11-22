@@ -430,7 +430,8 @@ export const boqRules = pgTable("boq_rules", {
   paramRatio: doublePrecision("param_ratio"),
   /** Conditional rule (wave 3): applies only when the BOQ has this feature (e.g. "trauma"); '' = always. */
   condition: varchar("condition", { length: 32 }).notNull().default(""),
-}, (t) => [uniqueIndex("boq_rules_uq").on(t.standardSetId, t.departmentTypeCode, t.deviceTypeId, t.condition)]);
+}, (t) => [uniqueIndex("boq_rules_uq").on(t.standardSetId, t.departmentTypeCode, t.deviceTypeId, t.condition),
+  check("boq_rules_qty_check", sql`${t.minQty} >= 0 and (${t.maxQty} is null or ${t.maxQty} >= ${t.minQty})`)]);
 
 /* ───────────────────────── Procurement projects ───────────────────────── */
 
@@ -452,7 +453,7 @@ export const projects = pgTable("projects", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (t) => [index("projects_facility_idx").on(t.facilityId), check("projects_budget_check", sql`${t.budget} is null or ${t.budget} >= 0`)]);
 
 export const boqs = pgTable("boqs", {
   id: serial("id").primaryKey(),
@@ -477,7 +478,8 @@ export const boqs = pgTable("boqs", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (t) => [index("boqs_facility_idx").on(t.facilityId), index("boqs_project_idx").on(t.projectId),
+  check("boqs_money_check", sql`(${t.targetBudget} is null or ${t.targetBudget} >= 0) and ${t.contingencyPct} >= 0`)]);
 
 /** Planned department scope inside a BOQ (the input the rules are applied to). */
 export const boqDepartments = pgTable("boq_departments", {
@@ -495,7 +497,7 @@ export const boqDepartments = pgTable("boq_departments", {
   priceTier: priceTier("price_tier"),
   /** Opening phase (1–4) for phasing and cash flow (wave 4). */
   phase: integer("phase").notNull().default(1),
-});
+}, (t) => [index("boq_departments_boq_idx").on(t.boqId)]);
 
 export const boqLines = pgTable("boq_lines", {
   id: serial("id").primaryKey(),
@@ -515,7 +517,10 @@ export const boqLines = pgTable("boq_lines", {
   priceTier: priceTier("price_tier"),
   /** The unit price was typed by hand: repricing by tier leaves it alone. */
   priceManual: boolean("price_manual").notNull().default(false),
-}, (t) => [index("boq_lines_boq_idx").on(t.boqId)]);
+}, (t) => [index("boq_lines_boq_idx").on(t.boqId), index("boq_lines_department_idx").on(t.boqDepartmentId),
+  index("boq_lines_device_type_idx").on(t.deviceTypeId),
+  check("boq_lines_quantity_check", sql`${t.quantity} >= 0 and ${t.calculatedQty} >= 0`),
+  check("boq_lines_price_check", sql`${t.unitPriceEstimate} is null or ${t.unitPriceEstimate} >= 0`)]);
 
 /**
  * Companion items (wave 3): equipment that comes with another, e.g. a CT scanner brings a CT injector. BOQ generation
@@ -539,7 +544,7 @@ export const techSpecs = pgTable("tech_specs", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (t) => [index("tech_specs_project_idx").on(t.projectId)]);
 
 export const specItems = pgTable("spec_items", {
   id: serial("id").primaryKey(),
@@ -551,7 +556,7 @@ export const specItems = pgTable("spec_items", {
   mandatory: boolean("mandatory").notNull().default(true),
   weight: real("weight").notNull().default(1),   // for technical scoring
   sortOrder: integer("sort_order").notNull().default(0),
-});
+}, (t) => [index("spec_items_spec_idx").on(t.specId)]);
 
 /* ─────────────────────────── RFQ & offers ─────────────────────────── */
 
@@ -567,7 +572,7 @@ export const rfqs = pgTable("rfqs", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (t) => [index("rfqs_project_idx").on(t.projectId)]);
 
 export const rfqSuppliers = pgTable("rfq_suppliers", {
   id: serial("id").primaryKey(),
@@ -590,7 +595,7 @@ export const rfqLines = pgTable("rfq_lines", {
   departments: text("departments").array().notNull().default(sql`'{}'::text[]`),
   sortOrder: integer("sort_order").notNull().default(0),
   notes: text("notes"),
-}, (t) => [uniqueIndex("rfq_lines_uq").on(t.rfqId, t.deviceTypeId)]);
+}, (t) => [uniqueIndex("rfq_lines_uq").on(t.rfqId, t.deviceTypeId), check("rfq_lines_quantity_check", sql`${t.quantity} is null or ${t.quantity} > 0`)]);
 
 export const offers = pgTable("offers", {
   id: serial("id").primaryKey(),
@@ -623,7 +628,7 @@ export const offers = pgTable("offers", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [index("offers_project_idx").on(t.projectId)]);
+}, (t) => [index("offers_project_idx").on(t.projectId), index("offers_rfq_idx").on(t.rfqId), index("offers_supplier_idx").on(t.supplierId)]);
 
 export const offerLines = pgTable("offer_lines", {
   id: serial("id").primaryKey(),
@@ -642,6 +647,8 @@ export const offerLines = pgTable("offer_lines", {
 }, (t) => [
   check("offer_lines_quantity_check", sql`${t.quantity} > 0`), check("offer_lines_price_check", sql`${t.unitPrice} >= 0`),
   check("offer_lines_discount_check", sql`${t.discountPct} >= 0 and ${t.discountPct} <= 100`),
+  index("offer_lines_offer_idx").on(t.offerId), index("offer_lines_boq_line_idx").on(t.boqLineId),
+  index("offer_lines_device_type_idx").on(t.deviceTypeId),
 ]);
 
 export const offerCompliance = pgTable("offer_compliance", {
@@ -653,7 +660,7 @@ export const offerCompliance = pgTable("offer_compliance", {
   remark: text("remark"),
   /** Where the offer shows it (datasheet page or clause), for the technical evaluation sheet (wave 10, D2). */
   pageRef: varchar("page_ref", { length: 64 }),
-}, (t) => [uniqueIndex("offer_compliance_uq").on(t.offerLineId, t.specItemId)]);
+}, (t) => [uniqueIndex("offer_compliance_uq").on(t.offerLineId, t.specItemId), index("offer_compliance_spec_item_idx").on(t.specItemId)]);
 
 /* ────────────────────────── Purchase orders ────────────────────────── */
 
@@ -677,7 +684,8 @@ export const purchaseOrders = pgTable("purchase_orders", {
   frameworkId: integer("framework_id").references((): AnyPgColumn => frameworks.id, { onDelete: "set null" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (t) => [index("purchase_orders_project_idx").on(t.projectId), index("purchase_orders_supplier_idx").on(t.supplierId),
+  index("purchase_orders_offer_idx").on(t.offerId), index("purchase_orders_facility_idx").on(t.facilityId)]);
 
 export const poLines = pgTable("po_lines", {
   id: serial("id").primaryKey(),
@@ -695,6 +703,9 @@ export const poLines = pgTable("po_lines", {
 }, (t) => [
   check("po_lines_quantity_check", sql`${t.quantity} > 0`), check("po_lines_price_check", sql`${t.unitPrice} >= 0`),
   check("po_lines_received_check", sql`${t.receivedQty} >= 0`),
+  // Goods receipt never books more than was ordered (receiving.ts caps it); lowering a line below what arrived is refused.
+  check("po_lines_received_max_check", sql`${t.receivedQty} <= ${t.quantity}`),
+  index("po_lines_po_idx").on(t.poId), index("po_lines_offer_line_idx").on(t.offerLineId),
 ]);
 
 export const deliveries = pgTable("deliveries", {
@@ -706,7 +717,7 @@ export const deliveries = pgTable("deliveries", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (t) => [index("deliveries_po_idx").on(t.poId)]);
 
 export const deliveryLines = pgTable("delivery_lines", {
   id: serial("id").primaryKey(),
@@ -714,7 +725,8 @@ export const deliveryLines = pgTable("delivery_lines", {
   poLineId: integer("po_line_id").notNull().references(() => poLines.id, { onDelete: "cascade" }),
   quantity: integer("quantity").notNull(),
   serialNumbers: text("serial_numbers").array(),
-});
+}, (t) => [index("delivery_lines_delivery_idx").on(t.deliveryId), index("delivery_lines_po_line_idx").on(t.poLineId),
+  check("delivery_lines_quantity_check", sql`${t.quantity} > 0`)]);
 
 /* ───────────────────────────── Assets ───────────────────────────── */
 
@@ -775,6 +787,9 @@ export const assets = pgTable("assets", {
   index("assets_device_type_idx").on(t.deviceTypeId),
   index("assets_facility_idx").on(t.facilityId),
   check("assets_residual_check", sql`${t.residualPct} is null or (${t.residualPct} >= 0 and ${t.residualPct} <= 100)`),
+  index("assets_po_line_idx").on(t.poLineId), index("assets_delivery_line_idx").on(t.deliveryLineId),
+  index("assets_parent_idx").on(t.parentAssetId),
+  check("assets_cost_check", sql`${t.purchaseCost} is null or ${t.purchaseCost} >= 0`),
 ]);
 
 export const assetMovements = pgTable("asset_movements", {
@@ -787,7 +802,7 @@ export const assetMovements = pgTable("asset_movements", {
   movedAt: timestamp("moved_at", { withTimezone: true }).notNull().defaultNow(),
   reason: text("reason"),
   movedBy: text("moved_by"),
-});
+}, (t) => [index("asset_movements_asset_idx").on(t.assetId, t.movedAt)]);
 
 export const maintenanceEvents = pgTable("maintenance_events", {
   id: serial("id").primaryKey(),
@@ -803,7 +818,7 @@ export const maintenanceEvents = pgTable("maintenance_events", {
   downtimeHours: real("downtime_hours"),
   findings: text("findings"),
   createdAt: createdAt(),
-}, (t) => [index("maintenance_asset_idx").on(t.assetId)]);
+}, (t) => [index("maintenance_asset_idx").on(t.assetId), check("maintenance_events_cost_check", sql`${t.cost} is null or ${t.cost} >= 0`)]);
 
 /**
  * Work order: a fault report or a job on one asset, from report to sign-off (wave 3).
@@ -858,6 +873,7 @@ export const workOrders = pgTable("work_orders", {
   index("work_orders_status_idx").on(t.status),
   index("work_orders_assignee_idx").on(t.assignedToId),
   index("work_orders_facility_idx").on(t.facilityId),
+  check("work_orders_cost_check", sql`${t.cost} is null or ${t.cost} >= 0`),
 ]);
 
 /** Service contract with a vendor covering a set of assets (wave 3). */
@@ -915,7 +931,10 @@ export const spareParts = pgTable("spare_parts", {
   active: boolean("active").notNull().default(true),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [uniqueIndex("spare_parts_facility_number_uq").on(t.facilityId, t.partNumber), index("spare_parts_type_idx").on(t.deviceTypeId)]);
+}, (t) => [uniqueIndex("spare_parts_facility_number_uq").on(t.facilityId, t.partNumber), index("spare_parts_type_idx").on(t.deviceTypeId),
+  // Stock never below zero: applyMovement() already refuses it; this is the database's own guard.
+  check("spare_parts_stock_check", sql`${t.stockQty} >= 0 and ${t.minQty} >= 0`),
+  check("spare_parts_cost_check", sql`${t.unitCost} is null or ${t.unitCost} >= 0`)]);
 
 /** Every stock movement. quantity is signed: receipts and returns add, issues subtract, adjustments either way. */
 export const partTransactions = pgTable("part_transactions", {
@@ -928,7 +947,8 @@ export const partTransactions = pgTable("part_transactions", {
   note: text("note"),
   actor: text("actor"),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("part_txn_part_idx").on(t.partId), index("part_txn_wo_idx").on(t.workOrderId)]);
+}, (t) => [index("part_txn_part_idx").on(t.partId), index("part_txn_wo_idx").on(t.workOrderId),
+  check("part_txn_quantity_check", sql`${t.quantity} <> 0`), check("part_txn_cost_check", sql`${t.unitCost} is null or ${t.unitCost} >= 0`)]);
 
 /** Field safety corrective action / recall notice from a manufacturer or regulator (wave 3). Not tied to one hospital. */
 export const recalls = pgTable("recalls", {
@@ -1078,7 +1098,7 @@ export const capitalBudgets = pgTable("capital_budgets", {
   amount: money("amount").notNull(),
   currency: varchar("currency", { length: 3 }).notNull().default("EGP"),
   notes: text("notes"),
-}, (t) => [primaryKey({ columns: [t.facilityId, t.year] })]);
+}, (t) => [primaryKey({ columns: [t.facilityId, t.year] }), check("capital_budgets_amount_check", sql`${t.amount} >= 0`)]);
 
 /** Standardisation (wave 5): the preferred model of a device type in one hospital. */
 export const preferredModels = pgTable("preferred_models", {
@@ -1302,7 +1322,7 @@ export const activityLog = pgTable("activity_log", {
   /** Changed fields: `{ status: { from: "IN_SERVICE", to: "OUT_OF_SERVICE" } }`. Null when the entry is not an edit. */
   changes: jsonb("changes").$type<Record<string, { from: unknown; to: unknown }>>(),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("activity_entity_idx").on(t.entityType, t.entityId), index("activity_at_idx").on(t.at)]);
+}, (t) => [index("activity_entity_idx").on(t.entityType, t.entityId), index("activity_at_idx").on(t.at), index("activity_actor_idx").on(t.actorId)]);
 
 
 /* ─────────────────────── Release 2.1: access, approvals, alerts ─────────────────────── */
@@ -1392,7 +1412,7 @@ export const approvalSteps = pgTable("approval_steps", {
   decidedById: integer("decided_by_id").references(() => users.id, { onDelete: "set null" }),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
   comment: text("comment"),
-}, (t) => [index("approval_steps_request_idx").on(t.requestId)]);
+}, (t) => [index("approval_steps_request_idx").on(t.requestId), index("approval_steps_approver_idx").on(t.approverUserId)]);
 
 export const invoiceStatus = pgEnum("invoice_status", ["RECEIVED", "MATCHED", "EXCEPTION", "APPROVED", "PAID", "REJECTED"]);
 export const bondKind = pgEnum("bond_kind", ["BID", "PERFORMANCE", "ADVANCE_PAYMENT"]);
@@ -1448,7 +1468,7 @@ export const budgetLines = pgTable("budget_lines", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [index("budget_lines_facility_year_idx").on(t.facilityId, t.year)]);
+}, (t) => [index("budget_lines_facility_year_idx").on(t.facilityId, t.year), check("budget_lines_amount_check", sql`${t.amount} >= 0`)]);
 
 /** A supplier's invoice against a purchase order, matched to what was ordered and received (three-way match). */
 export const invoices = pgTable("invoices", {
@@ -1483,7 +1503,8 @@ export const invoiceLines = pgTable("invoice_lines", {
   poLineId: integer("po_line_id").notNull().references(() => poLines.id, { onDelete: "cascade" }),
   quantity: integer("quantity").notNull(),
   unitPrice: money("unit_price").notNull(),
-}, (t) => [index("invoice_lines_invoice_idx").on(t.invoiceId)]);
+}, (t) => [index("invoice_lines_invoice_idx").on(t.invoiceId), index("invoice_lines_po_line_idx").on(t.poLineId),
+  check("invoice_lines_quantity_check", sql`${t.quantity} > 0`), check("invoice_lines_price_check", sql`${t.unitPrice} >= 0`)]);
 
 /** A framework agreement: agreed prices with a supplier up to a ceiling, called off with POs without a new tender. */
 export const frameworks = pgTable("frameworks", {
@@ -1513,7 +1534,8 @@ export const frameworkItems = pgTable("framework_items", {
   unitPrice: money("unit_price").notNull(),
   /** Most units that may be called off over the agreement; null = no limit beyond the ceiling. */
   maxQty: integer("max_qty"),
-}, (t) => [index("framework_items_fw_idx").on(t.frameworkId)]);
+}, (t) => [index("framework_items_fw_idx").on(t.frameworkId),
+  check("framework_items_check", sql`${t.unitPrice} >= 0 and (${t.maxQty} is null or ${t.maxQty} >= 0)`)]);
 
 /** Delivery, installation and acceptance of one device: checks, then two signatures; acceptance starts the warranty. */
 export const acceptances = pgTable("acceptances", {
@@ -1550,7 +1572,7 @@ export const bonds = pgTable("bonds", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [index("bonds_project_idx").on(t.projectId)]);
+}, (t) => [index("bonds_project_idx").on(t.projectId), index("bonds_po_idx").on(t.poId), check("bonds_amount_check", sql`${t.amount} >= 0`)]);
 
 /* ───────────────────────── Operations (wave 12) ───────────────────────── */
 
@@ -1590,7 +1612,7 @@ export const equipmentRequests = pgTable("equipment_requests", {
   boqId: integer("boq_id").references(() => boqs.id, { onDelete: "set null" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [index("equipment_requests_facility_idx").on(t.facilityId)]);
+}, (t) => [index("equipment_requests_facility_idx").on(t.facilityId), check("equipment_requests_quantity_check", sql`${t.quantity} > 0`)]);
 
 /** A walking round or stock-take of a ward (wave 12): devices confirmed, found faulty, moved or missing. */
 export const rounds = pgTable("rounds", {
@@ -1614,7 +1636,7 @@ export const roundItems = pgTable("round_items", {
   workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "set null" }),
   /** When it was checked on the phone (may be before it reached the server, when offline). */
   checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
-}, (t) => [uniqueIndex("round_items_round_asset_uq").on(t.roundId, t.assetId)]);
+}, (t) => [uniqueIndex("round_items_round_asset_uq").on(t.roundId, t.assetId), index("round_items_asset_idx").on(t.assetId)]);
 
 /* ───────────────────────── Wave 14 ───────────────────────── */
 

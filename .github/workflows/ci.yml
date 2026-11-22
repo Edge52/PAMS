@@ -1,4 +1,5 @@
 # Checks on every push and pull request (wave 20): types, lint, unit tests, then every page of the demo.
+# Wave 36 (audit CO-14): the same on PostgreSQL 16, and the Docker image is built and started (never pushed).
 name: Checks
 on:
   push:
@@ -35,3 +36,46 @@ jobs:
       - run: npm run check:pages
       - if: failure()
         run: tail -50 demo.log
+
+  postgres:
+    name: PostgreSQL 16 - migrations, demo seed and tests
+    runs-on: ubuntu-latest
+    needs: code
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: ci, POSTGRES_DB: hpams }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Migrate and load the demo data
+        env: { DATABASE_URL: "postgres://postgres:ci@localhost:5432/hpams", BACKUP_DIR: /tmp/backups }
+        run: |
+          npx tsx scripts/migrate.ts
+          npx tsx scripts/seed.ts
+          npx tsx scripts/migrate.ts
+      - name: Unit tests, with the PostgreSQL ones switched on
+        env: { TEST_DATABASE_URL: "postgres://postgres:ci@localhost:5432/postgres" }
+        run: npx vitest run
+
+  docker:
+    name: Docker image builds and starts
+    runs-on: ubuntu-latest
+    needs: code
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t hospital-pams:ci .
+      - name: Start it against PostgreSQL 16
+        run: |
+          docker network create pams
+          docker run -d --name db --network pams -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=hpams postgres:16
+          for i in $(seq 1 30); do docker exec db pg_isready -U postgres -d hpams && break; sleep 2; done
+          docker run -d --name app --network pams -p 3000:3000 -e DATABASE_URL=postgres://postgres:ci@db:5432/hpams -e SETUP_CODE=ci hospital-pams:ci
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:3000/login && exit 0; sleep 3; done
+          docker logs app; exit 1
+      - if: always()
+        run: docker images hospital-pams:ci; docker logs app 2>&1 | tail -30 || true
