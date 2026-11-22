@@ -344,6 +344,13 @@
       "when": 1795354041550,
       "tag": "0048_wave37_sso_subject",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795357393874,
+      "tag": "0049_wave37_features",
+      "breakpoints": true
     }
   ]
 }
