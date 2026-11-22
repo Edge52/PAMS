@@ -5,12 +5,12 @@ import "server-only";
  * the delivery and only creates units that do not have an asset yet, so it can be retried from the PO page if it
  * fails, and two retries at once don't both create (DL-12).
  */
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, deliveries, deliveryLines, poLines, projects, purchaseOrders } from "@/db/schema";
 import { createAssets, type NewAssetInput } from "@/lib/asset-factory";
 import { logActivity } from "@/lib/server-utils";
-import { deriveStatusAfterReceipt, type PoStatus } from "./po-status";
+import { canReceive, deriveStatusAfterReceipt, type PoStatus } from "./po-status";
 import { validateReceipt, type ReceiptInputLine } from "./receipt";
 import { advanceProject } from "./server";
 
@@ -40,6 +40,13 @@ async function serialsInUse(tx: Tx, candidates: string[]): Promise<Set<string>> 
   return new Set([...onAssets.rows, ...onDeliveries.rows].map((r) => r.s));
 }
 
+/** Why goods can't be received on an order in this status (DL-13). */
+export function notReceivable(status: string | undefined): string {
+  if (!status) return "This purchase order no longer exists.";
+  if (["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(status)) return "Issue the purchase order before receiving goods against it.";
+  return `Goods cannot be received on a ${status.toLowerCase().replace(/_/g, " ")} order. It may have changed a moment ago: reload the page.`;
+}
+
 export type ReceiptResult =
   | { ok: true; deliveryId: number; units: number; assetsCreated: number; assetError: string | null; status: PoStatus }
   | { ok: false; errors: string[] };
@@ -53,10 +60,14 @@ export async function receiveGoods(poId: number, header: ReceiptHeader, input: R
   let deliveryId: number;
   let status: PoStatus;
   let units: number;
+  let before: PoStatus;
   try {
-    ({ deliveryId, status, units } = await db.transaction(async (tx) => {
+    ({ deliveryId, status, before, units } = await db.transaction(async (tx) => {
       // One receipt at a time across the system: serial numbers must be unique hospital-wide, not just per PO.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('hpams:goods-receipt'))`);
+      // DL-13: lock the order and read its status again, so a receipt racing a cancel or a close can't win.
+      const [now] = await tx.select({ status: purchaseOrders.status }).from(purchaseOrders).where(eq(purchaseOrders.id, poId)).for("update");
+      if (!now || !canReceive(now.status as PoStatus)) throw new ReceiptError([notReceivable(now?.status)]);
       // Lock the PO's lines so two receipts at the same time cannot over-receive.
       const lines = await tx.select().from(poLines).where(eq(poLines.poId, poId)).orderBy(poLines.id).for("update");
       const known = await serialsInUse(tx, input.flatMap((l) => l.serials));
@@ -69,9 +80,9 @@ export async function receiveGoods(poId: number, header: ReceiptHeader, input: R
         await tx.update(poLines).set({ receivedQty: sql`least(${poLines.quantity}, ${poLines.receivedQty} + ${l.qty})` }).where(eq(poLines.id, l.poLineId));
       }
       const after = lines.map((l) => ({ quantity: l.quantity, receivedQty: check.lines.find((c) => c.poLineId === l.id)?.newReceivedQty ?? l.receivedQty }));
-      const next = deriveStatusAfterReceipt(po.status as PoStatus, after);
-      if (next !== po.status) await tx.update(purchaseOrders).set({ status: next }).where(eq(purchaseOrders.id, poId));
-      return { deliveryId: d.id, status: next, units: check.totalUnits };
+      const next = deriveStatusAfterReceipt(now.status as PoStatus, after);
+      if (next !== now.status) await tx.update(purchaseOrders).set({ status: next }).where(and(eq(purchaseOrders.id, poId), eq(purchaseOrders.status, now.status)));
+      return { deliveryId: d.id, status: next, before: now.status as PoStatus, units: check.totalUnits };
     }));
   } catch (e) {
     if (e instanceof ReceiptError) return { ok: false, errors: e.errors };
@@ -79,7 +90,7 @@ export async function receiveGoods(poId: number, header: ReceiptHeader, input: R
   }
 
   await logActivity("po", poId, "goods_received", `Delivery ${header.reference}: ${units} unit${units === 1 ? "" : "s"} received${header.receivedBy ? ` by ${header.receivedBy}` : ""}`, actor);
-  if (status !== po.status) await logActivity("po", poId, "status_changed", `Status changed to ${status.toLowerCase().replace("_", " ")} after delivery ${header.reference}`, actor);
+  if (status !== before) await logActivity("po", poId, "status_changed", `Status changed to ${status.toLowerCase().replace("_", " ")} after delivery ${header.reference}`, actor);
   await logActivity("delivery", deliveryId, "created", `Delivery ${header.reference} recorded against ${po.number}`, actor);
   await advanceProject(po.projectId, "DELIVERY", `goods received on ${po.number}`);
 

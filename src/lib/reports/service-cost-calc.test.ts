@@ -78,4 +78,15 @@ describe("service cost by the company that did the work (wave 29)", () => {
     expect(r[1]).toMatchObject({ devices: 1, jobs: 1, cost: 100, cosr: 1 });
     expect(r[2]).toMatchObject({ devices: 1, cost: 50, cosr: null });
   });
+
+  it("leaves a device with no price in EGP (e.g. no exchange rate) out of the ratio, not in it at 0 (B7)", async () => {
+    const { byProvider } = await import("./service-cost-calc");
+    const acme = { key: "s1", label: "Acme Service", supplierId: 1 };
+    // Device 2 was bought in a currency with no stored rate: its EGP price is unknown (null).
+    const r = byProvider([
+      { assetId: 1, amount: 500, source: "CONTRACT", provider: acme },
+      { assetId: 2, amount: 500, source: "CONTRACT", provider: acme },
+    ], (id) => ({ 1: 10_000, 2: null } as Record<number, number | null>)[id], 365.25);
+    expect(r[0]).toMatchObject({ devices: 2, cost: 1000, acquisition: 10_000, cosr: 5 });
+  });
 });

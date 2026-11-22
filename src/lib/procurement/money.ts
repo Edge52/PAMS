@@ -3,6 +3,24 @@
  * scorecards. Pure; amounts in one currency (the caller converts).
  */
 
+import { lineTotal } from "../format";
+
+/* ── Offer → purchase order prices ── */
+
+/**
+ * DL-10: the PO lines for `qty` units of an offer line, priced so they add up to the offer's own line total
+ * (quantity × price × (1 − discount), rounded to the cent once). A PO stores whole-cent unit prices, so when that
+ * total doesn't split evenly some units carry one cent more, on a second line.
+ */
+export function orderLinePrices(qty: number, unitPrice: number, discountPct: number): { quantity: number; unitPrice: string }[] {
+  const d = Number.isFinite(discountPct) ? Math.min(Math.max(discountPct, 0), 100) : 0;
+  const cents = Math.round(lineTotal(qty, unitPrice, d) * 100);
+  const base = Math.floor(cents / qty), extra = cents - base * qty;
+  const out = [{ quantity: qty - extra, unitPrice: (base / 100).toFixed(2) }];
+  if (extra) out.push({ quantity: extra, unitPrice: ((base + 1) / 100).toFixed(2) });
+  return out;
+}
+
 /* ── Three-way match: what was ordered, what was received, what is invoiced ── */
 
 export type MatchLine = {

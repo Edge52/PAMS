@@ -29,3 +29,28 @@ export function nextSort<K extends string>(current: Sort<K> | null, key: K): Sor
   if (current?.key !== key) return { key, dir: "asc" };
   return current.dir === "asc" ? { key, dir: "desc" } : null;
 }
+
+/* ── Long lists (audit B6 / CO-11): say when a list is cut, or page through it ── */
+
+const count = (n: number) => n.toLocaleString("en");
+
+/** The note under a list cut at `shown` rows of `total`, or null when everything is shown. */
+export function shownNote(shown: number, total: number, what = "rows"): string | null {
+  return shown < total ? `Showing the first ${count(shown)} of ${count(total)} ${what}. Narrow the filters to see the rest.` : null;
+}
+
+export type Paging = { page: number; pages: number; size: number; offset: number; total: number; from: number; to: number };
+
+/** The page asked for in the address (`?page=2`), kept within 1 … the last page. */
+export function pageFor(sp: Params, total: number, size: number): Paging {
+  const pages = Math.max(1, Math.ceil(total / size));
+  const asked = Number.parseInt(one(sp.page) ?? "", 10);
+  const page = Number.isFinite(asked) ? Math.min(Math.max(asked, 1), pages) : 1;
+  const offset = (page - 1) * size;
+  return { page, pages, size, offset, total, from: total ? offset + 1 : 0, to: Math.min(total, offset + size) };
+}
+
+/** "Showing 101–200 of 734", or null when one page holds everything. */
+export function pagingNote(p: Paging, what = "rows"): string | null {
+  return p.pages > 1 ? `Showing ${count(p.from)}–${count(p.to)} of ${count(p.total)} ${what}.` : null;
+}

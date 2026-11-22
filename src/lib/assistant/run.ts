@@ -6,7 +6,7 @@ import "server-only";
  */
 import type { CurrentUser } from "@/lib/auth/session";
 import { ROLE_LABELS, type Role } from "@/lib/auth/permissions";
-import { clip, toolsFor, trimHistory, type ChatTurn } from "./defs";
+import { clip, DATA_RULES, frameData, frameUser, takeQuestion, toolsFor, trimHistory, type ChatTurn } from "./defs";
 import { runTool } from "./tools";
 
 const API = process.env.ANTHROPIC_BASE_URL?.replace(/\/+$/, "") || "https://api.anthropic.com";
@@ -24,15 +24,19 @@ You are helping ${me.name}, ${ROLE_LABELS[me.role as Role] ?? me.role}${me.jobTi
 - When you mention a record that has a link, give it as a path such as /assets/12 so the user can open it.
 - You can draft technical specifications (use the device type's parameters and say which values the hospital must confirm), letters to suppliers, memos and reports. Mark anything you assumed in [square brackets].
 - Write plainly and briefly in English. Use short headings and lists where they help. Amounts with their currency.
-- For a table, use Markdown table rows (| a | b |). The user can download any answer as a Word document, so drafts should be complete and ready to edit.`;
+- For a table, use Markdown table rows (| a | b |). The user can download any answer as a Word document, so drafts should be complete and ready to edit.
+${DATA_RULES}`;
 }
 
-export async function ask(me: CurrentUser, history: ChatTurn[], model: string): Promise<{ text: string; used: string[] } | { error: string }> {
+/** `perHour`: questions one person may ask per hour (0 = no cap), from the assistantHourlyLimit setting. */
+export async function ask(me: CurrentUser, history: ChatTurn[], model: string, perHour = 0): Promise<{ text: string; used: string[] } | { error: string }> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return { error: "The assistant needs ANTHROPIC_API_KEY set on the server." };
   const tools = toolsFor(me.role).map(({ need: _n, ...t }) => (void _n, t));
-  const messages: Msg[] = trimHistory(history).map((t) => ({ role: t.role, content: t.text }));
+  const messages: Msg[] = trimHistory(history).map((t) => ({ role: t.role, content: t.role === "user" ? frameUser(t.text) : t.text }));
   if (!messages.length) return { error: "Ask a question first." };
+  const turn = takeQuestion(me.id, perHour);
+  if (!turn.ok) return { error: `You have asked ${perHour} questions in the last hour, the most allowed. Try again in ${turn.waitMinutes} minute${turn.waitMinutes === 1 ? "" : "s"}.` };
   const used: string[] = [];
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const res = await fetch(`${API}/v1/messages`, {
@@ -53,7 +57,7 @@ export async function ask(me: CurrentUser, history: ChatTurn[], model: string): 
       used.push(c.name);
       let out: unknown;
       try { out = await runTool(me, c.name, c.input ?? {}); } catch { out = { error: "That look-up failed." }; }
-      results.push({ type: "tool_result", tool_use_id: c.id, content: clip(out), ...(out && typeof out === "object" && "error" in out ? { is_error: true } : {}) });
+      results.push({ type: "tool_result", tool_use_id: c.id, content: frameData(c.name, clip(out)), ...(out && typeof out === "object" && "error" in out ? { is_error: true } : {}) });
     }
     messages.push({ role: "user", content: results });
   }

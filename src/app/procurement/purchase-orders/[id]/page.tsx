@@ -216,7 +216,7 @@ export default async function PoPage({ params, searchParams }: {
               <div className="flex flex-wrap gap-2">
                 {transitions.map((t) => (
                   <ActionForm key={t.to} action={setPoStatus} confirm={t.to === "CANCELLED" ? `Cancel ${po.number}?` : t.to === "CLOSED" && status === "PARTIALLY_DELIVERED" ? "Close the order with units still outstanding?" : undefined}>
-                    <input type="hidden" name="poId" value={id} /><input type="hidden" name="status" value={t.to} />
+                    <input type="hidden" name="poId" value={id} /><input type="hidden" name="status" value={t.to} /><input type="hidden" name="from" value={status} />
                     <SubmitButton variant={t.tone}>{t.label}</SubmitButton>
                   </ActionForm>
                 ))}

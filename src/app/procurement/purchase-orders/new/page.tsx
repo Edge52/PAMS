@@ -9,6 +9,7 @@ import { addDaysISO, formatMoney, formatNumber, round2, todayISO } from "@/lib/f
 import { pricesSealed, SEALED } from "@/lib/procurement/sealed";
 import { incotermOptions } from "@/lib/procurement/labels";
 import { netUnitPrice } from "@/lib/procurement/scoring";
+import { orderLinePrices } from "@/lib/procurement/money";
 import { facilityDepartments } from "@/lib/procurement/server";
 import { requireFacilityAccess, requirePermission, facilityScope } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
@@ -106,6 +107,9 @@ export default async function NewPoPage({ searchParams }: { searchParams: Promis
               })}
             </tbody>
           </Table>
+          {!sealed && lines.some(({ line: l }) => orderLinePrices(l.quantity, Number(l.unitPrice), l.discountPct).length > 1) && (
+            <p className="px-4 py-2 text-xs text-muted">Where the discount leaves part of a cent per unit, some units are priced one cent higher, on a second line, so the order adds up to the offer total.</p>
+          )}
         </Panel>
 
         <Panel title="Terms">

@@ -25,6 +25,8 @@ export type Settings = {
   /** In-app assistant (wave 13): off until an administrator switches it on; needs ANTHROPIC_API_KEY. */
   assistantEnabled: boolean;
   assistantModel: string;
+  /** Audit S8: questions one person may ask the assistant per hour (0 = no cap). Counted per server process. */
+  assistantHourlyLimit: number;
   /** Two-step sign-in (wave 25): who must use it. Anyone may switch it on for themselves. */
   twoStepRequired: "off" | "admins" | "all";
   /** User training (wave 27): months after which a person's training on a device type is due again. */
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   emailEnabled: false,
   assistantEnabled: false,
   assistantModel: "claude-sonnet-5-5",
+  assistantHourlyLimit: 30,
   twoStepRequired: "off",
   trainingValidMonths: 24,
   depreciationMethod: "STRAIGHT",

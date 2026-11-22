@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { budgetCrossing, budgetUse, checkCallOff, matchInvoice, poBudgetShare, requiredBond, scorecard, warrantyEndFrom } from "./money";
+import { budgetCrossing, budgetUse, checkCallOff, matchInvoice, orderLinePrices, poBudgetShare, requiredBond, scorecard, warrantyEndFrom } from "./money";
+import { lineTotal } from "../format";
 
 const line = { poLineId: 1, description: "Monitor", ordered: 10, received: 6, poUnitPrice: 100, invoicedBefore: 0, quantity: 6, unitPrice: 100 };
 describe("three-way match", () => {
@@ -52,4 +53,16 @@ describe("bonds, scorecards and warranty", () => {
     expect(scorecard({ deliveries: [], accepted: 0, acceptanceIssues: 0, warrantyResponseHours: [], invoices: 0, invoiceExceptions: 0 }).grade).toBeNull();
   });
   it("starts the warranty at acceptance", () => { expect(warrantyEndFrom("2026-03-31", 24)).toBe("2028-03-31"); expect(warrantyEndFrom("2026-01-01", null)).toBeNull(); });
+});
+
+describe("PO prices from an offer line (DL-10)", () => {
+  it("adds up to the offer's line total, one cent more on some units when it doesn't split", () => {
+    expect(orderLinePrices(2, 100.05, 50)).toEqual([{ quantity: 1, unitPrice: "50.02" }, { quantity: 1, unitPrice: "50.03" }]);
+    expect(orderLinePrices(4, 250, 10)).toEqual([{ quantity: 4, unitPrice: "225.00" }]);
+    for (const [q, p, dsc] of [[3, 10.01, 15], [7, 1999.99, 12.5], [1, 0.05, 50], [11, 333.33, 33.3]] as const) {
+      const cents = orderLinePrices(q, p, dsc).reduce((s, l) => s + l.quantity * Math.round(Number(l.unitPrice) * 100), 0);
+      expect(cents).toBe(Math.round(lineTotal(q, p, dsc) * 100));
+      expect(orderLinePrices(q, p, dsc).reduce((s, l) => s + l.quantity, 0)).toBe(q);
+    }
+  });
 });

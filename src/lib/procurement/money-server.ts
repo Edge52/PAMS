@@ -67,10 +67,15 @@ export async function budgetRows(lines: (typeof budgetLines.$inferSelect)[]): Pr
   return out;
 }
 
-/** The match lines of a PO for a new or existing invoice (`quantities` keyed by PO line; others invoiced exclude `invoiceId`). */
-export async function matchLinesFor(poId: number, entered: Map<number, { quantity: number; unitPrice: number }>, invoiceId?: number): Promise<MatchLine[]> {
-  const lines = await db.select().from(poLines).where(eq(poLines.poId, poId));
-  const before = await db.select({ poLineId: invoiceLines.poLineId, q: sql<number>`sum(${invoiceLines.quantity})::int` }).from(invoiceLines)
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * The match lines of a PO for a new or existing invoice (`quantities` keyed by PO line; others invoiced exclude
+ * `invoiceId`). Inside a transaction pass `tx` (PGlite has one connection).
+ */
+export async function matchLinesFor(poId: number, entered: Map<number, { quantity: number; unitPrice: number }>, invoiceId?: number, q: typeof db | Tx = db): Promise<MatchLine[]> {
+  const lines = await q.select().from(poLines).where(eq(poLines.poId, poId));
+  const before = await q.select({ poLineId: invoiceLines.poLineId, q: sql<number>`sum(${invoiceLines.quantity})::int` }).from(invoiceLines)
     .innerJoin(invoices, eq(invoices.id, invoiceLines.invoiceId))
     .where(and(eq(invoices.poId, poId), ne(invoices.status, "REJECTED"), invoiceId ? ne(invoices.id, invoiceId) : undefined)).groupBy(invoiceLines.poLineId);
   const prev = new Map(before.map((b) => [b.poLineId, b.q]));

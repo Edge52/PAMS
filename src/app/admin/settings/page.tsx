@@ -172,6 +172,9 @@ export default async function SettingsPage() {
                 <Field label="Model" hint="The Claude model to use.">
                   <Input name="assistantModel" defaultValue={s.assistantModel} />
                 </Field>
+                <Field label="Questions per person per hour" hint="0 means no limit.">
+                  <Input type="number" name="assistantHourlyLimit" min={0} max={1000} step={1} defaultValue={s.assistantHourlyLimit} />
+                </Field>
               </FormGrid>
             </fieldset>
             <SubmitButton>Save settings</SubmitButton>

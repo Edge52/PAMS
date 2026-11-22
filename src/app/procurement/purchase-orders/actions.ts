@@ -13,12 +13,11 @@ import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/li
 import { cancelApproval, startApproval } from "@/lib/approvals/server";
 import { fail, formObject, idParam, isUniqueViolation, optDate, optInt, optStr, reqDate, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { humanizeEnum, INCOTERMS } from "@/lib/procurement/labels";
-import { checkCallOff } from "@/lib/procurement/money";
+import { checkCallOff, orderLinePrices } from "@/lib/procurement/money";
 import { calledOff } from "@/lib/procurement/money-server";
 import { canSubmit, canTransition, isEditable, transitionPermission, type PoStatus, PO_STATUSES } from "@/lib/procurement/po-status";
 import { parseSerials, validateOrderQty } from "@/lib/procurement/receipt";
 import { createMissingAssets, receiveGoods } from "@/lib/procurement/receiving";
-import { netUnitPrice } from "@/lib/procurement/scoring";
 import { advanceProject } from "@/lib/procurement/server";
 
 const blankToUndef = (v: unknown) => (v === "" ? undefined : v);
@@ -31,10 +30,12 @@ const poHeader = z.object({
   notes: optStr(4000),
 });
 
-/** Units of each offer line already on other (non-cancelled) purchase orders. */
-async function alreadyOrdered(offerLineIds: number[], excludePoId?: number) {
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Units of each offer line already on other (non-cancelled) purchase orders. Pass `tx` inside a transaction. */
+async function alreadyOrdered(offerLineIds: number[], excludePoId?: number, q: typeof db | Tx = db) {
   if (!offerLineIds.length) return new Map<number, number>();
-  const rows = await db.select({ id: poLines.offerLineId, q: sql<number>`sum(${poLines.quantity})::int` }).from(poLines)
+  const rows = await q.select({ id: poLines.offerLineId, q: sql<number>`sum(${poLines.quantity})::int` }).from(poLines)
     .innerJoin(purchaseOrders, eq(purchaseOrders.id, poLines.poId))
     .where(and(inArray(poLines.offerLineId, offerLineIds), ne(purchaseOrders.status, "CANCELLED"), excludePoId ? ne(purchaseOrders.id, excludePoId) : undefined))
     .groupBy(poLines.offerLineId);
@@ -70,11 +71,13 @@ export async function createPurchaseOrder(offerId: number, _prev: ActionState, f
     if (err) { errors.push(`${l.description}: ${err.replace("(the quantity offered)", remaining < l.quantity ? "(not yet ordered)" : "(the quantity offered)")}`); continue; }
     if (qty === 0) continue;
     const dept = Number(fd.get(`dept_${l.id}`));
-    chosen.push({
-      offerLineId: l.id, deviceTypeId: l.deviceTypeId, description: l.description, manufacturer: l.manufacturer, model: l.model, quantity: qty,
-      unitPrice: String(round2(netUnitPrice(Number(l.unitPrice), l.discountPct))),
-      destinationDepartmentId: deptIds.has(dept) ? dept : null, poId: 0,
-    });
+    // DL-10: priced so the order adds up to the offer's line total (a cent more on some units when it doesn't split).
+    for (const part of orderLinePrices(qty, Number(l.unitPrice), l.discountPct)) {
+      chosen.push({
+        offerLineId: l.id, deviceTypeId: l.deviceTypeId, description: l.description, manufacturer: l.manufacturer, model: l.model, quantity: part.quantity,
+        unitPrice: part.unitPrice, destinationDepartmentId: deptIds.has(dept) ? dept : null, poId: 0,
+      });
+    }
   }
   if (errors.length) return fail(...errors);
   if (!chosen.length) return fail("Tick at least one line and enter a quantity to order.");
@@ -91,10 +94,17 @@ export async function createPurchaseOrder(offerId: number, _prev: ActionState, f
           currency: row.offer.currency, incoterm: h.incoterm ?? row.offer.incoterm, paymentTerms: h.paymentTerms ?? row.offer.paymentTerms,
           warrantyMonths: h.warrantyMonths ?? row.offer.warrantyMonths, notes: h.notes ?? null,
         }).returning({ id: purchaseOrders.id });
+        // DL-15: lock the offer and count what is ordered again, so two orders saved at once can't both take the
+        // same units.
+        await tx.select({ id: offers.id }).from(offers).where(eq(offers.id, offerId)).for("update");
+        const nowOrdered = await alreadyOrdered(chosen.map((c) => c.offerLineId!), po.id, tx);
+        const over = overOrdered(chosen, lines, nowOrdered);
+        if (over.length) throw new OrderRace(over);
         await tx.insert(poLines).values(chosen.map((c) => ({ ...c, poId: po.id })));
         return po.id;
       });
     } catch (e) {
+      if (e instanceof OrderRace) return fail(...e.problems);
       if (!isUniqueViolation(e)) throw e; // number taken by a concurrent PO: try the next one
     }
   }
@@ -113,6 +123,27 @@ export async function createPurchaseOrder(offerId: number, _prev: ActionState, f
   revalidatePath("/procurement/purchase-orders");
   revalidatePath(`/procurement/${row.project.id}`);
   redirect(`/procurement/purchase-orders/${poId}?created=1${notice}`);
+}
+
+class OrderRace extends Error {
+  constructor(public problems: string[]) { super(problems.join(" ")); }
+}
+
+/** Lines that would take an offer line past the quantity offered, given what other orders hold now (DL-15). */
+function overOrdered(want: { offerLineId?: number | null; quantity: number; description: string }[], offered: { id: number; quantity: number }[], ordered: Map<number, number>) {
+  // One offer line can be on two PO lines (DL-10), so add them up per offer line.
+  const per = new Map<number, { quantity: number; description: string }>();
+  for (const w of want) {
+    if (!w.offerLineId) continue;
+    const cur = per.get(w.offerLineId);
+    per.set(w.offerLineId, { quantity: (cur?.quantity ?? 0) + w.quantity, description: w.description });
+  }
+  return [...per].flatMap(([id, w]) => {
+    const o = offered.find((l) => l.id === id);
+    if (!o) return [];
+    const left = o.quantity - (ordered.get(o.id) ?? 0);
+    return w.quantity > left ? [`${w.description}: only ${Math.max(0, left)} not yet ordered now. Another order took some a moment ago. Reload the page.`] : [];
+  });
 }
 
 /** DRAFT → PENDING_APPROVAL and start the approval chain (amount converted to EGP for the thresholds). */
@@ -176,12 +207,16 @@ export async function withdrawPurchaseOrder(_prev: ActionState, fd: FormData): P
 
 export async function setPoStatus(_prev: ActionState, fd: FormData): Promise<ActionState> {
   // The permission depends on the target status (issue → po.issue, cancel → po.create); checked right after parsing.
-  const parsed = z.object({ poId: idParam("Purchase order missing"), status: z.enum(PO_STATUSES as [PoStatus, ...PoStatus[]]) }).safeParse(formObject(fd));
+  const statusEnum = z.enum(PO_STATUSES as [PoStatus, ...PoStatus[]]);
+  const parsed = z.object({ poId: idParam("Purchase order missing"), status: statusEnum, from: z.preprocess(blankToUndef, statusEnum.optional()) }).safeParse(formObject(fd));
   if (!parsed.success) return zodFail(parsed.error);
-  const { poId, status } = parsed.data;
+  const { poId, status, from } = parsed.data;
   const me = await requirePermission(transitionPermission(status));
   const po = await loadPoForAction(poId, me);
   if (!po) return fail("This purchase order no longer exists.");
+  // DL-14: the change is made from the status the page showed; if someone moved the order since, stop.
+  const changed = () => fail("Someone changed this purchase order a moment ago. Reload the page and try again.");
+  if (from && from !== po.status) return changed();
   const lines = await db.select({ quantity: poLines.quantity, receivedQty: poLines.receivedQty }).from(poLines).where(eq(poLines.poId, poId));
   if (!canTransition(po.status as PoStatus, status, lines)) {
     return fail(status === "CANCELLED" ? "An order with goods already received cannot be cancelled. Close it instead."
@@ -199,10 +234,19 @@ export async function setPoStatus(_prev: ActionState, fd: FormData): Promise<Act
         : `Record that the acceptance notice was sent to the supplier (on offer ${o.reference}) before issuing the PO (Law 182/2018, art. 39).`);
     }
   }
-  if (po.status === "PENDING_APPROVAL" && status === "CANCELLED") await cancelApproval("PO", poId, "purchase order cancelled", me, false);
   const set: Partial<typeof purchaseOrders.$inferInsert> = { status };
   if (status === "ISSUED" && !po.issueDate) set.issueDate = todayISO();
-  await db.update(purchaseOrders).set(set).where(eq(purchaseOrders.id, poId));
+  // Compare and set, with the lines read again under the order's lock: a receipt or another change in between wins.
+  const done = await db.transaction(async (tx) => {
+    const [now] = await tx.select({ status: purchaseOrders.status }).from(purchaseOrders).where(eq(purchaseOrders.id, poId)).for("update");
+    if (!now || now.status !== po.status) return false;
+    const fresh = await tx.select({ quantity: poLines.quantity, receivedQty: poLines.receivedQty }).from(poLines).where(eq(poLines.poId, poId));
+    if (!canTransition(now.status as PoStatus, status, fresh)) return false;
+    const moved = await tx.update(purchaseOrders).set(set).where(and(eq(purchaseOrders.id, poId), eq(purchaseOrders.status, po.status))).returning({ id: purchaseOrders.id });
+    return moved.length > 0;
+  });
+  if (!done) return changed();
+  if (po.status === "PENDING_APPROVAL" && status === "CANCELLED") await cancelApproval("PO", poId, "purchase order cancelled", me, false);
   await logActivity("po", poId, "status_changed", `${po.number}: ${humanizeEnum(po.status).toLowerCase()} → ${humanizeEnum(status).toLowerCase()}`);
   revalidatePath(`/procurement/purchase-orders/${poId}`);
   revalidatePath("/procurement/purchase-orders");
@@ -229,12 +273,15 @@ export async function updatePurchaseOrder(poId: number, _prev: ActionState, fd: 
 
   const errors: string[] = [];
   const updates: { id: number; quantity: number; dept: number | null }[] = [];
+  const asked = (l: (typeof lines)[number]) => (draft && fd.has(`qty_${l.id}`) ? Number(fd.get(`qty_${l.id}`)) : l.quantity);
   for (const l of lines) {
     const dept = Number(fd.get(`dept_${l.id}`));
     let quantity = l.quantity;
     if (draft && fd.has(`qty_${l.id}`)) {
       quantity = Number(fd.get(`qty_${l.id}`));
-      const max = l.offerLineId ? (offered.get(l.offerLineId) ?? l.quantity) - (ordered.get(l.offerLineId) ?? 0) : Infinity;
+      // Other lines of this order for the same offer line (an order split to the cent, DL-10) count too.
+      const siblings = lines.filter((x) => x.id !== l.id && x.offerLineId != null && x.offerLineId === l.offerLineId).reduce((t, x) => t + (asked(x) || 0), 0);
+      const max = l.offerLineId ? (offered.get(l.offerLineId) ?? l.quantity) - (ordered.get(l.offerLineId) ?? 0) - siblings : Infinity;
       const err = validateOrderQty(quantity, max);
       if (err || quantity < 1) { errors.push(`${l.description}: ${err ?? "quantity must be at least 1 (remove the line by cancelling and re-raising the order)."}`); continue; }
     }
@@ -261,10 +308,20 @@ export async function updatePurchaseOrder(poId: number, _prev: ActionState, fd: 
         .returning({ id: purchaseOrders.id });
       // A submit that slipped in between our read and this write: roll back rather than change what's being approved.
       if (!saved.length) throw new Error(RACED);
+      // DL-15: with the offer locked, check the raised quantities against what other orders hold now.
+      if (draft && po.offerId && updates.some((u) => u.quantity > (lines.find((l) => l.id === u.id)?.quantity ?? 0))) {
+        await tx.select({ id: offers.id }).from(offers).where(eq(offers.id, po.offerId)).for("update");
+        const ids = lines.map((l) => l.offerLineId).filter((x): x is number => x != null);
+        const nowOrdered = await alreadyOrdered(ids, poId, tx);
+        const over = overOrdered(updates.map((u) => { const l = lines.find((x) => x.id === u.id)!; return { offerLineId: l.offerLineId, quantity: u.quantity, description: l.description }; }),
+          [...offered].map(([id, quantity]) => ({ id, quantity })), nowOrdered);
+        if (over.length) throw new OrderRace(over);
+      }
       for (const u of updates) await tx.update(poLines).set({ quantity: u.quantity, destinationDepartmentId: u.dept }).where(eq(poLines.id, u.id));
     });
   } catch (e) {
     if (e instanceof Error && e.message === RACED) return fail(RACED);
+    if (e instanceof OrderRace) return fail(...e.problems);
     throw e;
   }
   if (changes || lineChanges) {
