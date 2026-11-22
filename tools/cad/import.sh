@@ -13,8 +13,18 @@ out="$root/$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['ou
 python3 -c "import json,sys; [print(f['code'] + '\t' + f['file']) for f in json.load(open(sys.argv[1]))['floors']]" "$cfg" |
 while IFS=$'\t' read -r code file; do
   echo "· $code  $file"
-  node --max-old-space-size=6000 "$here/extract.mjs" "$cad/$file" "$work/$code.json" "$cfg" 2>&1 | grep -v "error code" || true
-  (cd "$work" && python3 "$here/rooms.py" "$code.json" "$code-rooms.json")
+  # LibreDWG prints "error code" lines for harmless read warnings; drop those, but stop when the extract itself fails
+  # (audit A15: "|| true" used to hide that, and the next step crashed on a missing or empty file).
+  if ! node --max-old-space-size=6000 "$here/extract.mjs" "$cad/$file" "$work/$code.json" "$cfg" >"$work/$code.log" 2>&1; then
+    sed '/error code/d' "$work/$code.log" >&2
+    echo "✕ Couldn't read $file (floor $code). The import stopped; fix the file or the config and run it again." >&2
+    exit 1
+  fi
+  sed '/error code/d' "$work/$code.log"
+  if ! (cd "$work" && python3 "$here/rooms.py" "$code.json" "$code-rooms.json"); then
+    echo "✕ Couldn't find the rooms of $file (floor $code). The import stopped." >&2
+    exit 1
+  fi
 done
 mkdir -p "$(dirname "$out")"
 python3 "$here/build.py" "$cfg" "$work" "$out"

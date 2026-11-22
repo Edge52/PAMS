@@ -34,9 +34,15 @@ export function HudCompass({ scene, ready, northDeg, light }: { scene: RefObject
   const [turn, setTurn] = useState<number | null>(null);
   useEffect(() => {
     if (!ready || northDeg == null) return;
+    let last = "";
     const tick = () => {
       if (document.visibilityState !== "visible" || !scene.current) return;
-      const v = scene.current.viewState(), b = viewBearing(v.camera, v.target);
+      const v = scene.current.viewState();
+      // Only work out the needle when the camera moved (audit A21); an unchanged turn keeps the same state, so no re-render.
+      const key = [v.camera.x, v.camera.z, v.target.x, v.target.z].map((n) => n.toFixed(2)).join();
+      if (key === last) return;
+      last = key;
+      const b = viewBearing(v.camera, v.target);
       if (b == null) return; // straight above: keep the last turn
       const next = compassTurn(northDeg, b);
       setTurn((prev) => (prev == null ? next : Math.abs(nearestTurn(prev, next) - prev) < 0.2 ? prev : nearestTurn(prev, next)));

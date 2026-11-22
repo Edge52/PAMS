@@ -14,7 +14,11 @@ export function isISODate(v: unknown): v is string {
   return !Number.isNaN(d.getTime()) && toISO(d) === v;
 }
 
-/** Add months, clamping to the last day of the target month (31 Jan + 1 month → 28/29 Feb). */
+/**
+ * Add months, clamping to the last day of the target month (31 Jan + 1 month → 28/29 Feb, not 3 Mar). This is the one
+ * month-add for asset dates (PPM, safety tests, warranty, training). For a repeating cycle use `addMonthsSeries`, which
+ * counts every step from the first date so a 31st does not slide to the 28th for good after February.
+ */
 export function addMonths(iso: string, months: number): string {
   const d = parseISO(iso);
   const day = d.getUTCDate();
@@ -22,6 +26,11 @@ export function addMonths(iso: string, months: number): string {
   const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
   target.setUTCDate(Math.min(day, lastDay));
   return toISO(target);
+}
+
+/** The k-th date of a cycle of `months` months from `anchor` (k = 0 is the anchor), clamped to month ends. */
+export function addMonthsSeries(anchor: string, months: number, k: number): string {
+  return addMonths(anchor, months * k);
 }
 
 export function addDays(iso: string, days: number): string {

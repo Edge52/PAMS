@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ModelDatalists } from "@/components/assets/model-datalists";
 import { modelSuggestions } from "@/lib/assets/models-server";
 import { nameKey, SUPPORT_LABELS, SUPPORT_TONE, supportState } from "@/lib/assets/models";
@@ -12,6 +12,7 @@ import {
   deviceModels,
 } from "@/db/schema";
 import { assetLifecycle } from "@/lib/assets/lifecycle-server";
+import { findLabel } from "@/lib/assets/label-server";
 import { assetBookValue } from "@/lib/assets/depreciation-server";
 import { BookValuePanel } from "@/components/assets/book-value-panel";
 import { BAND_LABEL } from "@/lib/assets/lifecycle-kpis";
@@ -73,6 +74,11 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   const sp = await searchParams;
   if (!/^\d+$/.test(id)) notFound();
   const assetId = Number(id);
+  // Old printed labels open /assets/<id>?tag=<tag>. After a re-import the id can belong to another device, so the
+  // label's tag wins (audit B4); when no device has that tag any more the id is used and the page says so.
+  const labelTag = typeof sp.tag === "string" && sp.tag.trim() ? sp.tag.trim().toUpperCase() : null;
+  const label = labelTag ? await findLabel({ assetId, tag: labelTag }, await facilityScope(me)) : null;
+  if (label && label.id !== assetId) redirect(`/assets/${label.id}`);
   const [a] = await db.select({
     asset: assets,
     typeCode: deviceTypes.code, typeName: deviceTypes.name, typeNameAr: deviceTypes.nameAr, ppmIntervalMonths: deviceTypes.ppmIntervalMonths, maintenanceStrategy: deviceTypes.maintenanceStrategy, riskClass: deviceTypes.riskClass,
@@ -162,6 +168,11 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
         </>}
       />
       <Notice sp={sp} />
+      {label?.tagChanged && labelTag && (
+        <p role="alert" className="mb-4 rounded-[var(--radius-control)] border border-warn bg-warn-soft px-3 py-2 text-sm text-warn">
+          This label says {labelTag}, but this device&apos;s tag is now {x.assetTag}. Check it is the right device, then print a new label.
+        </p>
+      )}
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <StatusBadge value={x.status} />
         <StatusBadge value={x.condition} />

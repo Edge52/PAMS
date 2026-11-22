@@ -90,6 +90,12 @@ for (const e of ENTS) {
   } else if (e.type === 'ARC') { const p = arcPts(e.center, e.radius, e.startAngle, e.endAngle); for (let i = 0; i + 1 < p.length; i++) push(k, p[i], p[i + 1]); }
   else if (e.type === 'CIRCLE' && k === 'col') { const p = arcPts(e.center, e.radius, 0, Math.PI * 2, 12); for (let i = 0; i + 1 < p.length; i++) push(k, p[i], p[i + 1]); }
 }
+// Audit A15: a floor with no wall lines can't give rooms; stop here with the reason instead of crashing later.
+if (!segs.wall.length) {
+  console.error(`${file.split('/').pop()}: no wall lines found (${ENTS.length} drawing items read). Check that the file is the floor plan and that`
+    + ' its wall layers are named as tools/cad/rules.mjs expects, or add them to the config\'s "layers" (see tools/cad/README.md).');
+  process.exit(2);
+}
 const txt = (e) => (typeof e.text === 'string' ? e.text : e.text?.text ?? e.contents ?? '').replace(/\\P/g, ' ').replace(/\{\\[^;]*;|[{}]/g, '').trim();
 const pos = (e) => e.insertionPoint ?? e.text?.startPoint ?? e.startPoint;
 const roomTexts = [];

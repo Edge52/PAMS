@@ -38,6 +38,8 @@ describe("electrical safety tests (wave 23)", () => {
   it("works out the next test and how close it is", () => {
     expect(nextTestDue("2026-11-14", 6)).toBe("2027-05-14");
     expect(nextTestDue("2026-11-14", null)).toBe("2027-11-14");
+    expect(nextTestDue("2026-08-31", 6)).toBe("2027-02-28"); // A17: clamped, not 3 Mar
+    expect(nextTestDue("2028-02-29", 12)).toBe("2029-02-28");
     expect(testDueState("2026-11-13", "2026-11-14")).toBe("overdue");
     expect(testDueState("2026-12-10", "2026-11-14")).toBe("soon");
     expect(testDueState("2027-03-01", "2026-11-14")).toBe("ok");

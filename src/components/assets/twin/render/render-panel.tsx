@@ -176,6 +176,14 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
     saveBlob(new Blob([zip(files) as BlobPart], { type: "application/zip" }), `${data.facility.code}-floor-book-images.zip`.toLowerCase());
   }
   async function doBook() {
+    // Open the window now, while the click still counts as the user's (audit A20): a window opened after minutes of
+    // rendering is stopped by pop-up blockers. It shows a holding page, then the book.
+    const win = window.open("about:blank", "_blank");
+    if (win) {
+      win.document.title = "Floor book";
+      win.document.body.style.font = "16px system-ui, sans-serif";
+      win.document.body.textContent = "Rendering the floor book… Keep the 3D view open; this page fills in when it is ready.";
+    }
     const [w, h] = size === "8K" ? SIZES["4K"] : SIZES[size];
     const pages: { name: string; img: string; depts: string[] }[] = [];
     const ok = await run("Making the floor book…", async (s) => {
@@ -190,12 +198,15 @@ export function RenderPanel({ data, floorId: initialFloor, onClose, plans = [], 
       }
       return true;
     });
-    if (!ok || !pages.length) return;
+    if (!ok || !pages.length) { win?.close(); return; }
     // Credits of the model files on every floor in the book (wave 28).
     const bookCredits = equipment === "planned" ? [] : mergeCredits(floors.map((f) => floorModelFiles(data, f.id).credits));
     const html = floorBookHtml(data.facility.name, pages, { logo: data.facility.logo ?? null, color: data.facility.brandColor ?? null }, bookCredits);
-    const win = window.open(URL.createObjectURL(new Blob([html], { type: "text/html" })), "_blank");
-    if (!win) setError("Your browser blocked the floor book window. Allow pop-ups for this site and try again.");
+    const blob = new Blob([html], { type: "text/html" });
+    if (win && !win.closed) { win.location.href = URL.createObjectURL(blob); return; }
+    // Blocked or closed while rendering: download the book instead of losing the work.
+    saveBlob(blob, `${data.facility.code}-floor-book.html`.toLowerCase());
+    setError("The floor book window was blocked or closed, so the book was downloaded instead. Open the file to print it or save it as PDF.");
   }
 
   const radio = <T extends string>(name: string, value: T, set: (v: T) => void, items: [T, string][]) => (

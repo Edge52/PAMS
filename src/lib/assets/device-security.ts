@@ -3,6 +3,8 @@
  * of concerns. The fields follow the questions of the manufacturer's security statement (MDS2) that a hospital
  * can answer itself. Pure.
  */
+import { addMonths } from "./dates";
+
 export const CONNECTIONS = ["NONE", "WIRED", "WIRELESS", "BOTH"] as const;
 export const TRI = ["YES", "NO", "UNKNOWN"] as const;
 export const REMOTE = ["NONE", "SUPPLIER", "HOSPITAL", "BOTH"] as const;
@@ -22,7 +24,6 @@ export type SecurityRecord = {
 
 export type Concern = { level: "high" | "medium"; text: string };
 
-const addMonths = (iso: string, n: number) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 10); };
 
 /** What needs attention on this device, worst first. A device that isn't on the network and holds no patient data has none. */
 export function concerns(r: SecurityRecord, today: string): Concern[] {

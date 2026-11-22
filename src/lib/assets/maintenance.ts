@@ -12,7 +12,7 @@
  *   nothing scheduled, and it is left out of PPM compliance. Its interval is empty on purpose, so the default must
  *   not fill it in.
  */
-import { addMonths, daysBetween, monthKey } from "./dates";
+import { addMonths, addMonthsSeries, daysBetween, monthKey } from "./dates";
 
 export const DEFAULT_PPM_INTERVAL_MONTHS = 12;
 export const DUE_SOON_DAYS = 30;
@@ -77,11 +77,14 @@ export function ppmDatesInWindow(a: PpmAsset, from: string, to: string): string[
   const next = nextPpmDue(a);
   if (!next.due || from > to) return [];
   const out: string[] = [];
-  let d = next.due < from ? from : next.due;
-  for (let guard = 0; d <= to && guard < 240; guard++) {
-    out.push(d);
-    d = addMonths(d, next.intervalMonths);
-  }
+  // Every visit is counted from the date the cycle started (the last visit, install or purchase), so a cycle on the
+  // 31st stays on the last day of each month instead of sliding to the 28th after February (audit A16). An overdue
+  // device restarts the cycle on `from`; a usage-based date starts its own.
+  const base = a.lastPpmDate ?? a.installDate ?? a.purchaseDate ?? null;
+  const fromBase = next.due >= from && base && next.basis !== "usage";
+  const anchor = fromBase ? base : next.due < from ? from : next.due;
+  const k0 = fromBase ? 1 : 0;
+  for (let k = k0, d = addMonthsSeries(anchor, next.intervalMonths, k); d <= to && k < 240 + k0; k++, d = addMonthsSeries(anchor, next.intervalMonths, k)) out.push(d);
   return out;
 }
 

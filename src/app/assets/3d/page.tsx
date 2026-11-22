@@ -7,6 +7,7 @@ import { equipmentNames, loadFlow } from "@/lib/flows/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { DEPARTMENT_PALETTE, rectPoly } from "@/components/assets/twin/geometry";
 import { TwinView } from "@/components/assets/twin/twin-view";
+import { packTwin } from "@/components/assets/twin/pack";
 import { listPlans } from "@/lib/assets/commissioning-server";
 import type { TwinData } from "@/components/assets/twin/types";
 import { can } from "@/lib/auth/permissions";
@@ -136,7 +137,8 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
   const tours = (await db.select().from(twinTours)
     .where(sql`${twinTours.facilityId} = ${facility.id} and (${twinTours.shared} or ${twinTours.createdById} = ${me.id})`).orderBy(asc(twinTours.name)))
     .map((t) => ({ id: t.id, name: t.name, stops: t.stops, shared: t.shared, mine: t.createdById === me.id, by: t.createdByName }));
-  return <TwinView data={data} live={await twinLive(facility.id)} notes={notes} tours={tours} people={people} me={{ id: me.id, canEditAssets: can(me.role, "assets.edit"), role: me.role }}
+  // Packed for the wire (audit R6): device types once, devices as short rows, rooms without empty fields.
+  return <TwinView data={packTwin(data)} live={await twinLive(facility.id)} notes={notes} tours={tours} people={people} me={{ id: me.id, canEditAssets: can(me.role, "assets.edit"), role: me.role }}
     views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName, render: v.render ?? null }))}
     canManageViews={can(me.role, "users.manage")}
     plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []}

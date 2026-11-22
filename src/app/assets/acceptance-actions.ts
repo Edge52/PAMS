@@ -13,7 +13,7 @@ import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import type { FormState } from "@/lib/assets/forms";
 import { fillChecklist } from "@/lib/assets/checklists";
 import { todayISO } from "@/lib/format";
-import { warrantyEndFrom } from "@/lib/procurement/money";
+import { addMonths } from "@/lib/assets/dates";
 import { acceptanceSheet } from "@/lib/procurement/acceptance-server";
 import { logActivity } from "@/lib/server-utils";
 
@@ -55,7 +55,8 @@ export async function saveAcceptanceAction(_: FormState, fd: FormData): Promise<
   if (both && intent !== "reject") {
     const on = todayISO();
     v.status = "ACCEPTED"; v.acceptedOn = on;
-    const warrantyEnd = warrantyEndFrom(on, s.po?.warrantyMonths);
+    // The shared month-add clamps to month ends (31 Aug + 6 → 28 Feb, not 3 Mar).
+    const warrantyEnd = s.po?.warrantyMonths ? addMonths(on, s.po.warrantyMonths) : null;
     await db.update(assets).set({
       ...(warrantyEnd ? { warrantyEnd } : {}), installDate: a.installDate ?? installedOn ?? on,
       ...(a.status === "IN_STOCK" || a.status === "INSTALLED" ? { status: "IN_SERVICE" as const } : {}),

@@ -26,7 +26,9 @@ UNIT_MM = 100.0  # 1 plan unit = 100 mm → 10 units per metre
 data = {}
 for code, name, level in FLOORS:
     try: data[code] = json.load(open(f"{work}/{code}-rooms.json"))
-    except FileNotFoundError: print("missing", code)
+    except FileNotFoundError: print(f"missing {code}: no rooms file for this floor; it is left out", file=sys.stderr)
+if not data:  # audit A15: say so instead of crashing on an empty list
+    sys.exit("No floor was extracted, so there is nothing to build. Check the messages above and the file names in the config.")
 
 def lift_candidates(d):
     """Every position of every lift label (a drawing may repeat labels in a key plan)."""
@@ -115,6 +117,8 @@ for code, d in data.items():
         for x, y in ((s[0], s[1]), (s[2], s[3])):
             X, Y = tf(code, x, y)
             if in_clip(code, X, Y): xs.append(X); ys.append(Y)
+if not xs:
+    sys.exit("No wall lines inside the building's outline on any floor, so there is nothing to build. Check the wall layers and the lift labels used to align the floors.")
 xs.sort(); ys.sort(); q = lambda a, f: a[int(len(a) * f)]
 pad = 6000
 X0, X1, Y0, Y1 = q(xs, .002) - pad, q(xs, .998) + pad, q(ys, .002) - pad, q(ys, .998) + pad

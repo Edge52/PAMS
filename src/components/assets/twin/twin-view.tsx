@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { saveViewAction } from "@/app/assets/3d/actions";
 import { formatDims } from "@/lib/assets/dimensions";
@@ -23,6 +24,7 @@ import { WalkStick } from "./twin-view-parts";
  * below 1100 px), or on phones one bottom sheet with tabs.
  */
 import { useTwinView, type TwinCtx } from "./use-twin-view";
+import { unpackTwin, type PackedTwinData } from "./pack";
 import { FloorList, StatusList, PlaceList, TypeList } from "./panels/lists";
 import { LayerPanel } from "./panels/layer-panel";
 import { PlanPanel } from "./panels/plan-panel";
@@ -36,9 +38,12 @@ import { ToursPanel } from "./panels/tours-panel";
 import { ViewsPanel } from "./panels/views-panel";
 import { DetailsBody } from "./panels/details";
 
-export function TwinView(props: Parameters<typeof useTwinView>[0]) {
-  const t: TwinCtx = useTwinView(props);
-  const { assetList, categories, cats, choosePreset, closeDetails, comm, commissioning, compact, currentView, data, dropping, error, explode, filterCount, floorId, floorName, flowSel, flows, hasSelection, helpOpen, history, host, hover, hoverCard, isFull, layer, liveError, liveTime, matches, menu, navOn, notes, onTabKey, panels, panelsHidden, phone, placed, placingId, plan, planSummary, plans, playing, presentation, preset, progress, query, ready, renderInit, renderOpen, roomById, root, router, sceneRef, selAsset, setHelpOpen, setLook, setMenu, setPanelsHidden, setRenderInit, setRenderOpen, setSheetTab, setToast, setTourPlay, setViews, sheetTab, shownEvents, solidFloors, statuses, stopTour, stopWalk, style, tabs, toast, toggleFull, tourPlay, tourStop, tours, trauma, turnOf, undo, unplaced, views, visibleStatuses, walking } = t;
+type TwinViewProps = Parameters<typeof useTwinView>[0];
+/** The 3D view. The page sends its data packed (audit R6); it is unpacked once here. */
+export function TwinView({ data: packed, ...props }: Omit<TwinViewProps, "data"> & { data: PackedTwinData }) {
+  const unpacked = useMemo(() => unpackTwin(packed), [packed]);
+  const t: TwinCtx = useTwinView({ ...props, data: unpacked });
+  const { confirmDialog, assetList, categories, cats, choosePreset, closeDetails, comm, commissioning, compact, currentView, data, dropping, error, explode, filterCount, floorId, floorName, flowSel, flows, hasSelection, helpOpen, history, host, hover, hoverCard, isFull, layer, liveError, liveTime, matches, menu, navOn, notes, onTabKey, panels, panelsHidden, phone, placed, placingId, plan, planSummary, plans, playing, presentation, preset, progress, query, ready, renderInit, renderOpen, roomById, root, router, sceneRef, selAsset, setHelpOpen, setLook, setMenu, setPanelsHidden, setRenderInit, setRenderOpen, setSheetTab, setToast, setTourPlay, setViews, sheetTab, shownEvents, solidFloors, statuses, stopTour, stopWalk, style, tabs, toast, toggleFull, tourPlay, tourStop, tours, trauma, turnOf, undo, unplaced, views, visibleStatuses, walking } = t;
   const floorList = <FloorList t={t} />;
   const layerPanel = <LayerPanel t={t} />;
   const planPanel = <PlanPanel t={t} />;
@@ -217,6 +222,7 @@ export function TwinView(props: Parameters<typeof useTwinView>[0]) {
           <button type="button" onClick={() => sceneRef.current?.cancelDrop()} className="text-[#5fd6ff] hover:underline">Cancel</button>
         </div>
       )}
+      {confirmDialog}
       {toast && (toast.ok || toast.error) && placingId == null && (
         <div role={toast.error ? "alert" : "status"} className={`absolute left-1/2 top-24 z-20 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-[#04121fee] px-4 py-2 text-sm ${toast.error ? "border-[#ff4f62] text-[#ff8a96]" : "border-[#3cf5a6] text-[#b9ffe0]"}`}>
           <span>{toast.error ?? toast.ok}</span>
