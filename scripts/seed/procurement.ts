@@ -14,7 +14,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { DB } from "../../src/db";
 import {
   activityLog, boqLines, boqs, departments, deviceTypes, facilities, offerCompliance, offerLines, offers, poLines, projects,
-  purchaseOrders, rfqLines, rfqs, rfqSuppliers, specItems, suppliers, techSpecs,
+  purchaseOrders, rfqLines, rfqs, rfqSuppliers, specItems, suppliers, techSpecs, tenderAddenda, tenderClarifications, tenderTimetableSteps,
 } from "../../src/db/schema";
 import { SPEC_LIBRARY } from "../../src/lib/procurement/spec-library";
 
@@ -125,7 +125,7 @@ export default async function seed(db: DB) {
   const [fac] = await db.select().from(facilities).where(eq(facilities.code, "DGH"));
   if (!fac) { console.log("  procurement: facility DGH not found, skipped"); return; }
   const exists = await db.select({ id: projects.id }).from(projects).where(inArray(projects.code, ["UPA-2026-ICU-031", "UHI-2026-RAD-007"]));
-  if (exists.length) { console.log("  procurement: demo projects exist, skipped"); return; }
+  if (exists.length) { console.log("  procurement: demo projects exist, skipped"); await seedTenderFile(db); return; }
 
   allowServerOnly();
   const { recomputeOfferScores, loadComparison } = await import("../../src/lib/procurement/server");
@@ -317,5 +317,57 @@ export default async function seed(db: DB) {
   const res = await receiveGoods(po.id, { reference: "DN-26-1017", deliveryDate: "2026-10-20", receivedBy: "Eng. Ahmed Nabil (biomedical)", notes: "First shipment. Packaging intact; accessories checked against packing list." }, input, "Demo seed");
   if (!res.ok) throw new Error(`procurement seed: receipt failed: ${res.errors.join(" ")}`);
 
+  await seedTenderFile(db);
   console.log(`  procurement: ${SUPPLIERS.length} suppliers, 2 projects, 6 specs, 2 RFQs, 6 offers; ${winnerName} awarded; PO-2026-0001 ${res.status.toLowerCase()} with ${res.assetsCreated} assets${icuBoqCovered ? " (linked to the demo BOQ)" : ""}`);
+}
+
+/**
+ * Wave 37: procurement method, timetable, bidder questions and an addendum on the two demo tenders. Idempotent: runs
+ * on existing demo databases too, and skips a tender that already has a timetable.
+ */
+async function seedTenderFile(db: DB) {
+  const ps = await db.select().from(projects).where(inArray(projects.code, ["UPA-2026-ICU-031", "UHI-2026-RAD-007"]));
+  const icu = ps.find((p) => p.code === "UPA-2026-ICU-031"), rad = ps.find((p) => p.code === "UHI-2026-RAD-007");
+  if (!icu || !rad) return;
+  const done = await db.select({ id: tenderTimetableSteps.id }).from(tenderTimetableSteps).where(inArray(tenderTimetableSteps.projectId, [icu.id, rad.id])).limit(1);
+  if (done.length) return;
+  const log = (entityType: string, entityId: number, action: string, summary: string, at: string) =>
+    db.insert(activityLog).values({ entityType, entityId, action, summary, actor: "Demo seed", at: new Date(at + "T10:00:00Z") });
+
+  if (!icu.procurementMethod) {
+    await db.update(projects).set({ procurementMethod: "PUBLIC_TENDER", approvingAuthority: "Hospital director, decision 41/2026 of 8 Jul 2026" }).where(eq(projects.id, icu.id));
+  }
+  if (!rad.procurementMethod) {
+    await db.update(projects).set({
+      procurementMethod: "LIMITED_TENDER", approvingAuthority: "Hospital director, decision 77/2026 of 18 Sep 2026",
+      methodJustification: "Only suppliers with an EDA-registered 128-slice CT and a local service centre can meet the specification; invitations limited to the pre-qualified list (demo text).",
+    }).where(eq(projects.id, rad.id));
+  }
+  const plan = (projectId: number, rows: [string, string | null, string | null][]) =>
+    db.insert(tenderTimetableSteps).values(rows.map(([step, plannedDate, actualDate]) => ({ projectId, step, plannedDate, actualDate }))).onConflictDoNothing();
+  await plan(icu.id, [
+    ["ANNOUNCEMENT", "2026-07-15", null], ["CLARIFICATION_DEADLINE", "2026-08-12", "2026-08-12"], ["SUBMISSION", "2026-08-15", null],
+    ["TECHNICAL_OPENING", "2026-08-16", "2026-08-16"], ["AWARD_DECISION", "2026-08-30", null], ["STANDSTILL_END", "2026-09-06", null],
+    ["CONTRACT_SIGNATURE", "2026-09-15", null],
+  ]);
+  await plan(rad.id, [
+    ["ANNOUNCEMENT", "2026-09-25", null], ["CLARIFICATION_DEADLINE", "2026-11-06", null], ["SUBMISSION", "2026-11-20", null],
+    ["TECHNICAL_OPENING", "2026-11-21", null], ["AWARD_DECISION", "2026-12-20", null], ["STANDSTILL_END", "2026-12-27", null],
+    ["CONTRACT_SIGNATURE", "2027-01-10", null],
+  ]);
+  await log("project", icu.id, "timetable", "Tender timetable planned", "2026-07-10");
+  await log("project", rad.id, "timetable", "Tender timetable planned", "2026-09-20");
+
+  const [rfqRad] = await db.select().from(rfqs).where(eq(rfqs.projectId, rad.id)).limit(1);
+  if (!rfqRad) return;
+  const invited = await db.select({ supplierId: rfqSuppliers.supplierId }).from(rfqSuppliers).where(eq(rfqSuppliers.rfqId, rfqRad.id));
+  const who = (i: number) => invited[i % Math.max(1, invited.length)]?.supplierId ?? null;
+  await db.insert(tenderClarifications).values([
+    { rfqId: rfqRad.id, supplierId: who(0), receivedOn: "2026-10-05", question: "Is the CT gantry aperture of 70 cm acceptable, or is 78 cm required?", answer: "A minimum of 70 cm is acceptable. 78 cm or more earns the extra points in the evaluation.", sentOn: "2026-10-07" },
+    { rfqId: rfqRad.id, supplierId: who(1), receivedOn: "2026-10-12", question: "Should the DR offer include a second wireless detector?", answer: "Yes. See Addendum 1.", sentOn: "2026-10-14" },
+    { rfqId: rfqRad.id, supplierId: who(2), receivedOn: "2026-11-02", question: "Can the 10-year service price list be in EUR?", answer: null, sentOn: null },
+  ]);
+  await db.insert(tenderAddenda).values({ rfqId: rfqRad.id, number: 1, issuedOn: "2026-10-14", summary: "DR room: add a second wireless flat-panel detector (35 × 43 cm) to the scope. No other change.", extendsDeadline: false });
+  await log("rfq", rfqRad.id, "clarification", "Answer sent to all bidders on 7 Oct 2026", "2026-10-07");
+  await log("rfq", rfqRad.id, "addendum", "Addendum 1 issued 14 Oct 2026", "2026-10-14");
 }

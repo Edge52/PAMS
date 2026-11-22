@@ -155,6 +155,14 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
     // Loan equipment past its due-back date (wave 27): the hospital's biomedical engineers, once per loan.
     const loans = await notifyOverdueLoans(today);
     if (loans) { created += loans; byKind.loan_overdue = (byKind.loan_overdue ?? 0) + loans; }
+    // Tender timetable steps past their planned date with no actual date (wave 37): procurement, once per step and date.
+    const { overdueTimetableAlerts } = await import("@/lib/procurement/timetable-server");
+    const steps = await overdueTimetableAlerts(today);
+    candidates += steps.length;
+    for (const a of steps) {
+      const n = await notifyUsers(await who("PROCUREMENT", a.facilityId), a.n);
+      if (n) { created += n; byKind[a.n.kind] = (byKind[a.n.kind] ?? 0) + n; }
+    }
     // Approvals that ended while their effect was not applied (audit DL-24/DL-25): apply it now.
     const { reconcileApprovalEffects } = await import("@/lib/approvals/effects");
     const repaired = await reconcileApprovalEffects();

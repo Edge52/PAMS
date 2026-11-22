@@ -10,6 +10,7 @@ import { formatMoney, num } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
 import { saveSettings, savePolicy, togglePolicy } from "./actions";
 import { canSeal } from "@/lib/auth/secret-box";
+import { TenderDaysSettings } from "@/components/procurement/tender-days-settings";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approval rules & settings" };
@@ -182,6 +183,7 @@ export default async function SettingsPage() {
             <SubmitButton>Save settings</SubmitButton>
           </ActionForm>
         </Panel>
+        <TenderDaysSettings value={s.tenderMinDays} />
       </div>
     </>
   );

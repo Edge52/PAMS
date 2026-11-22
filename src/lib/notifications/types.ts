@@ -14,6 +14,7 @@ export const KIND_LABELS: Record<string, string> = {
   approval_decided: "Approval decided",
   offer_expiring: "Offer expiring",
   rfq_closing: "RFQ closing",
+  tender_step_overdue: "Tender step overdue",
   po_late: "Late delivery",
   warranty_ending: "Warranty ending",
   maintenance_due: "Maintenance due",

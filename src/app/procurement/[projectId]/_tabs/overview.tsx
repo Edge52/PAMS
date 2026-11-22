@@ -11,6 +11,7 @@ import { offerTotals, projectPoValues, sumInCurrency } from "@/lib/procurement/s
 import { setProjectStatus, updateProject } from "../../actions";
 import { facilityScope, type CurrentUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/permissions";
+import { TimetableSummary } from "@/components/procurement/timetable-panel";
 
 
 type Project = typeof projects.$inferSelect;
@@ -79,6 +80,7 @@ export async function OverviewTab({ project, facility, counts, me }: {
         </div>
 
         <div className="space-y-5">
+          <TimetableSummary project={project} />
           {mayEdit && <Panel title="Status">
             <ActionForm action={setProjectStatus} className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="projectId" value={project.id} />

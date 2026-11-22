@@ -455,6 +455,11 @@ export const projects = pgTable("projects", {
   twoEnvelope: boolean("two_envelope").notNull().default(false),
   technicalOpenedAt: timestamp("technical_opened_at", { withTimezone: true }),
   financialOpenedAt: timestamp("financial_opened_at", { withTimezone: true }),
+  /** Wave 37: Law 182/2018 art. 7 method (PROCUREMENT_METHODS in lib/procurement/timetable.ts; null = not set, read as
+   *  public tender), the reasoned justification for any other method, and who approved the method. */
+  procurementMethod: varchar("procurement_method", { length: 32 }),
+  methodJustification: text("method_justification"),
+  approvingAuthority: text("approving_authority"),
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -2171,3 +2176,4 @@ export const trainingAttendees = pgTable("training_attendees", {
 // sessions.ip (above) and the short browser label in sessions.user_agent; no new tables.
 /* ── Wave 28: 3D view (north arrow, own model files with licence and credit) ── */
 // No new tables: buildings.north_deg and equipment_models.glb_licence / glb_credit / glb_source / glb_bytes above.
+export * from "./schema-wave37-j";

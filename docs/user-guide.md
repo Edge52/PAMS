@@ -206,6 +206,24 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 8. **Framework agreements**: record the agreed items and prices once; **Draft call-off PO** whenever you need more.
 - Service contracts can also be managed from **Service contracts**.
 
+### Method, timetable and bidder questions (wave 37)
+
+- **Tender** tab › **Procurement method**: choose the method (Law 182/2018 art. 7: public tender, limited tender,
+  local tender, two-stage tender, public or limited practice, direct agreement; or a call-off under a framework
+  agreement, art. 65). Any method other than a public tender needs the reason and who approved it.
+- **Timetable**: a planned and an actual date for each step, from the announcement to the contract. Steps the app
+  already knows (RFQ issue and closing, envelopes opened, award approved, complaint period, first purchase order) fill
+  the actual date by themselves. **Suggest blank planned dates** fills empty steps from the method's minimum days. A
+  date shorter than the minimum, out of order, or with less than 7 days between answers and the opening is marked.
+  Overdue steps reach procurement as alerts. The Overview shows the method, the next step and open questions.
+- **RFQ page › Clarifications and addenda**: record each bidder's question (who asked stays inside the hospital),
+  the answer and the day it went to all bidders. **Record addendum** numbers it (Addendum 1, 2…); tick "extends the
+  submission deadline" to move the RFQ closing date (and the project deadline when it was the same). Nothing can be
+  added after the technical envelopes are opened (art. 19). **Notice to all bidders** prints the addenda and answers
+  without names; when email is switched on, **Email the notice to all bidders** sends each supplier their own copy.
+- Administrators set the minimum days per method under **Settings › Tender timetable**. The defaults are planning
+  figures: check them with your legal adviser.
+
 ---
 
 ## Director and Finance

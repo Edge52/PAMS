@@ -15,6 +15,7 @@ import { inviteSuppliers, setRfqStatus, updateInvitation, updateRfqNotes } from 
 import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { seesPrices, shownMoney } from "@/lib/auth/prices";
+import { ClarificationsPanel } from "@/components/procurement/clarifications-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -131,6 +132,9 @@ export default async function RfqPage({ params }: { params: Promise<{ id: string
               </Table>
             )}
           </Panel>
+
+          <ClarificationsPanel rfq={rfq} invited={invited.map((i) => ({ supplierId: i.inv.supplierId, name: i.name }))} mayEdit={mayEdit}
+            technicalOpened={!!project.technicalOpenedAt} />
 
           <DocumentsPanel entityType="rfq" entityId={id} returnPath={`/procurement/rfqs/${id}`} title="RFQ documents (letter, booklet, clarifications)" />
         </div>
