@@ -49,6 +49,8 @@ export type Settings = {
   landedDutyPct: number;
   landedClearancePct: number;
   landedLocalDeliveryPct: number;
+  /** Wave 38: month (1–12) the budget year starts in; Egypt's fiscal year starts in July (lib/fiscal-year). */
+  budgetYearStartMonth: number;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -79,6 +81,7 @@ export const DEFAULT_SETTINGS: Settings = {
   landedDutyPct: 5,
   landedClearancePct: 1.5,
   landedLocalDeliveryPct: 1,
+  budgetYearStartMonth: 7,
 };
 
 export async function getSettings(): Promise<Settings> {

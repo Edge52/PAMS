@@ -17,6 +17,7 @@ import { fxFactors } from "@/lib/procurement/server";
 import { logActivity, nextNumber } from "@/lib/server-utils";
 import { changeSummary, diff } from "@/lib/audit-diff";
 import { formatMoney } from "@/lib/format";
+import { budgetYear } from "@/lib/procurement/budget-year-server";
 import { deductionProblem, penaltyLeft, penaltyNote } from "@/lib/procurement/delay-penalty";
 import { poDelayPenalty } from "@/lib/procurement/penalty-server";
 
@@ -48,7 +49,8 @@ export async function saveBudgetLineAction(_: FormState, fd: FormData): Promise<
     if (!changes) return { ok: "Nothing changed." };
     await db.update(budgetLines).set(v).where(eq(budgetLines.id, id));
   } else await db.insert(budgetLines).values(v);
-  await logActivity("facility", facilityId, "budget line", `${year} ${name}: ${currency} ${amount.toLocaleString("en")}${changes ? `. ${changeSummary(changes)}` : ""}`, me.name, db, changes);
+  const fy = (await budgetYear()).label(year);
+  await logActivity("facility", facilityId, "budget line", `${fy} ${name}: ${currency} ${amount.toLocaleString("en")}${changes ? `. ${changeSummary(changes)}` : ""}`, me.name, db, changes);
   revalidatePath("/procurement/budgets");
   return { ok: id ? "Budget line saved." : `${name} added.` };
 }
@@ -69,13 +71,14 @@ export async function setPoBudgetAction(_: FormState, fd: FormData): Promise<For
   const inLine = po.budgetLineId === line.id;
   const crossing = !inLine && fx[po.currency] != null ? budgetCrossing(Number(line.amount), before.used + before.requested, value * fx[po.currency]!) : null;
   await db.update(purchaseOrders).set({ budgetLineId: line.id }).where(eq(purchaseOrders.id, po.id));
-  await logActivity("po", po.id, "budget", `Charged to ${line.year} ${line.name}`, me.name);
+  const fy = (await budgetYear()).label(line.year);
+  await logActivity("po", po.id, "budget", `Charged to ${fy} ${line.name}`, me.name);
   if (crossing) {
-    await notifyRole("FINANCE", { kind: "budget_warning", title: `${line.year} ${line.name}: ${crossing === "100" ? "over budget" : "past 80 %"} with ${po.number}`,
+    await notifyRole("FINANCE", { kind: "budget_warning", title: `${fy} ${line.name}: ${crossing === "100" ? "over budget" : "past 80 %"} with ${po.number}`,
       body: `Remaining before this PO: ${line.currency} ${Math.round(before.remaining).toLocaleString("en")}.`, href: `/procurement/budgets?facilityId=${line.facilityId}&year=${line.year}`, dedupeKey: `budget:${line.id}:${crossing}` }, line.facilityId);
   }
   revalidatePath(`/procurement/purchase-orders/${po.id}`);
-  return crossing ? { error: `Charged to ${line.name}, which is now ${crossing === "100" ? "over budget" : "past 80 % of its budget"}. Finance has been told.` } : { ok: `Charged to ${line.year} ${line.name}.` };
+  return crossing ? { error: `Charged to ${line.name}, which is now ${crossing === "100" ? "over budget" : "past 80 % of its budget"}. Finance has been told.` } : { ok: `Charged to ${fy} ${line.name}.` };
 }
 
 /* ── Invoices ── */

@@ -8,8 +8,10 @@ import { NativeSelect, Notice } from "@/components/assets/bits";
 import { scopeWhere, scopedFacilityId } from "@/lib/assets/access";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
-import { CURRENCIES, formatMoney } from "@/lib/format";
+import { CURRENCIES, formatDate, formatMoney } from "@/lib/format";
 import { budgetRows } from "@/lib/procurement/money-server";
+import { budgetYear } from "@/lib/procurement/budget-year-server";
+import { fiscalYearOptions, fiscalYearRange } from "@/lib/fiscal-year";
 import { saveBudgetLineAction } from "../invoices/actions";
 import { sumToEgp, toEgp } from "@/lib/reports/calc";
 import { EGP_NOTE, missingRatesNote, ratesFor } from "@/lib/reports/shared";
@@ -27,7 +29,11 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
   const facs = await db.select({ id: facilities.id, name: facilities.name }).from(facilities).where(scopeWhere(facilities.id, scope)).orderBy(asc(facilities.name));
   const facilityId = scopedFacilityId(scope, Number(sp.facilityId) || undefined) ?? facs[0]?.id;
   if (!facilityId) return <><PageHeader title="Budgets" /><EmptyState title="No hospital linked to your account">Ask an administrator for access to a hospital.</EmptyState></>;
-  const year = Number(sp.year) || new Date().getFullYear();
+  // Wave 38: budget years (FY 2026/27 = stored 2026, 1 Jul 2026 – 30 Jun 2027 with a July start).
+  const by = await budgetYear();
+  const year = Number(sp.year) || by.current;
+  const fy = by.label(year);
+  const range = fiscalYearRange(year, by.startMonth);
   const [lines, depts, projs] = await Promise.all([
     db.select().from(budgetLines).where(and(eq(budgetLines.facilityId, facilityId), eq(budgetLines.year, year))).orderBy(asc(budgetLines.name)),
     db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.facilityId, facilityId)).orderBy(asc(departments.name)),
@@ -52,25 +58,26 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="Budgets" description="Money set aside per year, against what purchase orders commit and approved invoices spend. Finance is told when a PO takes a line past 80 % or 100 %." />
+      <PageHeader title="Budgets" description="Money set aside per budget year, against what purchase orders commit and approved invoices spend. Finance is told when a PO takes a line past 80 % or 100 %." />
       <Notice sp={sp} />
       <form className="mb-5 flex flex-wrap items-end gap-2">
         <Field label="Hospital"><NativeSelect name="facilityId" value={facilityId} options={facs.map((f) => ({ value: f.id, label: f.name }))} /></Field>
-        <Field label="Year"><NativeSelect name="year" value={year} options={[-1, 0, 1, 2].map((k) => new Date().getFullYear() + k).map((y) => ({ value: y, label: String(y) }))} /></Field>
+        <Field label="Budget year"><NativeSelect name="year" value={year} options={fiscalYearOptions(by.current, by.startMonth, [year])} /></Field>
         <Button variant="secondary">Show</Button>
       </form>
       {byCur.size > 0 && (
         <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Stat label={`${year} budget in EGP`} value={formatMoney(egpAmount.egp, "EGP", { compact: true })}
+          <Stat label={`${fy} budget in EGP`} value={formatMoney(egpAmount.egp, "EGP", { compact: true })}
             hint={`${Math.round(egpAmount.egp ? egpUsed.egp / egpAmount.egp * 100 : 0)} % committed or spent · ${formatMoney(egpSpent.egp, "EGP", { compact: true })} spent`} />
-          {(mixed ? [...byCur] : []).map(([c, t]) => <Stat key={c} label={`${year} budget (${c})`} value={formatMoney(t.amount, c, { compact: true })} hint={`${Math.round(t.amount ? t.used / t.amount * 100 : 0)} % committed or spent`} />)}
+          {(mixed ? [...byCur] : []).map(([c, t]) => <Stat key={c} label={`${fy} budget (${c})`} value={formatMoney(t.amount, c, { compact: true })} hint={`${Math.round(t.amount ? t.used / t.amount * 100 : 0)} % committed or spent`} />)}
           <Stat label="Lines past 80 %" value={String(rows.filter((r) => r.level !== "OK").length)} hint={`of ${rows.length}`} />
           {mixed && <p className="col-span-full text-xs text-muted">{EGP_NOTE} {rateNote}</p>}
           {!mixed && rateNote && <p className="col-span-full text-xs text-muted">{rateNote}</p>}
         </div>
       )}
-      <Panel title={`${year} budget lines`} padded={false}>
-        {rows.length === 0 ? <p className="p-4 text-sm text-muted">No budget lines for {year} yet.{canEdit ? " Add one below." : ""}</p> : (
+      <Panel title={`${fy} budget lines`} padded={false}>
+        {range && <p className="border-b border-line px-4 py-2 text-xs text-muted">{fy} runs from {formatDate(range.start)} to {formatDate(range.end)}.</p>}
+        {rows.length === 0 ? <p className="p-4 text-sm text-muted">No budget lines for {fy} yet.{canEdit ? " Add one below." : ""}</p> : (
           <ul className="divide-y divide-line">{rows.map((r) => {
             const pct = (x: number) => `${Math.min(100, Number(r.amount) > 0 ? (x / Number(r.amount)) * 100 : 0)}%`;
             return (

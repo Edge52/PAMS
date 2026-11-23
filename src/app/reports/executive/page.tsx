@@ -3,6 +3,7 @@ import { and, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { approvalRequests, assets, boqs, budgetLines, buildings, deviceModels, deviceTypes, facilities, floors, patientFlows, preferredModels, projects, purchaseOrders, rooms, serviceContracts, workOrders } from "@/db/schema";
 import { budgetRows } from "@/lib/procurement/money-server";
+import { budgetYear } from "@/lib/procurement/budget-year-server";
 import { loadFlow } from "@/lib/flows/server";
 import { readiness } from "@/lib/flows/readiness";
 import { Badge, EmptyState, PageHeader } from "@/components/ui";
@@ -30,6 +31,7 @@ export default async function ExecutiveSummaryPage({ searchParams }: { searchPar
   const fac = facs.find((f) => f.id === wanted) ?? facs.find((f) => f.code === "LPH") ?? facs[0];
   await requireFacilityAccess(fac.id, me);
   const today = todayISO(), now = new Date(), since = new Date(now.getTime() - 90 * 86400_000);
+  const by = await budgetYear(now); // wave 38: the capital budget tile shows the current budget year (FY)
 
   const [live, jobRows, contractsEnding, warrantyEnding, fleetRows, models, prefs, pos, approvals, plans, [facRow]] = await Promise.all([
     twinLive(fac.id),
@@ -53,7 +55,7 @@ export default async function ExecutiveSummaryPage({ searchParams }: { searchPar
   // Wave 12: tenders, capital budget and pathway readiness.
   const [tenders, capLines, flowIds, roomRows, kit] = await Promise.all([
     db.select({ status: projects.status, n: sql<number>`count(*)::int` }).from(projects).where(and(eq(projects.facilityId, fac.id), inArray(projects.status, ["SPECIFICATION", "RFQ", "EVALUATION", "AWARDED", "DELIVERY"]))).groupBy(projects.status),
-    db.select().from(budgetLines).where(and(eq(budgetLines.facilityId, fac.id), eq(budgetLines.year, now.getFullYear()), eq(budgetLines.kind, "CAPITAL"))),
+    db.select().from(budgetLines).where(and(eq(budgetLines.facilityId, fac.id), eq(budgetLines.year, by.current), eq(budgetLines.kind, "CAPITAL"))),
     db.select({ id: patientFlows.id }).from(patientFlows).where(and(eq(patientFlows.facilityId, fac.id), eq(patientFlows.status, "PUBLISHED"))),
     db.select({ id: rooms.id, departmentId: rooms.departmentId }).from(rooms).innerJoin(floors, eq(floors.id, rooms.floorId)).innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(eq(buildings.facilityId, fac.id)),
     db.select({ id: assets.id, typeCode: deviceTypes.code, typeName: deviceTypes.name, roomId: assets.roomId, status: assets.status }).from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
@@ -147,7 +149,7 @@ export default async function ExecutiveSummaryPage({ searchParams }: { searchPar
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {tile("Tenders in progress", formatNumber(tenders.reduce((t, x) => t + x.n, 0)), tenders.map((x) => `${x.n} ${x.status.toLowerCase()}`).join(", ") || "None")}
-            {tile(`Capital budget ${now.getFullYear()}`, budget.pct != null ? `${budget.pct} % used` : budget.missing.length ? "No exchange rate" : "Not set", budget.pct != null ? `${formatMoney(budget.usedEgp, "EGP", { compact: true })} of ${formatMoney(budget.totalEgp, "EGP", { compact: true })}` : undefined)}
+            {tile(`Capital budget ${by.label(by.current)}`, budget.pct != null ? `${budget.pct} % used` : budget.missing.length ? "No exchange rate" : "Not set", budget.pct != null ? `${formatMoney(budget.usedEgp, "EGP", { compact: true })} of ${formatMoney(budget.totalEgp, "EGP", { compact: true })}` : undefined)}
             {tile("Pathways ready", flows.length ? `${flows.length - notReady.length} of ${flows.length}` : "—", notReady.length ? `Missing equipment: ${notReady.slice(0, 2).map((x) => x.name).join(", ")}${notReady.length > 2 ? "…" : ""}` : flows.length ? "All equipment in place" : "No published pathways")}
           </div>
           {budgetNote && <p className="mt-2 text-xs text-warn">{budgetNote}</p>}

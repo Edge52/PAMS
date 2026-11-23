@@ -30,6 +30,7 @@ vi.mock("@/lib/settings", () => import("../settings"));
 vi.mock("@/lib/server-utils", () => ({ logActivity: async () => {}, nextNumber: async (p: string) => `${p}-${Math.random().toString(36).slice(2, 10)}` }));
 vi.mock("@/lib/auth/session", () => ({ requirePermission: async () => h.me, requireFacilityAccess: async () => {} }));
 vi.mock("@/lib/notifications", () => ({ notifyRole: async () => {} }));
+vi.mock("@/lib/procurement/budget-year-server", () => ({ budgetYear: async () => ({ startMonth: 7, current: 2026, label: (y: number) => `FY ${y}` }) })); // wave 38
 vi.mock("@/lib/procurement/server", () => ({ fxFactors: async (cs: string[]) => Object.fromEntries(cs.map((c) => [c, 1])) }));
 vi.mock("@/lib/procurement/money", () => import("./money"));
 vi.mock("@/lib/procurement/money-server", () => import("./money-server"));

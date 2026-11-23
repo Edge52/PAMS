@@ -8,6 +8,7 @@ import { assets, boqDepartments, boqLines, boqs, budgetLines, departments, devic
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, type CurrentUser } from "@/lib/auth/session";
 import { budgetRows, poValues } from "@/lib/procurement/money-server";
+import { budgetYear } from "@/lib/procurement/budget-year-server";
 import { TOOLS } from "./defs";
 
 type Input = Record<string, unknown>;
@@ -108,10 +109,11 @@ export async function runTool(me: CurrentUser, name: string, input: Input): Prom
     }
 
     case "budget_status": {
-      const year = n(input.year) ?? new Date().getFullYear();
+      const by = await budgetYear(); // wave 38: budget years start in July by default ("year" = the start year)
+      const year = n(input.year) ?? by.current;
       const lines = await db.select().from(budgetLines).where(and(eq(budgetLines.year, year), inScope(budgetLines.facilityId), fac != null ? eq(budgetLines.facilityId, fac) : undefined)).limit(60);
       const codes = new Map((await db.select({ id: facilities.id, code: facilities.code }).from(facilities)).map((f) => [f.id, f.code]));
-      return (await budgetRows(lines)).map((r) => ({ hospital: codes.get(r.facilityId), name: r.name, kind: r.kind, year: r.year, currency: r.currency, amount: Number(r.amount), committed: r.committed, spent: r.spent, remaining: r.remaining, usedPct: Math.round(r.pct * 100), level: r.level }));
+      return (await budgetRows(lines)).map((r) => ({ hospital: codes.get(r.facilityId), name: r.name, kind: r.kind, year: r.year, budgetYear: by.label(r.year), currency: r.currency, amount: Number(r.amount), committed: r.committed, spent: r.spent, remaining: r.remaining, usedPct: Math.round(r.pct * 100), level: r.level }));
     }
 
     case "list_boqs": {

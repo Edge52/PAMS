@@ -10,10 +10,12 @@ import { can } from "@/lib/auth/permissions";
 import type { CurrentUser } from "@/lib/auth/session";
 import { formatDate, formatMoney } from "@/lib/format";
 import { budgetRows } from "@/lib/procurement/money-server";
+import { budgetYear } from "@/lib/procurement/budget-year-server";
 import { setPoBudgetAction } from "@/app/procurement/invoices/actions";
 
 export async function PoMoney({ po, me }: { po: typeof purchaseOrders.$inferSelect; me: CurrentUser }) {
-  const year = new Date().getFullYear();
+  const by = await budgetYear(); // wave 38: budget years (FY), not calendar years
+  const year = by.current;
   const [lines, invs] = await Promise.all([
     po.facilityId ? db.select().from(budgetLines).where(and(eq(budgetLines.facilityId, po.facilityId), eq(budgetLines.kind, "CAPITAL"), sql`${budgetLines.year} between ${year - 1} and ${year + 1}`)).orderBy(desc(budgetLines.year), budgetLines.name) : Promise.resolve([]),
     db.select({ i: invoices, total: sql<string>`(select sum(${invoiceLines.quantity} * ${invoiceLines.unitPrice}) from ${invoiceLines} where ${invoiceLines.invoiceId} = ${invoices.id})` })
@@ -26,14 +28,14 @@ export async function PoMoney({ po, me }: { po: typeof purchaseOrders.$inferSele
     <>
       <Panel title="Budget">
         {current ? (
-          <p className="mb-3 text-sm"><b>{current.year} {current.name}</b>{" "}<Badge tone={current.level === "OK" ? "ok" : current.level === "WARN" ? "warn" : "danger"}>{Math.round(current.pct * 100)} % used</Badge><br />
+          <p className="mb-3 text-sm"><b>{by.label(current.year)} {current.name}</b>{" "}<Badge tone={current.level === "OK" ? "ok" : current.level === "WARN" ? "warn" : "danger"}>{Math.round(current.pct * 100)} % used</Badge><br />
             <span className="text-muted">{current.remaining >= 0 ? `${formatMoney(current.remaining, current.currency)} left` : `${formatMoney(-current.remaining, current.currency)} over`} of {formatMoney(current.amount, current.currency)}. </span>
             <Link href={`/procurement/budgets?facilityId=${current.facilityId}&year=${current.year}&line=${current.id}`} className="text-primary hover:underline">Budget</Link></p>
         ) : <p className="mb-3 text-sm text-muted">Not charged to a budget line.</p>}
         {canBudget && (lines.length ? (
           <ActionForm action={setPoBudgetAction} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="poId" value={po.id} />
-            <NativeSelect name="budgetLineId" value={po.budgetLineId} placeholder="No budget line" aria-label="Budget line" options={lines.map((l) => ({ value: l.id, label: `${l.year} — ${l.name}` }))} />
+            <NativeSelect name="budgetLineId" value={po.budgetLineId} placeholder="No budget line" aria-label="Budget line" options={lines.map((l) => ({ value: l.id, label: `${by.label(l.year)} — ${l.name}` }))} />
             <Button variant="secondary">Charge</Button>
           </ActionForm>
         ) : <p className="text-xs text-muted">No budget lines for this hospital yet. <Link href="/procurement/budgets" className="text-primary hover:underline">Budgets</Link></p>)}

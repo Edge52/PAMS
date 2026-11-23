@@ -8,6 +8,8 @@ import { PrintButton } from "@/components/procurement/print-button";
 import { formatDate, formatMoney, formatNumber, round2 } from "@/lib/format";
 import { INCOTERM_LABELS, type Incoterm } from "@/lib/procurement/labels";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
+import { LegalNameAr } from "@/components/procurement/legal-name";
+import { supplierLegalName } from "@/lib/procurement/legal-names-server";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,7 @@ export default async function PoPrintPage({ params }: { params: Promise<{ id: st
   const lines = await db.select({ line: poLines, dept: departments.name }).from(poLines)
     .leftJoin(departments, eq(departments.id, poLines.destinationDepartmentId)).where(eq(poLines.poId, id)).orderBy(asc(poLines.id));
   const total = round2(lines.reduce((s, l) => s + l.line.quantity * Number(l.line.unitPrice), 0));
+  const supplierAr = await supplierLegalName(supplier.id); // wave 38
   const draft = ["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(po.status);
 
   return (
@@ -41,7 +44,7 @@ export default async function PoPrintPage({ params }: { params: Promise<{ id: st
         <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-primary pb-4">
           <div>
             <p className="text-lg font-bold text-primary-strong">{facility?.name ?? "Purchaser"}</p>
-            {facility?.nameAr && <p lang="ar" dir="rtl" className="text-sm">{facility.nameAr}</p>}
+            <LegalNameAr name={facility?.nameAr} className="text-sm" />
             <p className="text-xs text-muted">{[facility?.address, facility?.city, facility?.governorate].filter(Boolean).join(", ") || "Procurement department"}</p>
           </div>
           <div className="text-right">
@@ -55,6 +58,7 @@ export default async function PoPrintPage({ params }: { params: Promise<{ id: st
           <div>
             <p className="text-xs font-semibold text-muted">Supplier</p>
             <p className="font-semibold">{supplier.name}</p>
+            <LegalNameAr name={supplierAr} />
             {supplier.address && <p>{supplier.address}</p>}
             {supplier.contactName && <p>Attn: {supplier.contactName}</p>}
             <p className="text-xs">{[supplier.phone, supplier.email].filter(Boolean).join(" · ")}</p>

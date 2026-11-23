@@ -36,6 +36,7 @@ vi.mock("@/lib/auth/session", () => ({
   },
 }));
 vi.mock("@/lib/notifications", () => ({ notifyRole: async () => {} }));
+vi.mock("@/lib/procurement/budget-year-server", () => ({ budgetYear: async () => ({ startMonth: 7, current: 2026, label: (y: number) => `FY ${y}` }) })); // wave 38
 vi.mock("@/lib/procurement/server", serverStub);
 vi.mock("./server", serverStub);
 vi.mock("@/lib/procurement/money", () => import("./money"));

@@ -16,6 +16,7 @@ import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { seesPrices, shownMoney } from "@/lib/auth/prices";
 import { ClarificationsPanel } from "@/components/procurement/clarifications-panel";
+import { BidImportForm } from "@/components/procurement/bid-import-form";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,21 @@ export default async function RfqPage({ params }: { params: Promise<{ id: string
             )}
             {scope && <p className="border-t border-line px-4 py-2 text-xs text-muted">Scope limited to {scope.length} of the source items.</p>}
           </Panel>
+
+          {lines.length > 0 && rfq.status !== "CANCELLED" && (
+            <Panel title="Bids in Excel">
+              <p className="mb-3 text-sm text-muted">Send suppliers the bid template with the RFQ. It lists every item and specification line, with columns for their prices, make, model, delivery, warranty and compliance. Import the filled file to register their offer.</p>
+              <p className="mb-1 text-sm"><a href={`/procurement/rfqs/${id}/bid-template`} className="font-semibold text-primary hover:underline">Download bid template (Excel)</a></p>
+              {invited.length > 0 && <p className="text-xs text-muted">Made out to one supplier: {invited.map((i, n) => <span key={i.inv.id}>{n ? " · " : ""}<a href={`/procurement/rfqs/${id}/bid-template?supplierId=${i.inv.supplierId}`} className="text-primary hover:underline">{i.name}</a></span>)}</p>}
+              {mayOffer && (
+                <div className="mt-4 border-t border-line pt-4">
+                  <p className="mb-2 text-sm font-semibold">Import a bid from Excel</p>
+                  {invited.length ? <BidImportForm rfqId={id} suppliers={invited.map((i) => ({ id: i.inv.supplierId, name: i.name }))} />
+                    : <p className="text-sm text-muted">Invite the supplier first (Invited suppliers), then import their bid.</p>}
+                </div>
+              )}
+            </Panel>
+          )}
 
           <Panel title="Responses" padded={false}>
             {responses.length === 0 ? (

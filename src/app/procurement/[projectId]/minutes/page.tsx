@@ -6,6 +6,8 @@ import { bonds, offers, suppliers } from "@/db/schema";
 import { PrintButton } from "@/components/reports/print";
 import { ReportPrintStyles } from "@/components/reports/print-styles";
 import { Signatures } from "@/components/procurement/signatures";
+import { LegalNameAr } from "@/components/procurement/legal-name";
+import { supplierLegalNamesFor } from "@/lib/procurement/legal-names-server";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { normalizeWeights } from "@/lib/procurement/scoring";
@@ -34,6 +36,7 @@ export default async function MinutesPage({ params, searchParams }: { params: Pr
   const p = base.project;
   const sealed = p.twoEnvelope && !p.financialOpenedAt;
   const all = await db.select({ o: offers, supplier: suppliers.name }).from(offers).innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).where(eq(offers.projectId, id)).orderBy(asc(offers.id));
+  const supAr = await supplierLegalNamesFor(all.map((x) => x.o.supplierId)); // wave 38
   const bs = all.length ? await db.select().from(bonds).where(and(eq(bonds.projectId, id), inArray(bonds.offerId, all.map((x) => x.o.id)))) : [];
   const cmp = kind === "opening" ? null : await loadComparison(id, normalizeWeights(undefined));
   const fails = new Map(await Promise.all(all.map(async (x) => [x.o.id, kind === "technical" ? await mandatoryFailures(x.o.id) : []] as const)));
@@ -53,6 +56,7 @@ export default async function MinutesPage({ params, searchParams }: { params: Pr
       <article className="mx-auto max-w-3xl rounded border border-line bg-surface p-6 text-sm leading-relaxed print:border-0 print:p-0">
         <header className="mb-4 border-b-2 border-ink pb-2 text-center">
           <p className="text-xs text-muted">{base.facility ?? ""}</p>
+          <LegalNameAr name={base.facilityAr} className="text-xs text-muted" />
           <h1 className="text-lg font-bold">{TITLES[kind]}</h1>
           <p>{p.code} — {p.title}</p>
         </header>
@@ -63,7 +67,7 @@ export default async function MinutesPage({ params, searchParams }: { params: Pr
           <table className="mt-2 w-full border-collapse text-xs">
             <thead><tr className="border-b border-ink text-left"><th className="py-1">#</th><th>Supplier</th><th>Reference and date</th><th>Bid bond</th><th>Valid until</th>{showPrices && <th className="text-right">Total</th>}</tr></thead>
             <tbody>{all.map((x, n) => { const b = bs.filter((y) => y.offerId === x.o.id && y.kind === "BID"); return (
-              <tr key={x.o.id} className="border-b border-line/60"><td className="py-1">{n + 1}</td><td>{x.supplier}</td><td>{x.o.reference}, {formatDate(x.o.offerDate)}</td>
+              <tr key={x.o.id} className="border-b border-line/60"><td className="py-1">{n + 1}</td><td>{x.supplier}<LegalNameAr name={supAr.get(x.o.supplierId)} /></td><td>{x.o.reference}, {formatDate(x.o.offerDate)}</td>
                 <td>{b.length ? b.map((y) => `${formatMoney(y.amount, y.currency)}${y.bank ? `, ${y.bank}` : ""}`).join("; ") : "none"}</td><td>{formatDate(x.o.validUntil)}</td>
                 {showPrices && <td className="text-right">{cmp?.evaluation.offers.get(x.o.id)?.total != null ? formatMoney(cmp.evaluation.offers.get(x.o.id)!.total, p.currency) : "see offer"}</td>}</tr>); })}</tbody>
           </table>
@@ -75,7 +79,7 @@ export default async function MinutesPage({ params, searchParams }: { params: Pr
           <table className="mt-2 w-full border-collapse text-xs">
             <thead><tr className="border-b border-ink text-left"><th className="py-1">Supplier</th><th className="text-right">Technical score</th><th>Result</th></tr></thead>
             <tbody>{cmp.offers.map((o) => { const s = cmp.evaluation.offers.get(o.id)!; const f = fails.get(o.id) ?? []; return (
-              <tr key={o.id} className="border-b border-line/60 align-top"><td className="py-1">{o.supplierName}</td><td className="text-right">{f1(s.technicalScore)} %</td>
+              <tr key={o.id} className="border-b border-line/60 align-top"><td className="py-1">{o.supplierName}<LegalNameAr name={supAr.get(o.supplierId)} /></td><td className="text-right">{f1(s.technicalScore)} %</td>
                 <td>{f.length ? `Technically non-responsive: fails ${f.slice(0, 4).join("; ")}${f.length > 4 ? "…" : ""}` : s.nonResponsiveRows ? `${s.nonResponsiveRows} item(s) non-responsive` : "Technically accepted"}</td></tr>); })}</tbody>
           </table>
         </>)}
@@ -85,11 +89,11 @@ export default async function MinutesPage({ params, searchParams }: { params: Pr
           <table className="mt-2 w-full border-collapse text-xs">
             <thead><tr className="border-b border-ink text-left"><th className="py-1">Rank</th><th>Supplier</th><th className="text-right">Total ({p.currency})</th><th className="text-right">Technical</th><th className="text-right">Financial</th><th className="text-right">Combined</th></tr></thead>
             <tbody>{ranked.map(({ o, s }, n) => (
-              <tr key={o.id} className="border-b border-line/60"><td className="py-1">{s.notRanked ? "—" : n + 1}</td><td>{o.supplierName}{s.notRanked && <div className="text-muted">{s.notRanked}</div>}</td><td className="text-right">{s.total != null ? formatMoney(s.total, p.currency) : "rate missing"}</td>
+              <tr key={o.id} className="border-b border-line/60"><td className="py-1">{s.notRanked ? "—" : n + 1}</td><td>{o.supplierName}<LegalNameAr name={supAr.get(o.supplierId)} />{s.notRanked && <div className="text-muted">{s.notRanked}</div>}</td><td className="text-right">{s.total != null ? formatMoney(s.total, p.currency) : "rate missing"}</td>
                 <td className="text-right">{f1(s.technicalScore)}</td><td className="text-right">{f1(s.financialScore)}</td><td className="text-right font-semibold">{f1(s.combinedScore)}</td></tr>
             ))}</tbody>
           </table>
-          {kind === "award" && <p className="mt-3">{awarded ? <>The committee recommends awarding the tender to <b>{awarded.supplier}</b> (offer {awarded.o.reference}){awarded.o.awardApprovedOn ? `, approved by the competent authority on ${formatDate(awarded.o.awardApprovedOn)}` : ", subject to the competent authority's approval"}.</> : ranked[0] ? <>The highest combined score is <b>{ranked[0].o.supplierName}</b>. The committee recommends ……………………………………………… for the reasons below.</> : null}</p>}
+          {kind === "award" && <p className="mt-3">{awarded ? <>The committee recommends awarding the tender to <b>{awarded.supplier}</b>{supAr.get(awarded.o.supplierId) ? <> (<LegalNameAr name={supAr.get(awarded.o.supplierId)} block={false} />)</> : null} (offer {awarded.o.reference}){awarded.o.awardApprovedOn ? `, approved by the competent authority on ${formatDate(awarded.o.awardApprovedOn)}` : ", subject to the competent authority's approval"}.</> : ranked[0] ? <>The highest combined score is <b>{ranked[0].o.supplierName}</b>. The committee recommends ……………………………………………… for the reasons below.</> : null}</p>}
         </>))}
 
         <p className="mt-4">Remarks: …………………………………………………………………………………………………………………………</p>

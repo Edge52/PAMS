@@ -6,6 +6,7 @@ import { PageHeader, Panel } from "@/components/ui";
 import { SupplierForm } from "@/components/procurement/supplier-form";
 import { updateSupplier } from "../../actions";
 import { requirePermission } from "@/lib/auth/session";
+import { supplierLegalName } from "@/lib/procurement/legal-names-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Edit supplier" };
@@ -20,7 +21,7 @@ export default async function EditSupplierPage({ params }: { params: Promise<{ i
   return (
     <>
       <PageHeader title={`Edit ${s.name}`} back={{ href: `/procurement/suppliers/${id}`, label: s.name }} />
-      <Panel><SupplierForm action={updateSupplier.bind(null, id)} supplier={s} submitLabel="Save supplier" /></Panel>
+      <Panel><SupplierForm action={updateSupplier.bind(null, id)} supplier={s} nameAr={await supplierLegalName(id)} submitLabel="Save supplier" /></Panel>
     </>
   );
 }

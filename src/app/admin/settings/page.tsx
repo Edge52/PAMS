@@ -6,9 +6,10 @@ import { Badge, Field, FormGrid, Input, PageHeader, Panel, Select, Table, Td, Th
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { ROLES, ROLE_LABELS, type Role } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
-import { formatMoney, num } from "@/lib/format";
+import { formatMoney, num, todayISO } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
 import { PRICE_BASIS_LABELS } from "@/lib/procurement/landed-cost";
+import { fiscalYearLabel, fiscalYearOf, MONTH_NAMES } from "@/lib/fiscal-year";
 import { saveSettings, savePolicy, togglePolicy } from "./actions";
 import { canSeal } from "@/lib/auth/secret-box";
 import { TenderDaysSettings } from "@/components/procurement/tender-days-settings";
@@ -165,10 +166,13 @@ export default async function SettingsPage() {
             </fieldset>
 
             <fieldset className="space-y-2">
-              <legend className="mb-2 text-sm font-bold">Book value</legend>
+              <legend className="mb-2 text-sm font-bold">Book value and budgets</legend>
               <FormGrid cols={3}>
                 <Field label="Depreciation method" hint="Used on asset pages, the book value report and the depreciation journal. Ask finance which one the hospital uses.">
                   <Select name="depreciationMethod" defaultValue={s.depreciationMethod} options={DEPRECIATION_METHODS.map((m) => ({ value: m, label: DEPRECIATION_METHOD_LABELS[m] }))} />
+                </Field>
+                <Field label="Budget year starts in" hint={`Egypt's fiscal year runs 1 July to 30 June. Budgets, the budget pages and the executive summary use this year: now ${fiscalYearLabel(fiscalYearOf(todayISO(), s.budgetYearStartMonth), s.budgetYearStartMonth)}. A budget saved for 2026 is the year that starts in 2026.`}>
+                  <Select name="budgetYearStartMonth" defaultValue={String(s.budgetYearStartMonth)} options={MONTH_NAMES.map((m, i) => ({ value: String(i + 1), label: m }))} />
                 </Field>
               </FormGrid>
             </fieldset>
