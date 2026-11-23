@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { AutoSubmit } from "@/components/auto-submit";
-import { and, asc, eq, ilike, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { offers, purchaseOrders, suppliers } from "@/db/schema";
-import { EmptyState, Input, LinkButton, PageHeader, Select, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
+import { EmptyState, Input, LinkButton, PageHeader, Select, StatusBadge } from "@/components/ui";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { tableSort } from "@/components/ui/data-table-utils";
 import { formatMoney } from "@/lib/format";
 import { options, SUPPLIER_TYPES, type SupplierType } from "@/lib/procurement/labels";
 import { poTotals, sumInCurrency } from "@/lib/procurement/server";
 import { Stars } from "@/components/procurement/stars";
-import { SortTh } from "@/components/ui/sort-th";
 import { SavedFilters } from "@/components/saved-filters";
-import { parseSort, sortRows } from "@/lib/list";
+import { sortRows } from "@/lib/list";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 
@@ -26,11 +27,16 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
   const q = sp.q?.trim();
   if (q) where.push(or(ilike(suppliers.name, `%${q}%`), sql`array_to_string(${suppliers.brands}, ',') ilike ${`%${q}%`}`, ilike(suppliers.contactName, `%${q}%`))!);
 
-  const found = await db.select({
-    s: suppliers,
-    offerCount: sql<number>`(select count(*)::int from ${offers} where ${offers.supplierId} = ${suppliers.id})`,
-    awardedCount: sql<number>`(select count(*)::int from ${offers} where ${offers.supplierId} = ${suppliers.id} and ${offers.status} = 'AWARDED')`,
-  }).from(suppliers).where(where.length ? and(...where) : undefined).orderBy(asc(suppliers.name));
+  // Wave 38: the sort key is checked against this list; all but "ordered" (worked out below in EGP) sort in the query.
+  const sort = tableSort(sp, SORT_KEYS);
+  const offerCount = sql<number>`(select count(*)::int from ${offers} where ${offers.supplierId} = ${suppliers.id})`;
+  const awardedCount = sql<number>`(select count(*)::int from ${offers} where ${offers.supplierId} = ${suppliers.id} and ${offers.status} = 'AWARDED')`;
+  const way = sort?.dir === "desc" ? desc : asc;
+  const sqlOrder = { name: [way(suppliers.name)], type: [way(suppliers.type), asc(suppliers.name)],
+    rating: [sort?.dir === "desc" ? sql`${suppliers.rating} desc nulls last` : sql`${suppliers.rating} asc nulls last`, asc(suppliers.name)],
+    offers: [way(offerCount), asc(suppliers.name)], awarded: [way(awardedCount), asc(suppliers.name)], ordered: [asc(suppliers.name)] }[sort?.key ?? "name"];
+  const found = await db.select({ s: suppliers, offerCount, awardedCount })
+    .from(suppliers).where(where.length ? and(...where) : undefined).orderBy(...sqlOrder);
 
   const pos = found.length ? await db.select({ id: purchaseOrders.id, supplierId: purchaseOrders.supplierId, currency: purchaseOrders.currency })
     .from(purchaseOrders).where(ne(purchaseOrders.status, "CANCELLED")) : [];
@@ -40,10 +46,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
     const mine = pos.filter((p) => p.supplierId === r.s.id);
     if (mine.length) ordered.set(r.s.id, await sumInCurrency(mine.map((p) => ({ amount: totals.get(p.id)?.value ?? 0, currency: p.currency })), "EGP"));
   }
-  const sort = parseSort(sp, ["name", "type", "rating", "offers", "awarded", "ordered"] as const);
-  const rows = sortRows(found, sort, {
-    name: (r) => r.s.name, type: (r) => r.s.type, rating: (r) => r.s.rating, offers: (r) => r.offerCount, awarded: (r) => r.awardedCount, ordered: (r) => ordered.get(r.s.id)?.total ?? 0,
-  });
+  const rows = sort?.key === "ordered" ? sortRows(found, { key: "ordered", dir: sort.dir }, { ordered: (r) => ordered.get(r.s.id)?.total ?? 0 }) : found;
   const filtered = Boolean(q || sp.type || sp.show === "all");
 
   return (
@@ -68,28 +71,28 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
           : <EmptyState title="No suppliers yet" action={can(me.role, "suppliers.edit") ? <LinkButton href="/procurement/suppliers/new" variant="primary">Add the first supplier</LinkButton> : undefined}>
             Add the local agents and distributors you invite to tenders, with the brands they represent.</EmptyState>
       ) : (
-        <Table>
-          <THead><tr><SortTh k="name">Supplier</SortTh><SortTh k="type">Type</SortTh><Th>Brands</Th><Th>Contact</Th><SortTh k="rating">Rating</SortTh><SortTh k="offers" align="right">Offers</SortTh><SortTh k="awarded" align="right">Awarded</SortTh><SortTh k="ordered" align="right">Ordered (EGP)</SortTh></tr></THead>
-          <tbody>
-            {rows.map(({ s, offerCount, awardedCount }) => {
-              const o = ordered.get(s.id);
-              return (
-                <tr key={s.id} className={s.active ? undefined : "text-muted"}>
-                  <Td className="min-w-48"><Link href={`/procurement/suppliers/${s.id}`} className="font-semibold text-primary hover:underline">{s.name}</Link>
-                    {!s.active && <span className="ml-2 text-xs">(inactive)</span>}{s.country && <span className="block text-xs text-muted">{s.country}</span>}</Td>
-                  <Td><StatusBadge value={s.type} /></Td>
-                  <Td className="max-w-64 text-sm">{s.brands?.length ? s.brands.join(", ") : <span className="text-faint">—</span>}</Td>
-                  <Td className="text-sm">{s.contactName ?? "—"}{s.phone && <span className="block text-xs text-muted">{s.phone}</span>}</Td>
-                  <Td><Stars value={s.rating} /></Td>
-                  <Td align="right">{offerCount}</Td>
-                  <Td align="right">{awardedCount}</Td>
-                  <Td align="right" className="whitespace-nowrap">{o ? (o.total == null ? `${formatMoney(o.partial, "EGP", { compact: true })}*` : formatMoney(o.total, "EGP", { compact: true })) : "—"}</Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </Table>
+        <DataTable id="suppliers" label="Suppliers" path="/procurement/suppliers" sp={sp} sort={sort} rows={rows} rowKey={(r) => r.s.id}
+          rowClassName={(r) => (r.s.active ? undefined : "text-muted")} columns={supplierColumns(ordered)} />
       )}
     </>
   );
+}
+
+const SORT_KEYS = ["name", "type", "rating", "offers", "awarded", "ordered"] as const;
+type SupplierRow = { s: typeof suppliers.$inferSelect; offerCount: number; awardedCount: number };
+
+function supplierColumns(ordered: Map<number, { total: number | null; partial: number }>): Column<SupplierRow>[] {
+  return [
+    { key: "name", label: "Supplier", sort: true, className: "min-w-48",
+      cell: ({ s }) => <><Link href={`/procurement/suppliers/${s.id}`} className="font-semibold text-primary hover:underline">{s.name}</Link>
+        {!s.active && <span className="ml-2 text-xs">(inactive)</span>}{s.country && <span className="block text-xs text-muted">{s.country}</span>}</> },
+    { key: "type", label: "Type", sort: true, cell: ({ s }) => <StatusBadge value={s.type} /> },
+    { key: "brands", label: "Brands", optional: true, cellClassName: "max-w-64 text-sm", cell: ({ s }) => (s.brands?.length ? s.brands.join(", ") : <span className="text-faint">—</span>) },
+    { key: "contact", label: "Contact", optional: true, cellClassName: "text-sm", cell: ({ s }) => <>{s.contactName ?? "—"}{s.phone && <span className="block text-xs text-muted">{s.phone}</span>}</> },
+    { key: "rating", label: "Rating", sort: true, optional: true, cell: ({ s }) => <Stars value={s.rating} /> },
+    { key: "offers", label: "Offers", sort: true, align: "right", optional: true, cell: (r) => r.offerCount },
+    { key: "awarded", label: "Awarded", sort: true, align: "right", optional: true, cell: (r) => r.awardedCount },
+    { key: "ordered", label: "Ordered (EGP)", sort: true, align: "right", optional: true, className: "whitespace-nowrap",
+      cell: ({ s }) => { const o = ordered.get(s.id); return o ? (o.total == null ? `${formatMoney(o.partial, "EGP", { compact: true })}*` : formatMoney(o.total, "EGP", { compact: true })) : "—"; } },
+  ];
 }

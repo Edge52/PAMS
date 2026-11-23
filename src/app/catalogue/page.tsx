@@ -1,8 +1,13 @@
 import Link from "next/link";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { assets, deviceTypes } from "@/db/schema";
 import { Badge, EmptyState, LinkButton, PageHeader, StatusBadge } from "@/components/ui";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { tableSort, type Params } from "@/components/ui/data-table-utils";
+import { capRows } from "@/lib/list";
+import type { Scope } from "@/lib/assets/access";
 import { Ar } from "@/components/assets/bits";
 import { buildTree, filterTree, matches, type TaxNode } from "@/lib/assets/taxonomy";
 import { formatNumber } from "@/lib/format";
@@ -21,6 +26,7 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const q = (Array.isArray(sp.q) ? sp.q[0] : sp.q)?.trim().slice(0, 80) ?? "";
   const inUse = sp.inUse === "1";
+  const listView = sp.view === "list";
   // Two queries for the whole tree, whatever its size: the taxonomy and asset counts per type.
   const [rows, counts] = await Promise.all([
     db.select({ id: deviceTypes.id, code: deviceTypes.code, parentId: deviceTypes.parentId, level: deviceTypes.level, name: deviceTypes.name,
@@ -56,12 +62,21 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
           aria-label="Search the catalogue"
           className="min-w-[16rem] flex-1 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 py-1.5 text-[14px] placeholder:text-faint focus:border-primary focus:outline-none" />
         <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" name="inUse" value="1" defaultChecked={inUse} /> Only types in use</label>
+        {listView && <input type="hidden" name="view" value="list" />}
         <button className="rounded-[var(--radius-control)] border border-primary bg-primary px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-strong">Search</button>
-        {(searching || inUse) && <Link href="/catalogue" className="text-sm text-primary hover:underline">Clear</Link>}
+        {(searching || inUse) && <Link href={listView ? "/catalogue?view=list" : "/catalogue"} className="text-sm text-primary hover:underline">Clear</Link>}
+        <span className="ml-auto inline-flex rounded-full border border-line bg-surface p-0.5 text-sm" role="group" aria-label="Show as">
+          {([["tree", "Tree"], ["list", "List"]] as const).map(([v, l]) => {
+            const q2 = new URLSearchParams(); if (q) q2.set("q", q); if (inUse) q2.set("inUse", "1"); if (v === "list") q2.set("view", "list");
+            const on = (v === "list") === listView;
+            return <Link key={v} href={q2.size ? `/catalogue?${q2}` : "/catalogue"} aria-current={on ? "page" : undefined}
+              className={`rounded-full px-3 py-1 ${on ? "bg-primary-soft font-semibold text-primary-strong" : "text-muted hover:text-ink"}`}>{l}</Link>;
+          })}
+        </span>
       </form>
-      {searching && <p className="mb-3 text-sm text-muted" aria-live="polite">{matchCount} match{matchCount === 1 ? "" : "es"} for “{q}”</p>}
+      {searching && !listView && <p className="mb-3 text-sm text-muted" aria-live="polite">{matchCount} match{matchCount === 1 ? "" : "es"} for “{q}”</p>}
 
-      {tree.length === 0 ? (
+      {listView ? <TypeList sp={sp} q={q} inUse={inUse} scope={scope} /> : tree.length === 0 ? (
         <EmptyState title={searching ? "Nothing matches that search" : "No device types to show"}
           action={<LinkButton href="/catalogue">Show the whole catalogue</LinkButton>}>
           {searching ? "Try a shorter word, the English or Arabic name, or part of the code." : "No types are in use yet — clear the filter to browse all types."}
@@ -125,3 +140,43 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
     </>
   );
 }
+
+/* ── Wave 38: every device type as one sortable list (DataTable), sorted in the database ── */
+
+const LIST_SORTS = ["code", "name", "group", "criticality", "assets"] as const;
+const LIST_MAX = 400;
+type TypeRow = { id: number; code: string; name: string; nameAr: string | null; group: string | null; criticality: string | null; riskClass: string | null; assets: number };
+
+async function TypeList({ sp, q, inUse, scope }: { sp: Params; q: string; inUse: boolean; scope: Scope }) {
+  const sort = tableSort(sp, LIST_SORTS);
+  const grp = alias(deviceTypes, "grp");
+  const inScope = scopeWhere(assets.facilityId, scope);
+  const n = sql<number>`(select count(*)::int from ${assets} where ${assets.deviceTypeId} = ${deviceTypes.id} and ${assets.status} <> 'DISPOSED'${inScope ? sql` and ${inScope}` : sql``})`;
+  const way = sort?.dir === "desc" ? desc : asc;
+  const order = { code: [way(deviceTypes.code)], name: [way(deviceTypes.name)], group: [way(grp.name), asc(deviceTypes.name)],
+    criticality: [sort?.dir === "desc" ? sql`${deviceTypes.criticality} desc nulls last` : sql`${deviceTypes.criticality} asc nulls last`, asc(deviceTypes.code)],
+    assets: [way(n), asc(deviceTypes.code)] }[sort?.key ?? "code"];
+  const like = q ? `%${q}%` : null;
+  const found = await db.select({ id: deviceTypes.id, code: deviceTypes.code, name: deviceTypes.name, nameAr: deviceTypes.nameAr, group: grp.name,
+    criticality: deviceTypes.criticality, riskClass: deviceTypes.riskClass, assets: n })
+    .from(deviceTypes).leftJoin(grp, eq(grp.id, deviceTypes.parentId))
+    .where(and(eq(deviceTypes.active, true), eq(deviceTypes.level, 3), like ? or(ilike(deviceTypes.name, like), ilike(deviceTypes.code, like), ilike(deviceTypes.nameAr, like)) : undefined,
+      inUse ? sql`${n} > 0` : undefined))
+    .orderBy(...order).limit(LIST_MAX + 1);
+  const { rows, note } = capRows<TypeRow>(found, LIST_MAX, "device types");
+  return (
+    <DataTable id="catalogue-types" label="Device types" path="/catalogue" sp={sp} sort={sort} rows={rows} rowKey={(r) => r.id} columns={TYPE_COLUMNS}
+      footer={note ? <p className="text-sm text-muted">{note}</p> : undefined}
+      empty={<EmptyState title={q ? "Nothing matches that search" : "No device types to show"} action={<LinkButton href="/catalogue?view=list">Show every type</LinkButton>}>
+        {q ? "Try a shorter word, the English or Arabic name, or part of the code." : "No types are in use yet. Clear the filter to list all types."}</EmptyState>} />
+  );
+}
+
+const TYPE_COLUMNS: Column<TypeRow>[] = [
+  { key: "code", label: "Code", sort: true, className: "whitespace-nowrap", cellClassName: "font-mono text-xs", cell: (r) => <Link href={`/catalogue/${r.code}`} className="font-semibold text-primary hover:underline">{r.code}</Link> },
+  { key: "name", label: "Device type", sort: true, cell: (r) => <><Link href={`/catalogue/${r.code}`} className="hover:text-primary">{r.name}</Link>{r.nameAr && <Ar className="ml-2 text-xs text-muted">{r.nameAr}</Ar>}</> },
+  { key: "group", label: "Group", sort: true, optional: true, className: "hidden sm:table-cell", cell: (r) => r.group ?? "—" },
+  { key: "criticality", label: "Criticality", sort: true, optional: true, cell: (r) => (r.criticality ? <StatusBadge value={r.criticality} /> : <span className="text-faint">—</span>) },
+  { key: "risk", label: "Risk class", optional: true, hidden: true, cell: (r) => r.riskClass ?? <span className="text-faint">—</span> },
+  { key: "assets", label: "In use", sort: true, align: "right", cell: (r) => (r.assets > 0 ? <b>{formatNumber(r.assets)}</b> : <span className="text-faint">0</span>) },
+];

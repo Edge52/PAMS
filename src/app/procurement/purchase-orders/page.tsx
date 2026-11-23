@@ -3,16 +3,17 @@ import { AutoSubmit } from "@/components/auto-submit";
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { projects, purchaseOrders, suppliers } from "@/db/schema";
-import { EmptyState, Input, LinkButton, PageHeader, Select, StatusBadge, Table, Td, THead } from "@/components/ui";
+import { EmptyState, Input, LinkButton, PageHeader, Select, StatusBadge } from "@/components/ui";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { tableSort } from "@/components/ui/data-table-utils";
 import { DaysLeft, Progress } from "@/components/procurement/bits";
 
 import { rateToEgp } from "@/lib/server-utils";
 import { options } from "@/lib/procurement/labels";
 import { PO_STATUSES, type PoStatus } from "@/lib/procurement/po-status";
 import { poTotals } from "@/lib/procurement/server";
-import { SortTh } from "@/components/ui/sort-th";
 import { SavedFilters } from "@/components/saved-filters";
-import { parseSort, sortRows } from "@/lib/list";
+import { sortRows } from "@/lib/list";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
@@ -39,25 +40,32 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
   const q = sp.q?.trim();
   if (q) where.push(or(ilike(purchaseOrders.number, `%${q}%`), ilike(suppliers.name, `%${q}%`), ilike(projects.code, `%${q}%`))!);
 
+  // Wave 38: the sort key is checked against SORT_KEYS. Columns in the database sort in the query; value (in EGP) and
+  // received are worked out from the lines, so they sort below.
+  const sort = tableSort(sp, SORT_KEYS);
+  const way = sort?.dir === "desc" ? desc : asc;
+  const nullsLast = (c: SQL | typeof purchaseOrders.expectedDelivery) => (sort?.dir === "desc" ? sql`${c} desc nulls last` : sql`${c} asc nulls last`);
+  const sqlOrder = ({
+    number: [way(purchaseOrders.number)], supplier: [way(suppliers.name), desc(purchaseOrders.id)], project: [nullsLast(sql`${projects.code}`), desc(purchaseOrders.id)],
+    status: [way(purchaseOrders.status), desc(purchaseOrders.id)], delivery: [nullsLast(purchaseOrders.expectedDelivery), desc(purchaseOrders.id)],
+  } as Partial<Record<(typeof SORT_KEYS)[number], SQL[]>>)[sort?.key ?? "delivery"] ?? [sql`${purchaseOrders.expectedDelivery} asc nulls last`, desc(purchaseOrders.id)];
   const [found, supplierList, anyPo] = await Promise.all([
     db.select({
       id: purchaseOrders.id, number: purchaseOrders.number, status: purchaseOrders.status, currency: purchaseOrders.currency,
       issueDate: purchaseOrders.issueDate, expectedDelivery: purchaseOrders.expectedDelivery,
       supplierId: purchaseOrders.supplierId, supplier: suppliers.name, projectId: purchaseOrders.projectId, project: projects.code,
     }).from(purchaseOrders).innerJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId)).leftJoin(projects, eq(projects.id, purchaseOrders.projectId))
-      .where(where.length ? and(...where) : undefined).orderBy(sql`${purchaseOrders.expectedDelivery} asc nulls last`, desc(purchaseOrders.id)),
+      .where(where.length ? and(...where) : undefined).orderBy(...sqlOrder),
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).orderBy(asc(suppliers.name)),
     db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(inScope).limit(1),
   ]);
   const totals = await poTotals(found.map((r) => r.id));
   const egpRate = new Map(await Promise.all([...new Set(found.map((r) => r.currency))].map(async (c) => [c, await rateToEgp(c)] as const)));
   // Wave 21: a heading can re-sort the list. Value sorts in EGP so mixed currencies compare.
-  const sort = parseSort(sp, ["number", "supplier", "project", "status", "value", "delivery", "received"] as const);
-  const rows = sortRows(found, sort, {
-    number: (r) => r.number, supplier: (r) => r.supplier, project: (r) => r.project, status: (r) => r.status,
-    value: (r) => (totals.get(r.id)?.value ?? 0) * (egpRate.get(r.currency) ?? 1), delivery: (r) => r.expectedDelivery,
+  const rows = sort?.key === "value" || sort?.key === "received" ? sortRows(found, { key: sort.key, dir: sort.dir }, {
+    value: (r) => (totals.get(r.id)?.value ?? 0) * (egpRate.get(r.currency) ?? 1),
     received: (r) => { const t = totals.get(r.id); return t && t.ordered ? t.received / t.ordered : 0; },
-  });
+  }) : found;
   const filtered = status !== "open" || Boolean(sp.supplierId) || Boolean(q);
 
   return (
@@ -88,27 +96,8 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
         )
       ) : (
         <>
-        <Table>
-          <THead><tr><SortTh k="number">Number</SortTh><SortTh k="supplier">Supplier</SortTh><SortTh k="project">Project</SortTh><SortTh k="status">Status</SortTh><SortTh k="value" align="right">Value</SortTh><SortTh k="delivery">Expected delivery</SortTh><SortTh k="received">Received</SortTh></tr></THead>
-          <tbody>
-            {rows.map((r) => {
-              const t = totals.get(r.id);
-              const open = OPEN.includes(r.status as PoStatus);
-              return (
-                <tr key={r.id}>
-                  <Td className="whitespace-nowrap"><Link href={`/procurement/purchase-orders/${r.id}`} className="font-semibold text-primary hover:underline">{r.number}</Link></Td>
-                  <Td><Link href={`/procurement/suppliers/${r.supplierId}`} className="hover:text-primary">{r.supplier}</Link></Td>
-                  <Td>{r.projectId ? <Link href={`/procurement/${r.projectId}`} className="hover:text-primary">{r.project}</Link> : "—"}</Td>
-                  <Td><StatusBadge value={r.status} /></Td>
-                  <Td align="right" className="whitespace-nowrap">{shownMoney(prices, t?.value ?? 0, r.currency)}</Td>
-                  <Td className="whitespace-nowrap">{r.expectedDelivery ? <DaysLeft date={r.expectedDelivery} closedLabel={open ? undefined : "—"} /> : "—"}</Td>
-                  <Td><Progress pct={t && t.ordered ? Math.round((t.received / t.ordered) * 100) : 0} />
-                    <span className="text-xs text-muted">{t?.received ?? 0} of {t?.ordered ?? 0} units</span></Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </Table>
+        <DataTable id="purchase-orders" label="Purchase orders" path="/procurement/purchase-orders" sp={sp} sort={sort} rows={rows} rowKey={(r) => r.id}
+          columns={poColumns(totals, prices)} />
         {/* Wave 19: the orders listed, added up in one currency. */}
         {(() => {
           const by = new Map<string, number>();
@@ -127,4 +116,23 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
       )}
     </>
   );
+}
+
+const SORT_KEYS = ["number", "supplier", "project", "status", "value", "delivery", "received"] as const;
+type PoRow = { id: number; number: string; status: string; currency: string; expectedDelivery: string | null; supplierId: number; supplier: string; projectId: number | null; project: string | null };
+
+function poColumns(totals: Awaited<ReturnType<typeof poTotals>>, prices: boolean): Column<PoRow>[] {
+  return [
+    { key: "number", label: "Number", sort: true, className: "whitespace-nowrap",
+      cell: (r) => <Link href={`/procurement/purchase-orders/${r.id}`} className="font-semibold text-primary hover:underline">{r.number}</Link> },
+    { key: "supplier", label: "Supplier", sort: true, cell: (r) => <Link href={`/procurement/suppliers/${r.supplierId}`} className="hover:text-primary">{r.supplier}</Link> },
+    { key: "project", label: "Project", sort: true, optional: true, cell: (r) => (r.projectId ? <Link href={`/procurement/${r.projectId}`} className="hover:text-primary">{r.project}</Link> : "—") },
+    { key: "status", label: "Status", sort: true, cell: (r) => <StatusBadge value={r.status} /> },
+    { key: "value", label: "Value", sort: true, align: "right", optional: true, className: "whitespace-nowrap", cell: (r) => shownMoney(prices, totals.get(r.id)?.value ?? 0, r.currency) },
+    { key: "delivery", label: "Expected delivery", sort: true, optional: true, className: "whitespace-nowrap",
+      cell: (r) => (r.expectedDelivery ? <DaysLeft date={r.expectedDelivery} closedLabel={OPEN.includes(r.status as PoStatus) ? undefined : "—"} /> : "—") },
+    { key: "received", label: "Received", sort: true, optional: true,
+      cell: (r) => { const t = totals.get(r.id); return <><Progress pct={t && t.ordered ? Math.round((t.received / t.ordered) * 100) : 0} />
+        <span className="text-xs text-muted">{t?.received ?? 0} of {t?.ordered ?? 0} units</span></>; } },
+  ];
 }

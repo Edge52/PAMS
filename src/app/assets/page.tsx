@@ -4,9 +4,9 @@ import { humanize } from "@/lib/status";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { purchaseOrders } from "@/db/schema";
-import { Badge, EmptyState, LinkButton, PageHeader, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
+import { Badge, EmptyState, LinkButton, PageHeader, StatusBadge } from "@/components/ui";
+import { DataTable, type Column } from "@/components/ui/data-table";
 import { DeviceTypeSelect, enumOptions, NativeSelect, Notice, Pager } from "@/components/assets/bits";
-import { SortTh } from "@/components/ui/sort-th";
 import { SavedFilters } from "@/components/saved-filters";
 import { activeFilterCount, ASSET_STATUSES, CRITICALITIES, filterToQuery, parseAssetFilter } from "@/lib/assets/filters";
 import { dueState, nextPpmDue, warrantyState } from "@/lib/assets/maintenance";
@@ -135,63 +135,57 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
           )
         )
       ) : (
-        <>
-          <form id="labels-form" action="/assets/labels" method="get" />
-          <Table>
-            <THead>
-              <tr>
-                <Th><span className="sr-only">Select for labels</span></Th>
-                <SortTh k="tag">Tag</SortTh><SortTh k="type">Device type</SortTh><Th className="hidden md:table-cell">Manufacturer / model</Th><Th className="hidden lg:table-cell">Serial</Th><SortTh k="location" className="hidden sm:table-cell">Location</SortTh><SortTh k="status">Status</SortTh><SortTh k="warranty" className="hidden md:table-cell">Warranty end</SortTh><Th className="hidden md:table-cell">Next PPM</Th>
-              </tr>
-            </THead>
-            <tbody>
-              {rows.map((a) => {
-                const w = warrantyState(a.warrantyEnd, today);
-                const info = ppm.get(a.id);
-                const computed = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, maintenanceStrategy: a.maintenanceStrategy, lastPpmDate: info?.lastPpm, usageDue: usage.get(a.id)?.due });
-                const next = info?.nextScheduled && (!computed.due || info.nextScheduled <= computed.due) ? info.nextScheduled : computed.due;
-                const ds = a.status === "IN_STOCK" ? "NONE" : dueState(next, today);
-                return (
-                  <tr key={a.id} className="hover:bg-canvas">
-                    <Td className="w-8"><input type="checkbox" name="ids" value={a.id} form="labels-form" aria-label={`Select ${a.assetTag} for labels`} /></Td>
-                    <Td className="whitespace-nowrap"><Link href={`/assets/${a.id}`} className="font-mono text-[13px] font-semibold text-primary hover:underline">{a.assetTag}</Link></Td>
-                    <Td><Link href={`/catalogue/${a.deviceTypeCode}`} className="hover:text-primary">{a.deviceTypeName}</Link>
-                      {/* Phones: the hidden columns in one line under the type. */}
-                      <span className="block text-xs text-muted md:hidden">{[a.manufacturer, a.model].filter(Boolean).join(" ")}{a.roomId ? <span className="sm:hidden"> · {a.roomName}</span> : null}</span></Td>
-                    <Td className="hidden md:table-cell">{a.manufacturer ?? "—"}<div className="text-xs text-muted">{a.model}</div>
-                      {a.tags.length > 0 && <div className="mt-0.5 flex flex-wrap gap-1">{a.tags.map((t) => <Link key={t} href={`/assets${qs({ tag: t, page: undefined })}`}><Badge tone="info">{t}</Badge></Link>)}</div>}</Td>
-                    <Td className="hidden font-mono text-xs lg:table-cell">{a.serialNumber ?? <span className="text-faint">—</span>}</Td>
-                    <Td className="hidden min-w-[12rem] sm:table-cell">
-                      {a.roomId ? (
-                        <Link href={`/assets/map?assetId=${a.id}`} className="group block" title="Show on the floor map">
-                          <span className="text-xs text-muted">{a.floorName} › {a.departmentName ?? "No department"}</span>
-                          <span className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-tag" />{a.roomName} <span className="font-mono text-[11px] text-muted group-hover:text-primary">{a.roomCode}</span></span>
-                        </Link>
-                      ) : <span className="text-muted">{a.departmentName ?? "Not placed"}<div className="text-xs">no room</div></span>}
-                    </Td>
-                    <Td><StatusBadge value={a.status} /></Td>
-                    <Td className="hidden whitespace-nowrap md:table-cell">
-                      {formatDate(a.warrantyEnd)}
-                      {w.state === "EXPIRING" && <div><Badge tone="warn">{w.days} days left</Badge></div>}
-                      {w.state === "EXPIRED" && <div className="text-xs text-muted">expired</div>}
-                    </Td>
-                    <Td className="hidden whitespace-nowrap md:table-cell">
-                      {ds === "NONE" ? <span className="text-faint">—</span> : <>{formatDate(next)}{ds === "OVERDUE" && <div><Badge tone="danger">Overdue</Badge></div>}{ds === "DUE_SOON" && <div><Badge tone="warn">Due soon</Badge></div>}</>}
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <button form="labels-form" className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 font-semibold hover:bg-sunken">Print labels for selected</button>
-              <Link href={`/assets/labels?ids=${rows.map((r) => r.id).join(",")}`} className="text-primary hover:underline">Labels for this page ({rows.length})</Link>
-            </div>
-            <Pager page={page} pages={pages} href={(p) => `/assets${qs({ page: p > 1 ? p : undefined })}`} />
-          </div>
-        </>
+        <DataTable id="asset-register" label="Asset register" path="/assets" sp={sp} rows={rows} rowKey={(a) => a.id}
+          sort={f.sort ? { key: f.sort, dir: f.dir ?? "asc" } : null}
+          select={{ rowLabel: (a) => a.assetTag, what: "assets", actions: [{ label: "Print labels for selected", action: "/assets/labels" }],
+            extra: <Link href={`/assets/labels?ids=${rows.map((r) => r.id).join(",")}`} className="text-sm text-primary hover:underline">Labels for this page ({rows.length})</Link> }}
+          footer={<Pager page={page} pages={pages} href={(p) => `/assets${qs({ page: p > 1 ? p : undefined })}`} />}
+          columns={registerColumns({ today, ppm, usage, qs })} />
       )}
     </>
   );
+}
+
+type RegisterRow = Awaited<ReturnType<typeof searchAssets>>["rows"][number];
+
+/** The register's columns (wave 38: DataTable). Sort keys are the register's own (`parseAssetFilter` allows them). */
+function registerColumns({ today, ppm, usage, qs }: {
+  today: string; ppm: Awaited<ReturnType<typeof ppmInfo>>; usage: Awaited<ReturnType<typeof usageDueMap>>;
+  qs: (over?: Parameters<typeof filterToQuery>[1]) => string;
+}): Column<RegisterRow>[] {
+  return [
+    { key: "tag", label: "Tag", sort: true, className: "whitespace-nowrap",
+      cell: (a) => <Link href={`/assets/${a.id}`} className="font-mono text-[13px] font-semibold text-primary hover:underline">{a.assetTag}</Link> },
+    { key: "type", label: "Device type", sort: true,
+      cell: (a) => <><Link href={`/catalogue/${a.deviceTypeCode}`} className="hover:text-primary">{a.deviceTypeName}</Link>
+        {/* Phones: the hidden columns in one line under the type. */}
+        <span className="block text-xs text-muted md:hidden">{[a.manufacturer, a.model].filter(Boolean).join(" ")}{a.roomId ? <span className="sm:hidden"> · {a.roomName}</span> : null}</span></> },
+    { key: "maker", label: "Manufacturer / model", optional: true, className: "hidden md:table-cell",
+      cell: (a) => <>{a.manufacturer ?? "—"}<div className="text-xs text-muted">{a.model}</div>
+        {a.tags.length > 0 && <div className="mt-0.5 flex flex-wrap gap-1">{a.tags.map((t) => <Link key={t} href={`/assets${qs({ tag: t, page: undefined })}`}><Badge tone="info">{t}</Badge></Link>)}</div>}</> },
+    { key: "serial", label: "Serial", optional: true, className: "hidden lg:table-cell", cellClassName: "font-mono text-xs",
+      cell: (a) => a.serialNumber ?? <span className="text-faint">—</span> },
+    { key: "location", label: "Location", sort: true, optional: true, className: "hidden min-w-[12rem] sm:table-cell",
+      cell: (a) => a.roomId ? (
+        <Link href={`/assets/map?assetId=${a.id}`} className="group block" title="Show on the floor map">
+          <span className="text-xs text-muted">{a.floorName} › {a.departmentName ?? "No department"}</span>
+          <span className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-tag" />{a.roomName} <span className="font-mono text-[11px] text-muted group-hover:text-primary">{a.roomCode}</span></span>
+        </Link>
+      ) : <span className="text-muted">{a.departmentName ?? "Not placed"}<div className="text-xs">no room</div></span> },
+    { key: "status", label: "Status", sort: true, cell: (a) => <StatusBadge value={a.status} /> },
+    { key: "warranty", label: "Warranty end", sort: true, optional: true, className: "hidden whitespace-nowrap md:table-cell",
+      cell: (a) => { const w = warrantyState(a.warrantyEnd, today); return <>
+        {formatDate(a.warrantyEnd)}
+        {w.state === "EXPIRING" && <div><Badge tone="warn">{w.days} days left</Badge></div>}
+        {w.state === "EXPIRED" && <div className="text-xs text-muted">expired</div>}
+      </>; } },
+    { key: "ppm", label: "Next PPM", optional: true, className: "hidden whitespace-nowrap md:table-cell",
+      cell: (a) => {
+        const info = ppm.get(a.id);
+        const computed = nextPpmDue({ id: a.id, status: a.status, installDate: a.installDate, purchaseDate: a.purchaseDate, ppmIntervalMonths: a.ppmIntervalMonths, maintenanceStrategy: a.maintenanceStrategy, lastPpmDate: info?.lastPpm, usageDue: usage.get(a.id)?.due });
+        const next = info?.nextScheduled && (!computed.due || info.nextScheduled <= computed.due) ? info.nextScheduled : computed.due;
+        const ds = a.status === "IN_STOCK" ? "NONE" : dueState(next, today);
+        return ds === "NONE" ? <span className="text-faint">—</span> : <>{formatDate(next)}{ds === "OVERDUE" && <div><Badge tone="danger">Overdue</Badge></div>}{ds === "DUE_SOON" && <div><Badge tone="warn">Due soon</Badge></div>}</>;
+      } },
+  ];
 }

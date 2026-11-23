@@ -75,7 +75,7 @@ export function EmptyState({ title, children, action }: { title: string; childre
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 const btn: Record<Variant, string> = {
-  primary: "bg-primary text-white hover:bg-primary-strong border-primary",
+  primary: "bg-primary text-on-primary hover:bg-primary-strong border-primary",
   secondary: "bg-surface text-ink border-line hover:bg-sunken",
   ghost: "bg-transparent text-primary border-transparent hover:bg-primary-soft",
   danger: "bg-surface text-danger border-line hover:bg-danger-soft",

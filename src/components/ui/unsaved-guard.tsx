@@ -49,7 +49,7 @@ export function UnsavedGuard() {
       <p className="mt-2 text-sm text-muted">You changed something on this page and haven&apos;t saved it. If you leave now, the changes are lost.</p>
       <div className="mt-5 flex justify-end gap-2">
         <button type="button" autoFocus onClick={stay} className="min-h-9 rounded-full border border-line bg-surface px-4 text-sm font-semibold hover:bg-sunken">Stay on this page</button>
-        <button type="button" onClick={leave} className="min-h-9 rounded-full border border-primary bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-strong">Leave without saving</button>
+        <button type="button" onClick={leave} className="min-h-9 rounded-full border border-primary bg-primary px-4 text-sm font-semibold text-on-primary hover:bg-primary-strong">Leave without saving</button>
       </div>
     </dialog>
   );
