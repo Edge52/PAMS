@@ -5,9 +5,11 @@ import { signOut } from "@/app/login/actions";
 import { NotificationBell } from "@/components/notification-bell";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { PathBar } from "@/components/shell/path-bar";
+import { ThemeChoice } from "@/components/shell/theme-choice";
+import type { Theme } from "@/lib/theme";
 
 /** Right-hand bar above every page: notifications and the signed-in user's menu. */
-export function TopBar({ user, assistant = false }: { user: CurrentUser; assistant?: boolean }) {
+export function TopBar({ user, assistant = false, theme = "light" }: { user: CurrentUser; assistant?: boolean; theme?: Theme }) {
   const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
   return (
     <>
@@ -27,9 +29,10 @@ export function TopBar({ user, assistant = false }: { user: CurrentUser; assista
             <span className="block text-xs text-muted">{ROLE_LABELS[user.role]}</span>
           </span>
         </summary>
-        <div className="absolute right-0 z-40 mt-1 w-52 rounded-[var(--radius-panel)] border border-line bg-surface p-1 shadow-lg">
+        <div className="absolute right-0 z-40 mt-1 w-60 rounded-[var(--radius-panel)] border border-line bg-surface p-1 shadow-lg">
           <Link href="/account" className="block rounded-[var(--radius-control)] px-3 py-2 text-sm hover:bg-sunken">Your account</Link>
-          <form action={signOut}>
+          <ThemeChoice theme={theme} />
+          <form action={signOut} className="border-t border-line pt-1">
             <button type="submit" className="block w-full rounded-[var(--radius-control)] px-3 py-2 text-left text-sm hover:bg-sunken">Sign out</button>
           </form>
         </div>

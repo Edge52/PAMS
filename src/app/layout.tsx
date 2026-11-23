@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import { cookies } from "next/headers";
 import "./globals.css";
 import { SideNav } from "@/components/side-nav";
 import { TopBar } from "@/components/shell/top-bar";
 import { getCurrentUser } from "@/lib/auth/session";
 import { permissionsOf } from "@/lib/auth/permissions";
 import { getSetting } from "@/lib/settings";
+import { parseTheme, THEME_COOKIE } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: { default: "Hospital PAMS", template: "%s · Hospital PAMS" },
@@ -30,15 +32,17 @@ export const viewport: Viewport = { themeColor: "#0c1f1a", width: "device-width"
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   const assistant = user ? await getSetting("assistantEnabled") : false;
+  // Wave 38: light, dark or the device's choice, from this browser's cookie, so the first paint is right.
+  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value);
   return (
-    <html lang="en" className={`${inter.variable} ${fraunces.variable} ${plexArabic.variable}`}>
+    <html lang="en" data-theme={theme} suppressHydrationWarning className={`${inter.variable} ${fraunces.variable} ${plexArabic.variable}`}>
       <body className="min-h-screen">
         <a href="#content" className="skip-link">Skip to content</a>
         {user ? (
           <div className="flex min-h-screen">
             <SideNav perms={permissionsOf(user.role)} assistant={assistant} role={user.role} />
             <main id="content" tabIndex={-1} className="min-w-0 flex-1 px-5 py-3 outline-none md:px-8 lg:px-10">
-              <TopBar user={user} assistant={assistant} />
+              <TopBar user={user} assistant={assistant} theme={theme} />
               {children}
             </main>
           </div>

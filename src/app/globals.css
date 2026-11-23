@@ -19,6 +19,7 @@
   --color-primary: #14503f;     /* theatre green: primary actions */
   --color-primary-strong: #0c3a2d;
   --color-primary-soft: #e3eee9;
+  --color-on-primary: #ffffff;  /* text on a filled button or badge: primary, danger, ok, info (dark ink in the dark look) */
   --color-tag: #e0a526;         /* asset-tag amber: pins on plans */
   --color-tag-soft: #fbf1d9;
   --color-gold: #b08d57;        /* champagne accent: thin lines, marks, big figures on dark. Never small text on white. */
@@ -50,6 +51,100 @@
   --shadow-card: 0 18px 40px -30px rgb(12 31 26 / 0.35);
 }
 
+/*
+ * Dark look (wave 38). <html data-theme="light|dark|system"> comes from the hpams_theme cookie (src/lib/theme.ts), so the
+ * first paint is right. Only on screens: printing always uses the light values above, so letters and labels print
+ * dark on white. The two blocks below must stay the same (a test checks it); every text pair passes 4.5:1
+ * (src/lib/contrast.ts, `npx tsx scripts/contrast-table.ts`).
+ */
+@media screen {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-canvas: #0c1210;
+    --color-surface: #131b18;
+    --color-sunken: #1a2420;
+    --color-ink: #e7ece9;
+    --color-muted: #a4b1ac;
+    --color-faint: #8f9c97;
+    --color-line: #2b3833;
+    --color-primary: #5cc49c;
+    --color-primary-strong: #8ad8b9;
+    --color-primary-soft: #173a2f;
+    --color-on-primary: #05130e;
+    --color-tag: #e0a526;
+    --color-tag-soft: #3a2d10;
+    --color-gold: #c9a46c;
+    --color-gold-ink: #dcbf8f;
+    --color-gold-soft: #2c2518;
+    --color-ok: #6fd09a;
+    --color-ok-soft: #13301f;
+    --color-warn: #e9b65c;
+    --color-warn-soft: #33270e;
+    --color-danger: #f2897d;
+    --color-danger-soft: #3b1b18;
+    --color-info: #8fb5f2;
+    --color-info-soft: #172540;
+    --color-nav: #070e0c;
+    --color-nav-raised: #13291f;
+    --color-nav-line: #23403a;
+    --color-nav-ink: #c9d2ce;
+    --color-nav-muted: #8fa39b;
+    --color-nav-gold: #d4b483;
+    --shadow-card: 0 18px 40px -28px rgb(0 0 0 / 0.7);
+  }
+}
+@media screen and (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+    --color-canvas: #0c1210;
+    --color-surface: #131b18;
+    --color-sunken: #1a2420;
+    --color-ink: #e7ece9;
+    --color-muted: #a4b1ac;
+    --color-faint: #8f9c97;
+    --color-line: #2b3833;
+    --color-primary: #5cc49c;
+    --color-primary-strong: #8ad8b9;
+    --color-primary-soft: #173a2f;
+    --color-on-primary: #05130e;
+    --color-tag: #e0a526;
+    --color-tag-soft: #3a2d10;
+    --color-gold: #c9a46c;
+    --color-gold-ink: #dcbf8f;
+    --color-gold-soft: #2c2518;
+    --color-ok: #6fd09a;
+    --color-ok-soft: #13301f;
+    --color-warn: #e9b65c;
+    --color-warn-soft: #33270e;
+    --color-danger: #f2897d;
+    --color-danger-soft: #3b1b18;
+    --color-info: #8fb5f2;
+    --color-info-soft: #172540;
+    --color-nav: #070e0c;
+    --color-nav-raised: #13291f;
+    --color-nav-line: #23403a;
+    --color-nav-ink: #c9d2ce;
+    --color-nav-muted: #8fa39b;
+    --color-nav-gold: #d4b483;
+    --shadow-card: 0 18px 40px -28px rgb(0 0 0 / 0.7);
+  }
+}
+:root { color-scheme: light; }
+:root[data-theme="system"] { color-scheme: light dark; }
+@media print { :root { color-scheme: light; } }
+
+/* `dark:` utilities (images and logos that need their own dark version); they follow the same choice. */
+@custom-variant dark {
+  @media screen { &:where([data-theme="dark"], [data-theme="dark"] *) { @slot; } }
+  @media screen and (prefers-color-scheme: dark) { &:where([data-theme="system"], [data-theme="system"] *) { @slot; } }
+}
+
+/*
+ * Pages written before the dark look put `text-white` on a filled colour. In the dark look those fills are light, so
+ * the text follows --color-on-primary instead. New code: use `text-on-primary`.
+ */
+:is(.bg-primary, .bg-primary-strong, .bg-danger, .bg-ok, .bg-info).text-white { color: var(--color-on-primary); }
+
 html { background: var(--color-canvas); }
 body {
   color: var(--color-ink);
@@ -63,7 +158,7 @@ body {
 :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 
 /* "Skip to content": the first Tab stop on every page, shown only when it has focus. */
-.skip-link { position: absolute; left: 8px; top: -48px; z-index: 100; border-radius: var(--radius-control); background: var(--color-primary); color: #fff; padding: 8px 14px; font-weight: 600; }
+.skip-link { position: absolute; left: 8px; top: -48px; z-index: 100; border-radius: var(--radius-control); background: var(--color-primary); color: var(--color-on-primary); padding: 8px 14px; font-weight: 600; }
 .skip-link:focus { top: 8px; }
 
 /* A link inside a sentence is underlined, so it doesn't rely on colour alone (WCAG 1.4.1). */

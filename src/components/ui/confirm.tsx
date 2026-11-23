@@ -21,8 +21,8 @@ export function ConfirmDialog({ dialog, message, tone, confirmLabel, onAnswer }:
   onAnswer: (yes: boolean) => void;
 }) {
   const yes = tone === "danger"
-    ? "border-danger bg-danger text-white hover:opacity-90"
-    : "border-primary bg-primary text-white hover:bg-primary-strong";
+    ? "border-danger bg-danger text-on-primary hover:opacity-90"
+    : "border-primary bg-primary text-on-primary hover:bg-primary-strong";
   return (
     <dialog ref={dialog} onClose={() => onAnswer(false)} aria-labelledby="confirm-title"
       className="m-auto w-[min(92vw,440px)] rounded-[var(--radius-panel)] border border-line bg-surface p-6 text-ink shadow-2xl backdrop:bg-nav/50">
