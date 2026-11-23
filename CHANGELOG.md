@@ -1,5 +1,42 @@
 # Changelog
 
+## Wave 38 — the last missing features from the audit (not merged yet)
+
+Missing features 10–17 of the wave 30 audit. One migration (0050).
+
+**Procurement and money**
+- **Arabic legal names on formal documents (#10).** Suppliers, committee members, hospitals and device types can carry
+  a "Legal name in Arabic (for letters)"; it prints on award, regret and extension letters, committee minutes and the
+  PO print, right to left. The interface stays English.
+- **Budget years July–June (#11).** Settings › "Budget year starts in" (July by default). Budgets, the PO budget panel,
+  the executive tile, the maintenance budget and the capital plan show "FY 2026/27". An existing "2026" budget reads
+  as FY 2026/27 (1 Jul 2026 – 30 Jun 2027).
+- **Bids from Excel (#13).** On an RFQ, download a bid template per supplier (items, quantities, spec lines; no
+  prices), and import the filled file: it is checked first (wrong RFQ or supplier, unknown rows, bad prices, missing
+  mandatory answers) and then creates or updates the supplier's offer.
+
+**Assets and imaging**
+- **Uptime in covered hours (#12).** A service contract can cover set hours (e.g. Sun–Thu 08:00–20:00, not on public
+  holidays); its statement counts downtime and uptime inside those hours only. Public holidays per hospital, with the
+  Egyptian holidays for 2026–2027 to add in one click (Islamic holidays marked approximate). No hours set = as before.
+- **MRI helium and cryogen log (#14).** Readings per magnet (helium %, pressure, cold head, compressor, chiller) with
+  alerts when helium is low, falling fast, a reading is missing, or the cold head stops. Open MRIs default to "no
+  helium".
+- **Exam counts from the RIS/PACS (#15).** Import a CSV or Excel of daily exam counts per device (by tag or AE title),
+  checked before saving; it feeds Imaging use and usage-based PPM. Re-importing a day replaces it.
+- **X-ray and CT tube life (#17).** Tubes per device with counter readings, warranty and expected life, a forecast
+  replacement date and alerts; replacement history.
+
+**Interface**
+- **Dark mode (#16).** User menu › Look: Light, Dark or Same as my device, remembered per browser with no flash.
+  Every colour pair passes WCAG AA in both looks; letters and labels always print light.
+- **Sortable tables (U4).** A shared table with sorting (works without JavaScript), a column chooser and row ticks:
+  used on the asset register (print labels for the selected devices), suppliers, purchase orders, users and a new
+  list view of the catalogue.
+
+- Figures to confirm: helium limits (70 %, 2 points in 30 days, a reading every 7 days); tube warning window (8 weeks).
+- Checked: typecheck, lint, 1,091 tests, page check as three accounts on the demo.
+
 ## Wave 37 — missing features from the audit, and the last two security items (not merged yet)
 
 Missing features 2–9 of the wave 30 audit, plus S13 and S15. Two migrations: 0048 (Microsoft/Google account link) and

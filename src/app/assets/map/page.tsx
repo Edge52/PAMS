@@ -122,7 +122,7 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
                     x.id === f.id ? "bg-primary font-semibold text-white" : "text-ink hover:bg-sunken")}>
                   <span className="font-mono text-xs opacity-80">{x.level < 0 ? `B${-x.level}` : x.level === 0 ? "G" : x.level}</span>
                   {x.name}
-                  <span className={cx("text-xs", x.id === f.id ? "text-white/80" : "text-muted")}>{x.assetCount}</span>
+                  <span className={cx("text-xs", x.id === f.id ? "text-on-primary/80" : "text-muted")}>{x.assetCount}</span>
                 </Link>
               ))}
             </div>

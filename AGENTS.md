@@ -598,3 +598,11 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   `<method>Impl(scn, …)`. Change a body there; add a new large method the same way (method on the class that returns
   `fooImpl(this, …)`). `scene-build.ts` and `scene-view.ts` import `TwinScene` at run time for its static shapes; that
   circular import is safe because it's only read inside functions.
+
+## Wave 38 notes
+- New lists: use `DataTable` from `@/components/ui/data-table` (server sorting via `tableSort(sp, ALLOWED)`, column
+  chooser, row ticks with bulk actions). Text on filled colours: `text-on-primary`, not `text-white`.
+- Every new colour token needs a dark value in both dark blocks of globals.css; `src/lib/contrast.test.ts` checks it.
+- Budget years: `budgetYear()` from `@/lib/procurement/budget-year-server`, helpers in `@/lib/fiscal-year`.
+- Arabic only inside formal documents, through `<LegalNameAr>`; never in the interface.
+
