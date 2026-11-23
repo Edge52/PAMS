@@ -8,6 +8,9 @@ import { scopeWhere, scopedFacilityId } from "@/lib/assets/access";
 import { egpRates, missingCurrencies, toEgp } from "@/lib/assets/lifecycle-server";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatMoney, formatNumber, todayISO } from "@/lib/format";
+import { budgetYear } from "@/lib/procurement/budget-year-server";
+import { fiscalYearRange } from "@/lib/fiscal-year";
+import { addDays } from "@/lib/assets/dates";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Maintenance budget" };
@@ -25,9 +28,11 @@ export default async function MaintenanceBudgetPage({ searchParams }: { searchPa
   const facs = await db.select({ id: facilities.id, name: facilities.name }).from(facilities).where(scopeWhere(facilities.id, scope)).orderBy(asc(facilities.name));
   const facilityId = scopedFacilityId(scope, Number(sp.facilityId) || undefined) ?? facs[0]?.id;
   if (!facilityId) return <><PageHeader title="Maintenance budget" /><EmptyState title="No hospital linked to your account">Ask an administrator for access to a hospital.</EmptyState></>;
-  const now = new Date(), thisYear = now.getFullYear();
+  // Budget years (wave 38): July–June by default, from Settings › Budget year starts in.
+  const now = new Date(), by = await budgetYear(now), thisYear = by.current;
   const year = Number(sp.year) || thisYear;
-  const y0 = `${year}-01-01`, y1 = `${year + 1}-01-01`;
+  const range = fiscalYearRange(year, by.startMonth)!;
+  const y0 = range.start, y1 = addDays(range.end, 1);
   const elapsed = year < thisYear ? 1 : year > thisYear ? 0 : (now.getTime() - Date.parse(y0)) / (Date.parse(y1) - Date.parse(y0));
 
   const [rates, depts, events, contracts, lines, planned] = await Promise.all([
@@ -73,7 +78,7 @@ export default async function MaintenanceBudgetPage({ searchParams }: { searchPa
       {noRate.length > 0 && <p role="note" className="mb-3 text-sm text-warn">No exchange rate for {noRate.join(", ")}: those amounts count as 0 here. Add the rate under Finance › Exchange rates.</p>}
       <form className="mb-5 flex flex-wrap items-end gap-2">
         <Field label="Hospital"><NativeSelect name="facilityId" value={facilityId} options={facs.map((f) => ({ value: f.id, label: f.name }))} /></Field>
-        <Field label="Year"><NativeSelect name="year" value={year} options={[-2, -1, 0, 1].map((k) => thisYear + k).map((y) => ({ value: y, label: String(y) }))} /></Field>
+        <Field label="Budget year"><NativeSelect name="year" value={year} options={[-2, -1, 0, 1].map((k) => thisYear + k).map((y) => ({ value: y, label: by.label(y) }))} /></Field>
         <Button variant="secondary">Show</Button>
       </form>
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">

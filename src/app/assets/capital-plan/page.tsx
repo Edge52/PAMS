@@ -13,9 +13,11 @@ import { bookValues } from "@/lib/assets/depreciation-server";
 import { plannedYear } from "@/lib/assets/planning";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
-import { formatMoney, formatNumber, num } from "@/lib/format";
+import { formatDate, formatMoney, formatNumber, num } from "@/lib/format";
 import { createReplacementBoqAction } from "../replacement/actions";
 import { saveBudgetAction } from "./actions";
+import { budgetYear } from "@/lib/procurement/budget-year-server";
+import { fiscalYearRange } from "@/lib/fiscal-year";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Capital plan" };
@@ -34,11 +36,14 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
   const facilityId = scopedFacilityId(scope, Number(sp.facilityId) || undefined) ?? facs[0]?.id;
   if (!facilityId) return <><PageHeader title="Capital plan" /><EmptyState title="No hospital linked to your account">Ask an administrator for access to a hospital.</EmptyState></>;
   const horizon = sp.years === "10" ? 10 : 5;
-  const thisYear = new Date().getUTCFullYear();
+  // Budget years (wave 38): columns are budget years ("FY 2026/27"); a device's planned year is read as the budget
+  // year it falls in (it's an estimate from its age and life).
+  const by = await budgetYear();
+  const thisYear = by.current;
   const years = Array.from({ length: horizon }, (_, i) => thisYear + i);
   const pick = Number(sp.year) && years.includes(Number(sp.year)) ? Number(sp.year) : thisYear;
 
-  const replaceOn = pick === thisYear ? undefined : `${pick}-01-01`;
+  const replaceOn = pick === thisYear ? undefined : fiscalYearRange(pick, by.startMonth)!.start;
   const [plan, models, budgets, depts, bvNow, bvAt] = await Promise.all([
     replacementPlan(eq(assets.facilityId, facilityId)),
     db.select({ id: assets.id, eos: deviceModels.endOfSupport }).from(assets).innerJoin(deviceModels, and(eq(deviceModels.deviceTypeId, assets.deviceTypeId),
@@ -90,11 +95,11 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
         <Stat label={`${thisYear}`} value={egp(cell("all", thisYear))} hint={budgetOf(thisYear) != null ? `Budget ${egp(budgetOf(thisYear)!)}` : "No budget set"} />
         <Stat label="Maker support ending" value={formatNumber(placed.filter((r) => r.why === "Maker support ends").length)} hint="Brought forward to the end of support" />
         <Stat label="Without a price" value={formatNumber(unpriced)} hint="Add a price range to their device type" />
-        <Stat label={`Book value left, ${pick} devices`} value={egp(yearBook)} hint={`Written off if replaced${pick === thisYear ? " now" : ` on 1 Jan ${pick}`}${yearNoBook ? ` · ${formatNumber(yearNoBook)} without a book value` : ""}`} />
+        <Stat label={`Book value left, ${by.label(pick)} devices`} value={egp(yearBook)} hint={`Written off if replaced${pick === thisYear ? " now" : ` on ${formatDate(replaceOn!)}`}${yearNoBook ? ` · ${formatNumber(yearNoBook)} without a book value` : ""}`} />
       </div>
       <Panel title="Need by department and year (EGP)" padded={false}>
         <div className="overflow-x-auto"><table className="w-full text-[13px]">
-          <thead className="bg-sunken text-muted"><tr><th className="px-3 py-2 text-left font-semibold">Department</th>{years.map((y) => <th key={y} className="px-3 py-2 text-right font-semibold"><Link href={q(y)} className={y === pick ? "text-primary underline" : "hover:underline"}>{y}</Link></th>)}</tr></thead>
+          <thead className="bg-sunken text-muted"><tr><th className="px-3 py-2 text-left font-semibold">Department</th>{years.map((y) => <th key={y} className="px-3 py-2 text-right font-semibold"><Link href={q(y)} className={y === pick ? "text-primary underline" : "hover:underline"}>{by.label(y)}</Link></th>)}</tr></thead>
           <tbody>
             {deptIds.map((d) => (
               <tr key={String(d)} className="border-t border-line"><td className="px-3 py-1.5">{deptName(d)}</td>{years.map((y) => { const v = cell(d, y); return <td key={y} className="px-3 py-1.5 text-right">{v ? egp(v) : "—"}</td>; })}</tr>
@@ -117,8 +122,8 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
         </Panel>
       )}
       <ActionForm action={createReplacementBoqAction} className="mt-6">
-        <Panel title={`${pick}: ${formatNumber(yearRows.length)} devices, ${egp(yearRows.reduce((s, r) => s + (r.estimateEgp ?? 0), 0))}`}
-          actions={<span className="flex gap-2 text-sm">{years.map((y) => <Link key={y} href={q(y)} className={y === pick ? "font-semibold text-primary" : "text-muted hover:underline"}>{y}</Link>)}</span>}>
+        <Panel title={`${by.label(pick)}: ${formatNumber(yearRows.length)} devices, ${egp(yearRows.reduce((s, r) => s + (r.estimateEgp ?? 0), 0))}`}
+          actions={<span className="flex gap-2 text-sm">{years.map((y) => <Link key={y} href={q(y)} className={y === pick ? "font-semibold text-primary" : "text-muted hover:underline"}>{by.label(y)}</Link>)}</span>}>
           {canBoq && yearRows.length > 0 && (
             <div className="mb-4 flex flex-wrap items-end gap-2">
               <Field label="BOQ name" className="min-w-64 flex-1"><Input name="name" defaultValue={`${fac?.name ?? ""} — capital plan ${pick}`} maxLength={200} /></Field>
