@@ -17,6 +17,7 @@ import { formatDate, formatDateTime, formatMoney, formatNumber, num, todayISO } 
 import { getActivity } from "@/lib/server-utils";
 import { addContractAssetsAction, removeContractAssetAction, updateContractAction } from "../actions";
 import { ConfirmButton } from "@/components/ui/confirm";
+import { CoveragePanel } from "@/components/assets/coverage-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -141,6 +142,7 @@ export default async function ContractPage({ params, searchParams }: {
         </div>
 
         <aside className="space-y-6">
+          <CoveragePanel contractId={c.id} facilityId={c.facilityId} canEdit={canEdit} />
           {canEdit && (
             <Panel title="Add devices">
               <ActionForm action={addContractAssetsAction} className="space-y-3">

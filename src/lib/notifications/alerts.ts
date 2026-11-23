@@ -23,6 +23,8 @@ import { collectAlerts, CONTRACT_WARN_DAYS, digestAlerts, MAINTENANCE_DUE_DAYS, 
 import { DOC_NOTIFY_DAYS } from "@/lib/procurement/supplier-docs";
 import { collectSafetyAlerts } from "./safety-alert-rules";
 import { loadSafetyAlertData } from "./safety-alerts";
+import { collectImagingAlerts } from "./imaging-alert-rules";
+import { loadImagingAlertData } from "./imaging-alerts";
 
 export type AlertRunResult = {
   startedAt: string; finishedAt: string; ms: number;
@@ -134,7 +136,9 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
     // Wave 37: recalls still to action, low stock, safety tests, calibration and radiation safety. Loaded on its own so
     // a failure there never stops the other alerts.
     const safety = await loadSafetyAlertData(today).then((d) => collectSafetyAlerts(d, today)).catch((e) => { console.error("[alerts] safety alerts skipped:", e); return []; });
-    const alerts = digestAlerts([...collectAlerts(await loadData(today, windows), today, windows), ...safety], today, windows, (id) => (id == null ? null : names.get(id) ?? null));
+    // Wave 38: MRI cryogen log and X-ray/CT tubes, also on their own.
+    const imaging = await loadImagingAlertData(today).then((d) => collectImagingAlerts(d, today)).catch((e) => { console.error("[alerts] imaging alerts skipped:", e); return []; });
+    const alerts = digestAlerts([...collectAlerts(await loadData(today, windows), today, windows), ...safety, ...imaging], today, windows, (id) => (id == null ? null : names.get(id) ?? null));
     candidates = alerts.length;
 
     // One recipient lookup per role and facility per run.

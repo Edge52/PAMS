@@ -575,3 +575,47 @@ spare parts at or below their reorder level (daily, same alert as when stock dro
 due within 30 days or overdue (technicians too), test equipment whose calibration runs out, ENRRA licences expiring
 within 90 days or expired, physicist QC and protective checks due or overdue, and flagged dose readings. More than
 three of one kind in a hospital come as one summary.
+
+## Wave 38: covered hours, MRI helium, exam counts and X-ray tubes
+
+### Contract covered hours and public holidays
+- Many service contracts guarantee uptime only in agreed hours. On a contract's page, **Covered hours** › *Change
+  covered hours*: round the clock, or the days and the times (Cairo time), and whether public holidays count. An end
+  time earlier than the start is an overnight shift; it belongs to the day it starts.
+- With covered hours set, the **monthly statement** counts uptime and downtime only inside them: two jobs on the same
+  outage count once, and an outage at night or at the weekend costs nothing. Response and repair times stay in clock
+  hours. A contract with no covered hours works as before (24/7).
+- **Public holidays** (*Maintenance › Public holidays*) are kept per hospital. *Add the Egyptian holidays* fills in
+  2026–2027, with dates the government moved to a Thursday. Eid and other Islamic holidays are marked
+  **approximate**: correct them when the dates are announced. Coptic Easter Sunday is not on the list.
+
+### MRI cryogen log
+- *Maintenance › MRI cryogen log* lists every MRI scanner with its helium level, a trend line, the last reading and
+  any warning. Record a reading there or on the scanner's page (**Helium and cryogen log**): date, helium %,
+  pressure (psi), cold head and compressor state, chiller water temperature, remarks and who read it.
+- Warnings (and alerts to biomedical): helium below **70 %**, a fall of more than **2 points in 30 days** (counted
+  from the last refill), **no reading for 7 days**, and a cold head stopped or a compressor stopped or in fault at the
+  last reading. Each scanner can have its own levels (*Change the warning levels*).
+- Open MRIs with a permanent magnet have no helium: they are marked so by default and skipped. Tick
+  *Superconducting magnet* if yours has helium.
+
+### Exam counts from the RIS or PACS
+- *Assets › Import exam counts*: upload a CSV or Excel export with one row per device and day (or per procedure:
+  rows add up). Columns: the device's asset tag or **AE title**, the date, the exam count, and optionally the
+  modality and procedure. The preview shows every row with its problems; only good rows are saved.
+- Importing a device's day again replaces it. Month totals go into **Imaging use**, so utilisation, exams lost to
+  downtime and usage-based PPM use the imported figures. A month typed by hand on Imaging use is replaced the next
+  time daily counts for that month are imported.
+- Add each scanner's AE title (as set on the scanner) on the import page or on its page. The scanner's page shows
+  **Exams**: the last 28 days, per day, per week, the busiest day and 12 weeks of weekly totals.
+
+### X-ray and CT tubes
+- CT, X-ray (including C-arm and fluoroscopy), mammography and angiography devices have an **X-ray tube** panel.
+  Record the tube in use: serial, fitted on, the counter at fitting, warranty in months and/or use (whichever comes
+  first) and expected life. CT counters default to **scan seconds**, the others to **exposures**; mAs and rotations
+  can be chosen to match the warranty.
+- Record counter readings from the service screen. The panel shows use so far, use per day, the forecast
+  replacement date and the warranty end. **Replace the tube** closes the old one (with its last counter and the
+  reason) and keeps it in the replacement history with its cost.
+- Alerts to biomedical when the forecast replacement is within **8 weeks** or past the expected life, and when the
+  tube warranty ends within 8 weeks or has ended.

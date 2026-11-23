@@ -24,6 +24,11 @@ import { SafetyPanel, TestEquipmentForm } from "@/components/assets/safety-panel
 import { CalibrationPanel } from "@/components/assets/calibration-panel";
 import { RadiationPanel } from "@/components/assets/radiation-panel";
 import { isRadiationType } from "@/lib/assets/radiation";
+import { CryogenPanel } from "@/components/assets/cryogen-panel";
+import { TubePanel } from "@/components/assets/tube-panel";
+import { ExamCountsPanel, isExamDevice } from "@/components/assets/exam-counts-panel";
+import { isMriType } from "@/lib/assets/cryogen";
+import { isTubeType } from "@/lib/assets/tubes";
 import { SecurityPanel } from "@/components/assets/security-panel";
 import { UsagePanel } from "@/components/assets/usage-panel";
 import { LoansPanel } from "@/components/assets/loans-panel";
@@ -295,6 +300,9 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
           {usage && <UsagePanel assetId={x.id} typeCode={a.typeCode} usage={usage} canRecord={canMaint} disposed={x.status === "DISPOSED"} />}
           <CalibrationPanel assetId={x.id} deviceTypeId={x.deviceTypeId} required={a.requiresCalibration && !x.isTestEquipment} canRecord={canMaint} canEdit={canEdit} disposed={x.status === "DISPOSED"} />
           {isRadiationType(a.typeCode) && <RadiationPanel assetId={x.id} roomId={x.roomId} facilityId={x.facilityId} />}
+          {isExamDevice(a.typeCode) && <ExamCountsPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />}
+          {isMriType(a.typeCode) && <CryogenPanel assetId={x.id} canRecord={canMaint} canEdit={canEdit} disposed={x.status === "DISPOSED"} />}
+          {isTubeType(a.typeCode) && <TubePanel assetId={x.id} typeCode={a.typeCode} canRecord={canMaint} canEdit={canEdit} disposed={x.status === "DISPOSED"} />}
           <SafetyPanel assetId={x.id} canTest={canMaint} canReport={canReport} disposed={x.status === "DISPOSED"} />
           <LoansPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />
           <SecurityPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />

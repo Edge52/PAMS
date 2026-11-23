@@ -3,6 +3,7 @@
  * device goes in the capital plan (D4) and total cost of ownership of an offer (D5). Pure; hours and plain numbers.
  */
 import { downtimeMsByDevice } from "./downtime";
+import { coveredDowntimeByDevice, totalMs, type Interval } from "./coverage";
 
 /* ── D6: contract performance ── */
 
@@ -30,9 +31,10 @@ const hours = (a: Date, b: Date) => (b.getTime() - a.getTime()) / H;
  * device back up (or the job completed). A job is late by the larger of its response and repair overrun; penalties are
  * late hours × the hourly rate plus uptime points short × the point rate, capped at the cap % of the contract value
  * for the period. Jobs still open at the end of the period count up to then; lateness is charged in the month a job
- * was reported.
+ * was reported. `covered` (wave 38) limits uptime and downtime to the contract's covered hours; response and repair
+ * times stay in clock hours. The penalty cap's share of the contract stays in calendar time.
  */
-export function contractStatement(t: ContractTerms, jobs: ContractJob[], devices: number, from: Date, to: Date): Statement {
+export function contractStatement(t: ContractTerms, jobs: ContractJob[], devices: number, from: Date, to: Date, covered?: Interval[] | null): Statement {
   const rows: JobPerformance[] = jobs.map((j) => {
     const responseH = j.startedAt ? hours(j.reportedAt, j.startedAt) : j.completedAt ? hours(j.reportedAt, j.completedAt) : null;
     const back = j.downtimeEnd ?? j.completedAt;
@@ -42,10 +44,11 @@ export function contractStatement(t: ContractTerms, jobs: ContractJob[], devices
     const lateP = t.repairHours ? Math.max(0, openP - t.repairHours) : 0;
     return { ...j, responseH, repairH, lateH: Math.max(lateR, lateP), open: !back };
   });
-  const periodHours = Math.max(0, hours(from, to));
+  // Wave 38: with covered hours (coverage.ts), uptime counts only inside them; without, every hour of the period.
+  const periodHours = covered ? totalMs(covered) / H : Math.max(0, hours(from, to));
   // Two jobs on one outage count it once (audit A1): periods merge per device before they add up.
-  const down = downtimeMsByDevice(jobs.filter((j) => j.deviceDown && j.downtimeStart)
-    .map((j) => ({ device: j.tag, start: j.downtimeStart!, end: j.downtimeEnd })), from, to);
+  const periods = jobs.filter((j) => j.deviceDown && j.downtimeStart).map((j) => ({ device: j.tag, start: j.downtimeStart!, end: j.downtimeEnd }));
+  const down = covered ? coveredDowntimeByDevice(periods, covered, from, to) : downtimeMsByDevice(periods, from, to);
   const downtimeH = [...down.values()].reduce((s, ms) => s + ms, 0) / H;
   const uptimePct = devices && periodHours ? Math.max(0, 100 * (1 - downtimeH / (devices * periodHours))) : null;
   // Lateness is charged in the month the job was reported (so an open job isn't charged twice); downtime in every month it falls in.
@@ -54,7 +57,7 @@ export function contractStatement(t: ContractTerms, jobs: ContractJob[], devices
   const uptimeShort = t.uptimePct != null && uptimePct != null ? Math.max(0, t.uptimePct - uptimePct) : 0;
   const uptimePenalty = uptimeShort * (t.penaltyPerUptimePoint ?? 0);
   const contractH = hours(new Date(`${t.startDate}T00:00:00Z`), new Date(`${t.endDate}T23:59:59Z`));
-  const cap = t.penaltyCapPct != null && t.value != null && contractH > 0 ? (t.penaltyCapPct / 100) * t.value * Math.min(1, periodHours / contractH) : null;
+  const cap = t.penaltyCapPct != null && t.value != null && contractH > 0 ? (t.penaltyCapPct / 100) * t.value * Math.min(1, Math.max(0, hours(from, to)) / contractH) : null;
   const raw = latePenalty + uptimePenalty;
   return { jobs: rows, devices, periodHours, downtimeH, uptimePct, late, latePenalty, uptimeShort, uptimePenalty, cap,
     penalty: cap != null ? Math.min(raw, cap) : raw, capped: cap != null && raw > cap };

@@ -47,6 +47,10 @@ export const KIND_LABELS: Record<string, string> = {
   protective_check_due: "Apron check due",
   protective_check_overdue: "Apron check overdue",
   dose_flagged: "Dose reading",
+  cryogen_warning: "MRI helium",
+  cryogen_urgent: "MRI cold head",
+  tube_replace: "Tube replacement",
+  tube_warranty: "Tube warranty",
   test: "Test",
 };
 

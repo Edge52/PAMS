@@ -2197,3 +2197,4 @@ export const trainingAttendees = pgTable("training_attendees", {
 export * from "./schema-wave37-j";
 
 export * from "./schema-wave37-k";
+export * from "./schema-wave38-m";

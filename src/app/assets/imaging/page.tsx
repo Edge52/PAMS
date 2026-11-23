@@ -2,7 +2,7 @@ import Link from "next/link";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, deviceTypes, facilities, imagingUsage, rooms, typeCapacity, workOrders } from "@/db/schema";
-import { Badge, Button, EmptyState, Field, Input, PageHeader, Panel, Stat, Textarea } from "@/components/ui";
+import { Badge, Button, EmptyState, Field, Input, LinkButton, PageHeader, Panel, Stat, Textarea } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { NativeSelect, Notice } from "@/components/assets/bits";
 import { scopeWhere, scopedFacilityId } from "@/lib/assets/access";
@@ -79,7 +79,8 @@ export default async function ImagingPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="Imaging use" description="Exams per scanner against planning capacity, with uptime and the exams lost to downtime. Feeds the capital plan and tender justifications." />
+      <PageHeader title="Imaging use" description="Exams per scanner against planning capacity, with uptime and the exams lost to downtime. Feeds the capital plan and tender justifications."
+        actions={<LinkButton href="/assets/imaging/import">Import daily exam counts</LinkButton>} />
       <Notice sp={sp} />
       <form className="mb-5 flex flex-wrap items-end gap-2">
         <Field label="Hospital"><NativeSelect name="facilityId" value={facilityId} options={facs.map((f) => ({ value: f.id, label: f.name }))} /></Field>
