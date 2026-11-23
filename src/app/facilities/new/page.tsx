@@ -21,7 +21,7 @@ export default async function NewFacilityPage() {
           <FormGrid cols={3}>
             <Field label="Code" hint="Short code used in asset tags, e.g. DGH"><Input name="code" required maxLength={32} placeholder="DGH" className="uppercase" /></Field>
             <Field label="Name"><Input name="name" required placeholder="Demo General Hospital" /></Field>
-            <Field label="Arabic name"><Input name="nameAr" lang="ar" dir="rtl" /></Field>
+            <Field label="Legal name in Arabic (for letters)"><Input name="nameAr" lang="ar" dir="rtl" /></Field>
             <Field label="Type"><NativeSelect name="type" options={enumOptions(FACILITY_TYPES)} value="GENERAL_HOSPITAL" /></Field>
             <Field label="Governorate"><Input name="governorate" /></Field>
             <Field label="City"><Input name="city" /></Field>

@@ -114,6 +114,8 @@ const settingsSchema = z.object({
   landedDutyPct: num("Customs and duty must be between 0 and 100 %", 0, 100),
   landedClearancePct: num("Clearance must be between 0 and 100 % of the price", 0, 100),
   landedLocalDeliveryPct: num("Local delivery must be between 0 and 100 % of the price", 0, 100),
+  // Wave 38: budget (fiscal) year
+  budgetYearStartMonth: num("Choose the month the budget year starts in", 1, 12).int("Choose the month the budget year starts in"),
 });
 
 export async function saveSettings(_prev: ActionState, fd: FormData): Promise<ActionState> {

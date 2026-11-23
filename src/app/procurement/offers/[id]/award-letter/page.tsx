@@ -8,6 +8,7 @@ import { formatDate, formatMoney, formatNumber, lineTotal, round2, todayISO } fr
 import { INCOTERM_LABELS, type Incoterm } from "@/lib/procurement/labels";
 import { BOND_RATE, requiredBond } from "@/lib/procurement/money";
 import { pricesSealed } from "@/lib/procurement/sealed";
+import { LegalNameAr } from "@/components/procurement/legal-name";
 import { letterContext } from "@/lib/procurement/letters-server";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +43,7 @@ export default async function AwardLetter({ params }: { params: Promise<{ id: st
       <div className="no-print mb-4 flex flex-wrap items-center gap-3 text-sm">{back}<PrintButton /></div>
       <article className="mx-auto max-w-2xl rounded border border-line bg-surface p-8 text-[15px] leading-relaxed print:border-0 print:p-0">
         <p className="text-right">{formatDate(todayISO())}</p>
-        <p className="mt-6">To: <b>{s.name}</b>{sales || s.contactName ? <><br />Attn: {sales?.name ?? s.contactName}{sales?.email ? ` (${sales.email})` : ""}</> : null}{s.address ? <><br />{s.address}</> : null}</p>
+        <p className="mt-6">To: <b>{s.name}</b><LegalNameAr name={c.supplierAr} />{sales || s.contactName ? <><br />Attn: {sales?.name ?? s.contactName}{sales?.email ? ` (${sales.email})` : ""}</> : null}{s.address ? <><br />{s.address}</> : null}</p>
         <p className="mt-6 font-semibold">Subject: Notice of award — tender {p.code}, {p.title}</p>
         <p className="mt-4">Dear Sirs,</p>
         <p className="mt-3">With reference to your offer no. {o.reference} dated {formatDate(o.offerDate)} submitted for the above tender{c.facility ? ` of ${c.facility}` : ""}, we are pleased to inform you that, on the recommendation of the adjudication committee{c.committeeDate ? ` dated ${formatDate(c.committeeDate)}` : ""}, approved by the competent authority on <b>{formatDate(c.approvedOn)}</b>, the tender has been awarded to your company for the following items:</p>
@@ -51,7 +52,7 @@ export default async function AwardLetter({ params }: { params: Promise<{ id: st
           <tbody>{rows.map(({ l, net, total: t }, i) => (
             <tr key={l.id} className="border-b border-line align-top">
               <td className="py-1 pr-2">{i + 1}</td>
-              <td className="py-1 pr-2">{l.description}{l.manufacturer || l.model ? <span className="block text-xs">{[l.manufacturer, l.model].filter(Boolean).join(" ")}{l.countryOfOrigin ? `, ${l.countryOfOrigin}` : ""}</span> : null}</td>
+              <td className="py-1 pr-2">{l.description}<LegalNameAr name={c.typesAr.get(l.deviceTypeId)} className="text-xs" />{l.manufacturer || l.model ? <span className="block text-xs">{[l.manufacturer, l.model].filter(Boolean).join(" ")}{l.countryOfOrigin ? `, ${l.countryOfOrigin}` : ""}</span> : null}</td>
               <td className="py-1 pr-2 text-right">{formatNumber(l.quantity)}</td>
               <td className="py-1 pr-2 text-right whitespace-nowrap">{money(net)}</td>
               <td className="py-1 text-right whitespace-nowrap">{money(t)}</td>
@@ -63,7 +64,7 @@ export default async function AwardLetter({ params }: { params: Promise<{ id: st
         <p className="mt-3">All bidders are being notified of this result. Under Law 182/2018 (art. 39) complaints may be made until <b>{formatDate(c.complaintUntil)}</b>. The formal notice of acceptance will follow after that period, by {formatDate(c.acceptanceDue)}, and the purchase order will then be issued.</p>
         <p className="mt-3">Please be ready to provide a performance bond of {BOND_RATE.PERFORMANCE * 100} % of the contract value{sealed ? "" : ` (${formatMoney(requiredBond("PERFORMANCE", total), cur)})`}, as the tender conditions require.</p>
         <p className="mt-6">Yours faithfully,</p>
-        <div className="mt-14 w-64 border-t border-ink pt-1 text-sm">Procurement department<br />{c.facility ?? ""}</div>
+        <div className="mt-14 w-64 border-t border-ink pt-1 text-sm">Procurement department<br />{c.facility ?? ""}<LegalNameAr name={c.facilityAr} /></div>
         <p className="no-print mt-8 text-xs text-muted">Draft prepared by {me.name}. Check the items, the value and the dates before sending.</p>
       </article>
     </>

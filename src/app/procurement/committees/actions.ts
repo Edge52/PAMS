@@ -9,6 +9,8 @@ import { requireFacilityAccess, requirePermission, type CurrentUser } from "@/li
 import { logActivity } from "@/lib/server-utils";
 import { CAPACITIES, CAPACITY_LABELS, COMMITTEE_KINDS, KIND_LABELS, votesByDefault, type Capacity, type CommitteeKind } from "@/lib/procurement/committees";
 import { fail, formObject, idParam, isUniqueViolation, optDate, optStr, type ActionState, zodFail } from "@/lib/procurement/forms";
+import { cleanLegalName } from "@/lib/procurement/legal-names";
+import { memberLegalNamesFor, setMemberLegalName } from "@/lib/procurement/legal-names-server";
 
 const back = (projectId: number) => revalidatePath(`/procurement/${projectId}`);
 
@@ -122,12 +124,15 @@ export async function addCommitteeMember(_prev: ActionState, fd: FormData): Prom
     name = u.name;
   }
   if (!name) return fail("Choose a user, or type the name of an external member (e.g. the Ministry of Finance representative).");
+  const ar = cleanLegalName(fd.get("nameAr")); // wave 38: for the minutes
+  if (!ar.ok) return { errors: [ar.error], fields: { nameAr: ar.error } };
   if (d.capacity === "CHAIR") {
     const [chair] = await db.select({ name: committeeMembers.name }).from(committeeMembers)
       .where(and(eq(committeeMembers.committeeId, d.committeeId), eq(committeeMembers.capacity, "CHAIR")));
     if (chair) return fail(`${chair.name} already chairs this committee. Remove them first to name another chair.`);
   }
-  await db.insert(committeeMembers).values({ committeeId: d.committeeId, userId: d.userId ?? null, name, capacity: d.capacity, votes: votesByDefault(d.capacity) });
+  const [added] = await db.insert(committeeMembers).values({ committeeId: d.committeeId, userId: d.userId ?? null, name, capacity: d.capacity, votes: votesByDefault(d.capacity) }).returning({ id: committeeMembers.id });
+  if (ar.value) await setMemberLegalName(added.id, ar.value);
   await logActivity("project", found.p.id, "committee_member_added", `${KIND_LABELS[found.c.kind as CommitteeKind]}: ${name} added as ${CAPACITY_LABELS[d.capacity].toLowerCase()}${d.userId ? "" : " (external, signs on paper)"}`, me.name);
   back(found.p.id);
   return { message: `${name} added.` };
@@ -145,4 +150,22 @@ export async function removeCommitteeMember(_prev: ActionState, fd: FormData): P
   await logActivity("project", found.p.id, "committee_member_removed", `${KIND_LABELS[found.c.kind as CommitteeKind]}: ${m.name} removed`, me.name);
   back(found.p.id);
   return { message: `${m.name} removed.` };
+}
+
+/** Wave 38: a member's name in Arabic, printed on the committee minutes. Blank removes it. */
+export async function saveMemberLegalName(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const me = await requirePermission("procurement.edit");
+  const memberId = Number(fd.get("memberId"));
+  const [m] = Number.isInteger(memberId) && memberId > 0 ? await db.select().from(committeeMembers).where(eq(committeeMembers.id, memberId)) : [];
+  if (!m) return fail("This member was removed.");
+  const found = await committeeFor(m.committeeId, me);
+  if (!found) return fail("This committee no longer exists.");
+  const ar = cleanLegalName(fd.get("nameAr"));
+  if (!ar.ok) return { errors: [ar.error], fields: { nameAr: ar.error } };
+  const before = (await memberLegalNamesFor([memberId])).get(memberId) ?? null;
+  if (before === ar.value) return { message: "Nothing changed." };
+  await setMemberLegalName(memberId, ar.value);
+  await logActivity("project", found.p.id, "committee_member_updated", `${KIND_LABELS[found.c.kind as CommitteeKind]}: Arabic name for ${m.name} ${ar.value ? (before ? "changed" : "added") : "removed"}`, me.name);
+  back(found.p.id);
+  return { message: ar.value ? `Arabic name saved for ${m.name}.` : `Arabic name removed for ${m.name}.` };
 }

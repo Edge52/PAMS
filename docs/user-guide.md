@@ -575,3 +575,40 @@ spare parts at or below their reorder level (daily, same alert as when stock dro
 due within 30 days or overdue (technicians too), test equipment whose calibration runs out, ENRRA licences expiring
 within 90 days or expired, physicist QC and protective checks due or overdue, and flagged dose readings. More than
 three of one kind in a hospital come as one summary.
+
+## Wave 38: Arabic names on letters, budget years, bids from Excel
+
+### Arabic legal names on letters and minutes
+- Suppliers, hospitals, committee members and device types can have their official name in Arabic. The field is
+  **Legal name in Arabic (for letters)**: on the supplier form, the hospital's page, each committee member (Committees
+  tab: **Add Arabic name for the minutes**, or when adding the member) and the device type's catalogue page
+  (**Name on letters**). It must be typed in Arabic letters; leave it blank for none.
+- The Arabic name prints under the English one on the award, regret and extension letters, the committee minutes
+  (suppliers, hospital and signatures) and the purchase order print. The rest of the app stays in English: the
+  supplier's page only says whether an Arabic name is given.
+
+### Budget years (July to June)
+- Budgets run by budget year, labelled **FY 2026/27** (1 July 2026 to 30 June 2027). The start month is under
+  **Approval rules & settings › Book value and budgets › Budget year starts in** (July by default, Egypt's fiscal year).
+- A budget line keeps the year its budget year starts in: a line saved for **2026** is **FY 2026/27**. Lines made
+  before this change read the same way. With a January start the label is plain **FY 2026**, as before.
+- The Budgets page, the budget panel on a purchase order, Finance's budget warnings and the executive summary's
+  **Capital budget** tile all use the current budget year (in Cairo time). The maintenance budget and capital plan
+  pages under Assets still pick years by number.
+
+### Supplier bids from Excel
+- On an RFQ, **Bids in Excel › Download bid template (Excel)** gives a file with a row per item (code, item,
+  quantity) and blank columns for unit price, discount, make, model, country of origin, delivery (weeks), warranty
+  (months) and remarks; a **Compliance** sheet with each specification line to answer **Yes**, **No** or
+  **Partial** with the offered value, a remark and the datasheet page; and a **Read me** sheet. The template has no
+  prices. The links under it make it out to one invited supplier.
+- **Import a bid from Excel** (procurement): choose the invited supplier and the filled file, then **Check the
+  file**. Nothing is saved yet; you see every problem (unknown rows, prices that aren't numbers, bad discounts or
+  dates, mandatory lines not answered, a file from another RFQ or supplier) and the lines read. Fix the file and
+  check again, then **Import bid**.
+- Importing creates a **Received** offer with its lines and compliance answers (delivery: the longest of the items;
+  warranty: the shortest; each item's remarks go in the offer notes). Importing again replaces the lines and answers
+  of the supplier's offer while it is Received or Under review; a shortlisted or awarded offer is changed on its own
+  page.
+- Importing is data entry, so it works on a sealed two-envelope tender too, but the check shows prices only to
+  people who see supplier prices, and only once the financial envelopes are open.

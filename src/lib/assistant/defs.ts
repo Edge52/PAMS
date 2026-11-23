@@ -23,7 +23,7 @@ export const TOOLS: ToolDef[] = [
   { name: "search_suppliers", need: "procurement.view", description: "Suppliers matching words in the name or brands, with country, type, brands and contact.", input_schema: { type: "object", properties: { query: str("Words to look for") } } },
   { name: "purchase_orders", need: "procurement.view", description: "Purchase orders, newest first, optionally with one status or for one supplier name.",
     input_schema: { type: "object", properties: { status: str("PO status, e.g. ISSUED"), supplier: str("Words in the supplier name") } } },
-  { name: "budget_status", need: "procurement.view", description: "Budget lines for a year with amount, committed, spent and remaining.", input_schema: { type: "object", properties: { year: int("Year; defaults to this year"), facility_id: int("Hospital id") } } },
+  { name: "budget_status", need: "procurement.view", description: "Budget lines for a budget (fiscal) year with amount, committed, spent and remaining. Budget years start in July by default: year 2026 is FY 2026/27.", input_schema: { type: "object", properties: { year: int("Start year of the budget year (2026 = FY 2026/27); defaults to the current budget year"), facility_id: int("Hospital id") } } },
   // Wave 14
   { name: "list_boqs", need: "boq.view", description: "Equipment plans (BOQs): name, hospital, status, version, beds and estimated total; optionally matching words or with one status.",
     input_schema: { type: "object", properties: { query: str("Words in the BOQ name"), status: { type: "string", enum: ["DRAFT", "UNDER_REVIEW", "APPROVED", "SUPERSEDED"] } } } },

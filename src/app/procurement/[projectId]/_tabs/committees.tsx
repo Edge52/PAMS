@@ -12,7 +12,9 @@ import type { CurrentUser } from "@/lib/auth/session";
 import { formatDate, formatMoney } from "@/lib/format";
 import { CAPACITIES, CAPACITY_LABELS, COMMITTEE_KINDS, KIND_LABELS, requiredCommittees, type Capacity, type CommitteeKind } from "@/lib/procurement/committees";
 import { tenderCompliance } from "@/lib/procurement/tender";
-import { addCommitteeMember, createCommittee, deleteCommittee, removeCommitteeMember, updateCommittee } from "../../committees/actions";
+import { addCommitteeMember, createCommittee, deleteCommittee, removeCommitteeMember, saveMemberLegalName, updateCommittee } from "../../committees/actions";
+import { LEGAL_NAME_LABEL } from "@/lib/procurement/legal-names";
+import { memberLegalNamesFor } from "@/lib/procurement/legal-names-server";
 
 type Project = typeof projects.$inferSelect;
 const egp = (n: number) => formatMoney(n, "EGP");
@@ -34,6 +36,7 @@ export async function CommitteesTab({ project, me }: { project: Project; me: Cur
       .orderBy(desc(approvalRequests.id))
     : [];
   const approved = projectOffers.filter((o) => o.offer.status === "AWARDED" && o.offer.awardApprovedOn);
+  const arabic = await memberLegalNamesFor(committees.flatMap((c) => c.members.map((m) => m.id))); // wave 38
 
   return (
     <div className="space-y-5">
@@ -92,7 +95,17 @@ export async function CommitteesTab({ project, me }: { project: Project; me: Cur
                 <tbody>
                   {c.members.map((m) => (
                     <tr key={m.id}>
-                      <Td>{m.name}<span className="block text-xs text-muted">{m.userId ? `${m.userEmail} · ${ROLE_LABELS[m.userRole as Role] ?? m.userRole}` : "External — no account, signs on paper"}</span></Td>
+                      <Td>{m.name}<span className="block text-xs text-muted">{m.userId ? `${m.userEmail} · ${ROLE_LABELS[m.userRole as Role] ?? m.userRole}` : "External — no account, signs on paper"}</span>
+                        {mayEdit ? (
+                          <details className="mt-1 text-xs">
+                            <summary className="cursor-pointer text-primary">{arabic.has(m.id) ? "Arabic name given · change" : "Add Arabic name for the minutes"}</summary>
+                            <ActionForm action={saveMemberLegalName} className="mt-2 flex flex-wrap items-end gap-2">
+                              <input type="hidden" name="memberId" value={m.id} />
+                              <Field label={LEGAL_NAME_LABEL}><Input name="nameAr" lang="ar" dir="rtl" className="font-arabic" defaultValue={arabic.get(m.id) ?? ""} maxLength={300} /></Field>
+                              <SubmitButton variant="secondary" className="px-2 py-1 text-xs">Save Arabic name</SubmitButton>
+                            </ActionForm>
+                          </details>
+                        ) : arabic.has(m.id) ? <span className="block text-xs text-muted">Arabic name given for the minutes</span> : null}</Td>
                       <Td>{CAPACITY_LABELS[m.capacity as Capacity]}</Td>
                       <Td>{m.votes ? (m.userId ? "In the app" : "On paper") : <span className="text-muted">Doesn&apos;t vote</span>}</Td>
                       {mayEdit && <Td align="right">
@@ -115,6 +128,9 @@ export async function CommitteesTab({ project, me }: { project: Project; me: Cur
                   </Field>
                   <Field label="Or the external member's name" hint="E.g. the Ministry of Finance representative. A procurement officer records their signature from the signed minutes.">
                     <Input name="name" placeholder="Name and organisation" />
+                  </Field>
+                  <Field label={LEGAL_NAME_LABEL} hint="As in the formation decision. Printed only on the committee minutes.">
+                    <Input name="nameAr" lang="ar" dir="rtl" className="font-arabic" maxLength={300} />
                   </Field>
                   <Field label="Capacity">
                     <Select name="capacity" defaultValue="MEMBER" options={CAPACITIES.map((k) => ({ value: k, label: CAPACITY_LABELS[k] }))} />

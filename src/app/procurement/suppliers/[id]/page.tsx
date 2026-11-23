@@ -18,6 +18,7 @@ import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
 import { seesPrices, shownMoney } from "@/lib/auth/prices";
+import { supplierLegalName } from "@/lib/procurement/legal-names-server";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
   if (!s) notFound();
   // Suppliers are shared; their offers and orders are shown only for the facilities this user can see.
   const scope = await facilityScope(me);
+  const hasArabicName = !!(await supplierLegalName(id)); // wave 38: the name itself appears only on letters
 
   const [offerRows, poRows, invites, [{ n: assetCount }]] = await Promise.all([
     db.select({
@@ -101,6 +103,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ id: s
               { label: "Address", value: s.address },
               { label: "Tax ID", value: s.taxId },
               { label: "Commercial register", value: s.commercialRegister },
+              { label: "Legal name in Arabic (for letters)", value: hasArabicName ? "Given" : <span className="text-muted">Not given</span> },
             ]} />
             {s.notes && <p className="mt-4 whitespace-pre-line border-t border-line pt-3 text-sm">{s.notes}</p>}
           </Panel>

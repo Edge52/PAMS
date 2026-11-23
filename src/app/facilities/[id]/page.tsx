@@ -153,7 +153,7 @@ async function Overview({ fac, edit, canEdit, canAddAssets }: { fac: typeof faci
             <FormGrid cols={3}>
               <Field label="Code" hint="Changing it does not re-tag existing assets"><Input name="code" defaultValue={fac.code} required className="uppercase" /></Field>
               <Field label="Name"><Input name="name" defaultValue={fac.name} required /></Field>
-              <Field label="Arabic name"><Input name="nameAr" defaultValue={fac.nameAr ?? ""} lang="ar" dir="rtl" /></Field>
+              <Field label="Legal name in Arabic (for letters)"><Input name="nameAr" defaultValue={fac.nameAr ?? ""} lang="ar" dir="rtl" /></Field>
               <Field label="Type"><NativeSelect name="type" options={enumOptions(FACILITY_TYPES)} value={fac.type} /></Field>
               <Field label="Governorate"><Input name="governorate" defaultValue={fac.governorate ?? ""} /></Field>
               <Field label="City"><Input name="city" defaultValue={fac.city ?? ""} /></Field>
@@ -171,7 +171,7 @@ async function Overview({ fac, edit, canEdit, canAddAssets }: { fac: typeof faci
           <Details items={[
             { label: "Code", value: <span className="font-mono">{fac.code}</span> },
             { label: "Name", value: fac.name },
-            { label: "Arabic name", value: fac.nameAr ? <Ar>{fac.nameAr}</Ar> : null },
+            { label: "Legal name in Arabic (for letters)", value: fac.nameAr ? <Ar>{fac.nameAr}</Ar> : null },
             { label: "Type", value: humanize(fac.type) },
             { label: "Governorate", value: fac.governorate },
             { label: "City", value: fac.city },

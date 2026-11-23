@@ -187,7 +187,7 @@ export async function runSeed(opts: { reset?: boolean; only?: string[] | null; r
     const m = (await import(policies)) as { ensureDefaultPolicies: (d: DB) => Promise<void> };
     await m.ensureDefaultPolicies(db);
   }
-  for (const name of ["users", "facility", "boq", "procurement", "assets", "cad", "lifts", "approvals", "workorders", "plan", "models", "site", "planning", "money", "commissioning", "safety", "security", "maintenance", "finance", "north", "radiation"]) {
+  for (const name of ["users", "facility", "boq", "procurement", "assets", "cad", "lifts", "approvals", "workorders", "plan", "models", "site", "planning", "money", "commissioning", "safety", "security", "maintenance", "finance", "north", "radiation", "legal-names"]) {
     if (opts.only && !opts.only.includes(name)) continue;
     const file = path.join(__dirname, "seed", `${name}.ts`);
     if (!existsSync(file)) { console.log(`${name}: no seed file yet, skipped`); continue; }

@@ -11,6 +11,14 @@ import { logActivity } from "@/lib/server-utils";
 import { changeSummary, diff } from "@/lib/audit-diff";
 import { fail, formObject, optNum, optStr, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { SUPPLIER_TYPES } from "@/lib/procurement/labels";
+import { cleanLegalName } from "@/lib/procurement/legal-names";
+import { setSupplierLegalName, supplierLegalName } from "@/lib/procurement/legal-names-server";
+
+/** Wave 38: the Arabic legal name field, checked apart from the main schema. */
+function legalNameField(fd: FormData) {
+  const r = cleanLegalName(fd.get("nameAr"));
+  return r.ok ? { value: r.value } : { error: { errors: [r.error], fields: { nameAr: r.error } } as ActionState };
+}
 
 const schema = z.object({
   name: reqStr("Enter the supplier's name", 200),
@@ -40,9 +48,12 @@ export async function createSupplier(_prev: ActionState, fd: FormData): Promise<
   await requirePermission("suppliers.edit");
   const parsed = schema.safeParse(formObject(fd));
   if (!parsed.success) return zodFail(parsed.error);
+  const ar = legalNameField(fd);
+  if ("error" in ar) return ar.error!;
   const existing = await db.select({ id: suppliers.id }).from(suppliers).where(eq(suppliers.name, parsed.data.name));
   if (existing.length) return fail(`A supplier called ${parsed.data.name} already exists.`);
   const [row] = await db.insert(suppliers).values(values(parsed.data)).returning({ id: suppliers.id });
+  if (ar.value) await setSupplierLegalName(row.id, ar.value);
   await logActivity("supplier", row.id, "created", `Supplier ${parsed.data.name} added`);
   revalidatePath("/procurement/suppliers");
   redirect(`/procurement/suppliers/${row.id}`);
@@ -52,11 +63,15 @@ export async function updateSupplier(id: number, _prev: ActionState, fd: FormDat
   await requirePermission("suppliers.edit");
   const parsed = schema.safeParse(formObject(fd));
   if (!parsed.success) return zodFail(parsed.error);
+  const ar = legalNameField(fd);
+  if ("error" in ar) return ar.error!;
   const [before] = await db.select().from(suppliers).where(eq(suppliers.id, id));
   if (!before) return fail("This supplier no longer exists.");
   const next = values(parsed.data);
-  const changes = diff(before, next);
+  const arBefore = await supplierLegalName(id);
+  const changes = diff({ ...before, nameAr: arBefore }, { ...next, nameAr: ar.value });
   await db.update(suppliers).set(next).where(eq(suppliers.id, id));
+  if (arBefore !== ar.value) await setSupplierLegalName(id, ar.value);
   if (changes) await logActivity("supplier", id, "updated", `Supplier details updated. ${changeSummary(changes)}`, undefined, db, changes);
   revalidatePath(`/procurement/suppliers/${id}`);
   redirect(`/procurement/suppliers/${id}`);

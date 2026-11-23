@@ -2,18 +2,24 @@ import { Field, FormGrid, Input, Select, Textarea } from "@/components/ui";
 import type { suppliers } from "@/db/schema";
 import type { ActionState } from "@/lib/procurement/forms";
 import { options, SUPPLIER_TYPES } from "@/lib/procurement/labels";
+import { LEGAL_NAME_LABEL } from "@/lib/procurement/legal-names";
 import { ActionForm, SubmitButton } from "./action-form";
 
 type Supplier = typeof suppliers.$inferSelect;
 
-export function SupplierForm({ action, supplier, submitLabel }: {
+export function SupplierForm({ action, supplier, submitLabel, nameAr }: {
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>; supplier?: Supplier; submitLabel: string;
+  /** Wave 38: the Arabic legal name, shown only on letters and the purchase order print. */
+  nameAr?: string | null;
 }) {
   return (
     <ActionForm action={action} className="space-y-4">
       <FormGrid cols={3}>
         <Field label="Company name" className="sm:col-span-2"><Input name="name" required defaultValue={supplier?.name} /></Field>
         <Field label="Type"><Select name="type" defaultValue={supplier?.type ?? "DISTRIBUTOR"} options={options(SUPPLIER_TYPES)} /></Field>
+        <Field label={LEGAL_NAME_LABEL} hint="As on the commercial register. Shown only on award, regret and extension letters and the purchase order." className="sm:col-span-3">
+          <Input name="nameAr" lang="ar" dir="rtl" className="font-arabic" defaultValue={nameAr ?? ""} maxLength={300} />
+        </Field>
         <Field label="Brands represented" hint="Separate with commas" className="sm:col-span-2">
           <Input name="brands" defaultValue={supplier?.brands?.join(", ") ?? ""} placeholder="Mindray, Dräger" />
         </Field>
