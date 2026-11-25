@@ -1,406 +1,386 @@
 # Hospital PAMS
 
-Hospital procurement, BOQ planning and medical asset management in one system.
+Hospital procurement, BOQ planning and medical equipment management in one web app, built for Egyptian public
+hospitals (Law 182 of 2018 on public contracting).
 
-- **Plan** — build a bill of quantities from department scope (beds, rooms) using editable equipment-ratio standards, with every quantity explained.
-- **Procure** — run a tender end to end: technical specifications, RFQs, supplier offers with line-by-line compliance, weighted technical/financial comparison, award, purchase orders and goods receipt.
-- **Track** — every device received becomes an asset with a tag, located by facility › building › floor › department › room and pinned on the floor map, with warranty, planned maintenance, movements and its full procurement trail.
+- **Plan:** build a bill of quantities (BOQ) from each department's beds and rooms, using editable equipment-ratio
+  standards. Every quantity shows how it was worked out.
+- **Buy:** run a tender from start to finish: specifications, RFQs, supplier offers with line-by-line compliance,
+  technical and financial comparison, committees, award, purchase orders, goods receipt and invoices.
+- **Run:** every device received becomes a tagged asset placed in its room. It then has planned maintenance, work
+  orders, calibration, safety and radiation records, contracts, spare parts, loans, and in the end disposal.
 
-The modules share one device classification, so a line flows from BOQ → specification → offer → purchase order → delivered asset → room on the map, and the BOQ's "plan vs installed" view closes the loop.
+One device classification runs through all of it, so a line goes from BOQ → specification → offer → purchase order
+→ delivered asset → room on the floor map and in 3D. The BOQ's "plan vs installed" view closes the loop.
 
-## Documentation
+**Contents:** [Try it](#try-it) · [Roles](#roles-and-who-sees-what) · [What it does](#what-it-does) ·
+[Rules it enforces](#rules-the-system-enforces) · [Security](#security) · [Running it for real](#running-it-for-real) ·
+[How it's built](#how-its-built) · [Working on the code](#working-on-the-code) · [Documents](#documents) ·
+[Status](#status-and-whats-left)
 
-- [System documentation (release 3.0)](docs/system-documentation.md): what the system does, roles, architecture, limitations, backlog
-- [User guide](docs/user-guide.md): everyday jobs by role
-- [Deployment and going live](docs/deploy.md) · [Reference figures](docs/reference-figures.md) · [Changelog](CHANGELOG.md) · [All documents](docs/README.md)
+---
 
-## Try it on a laptop
+## Try it
 
-Requirements: Node.js 22 or newer ([nodejs.org](https://nodejs.org), or `brew install node` on a Mac). Nothing else.
+You need Node.js 22 or newer ([nodejs.org](https://nodejs.org), or `brew install node` on a Mac). Nothing else.
 
 On a Mac, double-click **Start demo.command**. Or in a terminal:
 
 ```bash
 npm install
-npm run demo          # first run ≈ 2–3 minutes, then open http://localhost:3000
+npm run demo          # the first start builds the app: 2–5 minutes; then open http://localhost:3000
 ```
 
-Sign in with one of the demo accounts listed on the sign-in page (password `demo1234`): one per role, from
-administrator and hospital director to technician and viewer, so you can see what each role can do.
+Sign in with a demo account shown on the sign-in page (password `demo1234`). There is one account per role, so you
+can see what each person sees. Examples: `admin@demo.hpams`, `procurement@demo.hpams`, `finance@demo.hpams`,
+`viewer@demo.hpams`, `icu@demo.hpams` (a department head).
 
-The demo uses an embedded database (PGlite, Postgres running inside Node) in the `.pglite` folder. Stop it with Ctrl+C.
-Run it again to restart with your changes kept (later starts take seconds), or delete `.pglite` to start over.
+The demo keeps its data in an embedded database (PGlite: PostgreSQL running inside Node) in the `.pglite` folder.
+Stop with Ctrl+C. Starting again keeps your changes and takes seconds; delete `.pglite` to start over. After a
+`git pull`, the next start rebuilds the app and applies any database changes on its own.
 
-To use it for real on one laptop, double-click **Start Hospital PAMS.command** (or `npm run local`): it starts empty
-except for the device catalogue, BOQ standards and default approval rules, asks you to create the administrator, and
-keeps your data in `.pglite-data`. For a team, run it on a server: see [docs/deploy.md](docs/deploy.md).
+**For real use on one laptop:** double-click **Start Hospital PAMS.command** (or `npm run local`). It starts empty
+apart from the device catalogue, BOQ standards and default approval rules. It asks you to create the first
+administrator and keeps the data in `.pglite-data`. For a team, run it on a server: see
+[Running it for real](#running-it-for-real).
 
-## Users, roles and approvals
+---
 
-Everyone signs in. A role decides what a person can change; everyone can read.
+## Roles and who sees what
+
+Everyone signs in. A role decides what a person can change. Users can be limited to some hospitals (facilities).
 
 | Role | Can change |
 |---|---|
-| Administrator | everything, plus users and settings |
-| Director (competent authority) | approves awards, high-value POs and BOQs |
-| Procurement officer | projects, specs, RFQs, suppliers, offers, award recommendations, POs, receiving, service contracts |
-| Finance | approves POs above the finance threshold |
-| BOQ planner | BOQs and BOQ standards |
-| Biomedical engineer | assets, maintenance, work orders (assigns jobs), spare parts, recalls, service contracts, disposals, facilities and rooms, catalogue and PPM checklists, specs, BOQs, receiving |
-| Technician | asset moves, maintenance records, working on assigned jobs and booking parts to them |
-| Department head, Viewer | read only, plus reporting a fault |
+| Administrator | Everything, plus users, settings, approval rules, backups |
+| Director (competent authority) | Approves awards, high-value purchase orders, BOQs and disposals |
+| Procurement officer | Projects and tenders, specs, RFQs, suppliers, offers, award recommendations, POs, receiving, service contracts, invoices |
+| Finance | Budgets, exchange rates, invoices (approve, record payment, delay penalties) |
+| BOQ planner | BOQs, BOQ standards, room kits |
+| Biomedical engineer | Assets, maintenance, work orders, spare parts, recalls, calibration, radiation safety, service contracts, disposals, facilities and rooms, the catalogue |
+| Technician | Moving assets, maintenance records, working on assigned jobs, booking parts |
+| Department head, Viewer | Read only, plus reporting a fault |
 
-Everyone signed in can **report a fault** (from the device page, or by scanning its QR label).
+**Supplier prices are confidential.** Offers, prices, order values, budgets, framework agreements, invoices and the
+spend reports are only for Administrator, Director, Procurement and Finance. Everyone else sees tenders and orders
+(items, quantities, dates, status) with "Hidden" in place of the money.
 
-Users can be limited to some facilities. Purchase orders, BOQs and awards go through approval chains set under
-**Administration › Approval rules & settings**. Tender committees follow Egypt's public contracts law (Law 182/2018):
-envelope-opening and adjudication committees, required Ministry of Finance and State Council members above the value
-thresholds, award approved by the competent authority, and the complaint window after notification.
+**Anyone signed in can report a fault**, from the device's page or by scanning its QR label.
 
-## Biomedical engineering
+**Separation of duties:** whoever submits something for approval can't decide it. An invoice needs three people: one
+records it, another approves it, a third records the payment.
 
-Under **Assets** (release 2.2 / wave 3):
+---
 
-- **Work orders** (`/assets/work-orders`): anyone reports a fault from the device page or its QR label (phone friendly).
-  The biomedical engineer assigns the job; the technician starts, puts on hold, completes (with the work done, the parts
-  used and the downtime) and the engineer closes it. Response targets by priority, downtime, KPIs (open jobs, overdue,
-  mean time to repair, uptime) and the effect on the device's status (a critical fault takes it out of service until
-  repaired). Completing a job writes the maintenance record, so history and the next PPM date stay in one place.
-- **Planned maintenance with checklists**: each device type has a PPM checklist (edited on its catalogue page,
-  inherited from its group or category, or a built-in default). "Create PPM jobs" turns due visits into work orders that
-  carry the checklist; completing one records every check (pass, fail, measured value).
-- **Service contracts and warranty claims** (`/assets/contracts`): which devices a contract covers, its dates, response
-  time and value. Every job shows whether the device is under warranty, under contract or not covered, with the claim
-  status and reference. Contracts ending within 60 days raise a notification.
-- **Spare parts** (`/assets/parts`): stock per hospital with minimum levels, receipts, issues to jobs and adjustments.
-  Stock never goes below zero; crossing the minimum notifies the biomedical team; parts costs add up on each job.
-- **Recalls and field safety notices** (`/assets/recalls`): match the affected devices by type, maker, model and serial
-  numbers or serial ranges (`SN1000 to SN1999`), raise inspection jobs, notify the biomedical team and department
-  heads, show the pending devices in 3D, and track each device to actioned or not affected.
-- **Disposal** (`/assets/disposals`): request, approval by the director (an approval rule you can change), then the
-  disposal record (method, certificate). The device is condemned on approval and disposed when recorded.
-- **Replacement plan** (`/assets/replacement`): devices scored 0–100 by age against service life, repair cost,
-  failures, downtime, criticality and condition (an open recall adds to it); selected devices become a draft BOQ for
-  their replacement.
-- **Capital plan** (`/assets/capital-plan`): every device placed in the year it should be replaced (by score, life and
-  the maker's end of support), costed per department and year against a budget, with a year's list turned into a BOQ.
-- **Imaging use** (`/assets/imaging`): monthly exams per scanner (entered or pasted from the RIS) against a planning
-  capacity, uptime, exams per hour of uptime, exams lost to downtime, and ready-made lines for tender justifications.
-- **Contract performance**: response, repair and uptime terms with penalties on each service contract, and a printable
-  monthly statement with the penalty due.
-- **Will it fit?** Site planning data on each make and model (footprint, service space, ceiling, door, floor load,
-  services, MRI 5 gauss line) checked against a room's survey in the 3D view, with a printable site readiness sheet.
-  Typical values to start from are marked as typical until replaced from the manufacturer's site planning guide.
-- **Device performance and cost**: on each asset page — uptime, failures, mean time between failures and to repair,
-  maintenance and parts cost against the purchase price.
+## What it does
 
-## Money and tender law (wave 10)
+The menu is grouped into modules (Dashboard › All modules). The main pages are listed below.
 
-- **Budgets** (`/procurement/budgets`), **supplier invoices** with three-way match and a finance CSV export
-  (`/procurement/invoices`), **framework agreements** with call-off POs (`/procurement/frameworks`).
-- **Supplier scorecards**, and **delivery, installation and acceptance** checklists that start the warranty.
-- Each tender's **Tender** tab: one or two envelopes with sealed prices, bonds, printable committee minutes, the
-  technical evaluation sheet and validity extension letters.
+### Planning: BOQs (`/boq`)
 
-## Operations (wave 12)
+- **Quick start:** answer planning questions (beds, theatres, imaging rooms, throughput), or start from a hospital
+  template, and get a full BOQ by department.
+- **Standards and ratios:** equipment per bed, per room, per department or per hospital, with conditional rules,
+  workload (throughput) rules and companion items. Each rule is sourced and editable (`docs/boq-standards.md`).
+- **Every quantity explained:** the BOQ shows the rule and the numbers behind each line. Hand-typed changes survive
+  regeneration.
+- **Checks:** fit to budget, benchmarks, risks, room requirements and room standards, cost of ownership, phasing.
+- **Room kits:** standard equipment sets per room type.
+- **Excel export**, versions, approval, and "plan vs installed" once equipment arrives.
 
-- **My department** and **equipment requests** (into the capital plan and a BOQ); **rounds and stock-take** on a
-  phone that work without signal; **maintenance budget**; **room data sheets**; room outlines in the layout editor;
-  moves between floors on the map; clean and dirty route checks.
-- Administration: **audit log** with export and **backups** with restore checks.
+### Procurement and tenders (`/procurement`)
 
-## Access and assistant (wave 13)
+- **Projects and tenders:** the procurement method (public, limited, local or two-stage tender, public or limited
+  practice, direct agreement, framework call-off), with the reason for anything but a public tender. Also a
+  **timetable** of planned and actual dates for each step. The app fills in the dates it already knows, checks the
+  minimum periods and alerts when a step is overdue.
+- **Technical specifications** built from the catalogue's spec templates.
+- **RFQs** raised from a BOQ (items and quantities frozen when the RFQ is created), with invited suppliers.
+- **Clarifications and addenda:** bidder questions and answers, and numbered addenda that can move the closing date.
+  A printable "notice to all bidders" never names who asked.
+- **Offers:** line by line, with compliance against every spec item. Bids can be imported from an Excel template
+  that the app generates per supplier and checks before saving.
+- **Two-envelope tenders:** prices stay sealed on every page until the financial envelopes are opened.
+- **Comparison:**
+  - weighted technical and financial scores
+  - several lines of one item added together
+  - partial bids marked "not ranked"
+  - the lowest single award priced at the required quantities
+  - landed cost by Incoterm (freight, insurance, duty, clearance, local delivery)
+  - cost of ownership
+  - prices converted at the tender's price-opening date
+  - downloadable as Excel
+- **Committees (Law 182):** envelope-opening and adjudication committees, with a Ministry of Finance member and a
+  State Council member required above the value thresholds. Minutes are generated with each member's Arabic legal
+  name.
+- **Award:** a recommendation goes to the competent authority, and only one offer per tender can hold the award.
+  The complaint window and acceptance dates follow. The app prints the **award and regret letters**.
+- **Purchase orders:** from the awarded offer (adding up to the offer total to the cent) or from a framework
+  call-off within its limits. Approval chains by value, then issue and print.
+- **Goods receipt:** each unit received becomes a tagged asset, linked to its PO line, supplier, cost and warranty.
+- **Suppliers:** contacts, documents with expiry dates, ratings, and their Arabic legal name for letters.
+- **Framework agreements:** agreed prices and limits; call-offs are checked against the item maximum and the ceiling.
 
-- Department heads edit pathways and room zones for the departments they look after.
-- Optional **Supabase**: hosted database over SSL, and *Sign in with Microsoft / Google* matched to PAMS users by email
-  (`docs/deploy.md`).
-- Optional **assistant** (`/assistant`, off by default): answers from PAMS data within each person's permissions and
-  drafts specifications and letters; needs `ANTHROPIC_API_KEY`.
+### Money (`/procurement/budgets`, `/procurement/invoices`, `/procurement/exchange-rates`)
 
-## Planning and opening (wave 14)
+- **Budgets** by budget year (July–June by default: "FY 2026/27"), showing committed and spent. Paid invoices still
+  count as spent if their PO is cancelled, and a PO closed short releases what wasn't delivered.
+- **Exchange rates:** Finance records the Central Bank rate of each currency by date. Offers convert at their
+  opening date, orders at their order date and purchases at their purchase date. Rates older than a month are
+  flagged.
+- **Invoices** with a three-way match (order, delivery, invoice), approval, payment, and the **late-delivery penalty**
+  (a weekly rate up to a cap, on the late items only). There's a CSV export for finance.
 
-- **Queue simulation** of the published pathways (`/flows/simulate`): waits and queues for rooms, scanners, beds,
-  porters and lifts hour by hour, over a day or a week, with what-if capacities.
-- **Commissioning** (`/assets/commissioning`): a new building or wing room by room from handover to acceptance, as a
-  curve, a Gantt (also on the project) and a week slider in 3D.
-- **Room standards** (`/facilities/room-standards`): the data sheet per room type, checked against each room. Since
-  wave 16 each is a room template with the equipment it needs (and clearances) and a minimum clear width.
-- Backups from the page on PostgreSQL too; the assistant keeps chats and downloads answers as Word files.
+### Assets and maintenance (`/assets`)
 
-## Wave 15
+- **Asset register:** sortable, with a column chooser. Filter by hospital, department, room, type, status or PO, and
+  print QR labels for the selected devices. Each device page shows its whole history.
+- **Scan a label:** the phone camera, a hand scanner, or typing the tag. Labels open the device by its tag.
+- **Work orders:** report a fault, assign, work, complete and close. Downtime is recorded, with overlapping jobs
+  counted once.
+- **Planned maintenance (PPM):** schedules by type or by usage, checklists, compliance, risk-based strategy
+  (run-to-failure types get no PPM), and the maintenance budget.
+- **Service contracts:** response and repair times, uptime guarantees with **covered hours** (for example Sun–Thu
+  08:00–20:00, not on public holidays) and penalties. Monthly statements are worked out in covered hours.
+- **Calibration** of clinical devices: interval by type or device, certificates, due and failed lists, compliance.
+  A device that fails calibration stays out of service until it passes.
+- **Safety tests** (electrical safety), **recalls**, **incidents**, **device security**, **user training**.
+- **Spare parts:** stock that never goes below zero, booked to jobs, with reorder alerts.
+- **Loans and rentals**, **equipment requests**, **rounds and stock-take**, **disposals** (with approval).
+- **Fleet and standardisation**, the **replacement plan** (score by age, downtime, cost and support), the **capital
+  plan** by budget year with book values, and commissioning and acceptance of new equipment.
 
-- **BOQ › Checks › Room standards**: the linked departments' rooms against their room standards (area, ceiling,
-  door, floor load, power, medical gas outlets, shielding), per department.
-- The room survey records **medical gas outlets**.
-- **Queue simulation**: staff on duty, opening hours, appointment books, moving a step to another floor as a
-  what-if, and **saved scenarios**.
-- **Renders**: more detailed furniture and equipment, still built in code.
+### Imaging and radiation safety
 
-## Wave 16
+- **Imaging use:** exams per device. Daily exam counts can be imported from the RIS/PACS export (by device tag or AE
+  title) and feed usage-based maintenance.
+- **Radiation safety** (`/assets/radiation`), per hospital:
+  - ENRRA licences per room or device
+  - physicist QC tests
+  - staff dosimetry readings against the dose limit
+  - lead apron and other protective checks
+  - a status for each room: in order, due soon or action needed
+- **MRI cryogen log:** helium, pressure, cold head and compressor readings, with alerts when helium is low or falling
+  fast, a reading is missing, or the cold head stops.
+- **X-ray and CT tubes:** counter readings, warranty, expected life, a forecast replacement date and replacement
+  history.
 
-- **3D view**: Imaging and ICU presets; detailed equipment and illustrative furniture in the live view; History replays
-  each device's status on a past day (stored daily from the hourly job, the past year rebuilt from downtime).
-- **Drawing quality** (`/facilities/[id]/drawing-quality`): a score per floor, issues by room, and each room's
-  source and confidence (from the drawing, assumed, verified on site); shown in 3D under View › Drawing confidence.
-- **CAD import**: DWG or DXF, layer rules and symbol rules per building, symbols (equipment, furniture, fittings, gas
-  outlets) read into rooms, dimension check (`tools/cad/README.md`).
+### Facilities, floor map and 3D (`/facilities`, `/assets/map`, `/assets/3d`)
 
-## Finding things and keeping the register tidy
+- **Facilities:** buildings, floors, departments and rooms, imported from CAD drawings (DWG → building file;
+  `tools/cad`) or drawn by hand.
+- **Floor map:** devices pinned in their rooms.
+- **3D view** of the whole building:
+  - layers for problems, downtime, PPM and warranty
+  - furniture and equipment models
+  - saved views
+  - the nearest working device, with a walking route
+  - a history replay of device status, day by day
+  - walk mode
+  - photo-style floor renders and a printable floor book
+  - presets for Imaging and ICU
+- **Room standards, pathways, analysis and a porter simulation** for planning patient and equipment flows.
 
-- **Search** (box at the top of every page): equipment by tag, serial number, maker, model or tag; device types; makes
-  and models; rooms; departments; work orders; suppliers, tenders and purchase orders; BOQs — only what your role and
-  hospitals allow.
-- **Makes and models** (**Device catalogue › Makes and models**): the brands and models of each device type, with a
-  reference price, end of sale and end of support. One click adds every make and model already typed into the
-  register. Equipment forms offer them as you type, so a model is always spelt the same way, and each asset shows its
-  model's support status.
-- **Fleet and standardisation** (`/assets/fleet`): per device type, how many makes and models the hospital runs, the
-  share on the most common model, units out of maker support or with no model recorded, and the hospital's
-  **preferred model** (set here, with the reason).
-- **Tags**: free labels on any asset (e.g. *loan*, *teaching*, *donated*), edited on the asset page; click a tag to list
-  every asset that has it, or filter the register with it.
-- **Executive summary** (**Reports › Executive summary**): one printable page per hospital — what needs attention first,
-  equipment availability and value, maintenance response and repair times, overdue maintenance, maker support,
-  contracts, warranties, deliveries and approvals. Print it or save it as a PDF.
+### Across the app
 
-## 3D view and CAD import
+- **Approvals** (`/approvals`): one inbox for POs, BOQs, awards and disposals, with rules by value and type, paper
+  signatures recorded when needed, and a repair pass that re-applies an approval whose effect was lost.
+- **Notifications:** an hourly run covers warranty, PPM, calibration and safety tests due, licences expiring,
+  contracts, stock, recalls, loans, tender steps overdue, budget use, backups and more. They arrive in the app, and by
+  email if it's set up.
+- **Reports** (`/reports`): register, maintenance, compliance, book value, purchase orders, spend, service cost, and
+  others. Each exports to Excel. There's also an **executive summary**.
+- **Search** across devices, rooms, suppliers, POs and tenders. **Assistant:** answers questions from the app's data.
+  It needs an Anthropic API key and is limited per person per hour.
+- **Dark mode:** in the user menu under Look, with Light, Dark or Same as my device. Letters and labels always print
+  light.
+- **Administration:** users and roles, approval rules and settings (thresholds, delay penalties, landed-cost defaults,
+  tender minimum days, budget year start, sign-in rules), the audit log, and backups.
 
-**Assets › 3D view** shows a facility as an interactive 3D building with every registered device in its room. It works
-for any facility; floors imported from CAD show the real walls, doors, glazing and columns. What it does:
+The English interface is the rule. Arabic appears only in formal documents: letters, minutes and the PO print carry
+the Arabic legal names of the hospital, suppliers, committee members and devices.
 
-- **Look around**: rotate, zoom, spread the floors apart, isolate a floor, filter by equipment type or status, search a
-  device and fly to it. Faults pulse in amber and red.
-- **Two looks** (under **View**, remembered in your browser): the glowing *digital twin*, and a light *architectural*
-  style with solid walls, floor slabs and pastel department colours that reads well in presentations and printouts.
-- **Readable from afar**: over the whole building walls are drawn low (a cutaway), so each floor reads as a plate of
-  coloured departments, with floor names beside the model and department names on the floors; basements fold away
-  unless you switch them on. Choose a floor and zoom in for full-height walls, doors, columns and room names.
-- **Devices**: close up, life-size models (bed, monitor on a pole, ventilator cart, scanner with its table, pump on an
-  IV pole) standing on a ring in their status colour; from afar, glowing dots.
-- **Selection**: a selected room (or the room of a selected device) is outlined with a glowing line, and the other
-  equipment steps back.
-- **Camera presets** (under **View**): *Isometric*, *Plan* (straight down) and *Eye level* (standing in the selected room,
-  or the floor's largest room, looking along it).
-- **Section cut**: slice the building east–west or north–south and slide the cut to look inside.
-- **Solid walls**: a floor shown on its own has solid walls from floor to slab, with door openings (lintel above 2.1 m)
-  and windows (sill, glass, head) read from the drawing; surveyed ceilings show as orange outlines. Under **View**.
-- **Equipment 3D library** (Catalogue › 3D library): clear zones and service connection points per model, own
-  .glb files, shown in 3D under View › Clearance zones and connections.
-- **Space planning** (`/facilities/[id]/space`): area schedule, net-to-gross, circulation, equipment density, bed
-  places, snapshots to compare before and after.
-- **Clash check** (`/facilities/[id]/clashes`, 3D View › Clash check): placed devices against rooms, each other,
-  doors, clear zones and MRI fields; ceilings and crowded rooms for every device.
-- **Clinical flow on the model**: the queue simulation drawn on rooms, scanners and lifts; bed and stretcher
-  clearance (pinch points, corners) on bed routes, in 3D and in the pathway checks.
-- **Photoreal presentation**: textured finishes and light fittings in renders; tours saved as flythrough videos.
-- **Glass façade**: from afar, each floor is wrapped in glass traced from its rooms, with a line at every storey, so the
-  stack reads as one building. Switch it off under **View**.
-- **Heat map or blocks**: problem layers spread a soft colour from the affected rooms (stronger = worse), or show the
-  original blocks (taller = worse).
-- **Problem layers**: colour rooms or whole departments by open faults, overdue maintenance, devices past their service
-  life, downtime over 12 months, equipment value or open recalls, with a legend and the most affected places.
-- **Live**: statuses refresh every minute (and when you come back to the tab) without reloading.
-- **Act from the model**: click a device to report a fault, record maintenance, open its jobs, move it to another room
-  or set its exact spot (the same spot shows on the 2D floor map); click a room to list its equipment or add a device.
-- **Plan vs installed**: choose a BOQ of the hospital. Rooms take their department's completeness colour (complete,
-  mostly, partly, mostly missing), planned devices not installed yet show as white wireframe ghosts, and a list gives
-  the missing, delivered-not-installed and extra units per department.
-- **Nearest working device**: from any room, pick a device type ("defibrillator") and get the nearest working ones,
-  same floor first, other floors through the lifts or stairs, with the route drawn.
-- **Lifts and stairs**: stairs, lifts and service shafts (read from the room names) rise through the building.
-- **Saved views**: name a view (camera, floor, layer, filters), keep it private or share it with the team, copy a link
-  to it, or download a high-resolution image with a caption for reports and tender files.
-- **Phones and tablets**: one bottom sheet with tabs on phones; the floor a link points at loads first and the rest
-  stream in; a device that struggles switches itself to lighter graphics (no glow).
-
-Added in wave 7 (branch `wave-7`):
-
-- **Lift cores** (Facilities › Lifts): bed, public, service and AGV lifts with the floors they stop at, suggested from
-  the drawings' lift lobbies and marked *assumed* until confirmed.
-- **Walking routes**: routes follow corridors and doors on a network built from each floor's wall lines, with lifts
-  chosen by journey (beds by bed lifts) and times by pace. *Nearest working device* ranks by real walking time.
-  Openings and closures can be fixed by hand, and rooms carry an access zone (sterile and isolation rooms are closed
-  to through-traffic).
-- **Patient pathways** (Planning › Patient pathways): steps and arrows with shares, five starters, checks while you
-  edit, versions, export and import, and a canvas to arrange and draw them. In 3D: each pathway on its real route,
-  animated patients, a card with distance and time per patient, live **equipment readiness**, lift load, corridor
-  traffic and side-by-side comparison. **Analysis**: room load at the busiest hour, beds, scanners, with an Excel
-  report ([docs/pathway-analysis.md](docs/pathway-analysis.md)).
-- **Real-size equipment**: devices have a size (L × W × H) and are drawn at it; new devices are placed from a *To
-  place* list by dropping them on the plan, and any device can be dragged to another room (press and hold).
-- **Notes** on rooms, devices or spots, for a colleague, turned into a work order with a click; **live alerts** flash
-  new faults; **hover cards** sum up a room or device.
-- **Guided tours**: saved views in order with captions and timing, played full screen and shared by link.
-- **History**: replay the last 7–365 days of faults, repairs, moves and installations with a time slider.
-- **Walk mode**: first person on a floor, kept to the walkable space (keys, drag to look, or an on-screen stick).
-- **Keyboard shortcuts**: F find, 1–9 floors, 0 whole building, L look, R reset, W walk, Esc clear, ? help.
-- **Presentation renders**: furnished dollhouse images of a floor or department at up to 8K, and a floor book, with
-  installed and/or planned (BOQ) equipment, the hospital's logo, settings saved with a view, and room kits editable
-  under Planning › Room kits.
-- **Update drawings in place** (Facilities › Update drawings, or `npm run cad:update`): revised DWG exports are
-  matched by floor and room code and reviewed before anything changes; equipment and history are kept.
-
-La Plaza Hospital is imported from its DWG floor plans (`seed-data/cad/la-plaza.json`, 9 floors, 1,414 rooms with
-their real outlines, 5 m floor to floor, walls drawn 3.3 m high). Its equipment is an **illustrative fit-out generated
-from room names** (beds and monitors in ward rooms, the critical-care set in ICU bays, a CT in the CT room…), marked as
-demo data in each asset's notes, and its "equipment fit-out plan" BOQ is demo data too. Replace them with the real
-register via Assets › Import. To import new or revised drawings, see `tools/cad/README.md`.
-
-## Planning a BOQ
-
-**Planning › BOQs** builds a bill of quantities from department scope with editable equipment-ratio standards; every
-quantity shows its calculation.
-
-- **Quick start** (`/boq/quick-start`): answer a few questions — hospital type (general, specialised, teaching, women
-  and children) and ownership, beds (ICU, CCU, NICU and isolation pre-filled from the template), services (emergency,
-  theatres, cath lab, CT, MRI, dialysis chairs, deliveries a year, clinics…), special conditions (trauma centre,
-  teaching, oncology, transplant…), price tier and target budget — and review the priced BOQ before creating it.
-- **Workload sizing**: departments answer planning questions (CT and MRI exams a year, deliveries, dialysis chairs…)
-  and rules can size equipment from them ("1 CT per 15,000 exams a year"). An answer of 0 means none is planned.
-- **Conditional rules**: extra equipment only when the hospital has a special condition (e.g. trauma centre: a dedicated
-  trauma CT and rapid infusers), with the condition named in the line's explanation.
-- **Companion items**: equipment that comes with another (a CT brings its injector, a delivery bed its CTG and infant
-  warmer), topped up to what the department lacks.
-- **Price tiers and scenarios**: the BOQ priced at basic, standard and premium side by side against the target budget;
-  the tier can be set for the BOQ, a department or one line. Repricing never overwrites a price typed by hand.
-- **Checks** tab: **risk flags** (one CT and no backup, ICU short of ventilators, critical areas without monitors or a
-  defibrillator, essential items removed, over budget, unpriced lines, a life-critical fleet from a single maker),
-  **fit to budget** (drops optional items, then moves recommended lines to a lower price tier, biggest saving first;
-  essential lines and hand-typed prices are never touched; you review the list before applying it), **room
-  requirements** (CT, MRI, angiography, X-ray rooms, theatres… checked against the real room areas from the floor
-  plans, with shielding, power, HVAC and floor-load notes) and **benchmarks** (planned density per bed, room or 100
-  hospital beds against reference ranges).
-- **Phasing & costs** tab: departments open in up to four phases; a cash flow by quarter (an advance with the order,
-  ordered ahead by device lead time, the rest on delivery) and the 5- and 10-year cost of ownership (maintenance,
-  consumables, energy, replacements) with the devices that cost more to run than to buy.
-- **Plan vs installed** tab, approvals, versions and Excel export as before.
-
-The quick-start reference figures (`seed-data/boq-quickstart.json`: workload rates, conditional rules, companions),
-the benchmark ranges (`src/lib/boq/benchmarks.ts`), the running-cost rates (`src/lib/boq/tco.ts`), room requirements
-(`src/lib/boq/room-requirements.ts`) and lead times (`src/lib/boq/phasing.ts`) were **checked against published sources** in wave 6:
-see [docs/reference-figures.md](docs/reference-figures.md) and the review sheet `docs/reference-figures-review.xlsx`
-(`npm run reference:sheet` rebuilds it). Figures marked *judgement* still need your biomedical team's confirmation.
-
-## Updating an existing installation
-
-Pull the new code, run `npm install`, then `npm run db:migrate` (adds the new tables and columns; your data is kept).
-`npm run demo` does this by itself and adds any new demo data. Migrations so far: up to `0023_wave7_room_kits` (wave 7: `0016`–`0023`).
-
-For a real installation, load the hospital's floors and rooms from its CAD import **without** demo equipment with
-`npm run cad:load` (on the Docker server: `docker compose exec app npx tsx scripts/load-buildings.ts`). The going-live
-checklist, including the hospital's own email, is in [docs/deploy.md](docs/deploy.md#going-live-at-a-hospital-la-plaza-pilot).
-
-## Run it locally with PostgreSQL
-
-Requirements: Node.js 22+, PostgreSQL 15+.
-
-```bash
-npm install
-createdb hpams                                  # or create the database any way you like
-cp .env.example .env                            # set DATABASE_URL
-npm run db:migrate                              # create tables
-npm run db:seed                                 # reference data + demo hospital, BOQ, tenders and 366 assets
-npm run dev                                     # http://localhost:3000
-```
-
-If `DATABASE_URL` is not set, the app uses the embedded database in `.pglite` instead.
-
-`npm run db:reset` wipes everything and reseeds. `npm run db:reset -- --only=none` loads only the reference data
-(device catalogue, department types, BOQ standards, exchange rates) for a clean start with your own hospital.
-
-The demo data uses real manufacturer brand and model names, but its compliance answers, prices and serial numbers are
-invented for demonstration.
-
-## Deploy
-
-The simplest server setup is Docker: `cp .env.example .env`, set `DOMAIN` and `POSTGRES_PASSWORD`, then
-`docker compose up -d --build`. That runs the app, PostgreSQL, automatic HTTPS and daily backups. Full guide, restore
-steps and a no-Docker route: [docs/deploy.md](docs/deploy.md).
-
-### Settings (`.env`)
-
-| Variable | Default | What it does |
-|---|---|---|
-| `DATABASE_URL` | — | Postgres connection string (required). |
-| `APP_URL` | address used to print | Public address of the app; QR asset labels link here. Set it in production. |
-| `NEXT_PUBLIC_APP_TIME_ZONE` | `Africa/Cairo` | Time zone for "today", due dates and default dates. |
-| `UPLOAD_DIR` | `./storage/uploads` | Where uploaded files are kept. Use a persistent volume and back it up with the database. |
-| `COOKIE_SECURE` | on when `APP_URL` is https | Marks sign-in cookies Secure. |
-| `SMTP_URL`, `MAIL_FROM` | — | Email for notifications (also switch email on in settings). |
-
-### Uploaded files
-
-Quotations, datasheets, certificates, PO scans and floor plans are stored outside the web root and served by `/files/…`
-(`src/lib/storage.ts`). Only an allow-list of types is accepted (PDF, PNG/JPEG/WebP/GIF, Word, Excel, PowerPoint, CSV, text,
-ZIP, DWG/DXF, email). Anything that isn't a PDF or image downloads instead of opening, and no uploaded file can run script
-in the app. Floor plans must be raster images. Export PDF or SVG drawings to PNG first. Moving to S3-compatible storage
-only touches `src/lib/storage.ts` and the `/files` route.
-
-### Before going live
-
-- Follow the checklist in [docs/deploy.md](docs/deploy.md): HTTPS, demo accounts off, one account per person, backups
-  copied off the server.
+---
 
 ## Rules the system enforces
 
-- **BOQ:** every quantity shows its calculation. Manual overrides survive regeneration. Per-hospital-bed and fixed
-  quantities are placed once per BOQ, on the main department of that type, not repeated per department. Approved BOQs
-  are locked (make a new version). A BOQ that RFQs were raised from can't be deleted.
-- **Tenders:** an RFQ freezes its items and quantities when created, so later BOQ changes don't change what suppliers
-  were asked to quote. Comparison converts every offer to the project currency with the stored exchange rates. A line
-  failing a mandatory spec item is non-responsive and counts as 0 in the offer's combined score. Awarding such an offer
-  needs a written justification. Rejections need a reason. Once an offer is awarded its prices and compliance are locked,
-  and an award can't be revoked while a purchase order raised from it is live.
-- **Receiving:** you can't receive more than was ordered. A serial number can only exist once in the whole system.
-  Every received unit becomes a tagged asset linked to its PO line, delivery, supplier, cost and warranty.
-- **Assets:** assets, rooms and departments can only be linked within the same facility. A room or department that still
-  holds equipment can't be deleted. Every move is recorded.
-- **Work orders:** each step is allowed only from the right status and for the right role (report: everyone; assign:
-  biomedical; work the job: maintenance). A job can't be closed before it is completed, and a device with open jobs
-  can't be disposed. Reopening a PPM job puts its visit back on the schedule.
-- **Spare parts:** stock only changes through recorded movements, atomically, and never below zero.
-- **Disposal:** needs approval (director by default) before it can be recorded.
-- **BOQ fit to budget:** the proposal is worked out again on the server when applied; essential lines and hand-typed
-  prices are never changed, and every change is logged.
+- **BOQ:**
+  - Hand-typed quantities and prices survive regeneration.
+  - An approved BOQ is locked; make a new version to change it.
+  - A BOQ used for an RFQ can't be deleted.
+- **Tenders:**
+  - An RFQ freezes its items when created.
+  - A line failing a mandatory spec item is non-responsive.
+  - Rejecting an offer needs a reason, and awarding a non-compliant offer needs a written justification.
+  - Prices are sealed until the financial opening in two-envelope tenders.
+  - An awarded offer is locked, and an award can't be revoked while a live PO depends on it.
+  - There is one award per tender.
+- **Money:**
+  - An invoice can only hold lines of its own PO.
+  - You can't order, receive or invoice more than allowed. These checks are safe when two people act at once.
+  - Amounts with no exchange rate are listed, never counted as 0.
+- **Assets:**
+  - Each serial number exists once.
+  - Assets, rooms and departments link only within one hospital.
+  - Every move is recorded.
+  - A condemned device, or one that failed calibration, can't be put back in service by closing a job.
+- **Work orders:** each step is allowed only from the right status and role. A device with open jobs can't be
+  disposed.
+- **Database checks** refuse negative money, zero quantities, receiving more than was ordered, and negative stock.
 
-## Known limitations
+## Security
 
-- Rooms drawn by hand on the floor map are rectangles; rooms imported from CAD keep their real outlines. Moving an
-  asset to another floor is done from its page, not by dragging on the map.
-- Maintenance and parts costs are totalled per device and per job, but there's no maintenance budget view yet.
-- One contact per supplier (extra contacts go in notes).
-- "Nearest working device" distances are straight lines inside a floor plus a fixed cost per storey through the
-  nearest lift or stairs, not a walk along the corridors.
-- Lifts and stairs are recognised from room names ("Stair 3", "Elevator lobby"); lift shafts not drawn as rooms
-  don't show.
-- The planning reference figures listed under "Planning a BOQ" are drafts awaiting review.
+- **Passwords and two-step sign-in:**
+  - Passwords are hashed.
+  - Two-step sign-in (codes from a phone app) can be required by role; the wrong-code limit carries over between
+    sign-ins.
+  - Two-step secrets are stored encrypted when `APP_SECRET` is set.
+- **Microsoft and Google sign-in** (through Supabase): optional. It also requires the two-step code, needs a
+  verified email, and is linked to the person's own account at the first sign-in.
+- **Attacks and leaks:**
+  - Sign-in attempts are throttled per account and per address.
+  - Security headers include a strict content security policy.
+  - CSV exports are safe to open in Excel.
+  - File paths are checked.
+  - The assistant treats pasted text as data.
+- **Audit log** of who did what; IP addresses come from the proxy, not from the browser.
+- **Backups** are readable by the app only, and the first-administrator setup needs `SETUP_CODE` on a server.
 
-## Where things live
+---
+
+## Running it for real
+
+### One server with Docker (recommended)
+
+```bash
+cp .env.example .env      # set DOMAIN, POSTGRES_PASSWORD, SETUP_CODE, APP_SECRET (and SMTP for email)
+docker compose up -d --build
+```
+
+This runs the app, PostgreSQL 16, Caddy (automatic HTTPS for your domain) and a nightly backup job. On first visit
+the app asks for `SETUP_CODE` and creates the first administrator. Full steps, Supabase, and going live:
+[docs/deploy.md](docs/deploy.md).
+
+**Main settings** (`.env`; every option is listed in `.env.example`):
+
+| Setting | What it does |
+|---|---|
+| `DOMAIN`, `APP_URL` | The site's address (labels and emails link to it) |
+| `POSTGRES_PASSWORD` or `DATABASE_URL` | The database |
+| `SETUP_CODE` | Asked for when creating the first administrator |
+| `APP_SECRET` | 32+ random characters; encrypts two-step secrets. Keep a copy with the backups and never change it |
+| `SMTP_URL`, `MAIL_FROM` | Email for notifications |
+| `TRUST_PROXY`, `COOKIE_SECURE` | Set behind the Caddy proxy (done in docker-compose) |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_PROVIDERS`, `SUPABASE_AZURE_TENANTS` | Microsoft/Google sign-in |
+| `ANTHROPIC_API_KEY` | The assistant |
+| `BACKUP_KEEP_DAYS`, `MIGRATE_BACKUP` | How long backups are kept; the safety copy before database changes |
+| `NEXT_PUBLIC_APP_TIME_ZONE` | Defaults to Africa/Cairo |
+
+**Backups:** every night the job writes a verified database dump and an archive of uploaded files to `./backups`,
+keeping 14 days, and removes old copies only after a good run. Administration › Backups shows them, makes one now,
+runs a restore check, and alerts administrators when the nightly backup fails or is over two days old.
+
+**Updating:** `git pull`, then `docker compose up -d --build`. Database changes apply on start, under a lock and
+after a safety copy. Reference data (catalogue, standards) is only ever added on start, so your edits survive.
+
+### Without Docker
+
+Point `DATABASE_URL` at PostgreSQL 15 or newer (or Supabase), then:
+
+```bash
+npm ci && npm run build
+npm run db:migrate && npx tsx scripts/seed.ts --only=none   # database and reference data
+npm start
+```
+
+---
+
+## How it's built
+
+| Part | Technology |
+|---|---|
+| App | Next.js 16 (App Router, server components and server actions), React 19, TypeScript (strict) |
+| Look | Tailwind CSS v4 with colour tokens (light and dark), the app's own components (`src/components/ui`) |
+| Database | PostgreSQL 16 via Drizzle ORM; PGlite for the laptop and demo |
+| 3D | three.js |
+| Files | exceljs (Excel), qrcode (labels), nodemailer (email) |
+| Tests | Vitest (unit and database tests on PGlite), Playwright (page check) |
+
+### Where the code lives
 
 | Path | What |
 |---|---|
-| `src/db/schema.ts` | The whole data model (Drizzle). Change it, then `npm run db:generate` and `npm run db:migrate`. |
-| `seed-data/device-taxonomy.json` | Device classification (category › group › device type) with life, maintenance interval, price range, spec template. See `docs/taxonomy.md`. |
-| `seed-data/boq-standards.json` | Equipment ratio standards per department type, with sources. See `docs/boq-standards.md`. Editable in the app under Planning › Standards & ratios. |
-| `seed-data/department-types.json` | Department vocabulary (ICU, OR, RAD…) with Arabic names. |
-| `src/app/procurement`, `src/lib/procurement` | Projects, suppliers, specs, RFQs, offers, comparison, POs, goods receipt. |
-| `src/app/boq`, `src/lib/boq` | BOQ engine, builder, standards editor, Excel export. |
-| `src/app/assets`, `src/app/facilities`, `src/app/catalogue`, `src/lib/assets` | Asset register, floor map, maintenance, facilities and room layout, device catalogue. |
-| `src/components/assets/twin` | The 3D view (three.js scene, HUD, problem layers, saved views, nearest-device routing). |
-| `src/lib/assets/work-orders.ts`, `checklists.ts`, `contracts.ts`, `parts.ts`, `recalls.ts`, `lifecycle-kpis.ts`, `plan-installed.ts` | Biomedical rules (pure, unit-tested); `*-server.ts` beside them do the database side. |
-| `src/lib/boq/questions.ts`, `templates.ts`, `engine.ts`, `pricing.ts` | Quick start: planning questions, hospital templates, the BOQ engine, price tiers. |
-| `src/lib/boq/fit-budget.ts`, `benchmarks.ts`, `risks.ts`, `room-requirements.ts`, `tco.ts`, `phasing.ts` | BOQ checks and planning (pure, unit-tested). |
-| `seed-data/boq-quickstart.json` | Workload rules, conditional rules and companion items for the quick start. |
-| `src/lib/assets/models.ts`, `tags.ts`, `src/lib/search.ts`, `src/lib/reports/executive-calc.ts` | Makes and models, fleet standardisation, asset tags, global search, executive summary. |
-| `scripts/load-buildings.ts` | Loads real buildings from `seed-data/cad/` without demo equipment (`npm run cad:load`). |
-| `tools/cad`, `seed-data/cad`, `scripts/seed/cad.ts` | DWG → building pipeline, imported buildings, and their import into the system. |
-| `src/lib/asset-factory.ts` | The single place assets are created (tags, defaults, warranty). |
-| `AGENTS.md` | Engineering conventions. |
+| `src/db/schema.ts` (+ `schema-wave37-*.ts`, `schema-wave38-*.ts`) | The data model. Migrations in `drizzle/` |
+| `src/app/boq`, `src/lib/boq` | BOQ engine, builder, standards, checks, Excel export |
+| `src/app/procurement`, `src/lib/procurement` | Tenders, timetable, RFQs, offers, comparison, letters, POs, receiving, invoices, budgets |
+| `src/app/assets`, `src/lib/assets` | Register, maintenance, work orders, contracts, calibration, radiation, imaging, parts, lifecycle |
+| `src/components/assets/twin` | The 3D view |
+| `src/app/facilities`, `tools/cad`, `seed-data/cad` | Buildings, floors and rooms; the DWG import pipeline |
+| `src/lib/auth` | Sign-in, two-step, roles and permissions, who sees prices |
+| `src/lib/notifications` | Notifications and the hourly alert run |
+| `src/lib/reports` | Reports and their Excel exports |
+| `src/lib/fx.ts`, `src/lib/fiscal-year.ts`, `src/lib/format.ts` | Exchange rates by date, budget years, Cairo dates and money formatting |
+| `seed-data/` | Device taxonomy, BOQ standards, department types, quick-start rules |
+| `scripts/` | Launcher, migrate, seed (reference and demo data), backups, page check |
 
-## Tests
+---
 
-```bash
-npm run typecheck
-npm run lint
-npm test
-```
+## Working on the code
+
+Read [AGENTS.md](AGENTS.md) (strict conventions) and [docs/HANDOVER.md](docs/HANDOVER.md) first.
+
+- **How we work:** each piece of work goes on a branch (`wave-N`). Merge into `main` only after Hisham's OK.
+- **Before each commit:**
+
+  ```bash
+  npx tsc --noEmit -p .        # typecheck
+  npx eslint src scripts       # lint
+  npx vitest run               # about 1,100 tests, including database tests on PGlite
+  npm run demo                 # then, with the demo running:
+  npm run check:pages          # opens every kind of page as admin, a viewer and a department head
+  ```
+
+- **Database changes:** edit the schema, then `npm run db:generate` (creates a migration in `drizzle/`). Migrations
+  run on start.
+- **Demo data:** `scripts/seed/*.ts`. Every seed can run more than once without adding anything twice.
+- **CI** (`.github/workflows`): runs typecheck, lint and tests; migrates and seeds PostgreSQL 16; builds the Docker
+  image.
+- **Interface rules:**
+  - plain, short English, in sentence case
+  - colours only through tokens
+  - money with `formatMoney`
+  - dates in Cairo time with `todayISO`
+  - destructive actions ask first, in the shared dialog
+  - new lists use `DataTable`
+
+## Documents
+
+| Document | For |
+|---|---|
+| [docs/user-guide.md](docs/user-guide.md) | Everyday jobs, by role |
+| [docs/deploy.md](docs/deploy.md) | Servers, Docker, Supabase, backups, going live |
+| [docs/HANDOVER.md](docs/HANDOVER.md) | The current state and what's left (the working list) |
+| [docs/system-documentation.md](docs/system-documentation.md) | In-depth description at release 3.0 |
+| [docs/boq-standards.md](docs/boq-standards.md), [docs/taxonomy.md](docs/taxonomy.md) | BOQ standards and the device classification, with sources |
+| [docs/reference-figures.md](docs/reference-figures.md) | Planning reference figures awaiting review |
+| [CHANGELOG.md](CHANGELOG.md) | What each wave added |
+| [AGENTS.md](AGENTS.md) | Engineering conventions |
+
+## Status and what's left
+
+All 38 waves are in `main`, including every fix and missing feature from the wave 30 audit (waves 32–38).
+What's left needs input from the hospital or a partner, not more building:
+
+| Item | Needs |
+|---|---|
+| Go-live | The server and domain, the hospital mail server, the user list with roles; a Docker build and a load test there |
+| Real data | La Plaza's equipment register; makers' site figures; the reviewed reference figures |
+| Figures to confirm | Law 182 minimum tender periods; delay penalty and landed-cost defaults; radiation dose limits and QC intervals; MRI helium limits |
+| Microsoft/Google sign-in | A Supabase project; not yet tried with real accounts |
+| Assistant | An Anthropic API key; try real questions |
+| Integrations | The ERP and e-procurement file formats; links to the HIS and RIS (exam counts are imported from files for now) |
+| Pilots with partners | Building services (MEP) layers, BIM/IFC import, real-time location |
+
+Smaller items that could still be built: an Arabic right-to-left interface (only if the rule changes), camera
+scanning on every phone (needs a QR library), "deactivate selected" on the users list, contract response and
+repair times in covered hours, and moving the remaining lists to the shared sortable table.
