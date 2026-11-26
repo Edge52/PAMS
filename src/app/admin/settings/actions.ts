@@ -131,6 +131,8 @@ const settingsSchema = z.object({
   landedLocalDeliveryPct: num("Local delivery must be between 0 and 100 % of the price", 0, 100),
   // Wave 38: budget (fiscal) year
   budgetYearStartMonth: num("Choose the month the budget year starts in", 1, 12).int("Choose the month the budget year starts in"),
+  // Wave 40: in-house labour cost per hour (empty = not set)
+  labourRateEgp: z.preprocess((v) => (v === "" || v == null ? null : v), num("Labour cost per hour must be between 0 and 100,000 EGP", 0, 100_000).nullable()),
 });
 
 export async function saveSettings(_prev: ActionState, fd: FormData): Promise<ActionState> {

@@ -1,11 +1,12 @@
 import "server-only";
-import { and, eq, gte, inArray, isNotNull, lte, ne, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, facilities, maintenanceEvents, serviceContractAssets, serviceContracts, suppliers, workOrders } from "@/db/schema";
 import { addDays } from "@/lib/assets/dates";
 import { formatMoney, formatNumber, num } from "@/lib/format";
 import { toEgp } from "./calc";
-import { COSR_NOTE, contractShare, cosrTone, grandTotal, periodDays, rollUp, type CostLine, type CostRollup, byProvider } from "./service-cost-calc";
+import { getSetting } from "@/lib/settings";
+import { COSR_NOTE, contractShare, labourCost, labourNote, cosrTone, grandTotal, periodDays, rollUp, type CostLine, type CostRollup, byProvider } from "./service-cost-calc";
 import { EGP_NOTE, facilityCond, missingRatesNote, ratesFor } from "./shared";
 import type { Column, ReportContext, ReportResult, Row } from "./types";
 
@@ -16,7 +17,7 @@ export async function serviceCostReport({ filters: f, scope, today }: ReportCont
   const days = periodDays(from, to);
   const fac = facilityCond(assets.facilityId, f, scope);
 
-  const [devices, events, contracts] = await Promise.all([
+  const [devices, events, contracts, labourRate] = await Promise.all([
     db.select({
       id: assets.id, status: assets.status, cost: assets.purchaseCost, currency: assets.currency,
       typeId: deviceTypes.id, typeName: deviceTypes.name, typeCode: deviceTypes.code,
@@ -26,17 +27,19 @@ export async function serviceCostReport({ filters: f, scope, today }: ReportCont
       .leftJoin(departments, eq(departments.id, assets.departmentId)).leftJoin(suppliers, eq(suppliers.id, assets.supplierId))
       .where(and(fac, ne(assets.status, "IN_STOCK"))),
     // Completed maintenance and repairs in the period. A job's cost (parts included) is written to its maintenance record.
-    db.select({ assetId: maintenanceEvents.assetId, cost: maintenanceEvents.cost, currency: maintenanceEvents.currency, vendorId: maintenanceEvents.vendorId,
+    // Wave 40: jobs with labour hours count too (in-house labour × the rate), even without a cost.
+    db.select({ assetId: maintenanceEvents.assetId, cost: maintenanceEvents.cost, laborHours: workOrders.laborHours, currency: maintenanceEvents.currency, vendorId: maintenanceEvents.vendorId,
       vendor: suppliers.name, coverage: workOrders.coverage })
       .from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId))
       .leftJoin(workOrders, eq(workOrders.maintenanceEventId, maintenanceEvents.id)).leftJoin(suppliers, eq(suppliers.id, maintenanceEvents.vendorId))
-      .where(and(fac, eq(maintenanceEvents.status, "COMPLETED"), isNotNull(maintenanceEvents.cost), gte(maintenanceEvents.completedDate, from), lte(maintenanceEvents.completedDate, to))),
+      .where(and(fac, eq(maintenanceEvents.status, "COMPLETED"), or(isNotNull(maintenanceEvents.cost), isNotNull(workOrders.laborHours)), gte(maintenanceEvents.completedDate, from), lte(maintenanceEvents.completedDate, to))),
     db.select({ id: serviceContracts.id, value: serviceContracts.value, currency: serviceContracts.currency, start: serviceContracts.startDate, end: serviceContracts.endDate,
       supplierId: serviceContracts.supplierId, supplier: sql<string>`(select s.name from suppliers s where s.id = ${serviceContracts.supplierId})`,
       devices: sql<number>`(select count(*) from service_contract_assets x where x.contract_id = ${serviceContracts.id})::int` })
       .from(serviceContracts)
       .where(and(f.facilityId ? eq(serviceContracts.facilityId, f.facilityId) : scope === null ? undefined : scope.length ? inArray(serviceContracts.facilityId, scope) : sql`false`,
         lte(serviceContracts.startDate, to), gte(serviceContracts.endDate, from), isNotNull(serviceContracts.value))),
+    getSetting("labourRateEgp"),
   ]);
   const covered = contracts.length ? await db.select({ contractId: serviceContractAssets.contractId, assetId: serviceContractAssets.assetId })
     .from(serviceContractAssets).where(inArray(serviceContractAssets.contractId, contracts.map((c) => c.id))) : [];
@@ -55,7 +58,8 @@ export async function serviceCostReport({ filters: f, scope, today }: ReportCont
     const provider = e.vendorId != null ? { key: `s${e.vendorId}`, label: e.vendor ?? "Supplier", supplierId: e.vendorId }
       : contract ? { key: "covered", label: "Under a contract or warranty (company not on the job)", supplierId: null }
       : { key: "in-house", label: "The hospital's own team", supplierId: null };
-    lines.push({ assetId: e.assetId, amount: egp(num(e.cost), e.currency), source: contract ? "CONTRACT" : "IN_HOUSE", provider });
+    const amount = (e.cost != null ? egp(num(e.cost), e.currency) : 0) + labourCost(e.laborHours, labourRate, !contract);
+    lines.push({ assetId: e.assetId, amount, source: contract ? "CONTRACT" : "IN_HOUSE", provider });
   }
   for (const c of contracts) {
     const share = contractShare({ value: num(c.value), start: c.start, end: c.end, devices: c.devices }, from, to);
@@ -135,6 +139,7 @@ export async function serviceCostReport({ filters: f, scope, today }: ReportCont
       "COSR (cost of service ratio) = service cost in the period ÷ acquisition cost of the same devices. COSR per year scales the period to 12 months.",
       COSR_NOTE,
       "Service cost = completed maintenance and repairs in the period (a work order's cost includes the parts booked to it) plus each service contract's share for the period, split evenly over the devices it covers.",
+      labourNote(labourRate),
       "In-house: work by the hospital's own team. Contract and vendor: contract shares, work by an outside company, and jobs under a contract or warranty.",
       `Supplier is the company that supplied the device. Devices without a purchase cost (${formatNumber(unpriced)}) are in the service cost but not in the ratio.`,
       EGP_NOTE, missingRatesNote(missing),

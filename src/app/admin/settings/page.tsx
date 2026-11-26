@@ -174,6 +174,9 @@ export default async function SettingsPage() {
                 <Field label="Completed planned visits at least" hint="Every device of the type must have this many planned maintenance visits done.">
                   <Input type="number" min={0} max={20} name="strategyMinPpms" defaultValue={s.strategyMinPpms} />
                 </Field>
+                <Field label="In-house labour cost per hour (EGP)" hint="Used for the service cost and COSR: hours your own team books on jobs × this rate. Leave empty to leave labour out.">
+                  <Input type="number" min={0} max={100000} step="0.01" name="labourRateEgp" defaultValue={s.labourRateEgp ?? ""} />
+                </Field>
               </FormGrid>
             </fieldset>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contractShare, cosrPct, cosrTone, grandTotal, periodDays, rollUp, yearlyCosr } from "./service-cost-calc";
+import { contractShare, cosrPct, cosrTone, grandTotal, labourCost, labourNote, periodDays, rollUp, yearlyCosr } from "./service-cost-calc";
 
 describe("contract share", () => {
   it("takes the part of the contract inside the period, split per device", () => {
@@ -88,5 +88,18 @@ describe("service cost by the company that did the work (wave 29)", () => {
       { assetId: 2, amount: 500, source: "CONTRACT", provider: acme },
     ], (id) => ({ 1: 10_000, 2: null } as Record<number, number | null>)[id], 365.25);
     expect(r[0]).toMatchObject({ devices: 2, cost: 1000, acquisition: 10_000, cosr: 5 });
+  });
+});
+
+describe("in-house labour (wave 40)", () => {
+  it("counts hours × rate for the hospital's own team", () => expect(labourCost(2.5, 400, true)).toBe(1000));
+  it("is zero without a rate, without hours, or for contract and vendor jobs", () => {
+    expect(labourCost(3, null, true)).toBe(0);
+    expect(labourCost(null, 400, true)).toBe(0);
+    expect(labourCost(3, 400, false)).toBe(0);
+  });
+  it("says on the report whether labour is in", () => {
+    expect(labourNote(350)).toMatch(/is counted.*350 EGP/);
+    expect(labourNote(null)).toMatch(/not counted/);
   });
 });

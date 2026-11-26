@@ -62,6 +62,9 @@ export type Settings = {
   landedLocalDeliveryPct: number;
   /** Wave 38: month (1–12) the budget year starts in; Egypt's fiscal year starts in July (lib/fiscal-year). */
   budgetYearStartMonth: number;
+  /** Wave 40: cost of an hour of the hospital's own technicians (EGP). Null = not set: in-house labour is left out of
+   *  service cost and COSR. */
+  labourRateEgp: number | null;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -94,6 +97,7 @@ export const DEFAULT_SETTINGS: Settings = {
   landedClearancePct: 1.5,
   landedLocalDeliveryPct: 1,
   budgetYearStartMonth: 7,
+  labourRateEgp: null,
 };
 
 export async function getSettings(): Promise<Settings> {
