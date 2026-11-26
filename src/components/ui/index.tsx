@@ -37,9 +37,9 @@ export function Panel({
   return (
     <section className={cx("rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-card)]", className)}>
       {(title || actions) && (
-        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-line px-5 py-3.5">
           {title && <h2 className="text-[16px] font-semibold">{title}</h2>}
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+          {actions && <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>}
         </div>
       )}
       <div className={padded ? "p-5" : undefined}>{children}</div>

@@ -123,7 +123,7 @@ export default async function CapitalPlanPage({ searchParams }: { searchParams: 
       )}
       <ActionForm action={createReplacementBoqAction} className="mt-6">
         <Panel title={`${by.label(pick)}: ${formatNumber(yearRows.length)} devices, ${egp(yearRows.reduce((s, r) => s + (r.estimateEgp ?? 0), 0))}`}
-          actions={<span className="flex gap-2 text-sm">{years.map((y) => <Link key={y} href={q(y)} className={y === pick ? "font-semibold text-primary" : "text-muted hover:underline"}>{by.label(y)}</Link>)}</span>}>
+          actions={<span className="flex flex-wrap gap-x-2 gap-y-1 text-sm">{years.map((y) => <Link key={y} href={q(y)} className={y === pick ? "font-semibold text-primary" : "text-muted hover:underline"}>{by.label(y)}</Link>)}</span>}>
           {canBoq && yearRows.length > 0 && (
             <div className="mb-4 flex flex-wrap items-end gap-2">
               <Field label="BOQ name" className="min-w-64 flex-1"><Input name="name" defaultValue={`${fac?.name ?? ""} — capital plan ${pick}`} maxLength={200} /></Field>

@@ -4,6 +4,7 @@
  * service worker keeps the page itself, so it opens without signal. Changes go into a queue on the phone and are sent
  * when there is signal: queued → synced, or conflict when someone else changed the job meanwhile (never written over).
  */
+import { formatDate, formatDateTime } from "@/lib/format";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -122,7 +123,7 @@ export function MyJobs({ initial }: { initial: MyJobsData }) {
         {sum.queued > 0 && <Badge tone="warn">{sum.queued} waiting to send</Badge>}
         {sum.conflict > 0 && <Badge tone="danger">{sum.conflict} to review</Badge>}
         {loaded && !sum.queued && !sum.conflict && <Badge tone="ok">All sent</Badge>}
-        <span className="text-xs text-muted">Copy from {new Date(data.loadedAt).toLocaleString()}</span>
+        <span className="text-xs text-muted">Copy from {formatDateTime(data.loadedAt)}</span>
         {sum.queued > 0 && online && <button type="button" onClick={() => void send()} className="min-h-9 rounded-full border border-line bg-surface px-3 text-sm font-semibold">Send now</button>}
       </div>
 
@@ -184,7 +185,7 @@ function JobList({ title, jobs, queue, onOpen }: { title: string; jobs: OfflineJ
                 {waiting > 0 && !p.completing && <Badge tone="warn">{waiting} waiting</Badge>}
                 {p.conflicts > 0 && <Badge tone="danger">Review</Badge>}</span>
               <span className="mt-1 block text-base">{j.title}</span>
-              <span className="block text-sm text-muted"><span className="font-mono">{j.tag}</span> · {j.typeName}{j.place ? ` · ${j.place}` : ""}{j.dueAt ? ` · due ${new Date(j.dueAt).toLocaleDateString()}` : ""}</span>
+              <span className="block text-sm text-muted"><span className="font-mono">{j.tag}</span> · {j.typeName}{j.place ? ` · ${j.place}` : ""}{j.dueAt ? ` · due ${formatDate(j.dueAt)}` : ""}</span>
             </button>
           </li>
         );
