@@ -2,7 +2,7 @@
  * Data quality rules (wave 39). Pure: the page loads compact rows (bounded) and these functions say which records break
  * which rule, how serious it is, and each hospital's score. Change a rule here, with its test.
  *
- * Score per hospital = share of its devices (not disposed) that pass every asset rule.
+ * Score per hospital = share of its devices (not disposed) that pass every high and medium device rule.
  */
 import { nextPpmDue } from "./assets/maintenance";
 
@@ -159,7 +159,10 @@ export function evaluate(d: DqData, today: string, skip: (r: DqRule) => boolean 
 
 export type HospitalScore = { facilityId: number; devices: number; clean: number; pct: number | null };
 
-/** Per hospital: devices (not disposed) and how many pass every asset rule. */
+/** Device rules that count towards the score: high and medium only (low ones, e.g. catalogue GMDN codes, are listed but not scored). */
+export const SCORED_RULES = ASSET_RULES.filter((r) => r.severity !== "low");
+
+/** Per hospital: devices (not disposed) and how many pass every high and medium device rule. */
 export function hospitalScores(assets: DqAsset[], today: string): HospitalScore[] {
   const dupes = duplicateSerials(assets);
   const by = new Map<number, HospitalScore>();
@@ -167,7 +170,7 @@ export function hospitalScores(assets: DqAsset[], today: string): HospitalScore[
     if (!live(a)) continue;
     const s = by.get(a.facilityId) ?? { facilityId: a.facilityId, devices: 0, clean: 0, pct: null };
     s.devices++;
-    if (!ASSET_RULES.some((r) => r.test(a, { today, dupes }))) s.clean++;
+    if (!SCORED_RULES.some((r) => r.test(a, { today, dupes }))) s.clean++;
     by.set(a.facilityId, s);
   }
   return [...by.values()].map((s) => ({ ...s, pct: s.devices ? Math.round((s.clean / s.devices) * 1000) / 10 : null }))

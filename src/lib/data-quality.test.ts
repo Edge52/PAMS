@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { duplicateSerials, evaluate, hospitalScores, ppmDueUnplanned, recordHref, RULES, serialKey, sortResults, type DqAsset, type DqData } from "./data-quality";
+import { duplicateSerials, evaluate, hospitalScores, ppmDueUnplanned, recordHref, RULES, SCORED_RULES, serialKey, sortResults, type DqAsset, type DqData } from "./data-quality";
 
 const TODAY = "2026-11-26";
 let n = 0;
@@ -89,6 +89,11 @@ describe("scores and ordering", () => {
   it("share of devices passing every device rule, per hospital", () => {
     const s = hospitalScores([asset(), asset({ serial: null }), asset({ facilityId: 2 }), asset({ status: "DISPOSED", serial: null })], TODAY);
     expect(s).toEqual([{ facilityId: 1, devices: 2, clean: 1, pct: 50 }, { facilityId: 2, devices: 1, clean: 1, pct: 100 }]);
+  });
+  it("low rules (GMDN) are listed but not scored", () => {
+    const s = hospitalScores([asset({ facilityId: 3, gmdnCode: null }), asset({ facilityId: 3, purchaseCost: null })], TODAY);
+    expect(s).toEqual([{ facilityId: 3, devices: 2, clean: 1, pct: 50 }]);
+    expect(SCORED_RULES.some((r) => r.severity === "low")).toBe(false);
   });
   it("sorts by severity then count; skip leaves rules out", () => {
     const res = sortResults(evaluate(data({ assets: [asset({ gmdnCode: null }), asset({ serial: null })] }), TODAY, (r) => r.entity === "offer"));

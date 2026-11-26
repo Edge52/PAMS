@@ -666,7 +666,8 @@ three of one kind in a hospital come as one summary.
   downtime times; jobs open more than 90 days; orders received 60+ days ago with no invoice; offers with no exchange
   rate; expired contracts still linked to devices in use.
 - Each rule shows a severity and a count. Click it for the list of records, each with a link to open and fix it.
-- The score per hospital is the share of its devices that pass every device rule. Choose a hospital at the top.
+- The score per hospital is the share of its devices that pass every high and medium device rule (low ones, like
+  the GMDN code, are listed but not scored). Choose a hospital at the top.
 - Rules on offers and invoices show only for people who see supplier prices.
 
 ### Start a tender from a BOQ

@@ -50,7 +50,7 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {scores.map((s) => (
           <Stat key={s.facilityId} label={name.get(s.facilityId) ?? `Hospital ${s.facilityId}`} value={s.pct == null ? "—" : `${formatNumber(s.pct, 1)} %`}
-            hint={`${formatNumber(s.clean)} of ${formatNumber(s.devices)} devices pass every device rule`} />
+            hint={<>{formatNumber(s.clean)} of {formatNumber(s.devices)} devices pass<span className="block">Score counts high and medium rules</span></>} />
         ))}
         <Stat label="Rules with problems" value={`${failing} of ${results.length}`} />
       </div>
@@ -69,7 +69,7 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
           ]} />
       </Panel>
       <ul className="mt-3 space-y-1 text-xs text-muted">
-        <li>Score = devices (not disposed) that pass every device rule, as a share of all devices.</li>
+        <li>Score = devices (not disposed) that pass every high and medium device rule, as a share of all devices. Low rules are listed but not scored.</li>
         <li>Work orders: open jobs and jobs finished in the last 12 months. Offers and contracts: the last two years.</li>
         {!prices && <li>Rules on offers and invoices are shown only to people who may see prices.</li>}
         {cut.length > 0 && <li className="text-warn">Only the first 20,000 {cut.join(", ")} were checked.</li>}

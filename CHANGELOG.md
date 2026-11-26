@@ -7,7 +7,7 @@
   install date, cost, room, criticality, GMDN; PPM due with nothing planned; duplicate serials; out of service with no
   open job; finished jobs without labour or downtime; jobs open 90+ days; orders received 60+ days ago with no invoice;
   offers without a rate; expired contracts still linked). Each has a severity, a count and a list of the records to
-  fix. Score per hospital = devices passing every device rule. Rules pure in `src/lib/data-quality.ts` (tested), bounded
+  fix. Score per hospital = devices passing every high and medium device rule (low ones, like GMDN, listed only). Rules pure in `src/lib/data-quality.ts` (tested), bounded
   loading in `src/lib/data-quality-server.ts`. Offer and invoice rules only for people who see prices.
 - **Start a tender from a BOQ** (`/boq/[id]/tender`): pick lines or whole device types, use an existing project or
   create one (the BOQ is linked to it), and make a draft RFQ with one item per device type that keeps its BOQ line ids;
