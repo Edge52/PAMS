@@ -12,6 +12,10 @@ const EXEC: Card = {
   href: "/reports/executive", title: "Executive summary",
   description: "One page per hospital: what needs attention, equipment availability, maintenance performance, contracts and purchasing.",
 };
+const DQ: Card = {
+  href: "/reports/data-quality", title: "Data quality",
+  description: "Missing serials, costs and rooms, duplicate serials, jobs and orders left open: a score per hospital and a list to fix.",
+};
 /** Report library (wave 26): grouped by subject, each role's own group first, with a search box. */
 const GROUPS: { id: string; title: string; slugs: string[] }[] = [
   { id: "summary", title: "Summary", slugs: [] },
@@ -33,7 +37,7 @@ export default async function ReportsIndex({ searchParams }: { searchParams: Pro
     .map((g) => ({
       ...g,
       // Audit R9: reports with spend or order values only for those who may see prices.
-      cards: (g.id === "summary" ? (can(me.role, "prices.view") ? [EXEC] : []) : g.slugs.map((slug) => REPORTS.find((r) => r.slug === slug)).filter((r): r is NonNullable<typeof r> => !!r && (!r.need || can(me.role, r.need)))
+      cards: (g.id === "summary" ? [...(can(me.role, "prices.view") ? [EXEC] : []), DQ] : g.slugs.map((slug) => REPORTS.find((r) => r.slug === slug)).filter((r): r is NonNullable<typeof r> => !!r && (!r.need || can(me.role, r.need)))
         .map((r) => ({ href: `/reports/${r.slug}`, title: r.title, description: r.description })))
         .filter((c) => !q || `${c.title} ${c.description} ${g.title}`.toLowerCase().includes(q)),
     })).filter((g) => g.cards.length);

@@ -24,6 +24,9 @@ import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
 import { ApprovalPanel } from "@/components/approvals/approval-panel";
+import { OrdersTab } from "@/components/boq/tabs/orders";
+import { tenderHint } from "@/lib/boq/tender-handoff";
+import { boqPlanVsOrdered } from "@/lib/boq/tender-server";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +37,7 @@ const TABS = [
   { key: "gap", label: "Plan vs installed" },
   { key: "checks", label: "Checks" },
   { key: "phasing", label: "Phasing & costs" },
+  { key: "orders", label: "Tender & orders" },
   { key: "assumptions", label: "Assumptions" },
   { key: "history", label: "History & files" },
 ] as const;
@@ -69,7 +73,7 @@ export default async function BoqPage({ params, searchParams }: {
   const overrides = ws.lines.filter((l) => l.isOverridden).length;
   const manual = ws.lines.filter((l) => l.isManual).length;
 
-  const rfqHref = boq.projectId ? `/procurement/rfqs/new?projectId=${boq.projectId}&boqId=${boq.id}` : null;
+  const mayTender = can(me.role, "procurement.edit");
 
   return (
     <>
@@ -92,20 +96,12 @@ export default async function BoqPage({ params, searchParams }: {
             <a href={`/boq/${boq.id}/export`} className="inline-flex items-center rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">
               Export to Excel
             </a>
-            {can(me.role, "procurement.edit") && (rfqHref
-              ? <LinkButton href={rfqHref} variant="primary">Create RFQ from this BOQ</LinkButton>
-              : <span title="Link this BOQ to a project on the Departments tab first — an RFQ belongs to a project.">
-                  <Button type="button" disabled>Create RFQ from this BOQ</Button>
-                </span>)}
+            {mayTender && <LinkButton href={`/boq/${boq.id}/tender`} variant="primary">Start a tender from this BOQ</LinkButton>}
           </>
         }
       />
       <Notice notice={sp.notice} error={sp.error} />
-      {!rfqHref && can(me.role, "procurement.edit") && (
-        <p className="-mt-2 mb-4 text-xs text-muted">
-          To raise an RFQ, link this BOQ to a project in <Link href={`/boq/${boq.id}?tab=scope`} className="text-primary hover:underline">BOQ settings</Link>.
-        </p>
-      )}
+      {mayTender && <p className="-mt-2 mb-4 text-xs text-muted">{tenderHint({ project: ws.project, status: boq.status })}</p>}
 
       {regenSummary && (
         <div role="status" className="mb-5 rounded-[var(--radius-panel)] border border-ok/30 bg-ok-soft px-4 py-3 text-sm">
@@ -189,6 +185,7 @@ export default async function BoqPage({ params, searchParams }: {
       {tab === "gap" && <GapTab ws={ws} installed={await installedCounts(ws.depts.map((d) => d.departmentId).filter((x): x is number => !!x))} />}
       {tab === "checks" && <ChecksTab ws={ws} checks={checks} locked={locked} rooms={await roomsCheck(ws)} standards={await roomStandardsCheck(ws)} />}
       {tab === "phasing" && <PhasingTab ws={ws} planning={await boqPlanning(ws)} locked={locked} />}
+      {tab === "orders" && <OrdersTab boqId={boq.id} canTender={mayTender} {...await boqPlanVsOrdered(boq.id)} />}
       {tab === "assumptions" && <AssumptionsTab ws={ws} rules={await rulesForSet(boq.standardSetId)} />}
       {tab === "history" && <History boqId={boq.id} />}
     </>

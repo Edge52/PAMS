@@ -1,5 +1,20 @@
 # Changelog
 
+## Wave 39 (not merged yet)
+
+**Data quality and BOQ to tender**
+- **Data quality page** (`/reports/data-quality`, Reports menu): 16 rules computed live (missing serial, maker/model,
+  install date, cost, room, criticality, GMDN; PPM due with nothing planned; duplicate serials; out of service with no
+  open job; finished jobs without labour or downtime; jobs open 90+ days; orders received 60+ days ago with no invoice;
+  offers without a rate; expired contracts still linked). Each has a severity, a count and a list of the records to
+  fix. Score per hospital = devices passing every device rule. Rules pure in `src/lib/data-quality.ts` (tested), bounded
+  loading in `src/lib/data-quality-server.ts`. Offer and invoice rules only for people who see prices.
+- **Start a tender from a BOQ** (`/boq/[id]/tender`): pick lines or whole device types, use an existing project or
+  create one (the BOQ is linked to it), and make a draft RFQ with one item per device type that keeps its BOQ line ids;
+  optional draft specs from the template. New BOQ tab **Tender & orders**: plan vs ordered per device type. The BOQ
+  page's two disagreeing hints are replaced by one (`tenderHint`). Mapping pure in `src/lib/boq/tender-handoff.ts`
+  (tested), action `src/app/boq/tender-actions.ts`. No schema change.
+
 ## Wave 38 — the last missing features from the audit (not merged yet)
 
 Missing features 10–17 of the wave 30 audit. One migration (0050).
