@@ -5,7 +5,7 @@ import { Badge, EmptyState, LinkButton, Panel, StatusBadge } from "@/components/
 import { Notice, validityState } from "@/components/procurement/bits";
 import { OfferStatusActions } from "@/components/procurement/offer-status-actions";
 import { WeightControl } from "@/components/procurement/weight-control";
-import { formatDate, formatMoney, formatNumber } from "@/lib/format";
+import { formatDate, formatMoney, formatNumber, todayISO } from "@/lib/format";
 import type { OfferStatus } from "@/lib/procurement/labels";
 import { normalizeWeights, type CellResult } from "@/lib/procurement/scoring";
 import { loadComparison } from "@/lib/procurement/server";
@@ -16,6 +16,9 @@ import { db } from "@/db";
 import { approvalRequests } from "@/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/permissions";
+import { seesPrices } from "@/lib/auth/prices";
+import { offerPriceFlags } from "@/lib/analytics/procurement-server";
+import { analyticsScope } from "@/lib/analytics/scope-server";
 
 
 type Project = typeof projects.$inferSelect;
@@ -67,6 +70,8 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
 
   const pendingAwards = new Set((await db.select({ id: approvalRequests.entityId }).from(approvalRequests)
     .where(and(eq(approvalRequests.entity, "AWARD"), eq(approvalRequests.status, "PENDING"), inArray(approvalRequests.entityId, offers.map((o) => o.id))))).map((r) => r.id));
+  // Wave 40: offers with a price well above earlier prices paid (Analytics › Procurement).
+  const priceFlags = seesPrices(me.role) ? await offerPriceFlags(project.id, await analyticsScope(me, { facilityId: null }), todayISO()) : new Map<number, unknown[]>();
   const missing = Object.entries(fx).filter(([, f]) => f == null).map(([c]) => c);
   const ranked = [...offers].sort((a, b) => (evaluation.offers.get(b.id)?.combinedScore ?? -1) - (evaluation.offers.get(a.id)?.combinedScore ?? -1));
   const top = ranked.find((o) => {
@@ -151,6 +156,7 @@ export async function ComparisonTab({ project, tw, me, tcoYears, tcoDown }: { pr
                 <th key={o.id} scope="col" className="min-w-52 border-b border-l border-line px-3 py-2 align-bottom font-semibold">
                   <Link href={`/procurement/offers/${o.id}`} className="text-ink hover:text-primary">{head(o)}</Link>
                   <span className="mt-0.5 flex flex-wrap items-center gap-1 text-xs font-normal">{o.reference} · {o.currency} <StatusBadge value={o.status} /></span>
+                  {priceFlags.has(o.id) && <Link href="/analytics/procurement" className="mt-1 inline-block text-xs font-normal" title={`${priceFlags.get(o.id)!.length} line(s) well above earlier prices paid`}><Badge tone="warn">Well above earlier prices</Badge></Link>}
                 </th>
               ))}
             </tr>
