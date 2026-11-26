@@ -61,7 +61,7 @@ export default async function ImagingAnalyticsPage({ searchParams }: { searchPar
                       <td key={j} className="p-0.5">
                         <div className="relative h-8 w-12 overflow-hidden rounded border border-line bg-sunken" title={c.avg == null ? "No data" : `${formatNumber(c.avg, 1)} a day over ${c.days} days`}>
                           {c.avg != null && <div className="absolute inset-0 bg-primary" style={{ opacity: a.heat.max ? 0.1 + 0.8 * (c.avg / a.heat.max) : 0 }} />}
-                          <span className="relative flex h-full items-center justify-center font-semibold">{c.avg == null ? "" : formatNumber(c.avg, 0)}</span>
+                          <span className="relative flex h-full items-center justify-center">{c.avg == null ? "" : <span className="rounded bg-surface px-1 text-xs font-semibold text-ink">{formatNumber(c.avg, 0)}</span>}</span>
                         </div>
                       </td>
                     ))}

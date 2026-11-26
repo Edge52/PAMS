@@ -41,7 +41,7 @@ export const GAHAR_MAP: GaharStandard[] = [
     { key: "plan_reviewed", text: "Annual evaluation recorded in the last 12 months", kind: "yes", link: "/assets/equipment-plan?facilityId={f}" },
   ] },
   { code: "EFS.10 EOC 2–3", title: "Qualified person in charge and competent staff", items: [
-    { key: "biomed_in_charge", text: "Biomedical engineer with access to this hospital", kind: "count", link: "/admin/users" },
+    { key: "biomed_in_charge", text: "Biomedical engineer with access to this hospital", kind: "count", link: "/assets/competency" },
     { key: "staff_competency", text: "Technician competency records", kind: "none" },
   ] },
   { code: "EFS.10 EOC 4", title: "Inventory, user training, ID cards, vendor emergency contacts, installation testing", items: [
@@ -75,7 +75,7 @@ export const GAHAR_MAP: GaharStandard[] = [
     { key: "dosimetry", text: "Staff dose readings recorded in the last 12 months", kind: "count", link: "/assets/radiation?facilityId={f}" },
     { key: "ppe", text: "Lead aprons and shields checked and in date", kind: "pct", link: "/assets/radiation?facilityId={f}" },
     { key: "radiation_equipment", text: "Radiation devices with calibration or QC in date", kind: "pct", link: "/assets/radiation?facilityId={f}" },
-    { key: "radiation_licences", text: "Radiation licences valid", kind: "pct", have: 100, link: "/assets/radiation/licences?facilityId={f}" },
+    { key: "radiation_licences", text: "Radiation licences valid", kind: "pct", have: 100, link: "/assets/radiation?tab=licences&facilityId={f}" },
     { key: "patient_dose", text: "Patient dose records", kind: "none" },
   ] },
 ];

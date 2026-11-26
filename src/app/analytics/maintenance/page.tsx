@@ -86,7 +86,7 @@ export default async function MaintenanceAnalyticsPage({ searchParams }: { searc
         <>
           <KpiGrid>{kpis.map((k) => <KpiCard key={k.kpi.label} kpi={k.kpi} period={period} tone={k.tone} href={k.href} />)}</KpiGrid>
 
-          <div className="mb-5 grid gap-5 lg:grid-cols-2">
+          <div className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
             <Panel title="Uptime by device type" padded={false}>
               <DataTable id="an-uptime-type" label="Uptime by device type" path="/analytics/maintenance" sp={sp} sort={null} rows={byType.slice(0, 40)} rowKey={(g) => g.key} columns={groupCols("Device type")} />
             </Panel>
@@ -96,7 +96,7 @@ export default async function MaintenanceAnalyticsPage({ searchParams }: { searc
           </div>
           <p className="-mt-3 mb-5 text-xs text-muted">Lowest uptime first. Uptime below the benchmark (94 %, imaging 98 %) is marked. * fewer than {MIN_N} devices: shown, not compared.</p>
 
-          <div className="mb-5 grid gap-5 lg:grid-cols-2">
+          <div className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
             <Panel title="Failures by failure code">
               {codes.length ? (
                 <BarList label="Corrective jobs in the period by failure code" data={codes.map((c) => ({ label: failureCodeLabel(c.code) ?? "Not recorded", value: c.count, tone: c.code ? "primary" : "muted" }))} />
