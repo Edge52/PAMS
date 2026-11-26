@@ -42,7 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 COPY --from=build --chown=node:node /app ./
 USER node
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD curl -fs http://localhost:3000/login >/dev/null || exit 1
+# Wave 39: /api/health checks the database too (503 when it is down), not just that the web server answers.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD curl -fs http://localhost:3000/api/health >/dev/null || exit 1
 # Migrations and reference data (device catalogue, standards, default approval rules) are applied on every start.
 # The reference seed only adds missing rows: it never overwrites an administrator's edits (audit CO-01). The first visit to the site asks for the first administrator.
 CMD ["sh", "-c", "npx tsx scripts/migrate.ts && npx tsx scripts/seed.ts --only=none && npx next start -p ${PORT}"]

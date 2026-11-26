@@ -22,7 +22,7 @@ const KIND = { database: "Database", uploads: "Uploaded files", other: "Other" }
 export default async function BackupsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requirePermission("users.manage");
   const sp = await searchParams;
-  const [{ files, nightly, lastUsable: lastDb }, dump, checks] = await Promise.all([backupHealth(), pgDumpVersion(), db.select().from(backupChecks).orderBy(desc(backupChecks.at)).limit(6)]);
+  const [{ files, nightly, remote, lastUsable: lastDb }, dump, checks] = await Promise.all([backupHealth(), pgDumpVersion(), db.select().from(backupChecks).orderBy(desc(backupChecks.at)).limit(6)]);
   const lastPass = checks.find((c) => c.ok);
   const testDue = restoreTestDue(lastPass?.at);
   const stale = backupIsStale(lastDb?.at);
@@ -49,8 +49,14 @@ export default async function BackupsPage({ searchParams }: { searchParams: Prom
               {nightly.ok ? `Nightly backup: last run ${formatDateTime(nightly.at)} succeeded.` : `Nightly backup failed ${formatDateTime(nightly.at)}: ${nightly.message}`}
             </p>
           )}
+          {remote ? (
+            <p className={remote.ok ? "text-muted" : "font-semibold text-danger"}>
+              {remote.ok ? `Off-site copy: last copied ${formatDateTime(remote.at)} (${ageOf(remote.at)}) to ${remote.target}.`
+                : `Off-site copy failed ${formatDateTime(remote.at)}: ${remote.message}${remote.lastOkAt ? ` Last good copy ${formatDateTime(remote.lastOkAt)}.` : ""}`}
+            </p>
+          ) : nightly ? <p className="text-muted">Off-site copy: not set up. Set BACKUP_REMOTE_KIND in .env (see docs/deploy.md).</p> : null}
           <form action={backupNowAction}><SubmitButton pendingLabel="Backing up…">Back up now</SubmitButton></form>
-          <p className="text-xs text-muted">Folder: <code className="break-all">{BACKUP_DIR}</code>. A backup on the same disk doesn&apos;t survive losing that disk: copy the files somewhere else as well.</p>
+          <p className="text-xs text-muted">Folder: <code className="break-all">{BACKUP_DIR}</code>. A backup on the same disk doesn&apos;t survive losing that disk{remote ? ": the nightly job also copies it off site." : ": copy the files somewhere else as well."}</p>
         </div>
       </Panel>
       <Panel title="Restore test" className="mb-5">

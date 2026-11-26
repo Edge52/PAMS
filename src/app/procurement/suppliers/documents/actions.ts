@@ -1,6 +1,6 @@
 "use server";
 /** Type and expiry date of a supplier document (wave 27). Needs `suppliers.edit`; suppliers are shared, so no facility check. */
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
@@ -19,7 +19,7 @@ export async function saveSupplierDocumentAction(_: ActionState, fd: FormData): 
   const p = Schema.safeParse(formObject(fd));
   if (!p.success) return zodFail(p.error);
   const d = p.data;
-  const [doc] = await db.select().from(documents).where(and(eq(documents.id, d.id), eq(documents.entityType, "supplier")));
+  const [doc] = await db.select().from(documents).where(and(eq(documents.id, d.id), eq(documents.entityType, "supplier"), isNull(documents.deletedAt)));
   if (!doc) return fail("That document no longer exists. Reload the page.");
   const next = { kind: d.kind ?? doc.kind, expiresOn: d.expiresOn ?? null };
   const changes = diff({ kind: doc.kind, expiresOn: doc.expiresOn }, next);

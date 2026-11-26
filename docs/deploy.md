@@ -54,6 +54,7 @@ after a good run, so a failing job never empties the folder. The result of the l
 **Administration › Backups** shows it, and administrators get a notification (and an email, when email is set up) when
 the nightly backup fails or the newest good database backup is more than two days old. Copy `./backups` off the
 server regularly (another machine, or object storage) — a backup on the same disk doesn't survive losing that disk.
+The nightly job can do that for you: see **Off-site backup** below.
 
 **Administration › Backups** lists the same folder (the app sees it as `/data/backups`): the age of the last database
 backup, a restore check that each file opens, downloads, and **Back up now**, which runs `pg_dump`. The image includes
@@ -78,6 +79,42 @@ Updating: `git pull` (or copy the new folder) and `docker compose up -d --build`
 Reference data (device catalogue, BOQ standards, department types) is only added on start, never overwritten, so your
 edits to device life, PPM intervals, BOQ rules and the default standard set survive updates. To deliberately reload it
 from `seed-data/`: `docker compose exec app npx tsx scripts/seed.ts --only=none --refresh-reference`.
+
+### Off-site backup
+
+After each good run the nightly job can copy the new dump and uploads archive to another place. Set these in `.env`
+(all optional; empty `BACKUP_REMOTE_KIND` = off), then `docker compose up -d`:
+
+| Setting | S3-compatible store | Another server (rsync) |
+| --- | --- | --- |
+| `BACKUP_REMOTE_KIND` | `s3` | `rsync` |
+| `BACKUP_REMOTE_URL` | `https://<endpoint>/<bucket>[/<folder>]`, e.g. `https://s3.eu-central-1.amazonaws.com/pams-backups/dgh` | `user@host:/path` (over ssh) or a folder mounted into the backup container |
+| `BACKUP_REMOTE_REGION` | the bucket's region (default `us-east-1`) | — |
+| `BACKUP_REMOTE_ACCESS_KEY`, `BACKUP_REMOTE_SECRET_KEY` | a key that may only write to that bucket | — |
+| `BACKUP_REMOTE_SSH_KEY` | — | path of a private key inside the container, e.g. `/ssh/id_ed25519` |
+
+- S3 uploads are signed with AWS Signature V4 by `curl`, so AWS S3, Wasabi, Backblaze B2, Cloudflare R2 and MinIO
+  all work (path-style URL: endpoint, then bucket). Give the key write access only, and set the bucket's own
+  lifecycle rule to delete old copies (the job never deletes anything off site).
+- rsync over ssh: make a key pair, put the public key in the target's `authorized_keys`, put the private key in
+  `./backup-ssh/` (readable by root only) and add `- ./backup-ssh:/ssh:ro` to the backup service's volumes. The host
+  key is remembered on the first copy (`backups/.remote-known-hosts`).
+- `curl` or `rsync` is installed in the backup container the first time it's needed, so the container needs internet
+  access once (to the Debian package mirror).
+- The result goes to `backups/.remote-status`. **Administration › Backups** shows the last copy and where it went
+  (never the keys); a failed copy notifies administrators, and the local backup is kept either way.
+
+### Health check
+
+`GET /api/health` answers without signing in: `{"ok":true,"db":"ok","version":"0.1.0","time":"…"}`, or status 503 with
+`"db":"down"` when the database doesn't answer. Docker's health check (the image and `docker-compose.yml`) uses it; point
+a load balancer or an uptime monitor at it too. It shows nothing else.
+
+### Server errors
+
+Errors the server meets (a page that fails, a form that can't be saved) are written to the database and listed under
+**Administration › System errors** with the time, page, message and the digest code the user saw; the stack trace is
+shown to administrators only. Entries are kept for 90 days. Nothing is sent outside the server.
 
 ### Restore
 

@@ -13,7 +13,7 @@ import { dumpError, pgDumpEnv } from "@/lib/backup-env";
 import { UPLOAD_ROOT } from "@/lib/storage";
 import { zipEntryCount } from "@/lib/zip";
 import { writeZipFile, type ZipSource } from "@/lib/zip-file";
-import { latestUsableDatabaseBackup, parseNightlyStatus, type NightlyStatus } from "@/lib/backup-health";
+import { latestUsableDatabaseBackup, parseNightlyStatus, parseRemoteStatus, type NightlyStatus, type RemoteStatus } from "@/lib/backup-health";
 
 const execFileP = promisify(execFile);
 
@@ -89,10 +89,15 @@ export async function readNightlyStatus(): Promise<NightlyStatus | null> {
   return parseNightlyStatus(await fs.readFile(path.join(/* turbopackIgnore: true */ BACKUP_DIR, ".nightly-status"), "utf8").catch(() => null));
 }
 
+/** The off-site copy's last result (backups/.remote-status, wave 39); null when no off-site copy is set up. */
+export async function readRemoteStatus(): Promise<RemoteStatus | null> {
+  return parseRemoteStatus(await fs.readFile(path.join(/* turbopackIgnore: true */ BACKUP_DIR, ".remote-status"), "utf8").catch(() => null));
+}
+
 /** Newest database backup that is a real dump, and the nightly job's last result: what the page and alerts judge by. */
 export async function backupHealth() {
-  const [files, nightly] = await Promise.all([listBackups(), readNightlyStatus()]);
-  return { files, nightly, lastUsable: latestUsableDatabaseBackup(files) };
+  const [files, nightly, remote] = await Promise.all([listBackups(), readNightlyStatus(), readRemoteStatus()]);
+  return { files, nightly, remote, lastUsable: latestUsableDatabaseBackup(files) };
 }
 
 /** Back up now: the database (embedded: a copy of its folder; PostgreSQL: pg_dump) and the uploaded files. */

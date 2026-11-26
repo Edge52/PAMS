@@ -7,7 +7,8 @@ import { contentPolicy, fixedHeaders } from "@/lib/security-headers";
  *   user do this?) happens in pages and server actions via lib/auth/session.
  * - Security headers (wave 25): a content policy with a one-time nonce, and the fixed headers.
  */
-const PUBLIC = ["/login", "/setup", "/auth/sso", "/auth/callback"];
+// Wave 39: /api/health answers Docker's health check without a session (it shows nothing secret).
+const PUBLIC = ["/login", "/setup", "/auth/sso", "/auth/callback", "/api/health"];
 const HTTPS = (process.env.APP_URL ?? "").startsWith("https://");
 const DEV = process.env.NODE_ENV !== "production";
 

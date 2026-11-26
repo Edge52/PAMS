@@ -10,7 +10,10 @@ import { lifecycle } from "@/lib/assets/maintenance";
 import { deviceTypeOptions } from "@/lib/assets/queries";
 import { ACTIVE_STATUSES } from "@/lib/assets/work-orders";
 import { can } from "@/lib/auth/permissions";
+import { myDepartments } from "@/lib/auth/departments";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
+import { mayRequestFor } from "@/lib/assets/request-rules";
+import { budgetYear } from "@/lib/procurement/budget-year-server";
 import { addDaysISO, formatDate, formatNumber, todayISO } from "@/lib/format";
 import { createRequestAction } from "../requests/actions";
 import { departmentTraining } from "@/lib/assets/training-server";
@@ -27,10 +30,13 @@ export default async function DepartmentPage({ searchParams }: { searchParams: P
   const facilityId = scopedFacilityId(scope, Number(sp.facilityId) || undefined) ?? facs[0]?.id;
   if (!facilityId) return <><PageHeader title="Department" /><EmptyState title="No hospital linked to your account">Ask an administrator for access to a hospital.</EmptyState></>;
   const depts = await db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.facilityId, facilityId)).orderBy(asc(departments.name));
-  const deptId = Number(sp.departmentId) || null;
+  // Wave 39: a department head opens on their own department; they may request only for the ones they look after.
+  const mine = me.role === "DEPARTMENT_HEAD" ? await myDepartments(me.id) : new Set<number>();
+  const deptId = Number(sp.departmentId) || depts.find((d) => mine.has(d.id))?.id || null;
   const dept = depts.find((d) => d.id === deptId) ?? null;
   const today = todayISO();
-  const canRequest = me.role === "DEPARTMENT_HEAD" || can(me.role, "assets.edit") || can(me.role, "boq.edit");
+  const canRequest = dept != null && mayRequestFor(me.role, mine, dept.id);
+  const by = await budgetYear();
   const canTrain = can(me.role, "maintenance.edit");
   const header = (
     <>
@@ -43,7 +49,7 @@ export default async function DepartmentPage({ searchParams }: { searchParams: P
       </form>
     </>
   );
-  if (!dept) return <>{header}<EmptyState title="Choose your department">Pick it above to see its equipment and requests.</EmptyState></>;
+  if (!dept) return <>{header}<EmptyState title="Choose your department">Pick it above to see its equipment and requests.{me.role === "DEPARTMENT_HEAD" && mine.size === 0 ? " No department is linked to your account yet: ask an administrator to add yours under Users." : ""}</EmptyState></>;
 
   const kit = await db.select({ id: assets.id, tag: assets.assetTag, status: assets.status, typeId: deviceTypes.id, typeName: deviceTypes.name, room: rooms.name, installDate: sql<string | null>`coalesce(${assets.installDate}, ${assets.purchaseDate})`, life: sql<number | null>`coalesce(${assets.lifeExpectancyYears}, ${deviceTypes.lifeExpectancyYears})` })
     .from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).leftJoin(rooms, eq(rooms.id, assets.roomId))
@@ -109,7 +115,7 @@ export default async function DepartmentPage({ searchParams }: { searchParams: P
           <p className="border-t border-line px-4 py-2 text-xs text-muted">Training counts for {training.months} months (Administration › Settings). <Link href="/assets/training" className="text-primary hover:underline">All training</Link></p>
         </Panel>
         <Panel title="Requests" actions={<Link href={`/assets/requests?facilityId=${facilityId}`} className="text-sm text-primary hover:underline">All requests</Link>}>
-          {reqs.length === 0 ? <p className="mb-3 text-sm text-muted">No requests yet.</p> : <ul className="mb-3 space-y-1 text-sm">{reqs.map((x) => <li key={x.r.id}><b>{x.r.number}</b> {x.r.quantity} × {x.typeName} <StatusBadge value={x.r.status} />{x.r.planYear ? <span className="text-muted"> · {x.r.planYear}</span> : null}</li>)}</ul>}
+          {reqs.length === 0 ? <p className="mb-3 text-sm text-muted">No requests yet.</p> : <ul className="mb-3 space-y-1 text-sm">{reqs.map((x) => <li key={x.r.id}><b>{x.r.number}</b> {x.r.quantity} × {x.typeName} <StatusBadge value={x.r.status} />{x.r.planYear ? <span className="text-muted"> · {by.label(x.r.planYear)}</span> : null}</li>)}</ul>}
           {canRequest && (
             <ActionForm action={createRequestAction} className="space-y-2 border-t border-line pt-3">
               <input type="hidden" name="facilityId" value={facilityId} /><input type="hidden" name="departmentId" value={dept.id} />

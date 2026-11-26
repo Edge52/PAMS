@@ -9,7 +9,7 @@ import "server-only";
  *  - adds nosniff and a sandboxing Content-Security-Policy, so an uploaded file can never run script as this app,
  *  - reads from disk per request, so new uploads are available immediately (public/ is frozen at `next start`).
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export const UPLOAD_ROOT = path.resolve(process.env.UPLOAD_DIR ?? path.join(/* turbopackIgnore: true */ process.cwd(), "storage", "uploads"));
@@ -70,4 +70,14 @@ export function resolveStored(segments: string[]): string | null {
   if (segments.some((s) => s === "" || s === "." || s === ".." || s.includes("\0"))) return null;
   const abs = path.resolve(UPLOAD_ROOT, ...segments);
   return abs.startsWith(UPLOAD_ROOT + path.sep) ? abs : null;
+}
+
+/** Wave 39: delete a stored file by its /files/... URL (purging a document). Missing files and foreign URLs are ignored. */
+export async function removeStored(url: string): Promise<boolean> {
+  if (!url.startsWith("/files/")) return false;
+  let segments: string[];
+  try { segments = url.slice("/files/".length).split("/").map((s) => decodeURIComponent(s)); } catch { return false; }
+  const abs = resolveStored(segments);
+  if (!abs) return false;
+  try { await unlink(abs); return true; } catch { return false; }
 }

@@ -35,6 +35,9 @@ export const PERMISSIONS = [
   "workorders.report", "workorders.assign", "contracts.edit", "parts.edit", "recalls.edit", "assets.dispose",
   // safety records (wave 23): anyone signed in can report an incident; investigating and closing is for biomedical
   "incidents.manage",
+  // equipment requests (wave 39): who may ask, and the department head's approval (own departments only) before the
+  // director decides (boq.approve)
+  "requests.create", "requests.approve",
   // admin
   "users.manage", "settings.manage",
 ] as const;
@@ -47,10 +50,12 @@ const MATRIX: Record<Role, readonly Permission[]> = {
   DIRECTOR: [...VIEW, "boq.approve", "prices.view"],
   PROCUREMENT: [...VIEW, "procurement.edit", "specs.edit", "suppliers.edit", "offers.edit", "award.recommend", "po.create", "po.issue", "goods.receive", "contracts.edit", "invoices.edit", "prices.view"],
   FINANCE: [...VIEW, "budgets.edit", "invoices.edit", "invoices.approve", "prices.view"],
-  PLANNER: [...VIEW, "boq.edit", "standards.edit", "flows.edit"],
-  BIOMEDICAL: [...VIEW, "boq.edit", "flows.edit", "specs.edit", "goods.receive", "assets.edit", "assets.move", "maintenance.edit", "facilities.edit", "catalogue.edit", "workorders.assign", "contracts.edit", "parts.edit", "recalls.edit", "assets.dispose", "incidents.manage"],
+  PLANNER: [...VIEW, "boq.edit", "standards.edit", "flows.edit", "requests.create"],
+  BIOMEDICAL: [...VIEW, "boq.edit", "requests.create", "flows.edit", "specs.edit", "goods.receive", "assets.edit", "assets.move", "maintenance.edit", "facilities.edit", "catalogue.edit", "workorders.assign", "contracts.edit", "parts.edit", "recalls.edit", "assets.dispose", "incidents.manage"],
   TECHNICIAN: [...VIEW, "assets.move", "maintenance.edit"],
-  DEPARTMENT_HEAD: [...VIEW],
+  // Wave 39: department heads ask for and approve equipment for their own departments (scoped in the actions);
+  // still no prices (prices.ts).
+  DEPARTMENT_HEAD: [...VIEW, "requests.create", "requests.approve"],
   VIEWER: [...VIEW],
 };
 
@@ -77,6 +82,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "facilities.edit": "edit facilities and rooms", "catalogue.edit": "edit the device catalogue",
   "workorders.report": "report faults", "workorders.assign": "assign and sign off work orders", "contracts.edit": "manage service contracts", "parts.edit": "manage spare parts stock", "recalls.edit": "record and track recalls", "assets.dispose": "propose and record device disposals",
   "incidents.manage": "investigate and close incidents",
+  "requests.create": "request equipment", "requests.approve": "approve equipment requests for your department",
   "users.manage": "manage users", "settings.manage": "change settings",
 };
 

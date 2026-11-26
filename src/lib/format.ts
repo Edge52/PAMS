@@ -17,7 +17,8 @@ export function lineTotal(qty: number, unitPrice: string | number | null, discou
   return round2(qty * num(unitPrice) * (1 - (discountPct || 0) / 100));
 }
 
-export function formatMoney(v: string | number | null | undefined, currency = "USD", opts?: { compact?: boolean }): string {
+/** Money for display. The currency defaults to EGP, the hospital's own (wave 39; it was USD). */
+export function formatMoney(v: string | number | null | undefined, currency = "EGP", opts?: { compact?: boolean }): string {
   if (v === null || v === undefined || v === "") return "—";
   const n = num(v);
   try {

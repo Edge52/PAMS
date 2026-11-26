@@ -90,6 +90,8 @@ export const MODULES: AppModule[] = [
     { href: "/admin/audit", label: "Audit log", need: "users.manage" },
     { href: "/admin/backups", label: "Backups", need: "users.manage" },
     { href: "/admin/design", label: "Design parts", need: "settings.manage" },
+    { href: "/admin/documents", label: "Deleted documents", need: "settings.manage" },
+    { href: "/admin/errors", label: "System errors", need: "settings.manage" },
   ] },
 ];
 

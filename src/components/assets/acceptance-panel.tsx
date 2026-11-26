@@ -5,16 +5,19 @@ import { ActionForm } from "@/components/assets/action-form";
 import { isMeasurement, rangeLabel } from "@/lib/assets/checklists";
 import { can } from "@/lib/auth/permissions";
 import type { CurrentUser } from "@/lib/auth/session";
+import { myDepartments } from "@/lib/auth/departments";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { acceptanceSheet } from "@/lib/procurement/acceptance-server";
 import { saveAcceptanceAction } from "@/app/assets/acceptance-actions";
 
-export async function AcceptancePanel({ assetId, status, me }: { assetId: number; status: string; me: CurrentUser }) {
+export async function AcceptancePanel({ assetId, status, me, departmentId }: { assetId: number; status: string; me: CurrentUser; departmentId?: number | null }) {
   const s = await acceptanceSheet(assetId);
   if (!s) return null;
   const r = s.record;
   if (!r && !s.po && status !== "IN_STOCK" && status !== "INSTALLED") return null;
-  const biomed = can(me.role, "assets.edit"), dept = me.role === "DEPARTMENT_HEAD" || biomed;
+  const biomed = can(me.role, "assets.edit");
+  // Wave 39: department heads sign for their own departments only (the action checks it again).
+  const dept = biomed || (me.role === "DEPARTMENT_HEAD" && departmentId != null && (await myDepartments(me.id)).has(departmentId));
   const done = r?.status === "ACCEPTED";
   const tone = done ? "ok" : r?.status === "REJECTED" ? "danger" : "warn";
   return (
@@ -42,20 +45,20 @@ export async function AcceptancePanel({ assetId, status, me }: { assetId: number
           <Field label="Issues for the supplier"><Textarea name="issues" rows={2} defaultValue={r?.issues ?? ""} /></Field>
           <div className="flex flex-wrap gap-2">
             <Button name="intent" value="save" variant="secondary">Save checks</Button>
-            {!r?.biomedSignedBy && <Button name="intent" value="sign_biomed">Sign for biomedical engineering</Button>}
+            {!r?.biomedSignedBy && <Button name="intent" value="sign_biomed">Sign for biomedical engineering as {me.name}</Button>}
             <Button name="intent" value="reject" variant="ghost">Not accepted</Button>
           </div>
         </ActionForm>
       )}
       <div className="mt-3 space-y-1 border-t border-line pt-3 text-sm">
         <p>Biomedical engineering: {r?.biomedSignedBy ? <b>{r.biomedSignedBy}, {formatDateTime(r.biomedSignedAt)}</b> : <span className="text-muted">not signed</span>}</p>
-        <p>Department: {r?.departmentSignedBy ? <b>{r.departmentSignedBy}, {formatDateTime(r.departmentSignedAt)}</b> : <span className="text-muted">not signed</span>}</p>
+        <p>Department: {r?.departmentSignedBy ? <><b>{r.departmentSignedBy}, {formatDateTime(r.departmentSignedAt)}</b>{r.departmentWitness ? <span className="text-muted"> · witness: {r.departmentWitness}</span> : null}</> : <span className="text-muted">not signed</span>}</p>
         {r?.issues && <p className="text-warn">Issues: {r.issues}</p>}
         {!done && dept && r?.biomedSignedBy && !r.departmentSignedBy && (
           <ActionForm action={saveAcceptanceAction} className="flex flex-wrap items-end gap-2 pt-1">
             <input type="hidden" name="assetId" value={assetId} />
-            {biomed && me.role !== "DEPARTMENT_HEAD" && <Field label="Signed for the department by"><Input name="deptName" required maxLength={120} /></Field>}
-            <Button name="intent" value="sign_dept">Sign for the department</Button>
+            <Field label="Witness, if not signed in (optional)"><Input name="witness" maxLength={120} required={r.biomedSignedById === me.id} placeholder="e.g. the receiving nurse" /></Field>
+            <Button name="intent" value="sign_dept">Sign for the department as {me.name}</Button>
           </ActionForm>
         )}
       </div>

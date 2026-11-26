@@ -13,6 +13,8 @@ export const STALE_AFTER_MS = 2 * 86_400_000;
 export type BackupKind = "database" | "uploads" | "other";
 export type HealthFile = { name: string; bytes: number; at: Date; kind: BackupKind };
 export type NightlyStatus = { ok: boolean; at: Date; message: string };
+/** Wave 39: the off-site copy (backups/.remote-status): where to, and the last copy's result. */
+export type RemoteStatus = NightlyStatus & { target: string; lastOkAt: Date | null };
 
 export function isUsableDatabaseBackup(f: HealthFile): boolean {
   return f.kind === "database" && f.bytes >= MIN_DATABASE_BACKUP_BYTES;
@@ -37,11 +39,23 @@ export function parseNightlyStatus(text: string | null | undefined): NightlyStat
 }
 
 /**
+ * The nightly job's .remote-status file (wave 39): "status=ok|failed\nat=…\nmessage=…\ntarget=…\nlast_ok=…".
+ * null when there is no off-site copy set up (no file) or the file is unreadable.
+ */
+export function parseRemoteStatus(text: string | null | undefined): RemoteStatus | null {
+  const base = parseNightlyStatus(text);
+  if (!base || !text) return null;
+  const line = (k: string) => text.split(/\r?\n/).find((l) => l.startsWith(`${k}=`))?.slice(k.length + 1).trim() ?? "";
+  const lastOk = new Date(line("last_ok"));
+  return { ...base, target: line("target"), lastOkAt: Number.isNaN(lastOk.getTime()) ? (base.ok ? base.at : null) : lastOk };
+}
+
+/**
  * One alert for administrators, or null when backups are healthy. A failed nightly run is reported once per
  * failure; a stale or missing backup once per day.
  */
-export function backupAlert(input: { lastUsable?: { at: Date; name: string }; nightly: NightlyStatus | null; now: Date; today: string }): NewNotification | null {
-  const { lastUsable, nightly, now, today } = input;
+export function backupAlert(input: { lastUsable?: { at: Date; name: string }; nightly: NightlyStatus | null; now: Date; today: string; remote?: RemoteStatus | null }): NewNotification | null {
+  const { lastUsable, nightly, now, today, remote } = input;
   const href = "/admin/backups";
   if (nightly && !nightly.ok) {
     return { kind: "backup_failed", title: "The nightly backup failed", href,
@@ -53,6 +67,12 @@ export function backupAlert(input: { lastUsable?: { at: Date; name: string }; ni
       body: lastUsable ? `The last good one is ${lastUsable.name}. Check that the nightly job runs, and make one now from Administration › Backups.`
         : "Make one now from Administration › Backups, and check that the nightly job runs.",
       dedupeKey: `backup_stale:${today}` };
+  }
+  // Wave 39: the backup is fine here, but its off-site copy failed.
+  if (remote && !remote.ok) {
+    return { kind: "backup_failed", title: "The off-site backup copy failed", href,
+      body: `${remote.message || "No detail given."} ${remote.lastOkAt ? `The last good copy was made ${remote.lastOkAt.toISOString().slice(0, 10)}.` : "No copy has reached the off-site store yet."} The backup on this server is fine.`,
+      dedupeKey: `backup_remote_failed:${remote.at.toISOString()}` };
   }
   return null;
 }

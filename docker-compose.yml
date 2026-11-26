@@ -50,6 +50,13 @@ services:
       PG_DUMP_PATH: ${PG_DUMP_PATH:-}
       PG_RESTORE_PATH: ${PG_RESTORE_PATH:-}
     volumes: [uploads:/data/uploads, ./backups:/data/backups]
+    # Wave 39: the app and its database answer (same check as the image's HEALTHCHECK).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:3000/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
 
   caddy:
     image: caddy:2
@@ -71,7 +78,15 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
       APP_UID: ${APP_UID:-1000}   # backups are written 0600 and handed to the app's user (S13)
+      # Optional off-site copy after each good run (wave 39; see docs/deploy.md). Empty BACKUP_REMOTE_KIND = off.
+      BACKUP_REMOTE_KIND: ${BACKUP_REMOTE_KIND:-}            # s3 or rsync
+      BACKUP_REMOTE_URL: ${BACKUP_REMOTE_URL:-}              # https://<endpoint>/<bucket>[/<folder>] or user@host:/path
+      BACKUP_REMOTE_REGION: ${BACKUP_REMOTE_REGION:-}
+      BACKUP_REMOTE_ACCESS_KEY: ${BACKUP_REMOTE_ACCESS_KEY:-}
+      BACKUP_REMOTE_SECRET_KEY: ${BACKUP_REMOTE_SECRET_KEY:-}
+      BACKUP_REMOTE_SSH_KEY: ${BACKUP_REMOTE_SSH_KEY:-}      # e.g. /ssh/id_ed25519 with the volume below
     volumes: [./backups:/backups, uploads:/uploads:ro, ./scripts/nightly-backup.sh:/nightly-backup.sh:ro]
+    # For rsync over ssh, add a read-only key folder:  - ./backup-ssh:/ssh:ro
     # Every 24 h: a verified database dump + uploads archive. Old backups are removed only after a good run, and the
     # result is written to backups/.nightly-status (shown on Administration › Backups; failures alert administrators).
     entrypoint: ["sh", "/nightly-backup.sh"]

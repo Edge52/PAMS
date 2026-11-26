@@ -3,7 +3,8 @@ import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { DocumentUploadForm } from "@/components/document-upload-form";
 import { saveSupplierDocumentAction } from "@/app/procurement/suppliers/documents/actions";
 import { deleteDocument } from "@/lib/documents";
-import { canEditDocuments, listDocuments } from "@/lib/documents-access";
+import { canEditDocuments, listDocuments, listVersions } from "@/lib/documents-access";
+import { DocumentVersions } from "@/components/document-versions";
 import { formatDate, todayISO } from "@/lib/format";
 import { DOC_STATE_LABELS, DOC_STATE_TONE, SUPPLIER_DOC_TYPES, docExpiry, docTypeLabel, expiryText } from "@/lib/procurement/supplier-docs";
 import { ConfirmButton } from "@/components/ui/confirm";
@@ -13,6 +14,7 @@ const TYPES = SUPPLIER_DOC_TYPES.map((t) => ({ value: t.value, label: t.label })
 /** A supplier's licences, registrations and certificates with their expiry dates (wave 27). Server component. */
 export async function SupplierDocumentsPanel({ supplierId }: { supplierId: number }) {
   const [docs, canEdit] = await Promise.all([listDocuments("supplier", supplierId), canEditDocuments("supplier")]);
+  const versions = await listVersions(docs.map((d) => d.id));
   const today = todayISO();
   const rows = docs.map((d) => ({ ...d, expiry: docExpiry(d.expiresOn, today) }))
     .sort((a, b) => (a.expiresOn ?? "9999").localeCompare(b.expiresOn ?? "9999") || b.id - a.id);
@@ -52,11 +54,12 @@ export async function SupplierDocumentsPanel({ supplierId }: { supplierId: numbe
                     <form action={deleteDocument}>
                       <input type="hidden" name="id" value={d.id} />
                       <input type="hidden" name="returnPath" value={returnPath} />
-                      <ConfirmButton confirm={`Remove ${d.fileName} from this supplier?`} className="min-h-8 px-2 text-sm text-danger hover:underline" aria-label={`Remove ${d.fileName}`}>Remove</ConfirmButton>
+                      <ConfirmButton confirm={`Remove ${d.fileName} from this supplier? An administrator can restore it.`} className="min-h-8 px-2 text-sm text-danger hover:underline" aria-label={`Remove ${d.fileName}`}>Remove</ConfirmButton>
                     </form>
                   </div>
                 </details>
               )}
+              <DocumentVersions doc={d} earlier={versions.filter((v) => v.documentId === d.id)} canEdit={canEdit} returnPath={returnPath} withExpiry />
             </li>
           ))}
         </ul>

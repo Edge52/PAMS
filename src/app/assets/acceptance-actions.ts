@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { acceptances, assets } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
+import { myDepartments } from "@/lib/auth/departments";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import type { FormState } from "@/lib/assets/forms";
 import { fillChecklist } from "@/lib/assets/checklists";
@@ -22,12 +23,13 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 export async function saveAcceptanceAction(_: FormState, fd: FormData): Promise<FormState> {
   const me = await requirePermission("assets.view");
   const assetId = Number(fd.get("assetId")), intent = String(fd.get("intent") ?? "save");
-  const [a] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, status: assets.status, installDate: assets.installDate }).from(assets).where(eq(assets.id, assetId));
+  const [a] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, departmentId: assets.departmentId, status: assets.status, installDate: assets.installDate }).from(assets).where(eq(assets.id, assetId));
   if (!a) return { error: "That device no longer exists." };
   await requireFacilityAccess(a.facilityId, me);
   const biomed = can(me.role, "assets.edit");
-  const dept = me.role === "DEPARTMENT_HEAD" || biomed;
-  if (intent === "sign_dept" ? !dept : !biomed) return { error: intent === "sign_dept" ? "Only the department head or biomedical engineering can sign for the department." : "Only biomedical engineering can fill in and sign the acceptance checks." };
+  // Wave 39: a department head signs for the departments they look after.
+  const dept = biomed || (me.role === "DEPARTMENT_HEAD" && a.departmentId != null && (await myDepartments(me.id)).has(a.departmentId));
+  if (intent === "sign_dept" ? !dept : !biomed) return { error: intent === "sign_dept" ? "Only the head of this device's department or biomedical engineering can sign for the department." : "Only biomedical engineering can fill in and sign the acceptance checks." };
   const s = await acceptanceSheet(a.id);
   if (!s) return { error: "That device no longer exists." };
   if (s.record?.status === "ACCEPTED") return { error: "This device is already accepted." };
@@ -42,10 +44,14 @@ export async function saveAcceptanceAction(_: FormState, fd: FormData): Promise<
   if (intent === "sign_biomed") {
     if (filled.problems.length) return { error: filled.problems.join(" ") };
     if (filled.failed) return { error: `${filled.failed} check${filled.failed === 1 ? "" : "s"} failed. Record it as not accepted, or correct the checks.` };
-    v.biomedSignedBy = me.name; v.biomedSignedAt = new Date();
+    // Wave 39: a signature is the signed-in account (id and time), never a typed name.
+    v.biomedSignedBy = me.name; v.biomedSignedById = me.id; v.biomedSignedAt = new Date();
   } else if (intent === "sign_dept") {
     if (!rec?.biomedSignedBy) return { error: "Biomedical engineering signs the checks first." };
-    v.departmentSignedBy = String(fd.get("deptName") ?? "").trim().slice(0, 120) || me.name; v.departmentSignedAt = new Date();
+    // An optional outside witness (someone without an account, such as the receiving nurse) is typed in.
+    const witness = String(fd.get("witness") ?? "").trim().slice(0, 120) || null;
+    if (rec.biomedSignedById === me.id && !witness) return { error: "You signed the checks. Name the department's person who witnessed the handover, or ask the department head to sign." };
+    v.departmentSignedBy = me.name; v.departmentSignedById = me.id; v.departmentWitness = witness; v.departmentSignedAt = new Date();
   } else if (intent === "reject") {
     if (!issues) return { error: "Describe what is wrong so the supplier can put it right." };
     v.status = "REJECTED";

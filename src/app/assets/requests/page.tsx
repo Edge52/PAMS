@@ -7,9 +7,13 @@ import { ActionForm } from "@/components/assets/action-form";
 import { NativeSelect, Notice } from "@/components/assets/bits";
 import { scopeWhere, scopedFacilityId } from "@/lib/assets/access";
 import { can } from "@/lib/auth/permissions";
+import { myDepartments } from "@/lib/auth/departments";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
+import { departmentStep, mayApproveForDepartment } from "@/lib/assets/request-rules";
+import { fiscalYearOptions } from "@/lib/fiscal-year";
 import { formatDate } from "@/lib/format";
-import { decideRequestAction, requestsToBoqAction } from "./actions";
+import { budgetYear } from "@/lib/procurement/budget-year-server";
+import { approveForDepartmentAction, decideRequestAction, requestsToBoqAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Equipment requests" };
@@ -27,20 +31,25 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
     .innerJoin(deviceTypes, eq(deviceTypes.id, equipmentRequests.deviceTypeId)).leftJoin(departments, eq(departments.id, equipmentRequests.departmentId)).leftJoin(assets, eq(assets.id, equipmentRequests.replacesAssetId))
     .where(and(eq(equipmentRequests.facilityId, facilityId), eq(equipmentRequests.status, tab.key))).orderBy(desc(equipmentRequests.id));
   const canDecide = can(me.role, "boq.approve"), canBoq = can(me.role, "boq.edit");
-  const year = new Date().getFullYear();
+  const mine = me.role === "DEPARTMENT_HEAD" ? await myDepartments(me.id) : new Set<number>();
+  // Wave 39: plan years are budget (fiscal) years, as in the capital plan.
+  const by = await budgetYear();
+  const year = by.current;
+  const yearOptions = fiscalYearOptions(year, by.startMonth).filter((o) => o.value >= year);
   const item = (x: typeof rows[number]) => (
     <div className="min-w-0">
       <p><b>{x.r.number}</b> · {x.r.quantity} × {x.typeName} {x.r.priority !== "NORMAL" && <StatusBadge value={x.r.priority} />}</p>
       <p className="text-xs text-muted">{x.dept ?? "Hospital-wide"} · by {x.r.requestedByName ?? "—"}, {formatDate(x.r.createdAt)}{x.r.neededBy ? ` · needed by ${formatDate(x.r.neededBy)}` : ""}{x.replaces ? <> · replaces <Link href={`/assets/${x.r.replacesAssetId}`} className="font-mono text-primary hover:underline">{x.replaces}</Link></> : null}</p>
       <p className="mt-1 whitespace-pre-line">{x.r.reason}</p>
-      {x.r.decidedByName && <p className="mt-1 text-xs text-muted">{x.r.status === "REJECTED" ? "Not approved" : `Approved for ${x.r.planYear}`} by {x.r.decidedByName}{x.r.decisionNote ? `: ${x.r.decisionNote}` : ""}</p>}
+      {departmentStep(x.r) && <p className="mt-1 text-xs text-muted">{departmentStep(x.r)}{x.r.deptApprovedAt ? `, ${formatDate(x.r.deptApprovedAt)}` : ""}</p>}
+      {x.r.decidedByName && <p className="mt-1 text-xs text-muted">{x.r.status === "REJECTED" ? "Not approved" : `Approved for ${x.r.planYear != null ? by.label(x.r.planYear) : "—"}`} by {x.r.decidedByName}{x.r.decisionNote ? `: ${x.r.decisionNote}` : ""}</p>}
       {x.r.boqId && <Link href={`/boq/${x.r.boqId}`} className="text-xs text-primary hover:underline">Open the BOQ</Link>}
     </div>
   );
   return (
     <>
       <PageHeader title="Equipment requests" description="Departments ask for new or replacement equipment; the director approves them for a year, which puts them in the capital plan, and approved requests become a BOQ."
-        actions={<Link href={`/assets/department?facilityId=${facilityId}`} className="text-sm font-semibold text-primary hover:underline">Request equipment</Link>} />
+        actions={can(me.role, "requests.create") ? <Link href={`/assets/department?facilityId=${facilityId}`} className="text-sm font-semibold text-primary hover:underline">Request equipment</Link> : undefined} />
       <Notice sp={sp} />
       <form className="mb-4 flex flex-wrap items-end gap-2"><input type="hidden" name="tab" value={tab.key} />
         <Field label="Hospital"><NativeSelect name="facilityId" value={facilityId} options={facs.map((f) => ({ value: f.id, label: f.name }))} /></Field><Button variant="secondary">Show</Button></form>
@@ -50,7 +59,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
           <Panel padded={false}>
             <ul className="divide-y divide-line text-sm">{rows.map((x) => <li key={x.r.id} className="flex gap-3 px-4 py-3">{canBoq && <input type="checkbox" name="requestIds" value={x.r.id} defaultChecked aria-label={`Include ${x.r.number}`} className="mt-1" />}{item(x)}</li>)}</ul>
           </Panel>
-          {canBoq && <div className="mt-3 flex flex-wrap items-end gap-2"><Field label="BOQ name" className="min-w-64 flex-1"><Input name="name" defaultValue={`${facs.find((f) => f.id === facilityId)?.name ?? ""} — department requests ${year}`} maxLength={200} /></Field><Button>Turn the ticked requests into a BOQ</Button></div>}
+          {canBoq && <div className="mt-3 flex flex-wrap items-end gap-2"><Field label="BOQ name" className="min-w-64 flex-1"><Input name="name" defaultValue={`${facs.find((f) => f.id === facilityId)?.name ?? ""} — department requests ${by.label(year)}`} maxLength={200} /></Field><Button>Turn the ticked requests into a BOQ</Button></div>}
         </ActionForm>
       ) : (
         <Panel padded={false} className="mt-4">
@@ -60,9 +69,15 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
               {canDecide && x.r.status === "SUBMITTED" && (
                 <ActionForm action={decideRequestAction} className="space-y-2">
                   <input type="hidden" name="requestId" value={x.r.id} />
-                  <Field label="Plan for"><NativeSelect name="planYear" value={year} options={[0, 1, 2, 3, 4].map((k) => ({ value: year + k, label: String(year + k) }))} /></Field>
+                  <Field label="Plan for"><NativeSelect name="planYear" value={year} options={[...yearOptions, ...[3, 4].map((k) => ({ value: year + k, label: by.label(year + k) }))]} /></Field>
                   <Textarea name="note" rows={2} placeholder="Note (needed to reject)" aria-label="Note" />
                   <div className="flex gap-2"><Button name="decision" value="approve">Approve</Button><Button variant="secondary" name="decision" value="reject">Not approved</Button></div>
+                </ActionForm>
+              )}
+              {!canDecide && x.r.status === "SUBMITTED" && !x.r.deptApprovedAt && mayApproveForDepartment(me.role, mine, x.r.departmentId) && (
+                <ActionForm action={approveForDepartmentAction}>
+                  <input type="hidden" name="requestId" value={x.r.id} />
+                  <Button>Approve for the department</Button>
                 </ActionForm>
               )}
               {x.r.status !== "SUBMITTED" && <div><Badge tone={x.r.status === "REJECTED" ? "danger" : "ok"}>{TABS.find((t) => t.key === x.r.status)?.label}</Badge></div>}

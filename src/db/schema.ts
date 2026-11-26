@@ -11,7 +11,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   pgTable, pgEnum, serial, integer, text, varchar, boolean, numeric, real,
-  date, timestamp, jsonb, uniqueIndex, index, pgSequence, doublePrecision, primaryKey, check, type AnyPgColumn,
+  date, timestamp, jsonb, uniqueIndex, index, pgSequence, doublePrecision, primaryKey, check, smallint, type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -1331,6 +1331,13 @@ export const documents = pgTable("documents", {
   /** Wave 27: the date a licence, registration or certificate stops being valid (supplier documents). */
   expiresOn: date("expires_on"),
   uploadedAt: createdAt(),
+  /** Wave 39: who uploaded the current file and their note; earlier files are in document_versions. */
+  uploadedById: integer("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  note: text("note"),
+  version: smallint("version").notNull().default(1),
+  /** Wave 39: removed documents are hidden, not deleted (the file stays); an administrator restores or purges them. */
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedById: integer("deleted_by_id").references(() => users.id, { onDelete: "set null" }),
 }, (t) => [index("documents_entity_idx").on(t.entityType, t.entityId), index("documents_expires_idx").on(t.expiresOn)]);
 
 export const activityLog = pgTable("activity_log", {
@@ -1576,6 +1583,10 @@ export const acceptances = pgTable("acceptances", {
   biomedSignedAt: timestamp("biomed_signed_at", { withTimezone: true }),
   departmentSignedBy: text("department_signed_by"),
   departmentSignedAt: timestamp("department_signed_at", { withTimezone: true }),
+  /** Wave 39: the signed-in accounts that signed (the names above are kept as they were), and an optional outside witness. */
+  biomedSignedById: integer("biomed_signed_by_id").references(() => users.id, { onDelete: "set null" }),
+  departmentSignedById: integer("department_signed_by_id").references(() => users.id, { onDelete: "set null" }),
+  departmentWitness: text("department_witness"),
   acceptedOn: date("accepted_on"),
   issues: text("issues"),
   updatedAt: updatedAt(),
@@ -1635,6 +1646,10 @@ export const equipmentRequests = pgTable("equipment_requests", {
   decidedByName: text("decided_by_name"),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
   decisionNote: text("decision_note"),
+  /** Wave 39: the department head's approval (their own requests are approved when sent); the director then decides. */
+  deptApprovedById: integer("dept_approved_by_id").references(() => users.id, { onDelete: "set null" }),
+  deptApprovedByName: text("dept_approved_by_name"),
+  deptApprovedAt: timestamp("dept_approved_at", { withTimezone: true }),
   /** Year it is planned for, and the BOQ it went into. */
   planYear: integer("plan_year"),
   boqId: integer("boq_id").references(() => boqs.id, { onDelete: "set null" }),
@@ -2201,3 +2216,4 @@ export * from "./schema-wave38-m";
 
 export * from "./schema-wave38-l";
 export * from "./schema-wave39-a";
+export * from "./schema-wave39-c";

@@ -8,8 +8,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { assets, boqDepartments, boqLines, boqs, departments, deviceTypes, equipmentRequests } from "@/db/schema";
-import { can } from "@/lib/auth/permissions";
+import { myDepartments } from "@/lib/auth/departments";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
+import { approvedOnSend, mayApproveForDepartment, mayRequestFor } from "@/lib/assets/request-rules";
+import { budgetYear } from "@/lib/procurement/budget-year-server";
 import type { FormState } from "@/lib/assets/forms";
 import { replacementSetId } from "@/lib/boq/replacement-set";
 import { defaultUnitPrices } from "@/lib/boq/generate";
@@ -19,10 +21,16 @@ import { convert, logActivity, nextNumber } from "@/lib/server-utils";
 const str = (fd: FormData, k: string, max: number) => String(fd.get(k) ?? "").trim().slice(0, max);
 
 export async function createRequestAction(_: FormState, fd: FormData): Promise<FormState> {
-  const me = await requirePermission("assets.view");
-  if (me.role !== "DEPARTMENT_HEAD" && !can(me.role, "assets.edit") && !can(me.role, "boq.edit")) return { error: "Department heads, biomedical engineering and planners can request equipment." };
+  // Wave 39: a permission of its own (viewers and technicians can't ask); department heads only for their departments.
+  const me = await requirePermission("requests.create");
   const facilityId = Number(fd.get("facilityId")), departmentId = Number(fd.get("departmentId")) || null, deviceTypeId = Number(fd.get("deviceTypeId"));
   await requireFacilityAccess(facilityId, me);
+  const mine = me.role === "DEPARTMENT_HEAD" ? await myDepartments(me.id) : new Set<number>();
+  if (!mayRequestFor(me.role, mine, departmentId)) return { error: "You can request equipment only for the departments you look after. An administrator sets them under Users." };
+  if (departmentId) {
+    const [d] = await db.select({ f: departments.facilityId }).from(departments).where(eq(departments.id, departmentId));
+    if (!d || d.f !== facilityId) return { error: "That department isn't in this hospital." };
+  }
   const [t] = Number.isInteger(deviceTypeId) ? await db.select({ id: deviceTypes.id, name: deviceTypes.name, level: deviceTypes.level }).from(deviceTypes).where(eq(deviceTypes.id, deviceTypeId)) : [];
   if (!t || t.level !== 3) return { error: "Choose the kind of equipment." };
   const quantity = Number(fd.get("quantity") || 1), reason = str(fd, "reason", 2000);
@@ -34,7 +42,9 @@ export async function createRequestAction(_: FormState, fd: FormData): Promise<F
   const priority = (["LOW", "NORMAL", "HIGH", "URGENT"] as const).find((p) => p === fd.get("priority")) ?? "NORMAL";
   const neededBy = str(fd, "neededBy", 10) || null;
   const number = await nextNumber("REQ", equipmentRequests, equipmentRequests.number);
-  const [r] = await db.insert(equipmentRequests).values({ number, facilityId, departmentId, deviceTypeId: t.id, quantity, replacesAssetId: rep?.id ?? null, reason, priority, neededBy: neededBy && /^\d{4}-\d{2}-\d{2}$/.test(neededBy) ? neededBy : null, requestedById: me.id, requestedByName: me.name }).returning({ id: equipmentRequests.id });
+  const deptOk = approvedOnSend(me.role, mine, departmentId);
+  const [r] = await db.insert(equipmentRequests).values({ number, facilityId, departmentId, deviceTypeId: t.id, quantity, replacesAssetId: rep?.id ?? null, reason, priority, neededBy: neededBy && /^\d{4}-\d{2}-\d{2}$/.test(neededBy) ? neededBy : null, requestedById: me.id, requestedByName: me.name,
+    ...(deptOk ? { deptApprovedById: me.id, deptApprovedByName: me.name, deptApprovedAt: new Date() } : {}) }).returning({ id: equipmentRequests.id });
   await logActivity("request", r.id, "submitted", `${number}: ${quantity} × ${t.name}`, me.name);
   await notifyRole("DIRECTOR", { kind: "equipment_request", title: `${number}: ${quantity} × ${t.name} requested`, body: reason.slice(0, 200), href: `/assets/requests?facilityId=${facilityId}`, dedupeKey: `req:${r.id}` }, facilityId);
   revalidatePath("/assets/requests"); revalidatePath("/assets/department");
@@ -48,13 +58,32 @@ export async function decideRequestAction(_: FormState, fd: FormData): Promise<F
   if (!r) return { error: "That request no longer exists." };
   await requireFacilityAccess(r.facilityId, me);
   if (r.status !== "SUBMITTED") return { error: "This request has already been decided." };
-  const planYear = Number(fd.get("planYear")) || new Date().getFullYear();
+  // Wave 39: the plan year is a budget (fiscal) year, as in the capital plan.
+  const by = await budgetYear();
+  const planYear = Number(fd.get("planYear")) || by.current, yearLabel = by.label(planYear);
   if (decision === "reject" && !note) return { error: "Give the reason, so the department knows." };
   await db.update(equipmentRequests).set({ status: decision === "reject" ? "REJECTED" : "APPROVED", decisionNote: note || null, decidedByName: me.name, decidedAt: new Date(), planYear: decision === "reject" ? null : planYear }).where(eq(equipmentRequests.id, id));
-  await logActivity("request", id, decision === "reject" ? "rejected" : "approved", decision === "reject" ? note : `Approved for ${planYear}${note ? `: ${note}` : ""}`, me.name);
-  if (r.requestedById) await notifyUsers([r.requestedById], { kind: "equipment_request", title: `${r.number} ${decision === "reject" ? "not approved" : `approved for ${planYear}`}`, body: note || undefined, href: `/assets/requests?facilityId=${r.facilityId}`, dedupeKey: `req:${id}:decided` });
+  await logActivity("request", id, decision === "reject" ? "rejected" : "approved", decision === "reject" ? note : `Approved for ${yearLabel}${note ? `: ${note}` : ""}`, me.name);
+  if (r.requestedById) await notifyUsers([r.requestedById], { kind: "equipment_request", title: `${r.number} ${decision === "reject" ? "not approved" : `approved for ${yearLabel}`}`, body: note || undefined, href: `/assets/requests?facilityId=${r.facilityId}`, dedupeKey: `req:${id}:decided` });
   revalidatePath("/assets/requests");
-  return { ok: decision === "reject" ? `${r.number} rejected.` : `${r.number} approved for ${planYear}: it now shows in the capital plan.` };
+  return { ok: decision === "reject" ? `${r.number} rejected.` : `${r.number} approved for ${yearLabel}: it now shows in the capital plan.` };
+}
+
+/** Wave 39: the department head approves a request for their department (before the director decides). */
+export async function approveForDepartmentAction(_: FormState, fd: FormData): Promise<FormState> {
+  const me = await requirePermission("requests.approve");
+  const id = Number(fd.get("requestId"));
+  const [r] = await db.select().from(equipmentRequests).where(eq(equipmentRequests.id, id));
+  if (!r) return { error: "That request no longer exists." };
+  await requireFacilityAccess(r.facilityId, me);
+  const mine = me.role === "DEPARTMENT_HEAD" ? await myDepartments(me.id) : new Set<number>();
+  if (!mayApproveForDepartment(me.role, mine, r.departmentId)) return { error: "You can approve requests only for the departments you look after." };
+  if (r.status !== "SUBMITTED") return { error: "The director has already decided on this request." };
+  if (r.deptApprovedAt) return { ok: `${r.number} is already approved by the department.` };
+  await db.update(equipmentRequests).set({ deptApprovedById: me.id, deptApprovedByName: me.name, deptApprovedAt: new Date() }).where(eq(equipmentRequests.id, id));
+  await logActivity("request", id, "department_approved", `${r.number} approved for the department`, me.name);
+  revalidatePath("/assets/requests"); revalidatePath("/assets/department");
+  return { ok: `${r.number} approved for the department. The director decides next.` };
 }
 
 /** Approved requests → a draft BOQ (one line per department and type), marked as planned. */

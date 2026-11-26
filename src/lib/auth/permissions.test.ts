@@ -12,6 +12,16 @@ describe("permissions", () => {
   it("viewer can't change anything except report a fault", () => {
     expect(permissionsOf("VIEWER").every((p) => p.endsWith(".view") || p === "workorders.report")).toBe(true);
   });
+  it("department heads request and approve equipment, viewers don't (wave 39)", () => {
+    expect(can("DEPARTMENT_HEAD", "requests.create")).toBe(true);
+    expect(can("DEPARTMENT_HEAD", "requests.approve")).toBe(true);
+    expect(can("DEPARTMENT_HEAD", "prices.view")).toBe(false);
+    expect(can("DEPARTMENT_HEAD", "boq.approve")).toBe(false);
+    expect(can("VIEWER", "requests.create")).toBe(false);
+    expect(can("TECHNICIAN", "requests.create")).toBe(false);
+    for (const r of ["BIOMEDICAL", "PLANNER", "ADMIN"]) expect(can(r, "requests.create")).toBe(true);
+    expect(permissionsOf("DEPARTMENT_HEAD")).not.toEqual(permissionsOf("VIEWER"));
+  });
   it("everyone can report a fault; only the biomedical lead and admins assign jobs", () => {
     for (const r of ROLES) expect(can(r, "workorders.report")).toBe(true);
     expect(can("BIOMEDICAL", "workorders.assign")).toBe(true);
