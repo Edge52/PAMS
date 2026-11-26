@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyserProblem, appliedPartLeakageLimit, equipmentLeakageLimit, judge, nextTestDue, requiredChecks, testDueState } from "./safety-tests";
+import { analyserProblem, appliedPartLeakageLimit, equipmentLeakageLimit, insulationLimit, judge, nextTestDue, requiredChecks, safetyGateWarning, specialKind, testDueState } from "./safety-tests";
 
 describe("electrical safety tests (wave 23)", () => {
   it("gives the leakage limits by class, method and applied part", () => {
@@ -44,5 +44,42 @@ describe("electrical safety tests (wave 23)", () => {
     expect(testDueState("2026-12-10", "2026-11-14")).toBe("soon");
     expect(testDueState("2027-03-01", "2026-11-14")).toBe("ok");
     expect(testDueState(null, "2026-11-14")).toBe("never");
+  });
+});
+
+describe("electrical safety refinements (wave 40, Rigel IEC 62353 guide)", () => {
+  const base = { protectionClass: "I", appliedPart: "CF", method: "DIRECT", visualOk: true, functionalOk: true, earthResistanceOhm: 0.1, equipmentLeakageUa: 100, appliedPartLeakageUa: 10 } as const;
+  it("gives insulation minimums by test path", () => {
+    expect(insulationLimit("MAINS_PE", "I", "NONE")).toBe(2);
+    expect(insulationLimit("MAINS_PE", "II", "NONE")).toBeNull();
+    expect(insulationLimit("MAINS_ACCESSIBLE", "II", "NONE")).toBe(7);
+    expect(insulationLimit("AP_PE", "I", "BF")).toBe(70);
+    expect(insulationLimit("AP_MAINS", "I", "B")).toBe(2);
+    expect(insulationLimit("AP_MAINS", "II", "B")).toBe(7);
+    expect(insulationLimit("AP_MAINS", "II", "CF")).toBe(70);
+    expect(insulationLimit("AP_MAINS", "INTERNAL", "CF")).toBeNull();
+  });
+  it("judges insulation readings by path, and the single reading by class", () => {
+    expect(judge({ ...base, insulation: [{ path: "MAINS_PE", mohm: 3 }, { path: "AP_MAINS", mohm: 80 }] }).result).toBe("PASS");
+    expect(judge({ ...base, insulation: [{ path: "AP_MAINS", mohm: 60 }] }).failures).toEqual(["Insulation applied parts to mains 60 MΩ is under 70 MΩ."]);
+    expect(judge({ ...base, protectionClass: "II", earthResistanceOhm: null, equipmentLeakageUa: 50, insulationMOhm: 5 }).failures).toEqual(["Insulation resistance 5 MΩ is under 7 MΩ."]);
+    expect(judge({ ...base, insulationMOhm: 5 }).result).toBe("PASS");
+  });
+  it("allows more leakage on mobile X-ray and 100 µA on defibrillator paddles", () => {
+    expect(equipmentLeakageLimit("I", "DIRECT", true)).toBe(2000);
+    expect(equipmentLeakageLimit("I", "ALTERNATIVE", true)).toBe(5000);
+    expect(appliedPartLeakageLimit("CF", true)).toBe(100);
+    expect(judge({ ...base, equipmentLeakageUa: 1500, mobileXray: true }).result).toBe("PASS");
+    expect(judge({ ...base, equipmentLeakageUa: 1500 }).result).toBe("FAIL");
+    expect(judge({ ...base, appliedPartLeakageUa: 80, defibPaddles: true }).result).toBe("PASS");
+    expect(specialKind("IMG-XR-CARM")).toEqual({ mobileXray: true, defibPaddles: false });
+    expect(specialKind("LIF-DEF-AED")).toEqual({ mobileXray: false, defibPaddles: true });
+    expect(specialKind("IMG-XR-DR")).toEqual({ mobileXray: false, defibPaddles: false });
+  });
+  it("asks for a reason when there is no passed test at acceptance or after repair", () => {
+    expect(safetyGateWarning({ context: "REPAIR", inProgramme: true, passedSince: false })).toContain("after every repair");
+    expect(safetyGateWarning({ context: "ACCEPTANCE", inProgramme: true, passedSince: false })).toContain("before first use");
+    expect(safetyGateWarning({ context: "REPAIR", inProgramme: true, passedSince: true })).toBeNull();
+    expect(safetyGateWarning({ context: "REPAIR", inProgramme: false, passedSince: false })).toBeNull();
   });
 });
