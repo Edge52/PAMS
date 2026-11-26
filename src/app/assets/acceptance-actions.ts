@@ -7,7 +7,8 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { acceptances, assets } from "@/db/schema";
+import { acceptances, assets, safetyTestWaivers } from "@/db/schema";
+import { safetyGate } from "@/lib/assets/vigilance-server";
 import { can } from "@/lib/auth/permissions";
 import { myDepartments } from "@/lib/auth/departments";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
@@ -44,6 +45,14 @@ export async function saveAcceptanceAction(_: FormState, fd: FormData): Promise<
   if (intent === "sign_biomed") {
     if (filled.problems.length) return { error: filled.problems.join(" ") };
     if (filled.failed) return { error: `${filled.failed} check${filled.failed === 1 ? "" : "s"} failed. Record it as not accepted, or correct the checks.` };
+    // Wave 40 (IEC 62353): a passed electrical safety test before first use, or a reason to go on (warn, not block).
+    const gate = await safetyGate(a.id, "ACCEPTANCE", null);
+    const why = String(fd.get("safetyTestReason") ?? "").trim().slice(0, 500);
+    if (gate && !why) return { error: gate, fields: { safetyTestReason: "Give the reason, or record the test first." } };
+    if (gate) {
+      await db.insert(safetyTestWaivers).values({ assetId: a.id, context: "ACCEPTANCE", reason: why, byId: me.id, byName: me.name });
+      await logActivity("asset", a.id, "acceptance", `Signed without a passed safety test: ${why}`.slice(0, 300), me.name);
+    }
     // Wave 39: a signature is the signed-in account (id and time), never a typed name.
     v.biomedSignedBy = me.name; v.biomedSignedById = me.id; v.biomedSignedAt = new Date();
   } else if (intent === "sign_dept") {

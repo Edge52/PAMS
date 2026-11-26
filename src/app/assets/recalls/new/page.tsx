@@ -3,6 +3,7 @@ import { ActionForm } from "@/components/assets/action-form";
 import { DeviceTypeSelect, NativeSelect } from "@/components/assets/bits";
 import { deviceTypeOptions } from "@/lib/assets/queries";
 import { RECALL_ACTION_LABELS, RECALL_ACTIONS } from "@/lib/assets/recalls";
+import { RECALL_SOURCE_LABELS, RECALL_SOURCES } from "@/lib/assets/vigilance";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { todayISO } from "@/lib/format";
@@ -24,7 +25,7 @@ export default async function NewRecallPage() {
             <FormGrid cols={2}>
               <Field label="Title"><Input name="title" required maxLength={200} placeholder="e.g. Risk of battery failure on Evita V500" /></Field>
               <Field label="Manufacturer's reference"><Input name="reference" maxLength={120} placeholder="FSN number" /></Field>
-              <Field label="Source"><Input name="source" maxLength={80} placeholder="Manufacturer, EDA, FDA…" /></Field>
+              <Field label="Source"><NativeSelect name="source" value="MAKER_FSN" options={RECALL_SOURCES.map((x) => ({ value: x, label: RECALL_SOURCE_LABELS[x] }))} /></Field>
               <Field label="Required action"><NativeSelect name="action" value="INSPECT" options={RECALL_ACTIONS.map((a) => ({ value: a, label: RECALL_ACTION_LABELS[a] }))} /></Field>
               <Field label="Issued on"><Input type="date" name="issuedDate" defaultValue={todayISO()} /></Field>
               <Field label="Complete by"><Input type="date" name="dueDate" /></Field>

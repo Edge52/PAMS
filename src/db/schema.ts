@@ -2220,3 +2220,4 @@ export * from "./schema-wave39-a";
 export * from "./schema-wave39-c";
 export * from "./schema-wave39-d";
 export * from "./schema-wave40-h";
+export * from "./schema-wave40-i";

@@ -15,7 +15,7 @@ import { logActivity } from "./server-utils";
 import { isISODate } from "./assets/dates";
 import { ALLOWED_EXTENSIONS_LABEL, fileKind, removeStored, storeFile } from "./storage";
 
-const ENTITY_TYPES = ["offer", "po", "asset", "spec", "supplier", "project", "delivery", "boq", "rfq", "work_order", "contract", "disposal", "twin_note", "facility", "framework", "training", "calibration", "radiation_licence", "equipment_plan"] as const;
+const ENTITY_TYPES = ["offer", "po", "asset", "spec", "supplier", "project", "delivery", "boq", "rfq", "work_order", "contract", "disposal", "twin_note", "facility", "framework", "training", "calibration", "radiation_licence", "equipment_plan", "competency"] as const;
 const MAX_BYTES = 25 * 1024 * 1024;
 
 export type UploadState = { error?: string; ok?: string } | null;

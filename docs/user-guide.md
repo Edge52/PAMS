@@ -748,3 +748,59 @@ and the in-house contact. Change contacts sets the in-house contact (and a vendo
 **Print ID card** prints an A5 card with the QR code. Tick "Show the service line on the QR label" to print the
 vendor's line on the label too.
 
+
+## Wave 40: competency, imaging QC, vigilance and recalls
+
+### Technician competency (Maintenance › Technician competency)
+A table of engineers and technicians against the device types and categories they are trained on. Record each
+training (maker's course, in-house or on the job) with its date, expiry, certificate number and whether the person
+is **authorised to service** that type alone; attach the certificate on the record's page. A record on a category
+covers every type in it. When a job or a PPM visit is given to someone not authorised (no record, expired, or
+trained but not authorised), the job is still assigned, a warning shows and the override is listed on the page.
+The person and biomedical engineers are reminded 60 days before a record runs out, and again when it has.
+
+### Imaging QC (Maintenance › Imaging QC)
+Routine checks by the technologists, separate from the physicist's yearly tests on Radiation safety.
+- **Templates**: per modality (CT, MRI, X-ray, mammography, fluoroscopy and C-arm, ultrasound), daily, weekly or
+  monthly. "Add the example templates" gives generic starting points (for example CT water 0 ± 4 HU, noise,
+  uniformity; MRI SNR, centre frequency, ghosting; X-ray output consistency; ultrasound dead elements). They stay
+  marked as examples until you adapt and save them. One item per line: `name | unit | min | max`, or just the
+  name for pass or fail.
+- **Due**: every scanner with each template of its modality: done, due now, missed or never done. Record opens a
+  phone-friendly form; values outside the limits fail the run.
+- **Runs**: a failed run has an **Open a work order** button (one click, linked to the run).
+- **Monthly review**: per department, runs, failures and missed periods; the radiologist or physicist signs with
+  comments (required when anything failed or was missed). Biomedical engineering or the department head signs.
+- **Trend**: one measured item on one scanner over time, with its limits.
+
+### EDA vigilance (Incidents)
+- **Safety contacts** (Incidents › Safety contacts): the medical-device safety contact officer named to the EDA
+  and the radiation protection officer. Administrators change them.
+- **Kept as found**: reporting an incident with "device kept as found" quarantines the device; biomedical can
+  also do it from the device or the incident page. While kept, no repair, PPM, calibration or safety test job can
+  be raised or worked and the device can't be disposed of (an inspection job is allowed). Releasing needs a
+  reason; who and when are kept.
+- **EDA report (Annex 2)**: the incident's print page follows the EDA User Incident Report: reporter, device (name,
+  maker, model, serial, lot, UDI, GMDN, supplier), incident, outcome, actions and where the device is kept, with
+  the maker's and the EDA's report references. Fill the missing fields under "EDA report details".
+
+### Recalls
+- **Source**: US FDA, UK MHRA, EDA, maker's field safety notice or other.
+- **Departments told**: each department with affected devices acknowledges the notice (its head or biomedical);
+  who and when are shown on the recall.
+- **Import an openFDA file**: on a computer with internet, open open.fda.gov/apis/device/recall, download the
+  file (unzip it) or save a query such as `api.fda.gov/device/recall.json?search=recalling_firm:"Siemens"&limit=1000`,
+  then upload it. The app lists notices whose maker and model match your devices; tick the devices and record
+  the recall, or mark it "Not ours". openFDA's recall status isn't kept up to date: use it to find notices, not
+  to close them.
+
+### Electrical safety and dosimetry
+- Safety tests take insulation readings by path (mains to earth 2 MΩ, mains to accessible parts 7 MΩ, applied
+  parts 70 MΩ), allow 2000 µA (5000 by the alternative method) on mobile X-ray and 100 µA on defibrillator paddles
+  (figures from the Rigel IEC 62353 guide; the maker's own figures come first).
+- Completing a repair job, or signing an acceptance, without a passed safety test asks for a reason (kept on
+  record). This applies to devices in the safety test programme (the device or its type has tests on record).
+- Dosimetry: eye lens and extremity readings; a five-year table per person (100 mSv in five years, 50 mSv in one
+  year, 20 mSv this year, eye lens 20, extremities 500). The radiation protection officer (and administrators)
+  can record a declared pregnancy: a flag and a date only, seen by nobody else; readings after the date are
+  checked against 1 mSv.

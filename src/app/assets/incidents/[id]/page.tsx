@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, deviceTypes, facilities, incidents } from "@/db/schema";
+import { assets, deviceTypes, facilities, incidents, incidentVigilance } from "@/db/schema";
+import { ActionForm as AssetForm } from "@/components/assets/action-form";
+import { quarantineFor } from "@/lib/assets/vigilance-server";
+import { placeQuarantineAction, releaseQuarantineAction, saveIncidentVigilanceAction } from "../vigilance-actions";
 import { Badge, Details, Field, FormGrid, Input, LinkButton, PageHeader, Panel, Select, Textarea } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { Notice } from "@/components/assets/bits";
@@ -30,13 +33,14 @@ export default async function IncidentPage({ params, searchParams }: { params: P
   const manage = can(me.role, "incidents.manage"), closed = i.status === "CLOSED";
   const todos = incidentTodos(i, todayISO()), blocked = closeProblem(i);
   const log = await getActivity("incident", i.id, 20);
+  const [[v], hold] = await Promise.all([db.select().from(incidentVigilance).where(eq(incidentVigilance.incidentId, i.id)), quarantineFor(i.assetId)]);
 
   return (
     <>
       <PageHeader title={<><span className="font-mono text-[26px]">{i.number}</span> {i.title}</>} back={{ href: "/assets/incidents", label: "Incidents" }}
         description={<>{row.facility} · happened {formatDateTime(i.occurredAt)} · reported by {i.reportedByName ?? "someone"} on {formatDate(i.createdAt)}</>}
         actions={<>
-          <LinkButton href={`/assets/incidents/${i.id}/report`}>Report sheet</LinkButton>
+          <LinkButton href={`/assets/incidents/${i.id}/report`}>EDA report (Annex 2)</LinkButton>
           {can(me.role, "workorders.report") && !i.workOrderId && <LinkButton href={`/assets/work-orders/new?assetId=${i.assetId}`}>Raise a work order</LinkButton>}
         </>} />
       <Notice sp={sp} />
@@ -103,6 +107,42 @@ export default async function IncidentPage({ params, searchParams }: { params: P
               { label: "Type", value: row.typeName }, { label: "Make and model", value: [row.manufacturer, row.model].filter(Boolean).join(" ") || null }, { label: "Serial number", value: row.serial },
             ]} />
           </Panel>
+          <Panel title="Kept as found">
+            {hold ? (
+              <>
+                <p className="text-sm"><b className="text-danger">Quarantined</b> since {formatDateTime(hold.placedAt)}{hold.placedByName ? ` by ${hold.placedByName}` : ""}: {hold.reason}{hold.keptAt ? `. Kept at ${hold.keptAt}.` : "."}</p>
+                <p className="mt-1 text-xs text-muted">No repair, maintenance or disposal until it is released.</p>
+                {manage && <AssetForm action={releaseQuarantineAction} className="mt-3 space-y-2">
+                  <input type="hidden" name="assetId" value={i.assetId} />
+                  <Field label="Why it can be released"><Input name="releaseReason" required maxLength={500} placeholder="e.g. the maker inspected it; EDA report closed" /></Field>
+                  <SubmitButton variant="secondary">Release the device</SubmitButton>
+                </AssetForm>}
+              </>
+            ) : manage ? (
+              <AssetForm action={placeQuarantineAction} className="space-y-2">
+                <input type="hidden" name="assetId" value={i.assetId} /><input type="hidden" name="incidentId" value={i.id} />
+                <p className="text-sm text-muted">Keep the device as found for the maker and the EDA: repair work and disposal are blocked until it is released.</p>
+                <Field label="Reason"><Input name="reason" required maxLength={300} defaultValue={`Incident ${i.number}`} /></Field>
+                <Field label="Kept at"><Input name="keptAt" maxLength={200} placeholder="e.g. Biomedical store, locked cage 2" /></Field>
+                <SubmitButton variant="secondary">Keep as found</SubmitButton>
+              </AssetForm>
+            ) : <p className="text-sm text-muted">Not quarantined.</p>}
+          </Panel>
+          {manage && (
+            <Panel title="EDA report details">
+              <AssetForm action={saveIncidentVigilanceAction} className="space-y-2">
+                <input type="hidden" name="incidentId" value={i.id} />
+                <Field label="Maker's report reference"><Input name="makerReference" maxLength={120} defaultValue={v?.makerReference ?? ""} /></Field>
+                <Field label="Lot or batch number"><Input name="lotNumber" maxLength={120} defaultValue={v?.lotNumber ?? ""} /></Field>
+                <Field label="UDI" hint="Blank uses the device's own UDI."><Input name="udi" maxLength={200} defaultValue={v?.udi ?? ""} /></Field>
+                <Field label="Where the device is kept"><Input name="keptAt" maxLength={200} defaultValue={v?.keptAt ?? hold?.keptAt ?? ""} /></Field>
+                <Field label="Reporter's job title"><Input name="reporterJobTitle" maxLength={160} defaultValue={v?.reporterJobTitle ?? ""} /></Field>
+                <Field label="Reporter's phone"><Input name="reporterPhone" maxLength={60} defaultValue={v?.reporterPhone ?? ""} /></Field>
+                <Field label="Reporter's email"><Input type="email" name="reporterEmail" maxLength={160} defaultValue={v?.reporterEmail ?? ""} /></Field>
+                <SubmitButton variant="secondary">Save details</SubmitButton>
+              </AssetForm>
+            </Panel>
+          )}
           <Panel title="History">
             {log.length === 0 ? <p className="text-sm text-muted">Nothing yet.</p> : (
               <ul className="space-y-2 text-sm">{log.map((l) => <li key={l.id}><span className="text-muted">{formatDateTime(l.at)} · {l.actor ?? "system"}</span><span className="block">{l.summary}</span></li>)}</ul>

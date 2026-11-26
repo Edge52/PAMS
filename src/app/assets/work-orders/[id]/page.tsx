@@ -14,12 +14,14 @@ import { ActionForm } from "@/components/assets/action-form";
 import { enumOptions, NativeSelect, Notice } from "@/components/assets/bits";
 import { maintenanceTypeLabel } from "@/lib/assets/maintenance";
 import { assignableUsers } from "@/lib/assets/work-order-server";
+import { competencyForAsset } from "@/lib/assets/competency-server";
+import { isAuthorised } from "@/lib/assets/competency";
 import { checklistSummary, isMeasurement, rangeLabel } from "@/lib/assets/checklists";
 import { CLAIM_STATUSES } from "@/lib/assets/contracts";
 import { allowedActions, downtimeHours, formatHours, isLate, WORK_ORDER_PRIORITIES } from "@/lib/assets/work-orders";
 import { can, ROLE_LABELS } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
-import { CURRENCIES, formatDate, formatDateTime, formatMoney } from "@/lib/format";
+import { CURRENCIES, formatDate, formatDateTime, formatMoney, todayISO } from "@/lib/format";
 import { getActivity } from "@/lib/server-utils";
 import { workshopRoute } from "@/lib/flows/route-server";
 import { instrumentOptions, instrumentsByEvent } from "@/lib/assets/test-equipment-server";
@@ -79,6 +81,9 @@ export default async function WorkOrderPage({ params, searchParams }: {
       .from(spareParts).where(and(eq(spareParts.facilityId, wo.facilityId), eq(spareParts.active, true)))
       .orderBy(sql`(${spareParts.deviceTypeId} = ${r.deviceTypeId}) desc nulls last`, asc(spareParts.name)).limit(400) : Promise.resolve([]),
   ]);
+  // Wave 40: who is authorised for this device's type (shown beside each name; assigning someone else warns).
+  const comp = people.length ? await competencyForAsset(wo.assetId, people.map((u) => u.id), todayISO()) : null;
+  const compLabel = (uid: number) => { const st = comp?.states.get(uid) ?? "none"; return isAuthorised(st) ? "" : st === "expired" ? " (training expired)" : st === "trained" ? " (not authorised)" : " (no training record)"; };
   const [instruments, usedOn] = await Promise.all([
     actions.has("complete") ? instrumentOptions(wo.facilityId) : Promise.resolve([]),
     instrumentsByEvent(wo.maintenanceEventId ? [wo.maintenanceEventId] : []),
@@ -131,7 +136,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
                 <input type="hidden" name="workOrderId" value={wo.id} />
                 <ChecklistInputs items={wo.checklist!} />
                 <p className="text-xs text-muted">A reading outside its range is recorded as failed. The checklist comes from the device type in the catalogue.</p>
-                <CompletionFields deviceDown={wo.deviceDown} optionalResolution partsCost={used.total} instruments={instruments} assetId={wo.assetId} />
+                <CompletionFields deviceDown={wo.deviceDown} optionalResolution partsCost={used.total} instruments={instruments} assetId={wo.assetId} repairOf={wo.type === "CORRECTIVE" ? wo.id : undefined} />
               </ActionForm>
             </Panel>
           )}
@@ -282,7 +287,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
             <Panel title="Complete the job">
               <ActionForm action={completeWorkOrderAction} className="space-y-3">
                 <input type="hidden" name="workOrderId" value={wo.id} />
-                <CompletionFields deviceDown={wo.deviceDown} partsCost={used.total} instruments={instruments} assetId={wo.assetId} />
+                <CompletionFields deviceDown={wo.deviceDown} partsCost={used.total} instruments={instruments} assetId={wo.assetId} repairOf={wo.type === "CORRECTIVE" ? wo.id : undefined} />
               </ActionForm>
             </Panel>
           )}
@@ -305,7 +310,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
                   <input type="hidden" name="workOrderId" value={wo.id} />
                   <Field label="Give the job to">
                     <NativeSelect name="assigneeId" required value={wo.assignedToId ?? undefined} placeholder="Choose a person…"
-                      options={people.map((u) => ({ value: u.id, label: `${u.name} — ${u.jobTitle ?? ROLE_LABELS[u.role as keyof typeof ROLE_LABELS] ?? u.role}` }))} />
+                      options={people.map((u) => ({ value: u.id, label: `${u.name} — ${u.jobTitle ?? ROLE_LABELS[u.role as keyof typeof ROLE_LABELS] ?? u.role}${compLabel(u.id)}` }))} />
                   </Field>
                   <Field label="Priority"><NativeSelect name="priority" value={wo.priority} options={enumOptions(WORK_ORDER_PRIORITIES)} /></Field>
                   <Field label="Note for the technician (optional)"><Input name="note" maxLength={500} /></Field>
@@ -350,7 +355,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
   );
 }
 
-function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instruments, assetId }: { deviceDown: boolean; optionalResolution?: boolean; partsCost?: number; instruments: Instrument[]; assetId: number }) {
+function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instruments, assetId, repairOf }: { deviceDown: boolean; optionalResolution?: boolean; partsCost?: number; instruments: Instrument[]; assetId: number; repairOf?: number }) {
   return (
     <div className="space-y-3">
       <Field label={optionalResolution ? "What was done (optional)" : "What was done"} hint={optionalResolution ? "Left blank, the checklist result is recorded." : undefined}>
@@ -366,6 +371,11 @@ function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instr
       </FormGrid>
       <TestEquipmentField options={instruments} />
       <MeterAtVisit assetId={assetId} />
+      {repairOf != null && (
+        <Field label="No safety test after the repair? Say why" hint={<>IEC 62353 asks for a passed electrical safety test after every repair. <Link href={`/assets/safety-tests/new?assetId=${assetId}&workOrderId=${repairOf}`} className="text-primary hover:underline">Record the test</Link>, or give the reason here (kept on record).</>}>
+          <Input name="safetyTestReason" maxLength={500} placeholder="e.g. battery-powered part only, no mains parts touched" />
+        </Field>
+      )}
       {deviceDown && (
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="returnToService" defaultChecked className="mt-1" />
           <span>Device is back in service</span></label>

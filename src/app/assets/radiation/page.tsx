@@ -12,12 +12,14 @@ import {
   ANNUAL_LIMIT_MSV, CHECK_STATE_LABELS, DOSE_FLAG_LABELS, DOSE_FLAG_TONE, INVESTIGATION_SHARE, LICENCE_STATE_LABELS, PROTECTIVE_KIND_LABELS, PROTECTIVE_KINDS,
   QC_TESTS, TONE, type DoseFlag, type ProtectiveKind,
 } from "@/lib/assets/radiation";
-import { radiationOverview } from "@/lib/assets/radiation-server";
+import { dosimetryExtras, radiationOverview } from "@/lib/assets/radiation-server";
+import { EXTREMITY_LIMIT_MSV, EYE_LENS_LIMIT_MSV, FIVE_YEAR_LIMIT_MSV, PREGNANCY_LIMIT_MSV, SINGLE_YEAR_LIMIT_MSV, seesPregnancy } from "@/lib/assets/dosimetry";
+import { safetyContacts } from "@/lib/assets/vigilance-server";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatNumber, todayISO } from "@/lib/format";
 import { capRows } from "@/lib/list";
-import { addLicenceAction, addProtectiveItemAction, recordDoseAction, recordProtectiveCheckAction, recordQcAction, retireProtectiveItemAction } from "./actions";
+import { addLicenceAction, addProtectiveItemAction, recordDoseAction, recordProtectiveCheckAction, recordQcAction, retireProtectiveItemAction, setPregnancyAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Radiation safety" };
@@ -165,7 +167,7 @@ export default async function RadiationPage({ searchParams }: { searchParams: Pr
         </div>
       )}
 
-      {tab === "dosimetry" && <Dosimetry o={o} canEdit={canEdit} facilityId={facilityId} departments={tree?.departments ?? []} />}
+      {tab === "dosimetry" && <Dosimetry o={o} canEdit={canEdit} facilityId={facilityId} departments={tree?.departments ?? []} me={me} today={today} />}
 
       {tab === "protective" && (
         <div className="space-y-5">
@@ -218,8 +220,12 @@ export default async function RadiationPage({ searchParams }: { searchParams: Pr
 
 type Overview = Awaited<ReturnType<typeof radiationOverview>>;
 
-function Dosimetry({ o, canEdit, facilityId, departments }: { o: Overview; canEdit: boolean; facilityId: number; departments: { id: number; name: string }[] }) {
+async function Dosimetry({ o, canEdit, facilityId, departments, me, today }: { o: Overview; canEdit: boolean; facilityId: number; departments: { id: number; name: string }[]; me: { id: number; role: string }; today: string }) {
   const { rows, note } = capRows(o.doses, 300, "readings");
+  const contacts = await safetyContacts(facilityId);
+  const rpo = seesPregnancy(me, contacts?.rpoUserId);
+  const x = await dosimetryExtras(facilityId, rows.map((r) => r.d.id), today, rpo);
+  const flagged = x.people.filter((p) => p.problems.length);
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted">Badge readings for the last 12 months. Each reading is judged against the period&apos;s share of the annual limit ({ANNUAL_LIMIT_MSV} mSv); {Math.round(INVESTIGATION_SHARE * 100)} % of it is the investigation level. Only a name and a role are kept: no ID numbers.</p>
@@ -227,18 +233,45 @@ function Dosimetry({ o, canEdit, facilityId, departments }: { o: Overview; canEd
         <>
           {note && <p role="note" className="text-sm text-warn">{note}</p>}
           <Table>
-            <THead><tr><Th>Person</Th><Th>Period</Th><Th className="text-right">Dose (mSv)</Th><Th className="text-right">Limit (mSv)</Th><Th>Flag</Th></tr></THead>
+            <THead><tr><Th>Person</Th><Th>Period</Th><Th className="text-right">Dose (mSv)</Th><Th className="text-right">Eye lens / extremity (mSv)</Th><Th className="text-right">Limit (mSv)</Th><Th>Flag</Th></tr></THead>
             <tbody>{rows.map(({ d, departmentName }) => (
               <tr key={d.id}>
                 <Td><b>{d.personName}</b><span className="block text-xs text-muted">{[d.personRole, departmentName].filter(Boolean).join(" · ")}</span></Td>
                 <Td className="whitespace-nowrap">{formatDate(d.periodStart)} to {formatDate(d.periodEnd)}</Td>
                 <Td className="text-right">{formatNumber(d.doseMsv, 2)}</Td>
+                <Td className="text-right text-sm">{(() => { const e = x.extra.get(d.id); return e ? `${e.eyeLensMsv != null ? formatNumber(e.eyeLensMsv, 2) : "—"} / ${e.extremityMsv != null ? formatNumber(e.extremityMsv, 2) : "—"}` : <span className="text-muted">—</span>; })()}</Td>
                 <Td className="text-right">{formatNumber(d.limitMsv, 2)}</Td>
                 <Td><Badge tone={DOSE_FLAG_TONE[d.flag as DoseFlag] ?? "neutral"}>{DOSE_FLAG_LABELS[d.flag as DoseFlag] ?? d.flag}</Badge>{d.notes && <span className="block max-w-xs text-xs text-muted">{d.notes}</span>}</Td>
               </tr>
             ))}</tbody>
           </Table>
         </>
+      )}
+      <Panel title="Over five years">
+        <p className="mb-2 text-sm text-muted">Each person&apos;s readings over the last five years: at most {FIVE_YEAR_LIMIT_MSV} mSv in five years and {SINGLE_YEAR_LIMIT_MSV} mSv in any one year (20 mSv a year on average); eye lens {EYE_LENS_LIMIT_MSV} mSv and extremities {EXTREMITY_LIMIT_MSV} mSv a year. A person is matched by the name as written on the readings.</p>
+        {x.people.length === 0 ? <p className="text-sm text-muted">No readings in the last five years.</p> : (
+          <Table>
+            <THead><tr><Th>Person</Th><Th className="text-right">5 years (mSv)</Th><Th className="text-right">This year (mSv)</Th><Th>Checks</Th></tr></THead>
+            <tbody>{(flagged.length ? flagged : x.people.slice(0, 20)).map((p) => (
+              <tr key={p.key}><Td><b>{p.name}</b></Td><Td className="text-right">{formatNumber(p.fiveYear, 2)}</Td><Td className="text-right">{formatNumber(p.currentYear, 2)}</Td>
+                <Td className="text-sm">{p.problems.length ? <span className="text-danger">{p.problems.join(" ")}</span> : <Badge tone="ok">Within limits</Badge>}</Td></tr>
+            ))}</tbody>
+          </Table>
+        )}
+        {flagged.length > 0 && <p className="mt-2 text-xs text-muted">Showing the {flagged.length} people with a problem.</p>}
+      </Panel>
+      {rpo && (
+        <Panel title="Declared pregnancies (radiation protection officer only)">
+          <p className="mb-2 text-sm text-muted">A flag and a date only: no medical detail is kept. Readings from periods ending after the date are checked against {PREGNANCY_LIMIT_MSV} mSv for the rest of the pregnancy. Only you and administrators see this.</p>
+          {x.pregnancies.length > 0 && <ul className="mb-3 space-y-1 text-sm">{x.pregnancies.map((d) => <li key={d.id}><b>{d.personName}</b>, declared {formatDate(d.declaredOn)}: {d.check ? `${formatNumber(d.check.since, 2)} mSv since` : "—"} {d.check?.over && <Badge tone="danger">At or over {PREGNANCY_LIMIT_MSV} mSv</Badge>}</li>)}</ul>}
+          <ActionForm action={setPregnancyAction} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="facilityId" value={facilityId} />
+            <Field label="Name, as on the readings"><Input name="personName" required maxLength={120} /></Field>
+            <Field label="Declared on"><Input type="date" name="declaredOn" max={today} /></Field>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="declared" defaultChecked className="size-5" /> Declared (untick to end)</label>
+            <SubmitButton variant="secondary">Save</SubmitButton>
+          </ActionForm>
+        </Panel>
       )}
       {canEdit && <Panel title="Record a badge reading">
         <ActionForm action={recordDoseAction} className="space-y-3">
@@ -251,6 +284,8 @@ function Dosimetry({ o, canEdit, facilityId, departments }: { o: Overview; canEd
             <Field label="Period from"><Input type="date" name="periodStart" required /></Field>
             <Field label="Period to"><Input type="date" name="periodEnd" required /></Field>
             <Field label="Limit for the period (mSv)" hint="Leave blank to use the share of 20 mSv a year."><Input name="limitMsv" inputMode="decimal" /></Field>
+            <Field label="Eye lens dose (mSv)" hint="Hp(3), if the badge reports it."><Input name="eyeLensMsv" inputMode="decimal" /></Field>
+            <Field label="Extremity dose (mSv)" hint="Hp(0.07) from a ring or wrist badge."><Input name="extremityMsv" inputMode="decimal" /></Field>
           </FormGrid>
           <Field label="Notes"><Input name="notes" maxLength={1000} /></Field>
           <SubmitButton variant="secondary">Save reading</SubmitButton>

@@ -166,6 +166,10 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
     // Loan equipment past its due-back date (wave 27): the hospital's biomedical engineers, once per loan.
     const loans = await notifyOverdueLoans(today);
     if (loans) { created += loans; byKind.loan_overdue = (byKind.loan_overdue ?? 0) + loans; }
+    // Wave 40: technician training and authorisations running out (lib/assets/competency): the person and biomedical.
+    const { notifyCompetencyExpiry } = await import("@/lib/assets/competency-server");
+    const comp = await notifyCompetencyExpiry(today).catch((e) => { console.error("[alerts] competency alerts skipped:", e); return 0; });
+    if (comp) { created += comp; byKind.competency_expiry = (byKind.competency_expiry ?? 0) + comp; }
     // Tender timetable steps past their planned date with no actual date (wave 37): procurement, once per step and date.
     const { overdueTimetableAlerts } = await import("@/lib/procurement/timetable-server");
     const steps = await overdueTimetableAlerts(today);

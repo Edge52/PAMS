@@ -23,6 +23,9 @@ import {
 } from "@/lib/assets/work-orders";
 import { notifyUsers } from "@/lib/notifications";
 import { saveInstruments } from "@/lib/assets/test-equipment-server";
+import { assignmentCheck } from "@/lib/assets/competency-server";
+import { quarantineFor } from "@/lib/assets/vigilance-server";
+import { quarantineBlock } from "@/lib/assets/vigilance";
 import { logActivity, nextNumber } from "@/lib/server-utils";
 import { todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
@@ -60,6 +63,10 @@ export async function reportFaultAction(_: FormState, fd: FormData): Promise<For
   if (!a) return { error: d.assetTag ? `No device has the tag ${d.assetTag.toUpperCase()}. Check the label and try again.` : "That device no longer exists." };
   await requireFacilityAccess(a.facilityId, me);
   if (a.status === "DISPOSED") return { error: `${a.tag} has been disposed of — it can't get a work order.` };
+  const typeWanted = can(me.role, "maintenance.edit") ? d.type ?? "CORRECTIVE" : "CORRECTIVE";
+  // Wave 40 (EDA vigilance): a device kept as found gets no repair work until it is released.
+  const kept = quarantineBlock(await quarantineFor(a.id), "work", typeWanted);
+  if (kept) return { error: kept };
 
   // Only maintenance staff pick a planned job type; a fault report is always corrective.
   const type = can(me.role, "maintenance.edit") ? d.type ?? "CORRECTIVE" : "CORRECTIVE";
@@ -116,13 +123,16 @@ export async function assignWorkOrderAction(_: FormState, fd: FormData): Promise
   if (!who) return { error: "That person can't take this job: they need maintenance rights and access to this hospital." };
   if (who.id === wo.assignedToId && (!p.data.priority || p.data.priority === wo.priority)) return { error: `${who.name} already has this job.` };
   const priority = p.data.priority ?? wo.priority;
+  // Wave 40 (GAHAR EFS.10): warn, never block, when the person is not authorised for the device's type; keep a record.
+  const comp = await assignmentCheck({ assetId: wo.assetId, facilityId: wo.facilityId, userId: who.id, userName: who.name, today: todayISO() });
   const ok = await db.transaction(async (tx) => {
     const set: Partial<typeof workOrders.$inferInsert> = { status: next, assignedToId: who.id, assignedAt: new Date(), priority };
     if (priority !== wo.priority && !wo.startedAt) set.dueAt = responseDue(wo.reportedAt, priority);
     if (!(await guardedUpdate(tx, wo, set))) return false;
     const verb = wo.assignedToId ? "Reassigned" : "Assigned";
     await logActivity("work_order", wo.id, "assigned",
-      `${verb} to ${who.name}${priority !== wo.priority ? `, priority ${humanize(priority).toLowerCase()}` : ""}${p.data.note ? ` — ${p.data.note}` : ""}`, me.name, tx);
+      `${verb} to ${who.name}${priority !== wo.priority ? `, priority ${humanize(priority).toLowerCase()}` : ""}${p.data.note ? ` — ${p.data.note}` : ""}${comp.warning ? ` (override: ${comp.warning})` : ""}`.slice(0, 600), me.name, tx);
+    await comp.record(tx, wo.id, me, p.data.note);
     return true;
   });
   if (!ok) return { error: RACE };
@@ -134,6 +144,7 @@ export async function assignWorkOrderAction(_: FormState, fd: FormData): Promise
     });
   }
   refresh(wo.id, wo.assetId);
+  if (comp.warning) redirect(`${path(wo.id)}?error=${encodeURIComponent(`Assigned to ${who.name}, with a warning: ${comp.warning} The override is recorded.`)}`);
   return done(wo.id, `Assigned to ${who.name}.`);
 }
 
@@ -280,6 +291,14 @@ export async function createPpmWorkOrdersAction(_: FormState, fd: FormData): Pro
       assignee = ok;
     }
   }
+  // Wave 40: devices kept as found are left out; a person not authorised for a type is warned about (and recorded).
+  const held = new Set<number>();
+  for (const r of rows) if (await quarantineFor(r.assetId)) held.add(r.assetId);
+  const rowsOk = rows.filter((r) => !held.has(r.assetId));
+  if (!rowsOk.length) return { error: "Every device chosen is kept as found (quarantined). Release it first." };
+  rows.splice(0, rows.length, ...rowsOk);
+  const checks = assignee ? await Promise.all(rows.map((r) => assignmentCheck({ assetId: r.assetId, facilityId: r.facilityId, userId: assignee!.id, userName: assignee!.name, today: todayISO() }))) : [];
+  const warnings = [...new Set(checks.map((c) => c.warning).filter((w): w is string => !!w))];
   const checklists = new Map<number, Awaited<ReturnType<typeof checklistForType>>>();
   for (const t of new Set(rows.map((r) => r.deviceTypeId))) checklists.set(t, await checklistForType(t));
   const covers = new Map<number, Awaited<ReturnType<typeof coverForAsset>>>();
@@ -288,7 +307,7 @@ export async function createPpmWorkOrdersAction(_: FormState, fd: FormData): Pro
   const now = new Date();
   const created = await db.transaction(async (tx) => {
     const out: { id: number; number: string }[] = [];
-    for (const r of rows) {
+    for (const [i, r] of rows.entries()) {
       const number = await nextNumber("WO", workOrders, workOrders.number, tx);
       const cover = covers.get(r.assetId)!;
       const label = r.type === "PPM" ? "Planned preventive maintenance" : humanize(r.type);
@@ -300,7 +319,8 @@ export async function createPpmWorkOrdersAction(_: FormState, fd: FormData): Pro
         checklist: blankResults(checklists.get(r.deviceTypeId)!.items),
         coverage: cover.kind, contractId: cover.kind === "CONTRACT" ? cover.contract.id : null,
       }).returning({ id: workOrders.id, number: workOrders.number });
-      await logActivity("work_order", w.id, "reported", `Raised from the maintenance schedule (visit due ${r.scheduledDate})${assignee ? `, assigned to ${assignee.name}` : ""}`, me.name, tx);
+      await logActivity("work_order", w.id, "reported", `Raised from the maintenance schedule (visit due ${r.scheduledDate})${assignee ? `, assigned to ${assignee.name}` : ""}${checks[i]?.warning ? ` (override: ${checks[i].warning})` : ""}`.slice(0, 600), me.name, tx);
+      if (checks[i]) await checks[i].record(tx, w.id, me);
       out.push(w);
     }
     return out;
@@ -314,8 +334,11 @@ export async function createPpmWorkOrdersAction(_: FormState, fd: FormData): Pro
   }
   revalidatePath("/assets/maintenance");
   revalidatePath("/assets/work-orders");
-  if (created.length === 1) return done(created[0].id, `${created[0].number} created from the schedule.`);
-  return { ok: `${created.length} work orders created${assignee ? ` and assigned to ${assignee.name}` : ""}. They are under Work orders.` };
+  const warnText = warnings.length ? ` Warning: ${warnings.slice(0, 3).join(" ")}${warnings.length > 3 ? ` and ${warnings.length - 3} more` : ""} The override is recorded.` : "";
+  const heldText = held.size ? ` ${held.size} device${held.size === 1 ? " is" : "s are"} kept as found and got no job.` : "";
+  if (created.length === 1 && !warnText && !heldText) return done(created[0].id, `${created[0].number} created from the schedule.`);
+  if (created.length === 1) redirect(`${path(created[0].id)}?error=${encodeURIComponent(`${created[0].number} created from the schedule.${warnText}${heldText}`)}`);
+  return { ok: `${created.length} work orders created${assignee ? ` and assigned to ${assignee.name}` : ""}. They are under Work orders.${warnText}${heldText}` };
 }
 
 /* ── Warranty / contract claim ── */

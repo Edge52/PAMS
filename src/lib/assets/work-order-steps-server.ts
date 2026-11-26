@@ -8,7 +8,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { maintenanceEvents, recallAssets, spareParts, users, workOrders } from "@/db/schema";
+import { maintenanceEvents, recallAssets, safetyTestWaivers, spareParts, users, workOrders } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { requireFacilityAccess, type CurrentUser } from "@/lib/auth/session";
 import { firstError, formObject, int, num, reqId, text } from "./forms";
@@ -21,6 +21,8 @@ import { applyMovement, issuedToJob, notifyIfLow } from "./parts-server";
 import { notifyUsers } from "@/lib/notifications";
 import { checkInstruments, saveInstruments } from "./test-equipment-server";
 import { readingAtVisit } from "./meters-server";
+import { quarantineFor, safetyGate } from "./vigilance-server";
+import { quarantineBlock } from "./vigilance";
 import { logActivity } from "@/lib/server-utils";
 import { todayISO } from "@/lib/format";
 
@@ -67,6 +69,10 @@ export async function progressJob(me: CurrentUser, woId: number, step: "start" |
   const r = await loadForAction(woId, step, me);
   if (r.error !== undefined) return { error: r.error };
   const { wo, next } = r;
+  if (step !== "hold") {
+    const kept = quarantineBlock(await quarantineFor(wo.assetId), "work", wo.type); // wave 40: kept as found
+    if (kept) return { error: kept };
+  }
   const ok = await db.transaction(async (tx) => {
     const set: Partial<typeof workOrders.$inferInsert> = { status: next };
     if (step === "start") { set.startedAt = new Date(); if (!wo.assignedToId) { set.assignedToId = me.id; set.assignedAt = new Date(); } }
@@ -90,6 +96,8 @@ const CompleteSchema = z.object({
   workOrderId: reqId("Work order"), resolution: text(4000), rootCause: text(500),
   laborHours: num("Labour hours", 0, 1000), cost: num("Cost", 0, 1e10), currency: text(3),
   returnToService: z.preprocess((v) => v === "on" || v === "true" || v === "1", z.boolean()),
+  /** Wave 40: why the job is finished without a passed electrical safety test after the repair. */
+  safetyTestReason: text(500),
 });
 
 /**
@@ -117,6 +125,11 @@ export async function completeJob(me: CurrentUser, fd: FormData, inTx?: InTx): P
   const sum = checklistSummary(checklist);
   const resolution = d.resolution ?? (checklist?.length ? `Checklist done: ${sum.pass} passed, ${sum.fail} failed${sum.na ? `, ${sum.na} not applicable` : ""}.` : undefined);
   if (!resolution) return { error: "Say what was done." };
+  const kept = quarantineBlock(await quarantineFor(wo.assetId), "work", wo.type); // wave 40: kept as found
+  if (kept) return { error: kept };
+  // Wave 40 (IEC 62353): a passed safety test after a repair, or a reason to go on without one (warn, not block).
+  const gate = wo.type === "CORRECTIVE" ? await safetyGate(wo.assetId, "REPAIR", todayISO(wo.startedAt ?? wo.reportedAt)) : null;
+  if (gate && !d.safetyTestReason) return { error: gate, fields: { safetyTestReason: "Give the reason, or record the test first." } };
   const now = new Date();
   // Wave 27: test equipment used must be in calibration today.
   const used = await checkInstruments(fd, wo.facilityId, todayISO(now));
@@ -147,10 +160,11 @@ export async function completeJob(me: CurrentUser, fd: FormData, inTx?: InTx): P
     await tx.update(workOrders).set({ maintenanceEventId: eventId }).where(eq(workOrders.id, wo.id));
     await saveInstruments(tx, eventId, used.ok);
     await meter.save(tx);
+    if (gate && d.safetyTestReason) await tx.insert(safetyTestWaivers).values({ assetId: wo.assetId, context: "REPAIR", workOrderId: wo.id, reason: d.safetyTestReason, byId: me.id, byName: me.name });
     // A recall job done = that device is actioned for the recall.
     await tx.update(recallAssets).set({ status: "ACTIONED", actionedAt: now, note: `Done under ${wo.number}` })
       .where(and(eq(recallAssets.workOrderId, wo.id), eq(recallAssets.status, "PENDING")));
-    await logActivity("work_order", wo.id, "completed", `Completed by ${me.name}: ${resolution.slice(0, 200)}${failed ? ` — ${failed} checklist item${failed === 1 ? "" : "s"} failed` : ""}${wo.deviceDown ? (d.returnToService ? " — back in service" : " — still out of use") : ""}`, me.name, tx);
+    await logActivity("work_order", wo.id, "completed", `Completed by ${me.name}: ${resolution.slice(0, 200)}${failed ? ` — ${failed} checklist item${failed === 1 ? "" : "s"} failed` : ""}${wo.deviceDown ? (d.returnToService ? " — back in service" : " — still out of use") : ""}${gate && d.safetyTestReason ? ` — no safety test after repair: ${d.safetyTestReason}` : ""}`.slice(0, 600), me.name, tx);
     await logActivity("asset", wo.assetId, "maintenance", `${wo.number} completed — ${resolution.slice(0, 120)}`, me.name, tx);
     await applyAssetEffect("complete", wo, { returnToService: d.returnToService, actor: me.name, calibrationHeld: held }, tx);
     if (inTx) await inTx(tx);

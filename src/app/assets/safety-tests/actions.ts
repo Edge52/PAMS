@@ -9,10 +9,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, deviceTypes, safetyTests } from "@/db/schema";
+import { assets, deviceTypes, safetyTestInsulation, safetyTests } from "@/db/schema";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formObject, id, isoDate, num, oneOf, reqId, text } from "@/lib/assets/forms";
-import { analyserProblem, APPLIED_PARTS, judge, METHODS, nextTestDue, PROTECTION_CLASSES } from "@/lib/assets/safety-tests";
+import { analyserProblem, APPLIED_PARTS, insulationLimit, judge, METHODS, nextTestDue, PROTECTION_CLASSES, specialKind, type InsulationPath } from "@/lib/assets/safety-tests";
 import { fail, zodFail, type ActionState } from "@/lib/procurement/forms";
 import { logActivity } from "@/lib/server-utils";
 
@@ -26,6 +26,9 @@ const TestSchema = z.object({
   visualOk: flag, functionalOk: flag,
   earthResistanceOhm: num("Protective earth resistance", 0, 100), insulationMOhm: num("Insulation resistance", 0, 100000),
   equipmentLeakageUa: num("Equipment leakage", 0, 100000), appliedPartLeakageUa: num("Applied part leakage", 0, 100000),
+  // Wave 40: insulation by test path (Rigel IEC 62353 guide).
+  insMainsAccessible: num("Insulation, mains to accessible parts", 0, 100000), insAppliedPe: num("Insulation, applied parts to earth", 0, 100000),
+  insAppliedMains: num("Insulation, applied parts to mains", 0, 100000),
   analyserAssetId: reqId("Test device"), workOrderId: id(), notes: text(2000),
 });
 
@@ -34,7 +37,7 @@ export async function recordSafetyTestAction(_: ActionState, fd: FormData): Prom
   const p = TestSchema.safeParse(formObject(fd));
   if (!p.success) return zodFail(p.error);
   const d = p.data;
-  const [a] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, interval: deviceTypes.ppmIntervalMonths })
+  const [a] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, interval: deviceTypes.ppmIntervalMonths, code: deviceTypes.code })
     .from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).where(eq(assets.id, d.assetId));
   if (!a) return fail("That device is not in the register.");
   await requireFacilityAccess(a.facilityId, me);
@@ -52,13 +55,18 @@ export async function recordSafetyTestAction(_: ActionState, fd: FormData): Prom
     protectionClass: d.protectionClass, appliedPart: d.appliedPart ?? "NONE", method: d.method ?? "DIRECT", visualOk: d.visualOk, functionalOk: d.functionalOk,
     earthResistanceOhm: d.earthResistanceOhm ?? null, insulationMOhm: d.insulationMOhm ?? null, equipmentLeakageUa: d.equipmentLeakageUa ?? null, appliedPartLeakageUa: d.appliedPartLeakageUa ?? null,
   };
-  const verdict = judge(reading);
+  const insulation = ([["MAINS_ACCESSIBLE", d.insMainsAccessible], ["AP_PE", d.insAppliedPe], ["AP_MAINS", d.insAppliedMains]] as [InsulationPath, number | undefined][])
+    .filter((x): x is [InsulationPath, number] => x[1] != null).map(([path, mohm]) => ({ path, mohm }));
+  const kind = specialKind(a.code);
+  const verdict = judge({ ...reading, insulation, ...kind });
   const nextDue = verdict.result === "PASS" ? nextTestDue(d.testedOn, a.interval) : null;
   const [row] = await db.insert(safetyTests).values({
     assetId: a.id, workOrderId: d.workOrderId ?? null, testedOn: d.testedOn, testedById: me.id, testedByName: me.name, ...reading,
     analyserAssetId: an.id, analyserLabel: `${label}${an.serial ? `, serial ${an.serial}` : ""} (${an.tag})`, analyserCalibrationDue: an.calibrationDue,
     result: verdict.result, failures: verdict.failures, nextDue, notes: d.notes ?? null,
   }).returning({ id: safetyTests.id });
+  const withLimits = insulation.map((x) => ({ ...x, limitMohm: insulationLimit(x.path, reading.protectionClass, reading.appliedPart) })).filter((x): x is typeof x & { limitMohm: number } => x.limitMohm != null);
+  if (withLimits.length) await db.insert(safetyTestInsulation).values(withLimits.map((x) => ({ safetyTestId: row.id, path: x.path, mohm: x.mohm, limitMohm: x.limitMohm })));
   await logActivity("asset", a.id, "safety_test", `Electrical safety test ${verdict.result === "PASS" ? "passed" : "FAILED"}${verdict.failures.length ? `: ${verdict.failures[0]}` : ""}`.slice(0, 300), me.name);
   revalidatePath(`/assets/${a.id}`); revalidatePath("/assets/safety-tests");
   const msg = verdict.result === "PASS" ? `Passed. Next test due ${nextDue}.` : `Failed: ${verdict.failures.join(" ")} Take the device out of use and raise a work order.`;

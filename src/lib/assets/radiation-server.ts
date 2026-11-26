@@ -3,9 +3,10 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, isNotNull, like, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  assets, departments, deviceTypes, dosimetryPeriods, floors, protectiveChecks, protectiveItems, radiationLicences, radiationQcTests, rooms,
+  assets, departments, deviceTypes, dosimetryDeclarations, dosimetryExtra, dosimetryPeriods, floors, protectiveChecks, protectiveItems, radiationLicences, radiationQcTests, rooms,
 } from "@/db/schema";
 import { addMonths } from "./dates";
+import { personChecks, personKey, pregnancyCheck } from "./dosimetry";
 import { checkState, isRadiationType, latestBy, licenceState, roomStatus, type CheckState, type ExpiryState, type RoomStatus } from "./radiation";
 
 /** Devices in a hospital (or all, when facilityId is null) whose type uses ionising radiation, not disposed. */
@@ -85,4 +86,23 @@ export async function radiationFor(o: { assetId?: number; roomId?: number | null
   ]);
   const latest = [...latestBy(qc, qcKey, (r) => r.testedOn).values()].map((q) => ({ ...q, state: checkState(q, today) }));
   return { licences: licences.map((l) => ({ ...l, state: licenceState(l.expiresOn, today) })), qc: latest };
+}
+
+/**
+ * Wave 40: dosimetry beyond one period — eye lens and extremity readings of the shown periods, per-person checks
+ * over five years (100 mSv, 50 mSv in one year, 20 mSv this year), and declared pregnancies (only when `withPregnancy`).
+ */
+export async function dosimetryExtras(facilityId: number, periodIds: number[], today: string, withPregnancy: boolean) {
+  const fiveAgo = addMonths(today, -60);
+  const [extra, readings, decl] = await Promise.all([
+    periodIds.length ? db.select().from(dosimetryExtra).where(inArray(dosimetryExtra.periodId, periodIds.slice(0, 5000))) : Promise.resolve([]),
+    db.select({ personName: dosimetryPeriods.personName, periodStart: dosimetryPeriods.periodStart, periodEnd: dosimetryPeriods.periodEnd, doseMsv: dosimetryPeriods.doseMsv,
+      eyeLensMsv: dosimetryExtra.eyeLensMsv, extremityMsv: dosimetryExtra.extremityMsv })
+      .from(dosimetryPeriods).leftJoin(dosimetryExtra, eq(dosimetryExtra.periodId, dosimetryPeriods.id))
+      .where(and(eq(dosimetryPeriods.facilityId, facilityId), gte(dosimetryPeriods.periodEnd, fiveAgo))).limit(20000),
+    withPregnancy ? db.select().from(dosimetryDeclarations).where(and(eq(dosimetryDeclarations.facilityId, facilityId), eq(dosimetryDeclarations.pregnancyDeclared, true))) : Promise.resolve([]),
+  ]);
+  const people = personChecks(readings, today);
+  const pregnancies = decl.map((d) => ({ ...d, check: pregnancyCheck(d.declaredOn, readings.filter((r) => personKey(r.personName) === d.personKey)) }));
+  return { extra: new Map(extra.map((e) => [e.periodId, e])), people, pregnancies };
 }

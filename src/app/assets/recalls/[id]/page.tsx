@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, departments, deviceTypes, facilities, recallAssets, recalls, workOrders } from "@/db/schema";
+import { assets, departments, deviceTypes, facilities, recallAcknowledgements, recallAssets, recalls, workOrders } from "@/db/schema";
+import { mayAcknowledge, pendingAcknowledgements, sourceLabel } from "@/lib/assets/vigilance";
+import { myDepartments } from "@/lib/auth/departments";
+import { acknowledgeRecallAction } from "../fsn-actions";
 import { Badge, Button, Details, PageHeader, Panel, Stat, StatusBadge } from "@/components/ui";
 import { ActionForm } from "@/components/assets/action-form";
 import { Meter, NativeSelect, Notice } from "@/components/assets/bits";
@@ -31,13 +34,18 @@ export default async function RecallPage({ params, searchParams }: {
   const canEdit = can(me.role, "recalls.edit");
   const [devices, activity] = await Promise.all([
     db.select({ ra: recallAssets, tag: assets.assetTag, model: assets.model, serial: assets.serialNumber, assetStatus: assets.status,
-      department: departments.name, facility: facilities.name, facilityId: assets.facilityId, roomId: assets.roomId, woNumber: workOrders.number, woStatus: workOrders.status })
+      department: departments.name, departmentId: assets.departmentId, facility: facilities.name, facilityId: assets.facilityId, roomId: assets.roomId, woNumber: workOrders.number, woStatus: workOrders.status })
       .from(recallAssets).innerJoin(assets, eq(assets.id, recallAssets.assetId)).innerJoin(facilities, eq(facilities.id, assets.facilityId))
       .leftJoin(departments, eq(departments.id, assets.departmentId)).leftJoin(workOrders, eq(workOrders.id, recallAssets.workOrderId))
       .where(and(eq(recallAssets.recallId, r.id), scope === null ? undefined : scope.length ? inArray(assets.facilityId, scope) : sql`false`))
       .orderBy(sql`case ${recallAssets.status} when 'PENDING' then 0 else 1 end`, asc(assets.assetTag)),
     getActivity("recall", r.id, 30),
   ]);
+  // Wave 40: each department with affected devices acknowledges the notice (who, when).
+  const acks = await db.select().from(recallAcknowledgements).where(eq(recallAcknowledgements.recallId, r.id));
+  const deptList = [...new Map(devices.filter((d) => d.departmentId != null).map((d) => [d.departmentId!, d.department ?? "Department"])).entries()];
+  const waiting = pendingAcknowledgements(devices, acks);
+  const mine = me.role === "DEPARTMENT_HEAD" ? await myDepartments(me.id) : new Set<number>();
   const prog = recallProgress(devices.map((d) => d.ra));
   const withoutJob = devices.filter((d) => d.ra.status === "PENDING" && !d.ra.workOrderId).length;
   const multi = scope === null || scope.length > 1;
@@ -62,7 +70,7 @@ export default async function RecallPage({ params, searchParams }: {
           <Panel title="Notice">
             <Details items={[
               { label: "Required action", value: RECALL_ACTION_LABELS[r.action as RecallAction] },
-              { label: "Source", value: r.source },
+              { label: "Source", value: sourceLabel(r.source) },
               { label: "Manufacturer's reference", value: r.reference },
               { label: "Issued", value: formatDate(r.issuedDate) },
               { label: "Complete by", value: formatDate(r.dueDate) },
@@ -134,6 +142,23 @@ export default async function RecallPage({ params, searchParams }: {
             </>
           )}
           {r.status === "CLOSED" && <Panel><p className="text-sm text-muted">Closed {formatDateTime(r.closedAt)}.</p></Panel>}
+          {deptList.length > 0 && (
+            <Panel title="Departments told">
+              <p className="mb-2 text-xs text-muted">{waiting.length ? `${waiting.length} department${waiting.length === 1 ? "" : "s"} still to acknowledge.` : "Every department has acknowledged."}</p>
+              <ul className="space-y-2 text-sm">{deptList.map(([did, name]) => {
+                const a = acks.find((x) => x.departmentId === did);
+                return (
+                  <li key={did}>{name}: {a ? <span className="text-muted">acknowledged by {a.byName}, {formatDateTime(a.at)}{a.note ? ` — ${a.note}` : ""}</span> : mayAcknowledge({ canManage: canEdit, isHead: me.role === "DEPARTMENT_HEAD", myDepartments: mine }, did) ? (
+                    <ActionForm action={acknowledgeRecallAction} className="mt-1 flex flex-wrap items-center gap-1">
+                      <input type="hidden" name="recallId" value={r.id} /><input type="hidden" name="departmentId" value={did} />
+                      <input name="note" placeholder="Note" aria-label={`Note for ${name}`} maxLength={500} className="w-32 rounded-[var(--radius-control)] border border-line bg-surface px-2 py-1 text-[13px]" />
+                      <button className="text-[13px] text-primary hover:underline">Acknowledge</button>
+                    </ActionForm>
+                  ) : <Badge tone="warn">Waiting</Badge>}</li>
+                );
+              })}</ul>
+            </Panel>
+          )}
           <Panel title="History">
             {activity.length === 0 ? <p className="text-sm text-muted">Nothing recorded yet.</p> : (
               <ol className="space-y-3">{activity.map((e) => (

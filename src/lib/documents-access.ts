@@ -6,11 +6,11 @@ import "server-only";
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, boqs, calibrations, radiationLicences, equipmentPlans, frameworks, disposals, facilities, twinNotes, serviceContracts, workOrders, deliveries, documents, offers, projects, purchaseOrders, rfqs, techSpecs, trainingSessions, documentVersions, users } from "@/db/schema";
+import { assets, boqs, calibrations, radiationLicences, equipmentPlans, frameworks, disposals, facilities, twinNotes, serviceContracts, workOrders, deliveries, documents, offers, projects, purchaseOrders, rfqs, techSpecs, trainingSessions, documentVersions, users, competencies } from "@/db/schema";
 import { can, type Permission } from "./auth/permissions";
 import { facilityScope, getCurrentUser, requireFacilityAccess, requirePermission, type CurrentUser } from "./auth/session";
 
-export const ENTITY_TYPES = ["offer", "po", "asset", "spec", "supplier", "project", "delivery", "boq", "rfq", "work_order", "contract", "disposal", "twin_note", "facility", "framework", "training", "calibration", "radiation_licence", "equipment_plan"] as const;
+export const ENTITY_TYPES = ["offer", "po", "asset", "spec", "supplier", "project", "delivery", "boq", "rfq", "work_order", "contract", "disposal", "twin_note", "facility", "framework", "training", "calibration", "radiation_licence", "equipment_plan", "competency"] as const;
 type EntityType = (typeof ENTITY_TYPES)[number];
 
 /** Which module's read permission covers each kind of record's attachments. */
@@ -18,7 +18,7 @@ export const VIEW_PERMISSION: Record<EntityType, Permission> = {
   offer: "procurement.view", po: "procurement.view", asset: "assets.view", spec: "procurement.view", supplier: "procurement.view",
   project: "procurement.view", delivery: "procurement.view", boq: "boq.view", rfq: "procurement.view", work_order: "assets.view", contract: "assets.view", disposal: "assets.view",
   twin_note: "assets.view", facility: "assets.view", framework: "procurement.view", training: "assets.view",
-  calibration: "assets.view", radiation_licence: "assets.view", equipment_plan: "assets.view",
+  calibration: "assets.view", radiation_licence: "assets.view", equipment_plan: "assets.view", competency: "assets.view",
 };
 
 /** Who may attach to / remove from each kind of record. */
@@ -33,6 +33,8 @@ export const EDIT_PERMISSION: Record<EntityType, Permission> = {
   calibration: "maintenance.edit", radiation_licence: "maintenance.edit",
   // Wave 40: the signed equipment management plan, added by biomedical engineering.
   equipment_plan: "assets.edit",
+  // Wave 40: a technician's training certificate, added by the biomedical lead who records it (no hospital).
+  competency: "workorders.assign",
 };
 
 /** The facility a record belongs to (null = none, visible to all), or undefined when the record doesn't exist. */
@@ -57,6 +59,7 @@ export async function facilityOfEntity(entityType: string, id: number): Promise<
     case "equipment_plan": return one(db.select({ f: equipmentPlans.facilityId }).from(equipmentPlans).where(eq(equipmentPlans.id, id)));
     case "framework": return one(db.select({ f: frameworks.facilityId }).from(frameworks).where(eq(frameworks.id, id)));
     case "delivery": return one(db.select({ f: purchaseOrders.facilityId }).from(deliveries).innerJoin(purchaseOrders, eq(purchaseOrders.id, deliveries.poId)).where(eq(deliveries.id, id)));
+    case "competency": { const r = await db.select({ id: competencies.id }).from(competencies).where(eq(competencies.id, id)); return r.length ? null : undefined; }
     default: return null; // suppliers have no facility
   }
 }
