@@ -716,3 +716,35 @@ https for the camera).
   mine**.
 - Test equipment and meter readings are recorded on the full job page (needs signal).
 - Signing out removes the kept jobs from the phone. Changes not yet sent stay and go out when you sign in again.
+
+## GAHAR readiness (wave 40)
+
+### GAHAR evidence pack
+Reports › Accreditation › **GAHAR evidence pack**. Pick the hospital and the period. Each GAHAR 2025 standard for
+medical equipment (EFS.10 EOC 1–6, utilities EFS.11, water EFS.12, imaging QC DAS.05, radiation safety DAS.09) lists
+its evidence with **Have**, **Partly** or **Missing**, a count or a percentage, and a link to the records. "Not
+recorded in PAMS" means keep that evidence elsewhere (for example utilities and water). Print or save as PDF, or
+export to Excel. Check the current GAHAR handbook: wording can change.
+
+### New reports
+Under Reports: **Calibration**, **Electrical safety tests**, **Recalls** and **User training**. Each can be printed
+and exported to Excel.
+
+### Equipment management plan
+Maintenance › **Equipment plan**. Start the year's plan (it copies last year's, or suggested text), edit the scope,
+risk method, maintenance strategy and the KPIs with their targets, then **Submit for approval**. The hospital
+director approves it under Approvals. Once a year press **Record evaluation**: PAMS works out the KPI figures for the
+period and keeps them with your findings and actions. **Start a new version** to update an approved plan. **Print
+plan** gives the document to sign; attach the signed copy on the plan page.
+
+### Backups for critical devices
+Maintenance › **Critical backups**. For a department and device type, set the units in daily use and the backups
+needed. The shortfall list shows life-support and high criticality types with too few working units (installed or
+in service). Biomedical engineers get a notice when the last working backup goes.
+
+### Equipment ID card
+On a device page, the **Equipment ID card** panel shows the vendor's emergency line, the running service contract
+and the in-house contact. Change contacts sets the in-house contact (and a vendor phone when the supplier has none).
+**Print ID card** prints an A5 card with the QR code. Tick "Show the service line on the QR label" to print the
+vendor's line on the label too.
+

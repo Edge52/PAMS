@@ -20,11 +20,13 @@ export const DEFAULT_POLICIES: NewPolicy[] = [
   { entity: "AWARD", label: "Competent authority", approverRole: "DIRECTOR", minAmountEgp: "0", stepOrder: 1 },
   // Condemning a device writes off a public asset: the director decides (add a Finance step under settings if needed).
   { entity: "DISPOSAL", label: "Hospital director", approverRole: "DIRECTOR", minAmountEgp: "0", stepOrder: 1 },
+  // Wave 40: the yearly medical equipment management plan (GAHAR EFS.10) is approved by the hospital director.
+  { entity: "EQUIPMENT_PLAN", label: "Hospital director", approverRole: "DIRECTOR", minAmountEgp: "0", stepOrder: 1 },
 ];
 
 export async function ensureDefaultPolicies(db: DB): Promise<void> {
   let added = 0;
-  for (const entity of ["PO", "BOQ", "AWARD", "DISPOSAL"] as const) {
+  for (const entity of ["PO", "BOQ", "AWARD", "DISPOSAL", "EQUIPMENT_PLAN"] as const) {
     const [existing] = await db.select({ id: approvalPolicies.id }).from(approvalPolicies).where(eq(approvalPolicies.entity, entity)).limit(1);
     if (existing) continue;
     const rows = DEFAULT_POLICIES.filter((p) => p.entity === entity);

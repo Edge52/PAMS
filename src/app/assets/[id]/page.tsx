@@ -30,6 +30,7 @@ import { ExamCountsPanel, isExamDevice } from "@/components/assets/exam-counts-p
 import { isMriType } from "@/lib/assets/cryogen";
 import { isTubeType } from "@/lib/assets/tubes";
 import { SecurityPanel } from "@/components/assets/security-panel";
+import { IdCardPanel } from "@/components/assets/id-card-panel";
 import { UsagePanel } from "@/components/assets/usage-panel";
 import { LoansPanel } from "@/components/assets/loans-panel";
 import { usageDueMap } from "@/lib/assets/meters-server";
@@ -171,6 +172,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
           {canReport && x.status !== "DISPOSED" && <LinkButton href={`/assets/work-orders/new?assetId=${x.id}`} variant="danger">Report a fault</LinkButton>}
           {canReport && x.status !== "DISPOSED" && <LinkButton href={`/assets/incidents/new?assetId=${x.id}`}>Report an incident</LinkButton>}
           <LinkButton href={`/assets/labels?ids=${x.id}`}>Print label</LinkButton>
+          <LinkButton href={`/assets/${x.id}/id-card`}>Print ID card</LinkButton>
           {canDispose && <LinkButton href={`/assets/disposals/new?assetId=${x.id}`} variant="ghost">Propose disposal</LinkButton>}
           {x.roomId && <LinkButton href={`/assets/3d?facilityId=${x.facilityId}&assetId=${x.id}`}>Show in 3D</LinkButton>}
           {x.roomId && <LinkButton href={`/assets/map?assetId=${x.id}`} variant="primary">Show on floor map</LinkButton>}
@@ -367,6 +369,8 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
               </div>
             </Panel>
           )}
+
+          <IdCardPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />
 
           {bookValue && <BookValuePanel bv={bookValue} own={{ lifeYears: x.lifeExpectancyYears, residualPct: x.residualPct }} canEdit={canEdit} />}
 

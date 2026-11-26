@@ -138,7 +138,9 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
     const safety = await loadSafetyAlertData(today).then((d) => collectSafetyAlerts(d, today)).catch((e) => { console.error("[alerts] safety alerts skipped:", e); return []; });
     // Wave 38: MRI cryogen log and X-ray/CT tubes, also on their own.
     const imaging = await loadImagingAlertData(today).then((d) => collectImagingAlerts(d, today)).catch((e) => { console.error("[alerts] imaging alerts skipped:", e); return []; });
-    const alerts = digestAlerts([...collectAlerts(await loadData(today, windows), today, windows), ...safety, ...imaging], today, windows, (id) => (id == null ? null : names.get(id) ?? null));
+    // Wave 40: a critical device type with no working backup left in a department, on its own too.
+    const backups = await import("@/lib/compliance/critical-backup-server").then((m) => m.criticalBackupAlerts()).catch((e) => { console.error("[alerts] backup alerts skipped:", e); return []; });
+    const alerts = digestAlerts([...collectAlerts(await loadData(today, windows), today, windows), ...safety, ...imaging, ...backups], today, windows, (id) => (id == null ? null : names.get(id) ?? null));
     candidates = alerts.length;
 
     // One recipient lookup per role and facility per run.

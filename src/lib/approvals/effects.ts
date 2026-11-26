@@ -6,10 +6,11 @@ import "server-only";
  *   BOQ:   approved → APPROVED (locked);           rejected/withdrawn → back to DRAFT
  *   AWARD: approved → offer AWARDED with the Law 182 art. 39 timeline; rejected → offer unchanged (logged)
  *   DISPOSAL: approved → disposal APPROVED, asset condemned and out of service; rejected → REJECTED; withdrawn → DRAFT
+ *   EQUIPMENT_PLAN: approved → plan APPROVED (earlier approved versions of the same year stay as history); rejected/withdrawn → DRAFT
  */
 import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { approvalRequests, assets, boqs, disposals, offers, purchaseOrders } from "@/db/schema";
+import { approvalRequests, assets, boqs, disposals, equipmentPlans, offers, purchaseOrders } from "@/db/schema";
 import { logActivity } from "@/lib/server-utils";
 import { applyApprovedAward, committeeChairUserIds, logAwardOutcome } from "@/lib/procurement/tender";
 import type { ApprovalEntity } from "./core";
@@ -41,6 +42,11 @@ export async function onRequestClosed(entity: ApprovalEntity, entityId: number, 
       await db.update(assets).set({ status: "OUT_OF_SERVICE", condition: "CONDEMNED" }).where(eq(assets.id, res[0].assetId));
       await logActivity("asset", res[0].assetId, "condemned", `Condemned under ${res[0].number}; awaiting disposal`, ctx.actor.name);
     }
+  } else if (entity === "EQUIPMENT_PLAN") {
+    const to = status === "APPROVED" ? "APPROVED" : "DRAFT";
+    const res = await db.update(equipmentPlans).set({ status: to, approvedAt: to === "APPROVED" ? new Date() : null })
+      .where(and(eq(equipmentPlans.id, entityId), eq(equipmentPlans.status, "SUBMITTED"))).returning({ year: equipmentPlans.year, version: equipmentPlans.version });
+    if (res.length) await logActivity("equipment_plan", entityId, "status_changed", `Plan ${res[0].year} v${res[0].version}: ${to === "APPROVED" ? "approved" : status === "REJECTED" ? "rejected, back to draft" : "withdrawn, back to draft"}`, ctx.actor.name);
   }
 }
 
@@ -72,6 +78,7 @@ export async function reconcileApprovalEffects(): Promise<number> {
     let stuck = false;
     if (r.entity === "PO") stuck = (await db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(and(eq(purchaseOrders.id, r.entityId), eq(purchaseOrders.status, "PENDING_APPROVAL")))).length > 0;
     else if (r.entity === "BOQ") stuck = (await db.select({ id: boqs.id }).from(boqs).where(and(eq(boqs.id, r.entityId), eq(boqs.status, "UNDER_REVIEW")))).length > 0;
+    else if (r.entity === "EQUIPMENT_PLAN") stuck = (await db.select({ id: equipmentPlans.id }).from(equipmentPlans).where(and(eq(equipmentPlans.id, r.entityId), eq(equipmentPlans.status, "SUBMITTED")))).length > 0;
     else if (r.entity === "DISPOSAL") stuck = (await db.select({ id: disposals.id }).from(disposals).where(and(eq(disposals.id, r.entityId), eq(disposals.status, "PENDING_APPROVAL")))).length > 0;
     else if (r.entity === "AWARD" && r.status === "APPROVED" && r.decidedAt) {
       stuck = (await db.select({ id: offers.id }).from(offers).where(and(eq(offers.id, r.entityId), ne(offers.status, "AWARDED"),

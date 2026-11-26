@@ -16,7 +16,7 @@ import { penaltySettingsProblem } from "@/lib/procurement/delay-penalty";
 const blank = (v: unknown) => (v === "" ? undefined : v);
 const policySchema = z.object({
   id: z.preprocess(blank, z.coerce.number().int().positive().optional()),
-  entity: z.enum(["PO", "BOQ", "AWARD", "DISPOSAL"], { error: "Choose what the rule approves" }),
+  entity: z.enum(["PO", "BOQ", "AWARD", "DISPOSAL", "EQUIPMENT_PLAN"], { error: "Choose what the rule approves" }),
   label: reqStr("Give the step a name, e.g. Finance", 120),
   approverRole: z.enum(ROLES, { error: "Choose the role that approves" }),
   minAmountEgp: optNum("Enter the minimum as an amount in EGP"),

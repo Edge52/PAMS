@@ -6,6 +6,8 @@ import { parseIds } from "@/lib/assets/filters";
 import { assetsByIds } from "@/lib/assets/queries";
 import { isLocalOrigin, labelUrl } from "@/lib/assets/rounds";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
+import { idCards } from "@/lib/compliance/id-card-server";
+import { todayISO } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Asset labels" };
@@ -23,6 +25,9 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
   const origin = (process.env.APP_URL || `${proto}://${host}`).replace(/\/+$/, "");
   const appUrlSet = !!process.env.APP_URL?.trim();
   const local = isLocalOrigin(origin);
+  // Wave 40: the vendor's service line on labels of devices whose ID card says so (or every label with ?service=1).
+  const allService = sp.service === "1";
+  const cards = await idCards(list.map((a) => a.id), todayISO());
   const labels = await Promise.all(list.map(async (a) => ({
     a,
     // The QR holds the tag only (audit B4): a database id can point at another device after a re-import.
@@ -52,6 +57,10 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
               : <>APP_URL is not set, so labels point to {origin}, the address this page was opened on. Set APP_URL if phones use another address.</>}
           </p>
         )}
+        {list.length > 0 && (
+          <p className="mb-4 text-sm"><a href={`/assets/labels?ids=${list.map((a) => a.id).join(",")}${allService ? "" : "&service=1"}`} className="text-primary hover:underline">
+            {allService ? "Show the service line only where the ID card asks for it" : "Show the vendor's service line on every label"}</a></p>
+        )}
       </div>
       {list.length === 0 ? (
         <EmptyState title="No assets chosen" action={<LinkButton href="/assets" variant="primary">Choose assets in the register</LinkButton>}>
@@ -69,6 +78,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
                 <p className="truncate text-[6.5pt]">{[a.manufacturer, a.model].filter(Boolean).join(" ")}</p>
                 {a.serialNumber && <p className="truncate font-mono text-[6.5pt]">S/N {a.serialNumber}</p>}
                 <p className="mt-0.5 truncate text-[6.5pt] text-muted">{a.departmentName ?? ""}{a.roomCode ? ` · ${a.roomCode}` : ""}</p>
+                {(allService || cards.get(a.id)?.showOnLabel) && cards.get(a.id)?.vendor.phone && <p className="truncate text-[6.5pt] font-semibold">Service {cards.get(a.id)!.vendor.phone}</p>}
               </div>
             </div>
           ))}

@@ -51,6 +51,7 @@ export const KIND_LABELS: Record<string, string> = {
   cryogen_urgent: "MRI cold head",
   tube_replace: "Tube replacement",
   tube_warranty: "Tube warranty",
+  critical_backup: "No backup left",
   test: "Test",
 };
 

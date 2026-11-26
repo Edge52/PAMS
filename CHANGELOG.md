@@ -1,5 +1,30 @@
 # Changelog
 
+## Wave 40 (not merged yet)
+
+### GAHAR evidence and the equipment plan
+- **New reports** (print or PDF, and Excel like the others): Calibration (in date, due, overdue, failed, never; done in
+  the period and % on time), Electrical safety tests (done, failed, overdue per IEC 62353 class), Recalls (open and
+  closed, devices affected and still to action, days to close), User training (trained users per device type,
+  refreshers due, department coverage).
+- **GAHAR evidence pack** (`/reports/gahar`): hospital and period; one section per standard (EFS.10 EOC 1–6, EFS.11,
+  EFS.12, DAS.05, DAS.09), each evidence item marked have, partly or missing with a count or % and a link to the
+  records; items PAMS doesn't hold say "Not recorded in PAMS". Map and rules are pure data in
+  `src/lib/compliance/gahar.ts`. Worded "GAHAR 2025 standards", with a note to check the current handbook.
+- **Equipment management plan** (`/assets/equipment-plan`): per hospital and year, versions; scope, risk method,
+  maintenance strategy policy, KPIs with targets; approved through Approvals (new entity `EQUIPMENT_PLAN`, default
+  step: hospital director); yearly evaluation keeps a KPI snapshot (PPM on time, calibration, safety tests,
+  incidents with harm, recalls done, training coverage, equipment available); "Print plan"; signed copy as a document.
+- **Backups for critical devices** (`/assets/critical-backup`): units in use plus backups per department and device
+  type, a shortfall list for life-support and high criticality types, and an hourly alert to biomedical engineers
+  (`critical_backup`) when the last working backup goes.
+- **Equipment ID card**: on the device page the vendor's emergency line (contract, then the supplier's service
+  contact, then typed, then the supplier's phone), the running contract and the in-house contact; "Print ID card"
+  (A5 with QR); the service line on QR labels when the card asks for it (or `?service=1` for all).
+- Schema (migration to come from the lead): tables `equipment_plans`, `equipment_plan_reviews`, `critical_backups`,
+  `equipment_id_cards`, enum `equipment_plan_status`; value `EQUIPMENT_PLAN` added to enum `approval_entity`.
+
+
 ## Wave 39 (not merged yet)
 
 ### Law 182 and maintenance rules

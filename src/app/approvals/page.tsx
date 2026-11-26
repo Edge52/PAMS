@@ -8,7 +8,7 @@ import { HIDDEN_PRICE, opensFor, seesPrices } from "@/lib/auth/prices";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approvals" };
 
-const KIND: Record<string, string> = { PO: "Purchase order", BOQ: "BOQ", AWARD: "Award", DISPOSAL: "Disposal" };
+const KIND: Record<string, string> = { PO: "Purchase order", BOQ: "BOQ", AWARD: "Award", DISPOSAL: "Disposal", EQUIPMENT_PLAN: "Equipment plan" };
 const REQ_TONE: Record<string, Tone> = { PENDING: "warn", APPROVED: "ok", REJECTED: "danger", CANCELLED: "neutral" };
 const REQ_TEXT: Record<string, string> = { PENDING: "In progress", APPROVED: "Approved", REJECTED: "Rejected", CANCELLED: "Withdrawn" };
 

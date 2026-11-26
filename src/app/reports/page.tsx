@@ -19,9 +19,10 @@ const DQ: Card = {
 /** Report library (wave 26): grouped by subject, each role's own group first, with a search box. */
 const GROUPS: { id: string; title: string; slugs: string[] }[] = [
   { id: "summary", title: "Summary", slugs: [] },
-  { id: "maintenance", title: "Maintenance", slugs: ["work-orders", "ppm-compliance"] },
+  { id: "maintenance", title: "Maintenance", slugs: ["work-orders", "ppm-compliance", "calibration", "electrical-safety", "user-training"] },
   { id: "assets", title: "Assets", slugs: ["assets-by-department", "warranty-expiries"] },
-  { id: "safety", title: "Safety and security", slugs: ["incidents", "device-security"] },
+  { id: "safety", title: "Safety and security", slugs: ["incidents", "recalls", "device-security"] },
+  { id: "gahar", title: "Accreditation", slugs: ["gahar"] },
   { id: "procurement", title: "Procurement", slugs: ["tender-status", "open-purchase-orders"] },
   { id: "money", title: "Money", slugs: ["book-value", "depreciation-journal", "service-cost"] },
 ];

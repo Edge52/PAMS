@@ -14,6 +14,11 @@ import { deviceSecurityReport } from "./device-security";
 import { depreciationJournalReport } from "./depreciation-journal";
 import { bookValueReport } from "./book-value";
 import { serviceCostReport } from "./service-cost";
+import { calibrationReport } from "./calibration";
+import { electricalSafetyReport } from "./electrical-safety";
+import { recallsReport } from "./recalls";
+import { userTrainingReport } from "./user-training";
+import { gaharReport } from "./gahar";
 
 export type ReportDef = {
   slug: string;
@@ -99,6 +104,41 @@ export const REPORTS: ReportDef[] = [
     filters: ["facility", "dateRange"], dateLabel: "Period",
     defaults: (today) => ({ from: today.slice(0, 4) + "-01-01", to: today }),
     load: serviceCostReport,
+  },
+  // Wave 40: the standard reports GAHAR surveyors ask for, and the evidence pack.
+  {
+    slug: "calibration", title: "Calibration",
+    description: "Devices that need calibration by department: in date, due, overdue, failed and never calibrated, with calibrations done in the period and the share done on time.",
+    filters: ["facility", "dateRange"], dateLabel: "Calibrated",
+    defaults: (today) => ({ from: today.slice(0, 4) + "-01-01", to: today }),
+    load: calibrationReport,
+  },
+  {
+    slug: "electrical-safety", title: "Electrical safety tests",
+    description: "Tests done and failed in the period by IEC 62353 protection class, and devices whose last test failed or is overdue.",
+    filters: ["facility", "dateRange"], dateLabel: "Tested",
+    defaults: (today) => ({ from: today.slice(0, 4) + "-01-01", to: today }),
+    load: electricalSafetyReport,
+  },
+  {
+    slug: "recalls", title: "Recalls",
+    description: "Recalls open and issued in the period: devices affected, still to action and done, and the days each took to close.",
+    filters: ["facility", "dateRange"], dateLabel: "Issued",
+    defaults: (today) => ({ from: today.slice(0, 4) + "-01-01", to: today }),
+    load: recallsReport,
+  },
+  {
+    slug: "user-training", title: "User training",
+    description: "For each device type in use: users with current training, refreshers due and departments without a trained user.",
+    filters: ["facility"],
+    load: userTrainingReport,
+  },
+  {
+    slug: "gahar", title: "GAHAR evidence pack",
+    description: "GAHAR 2025 standards for medical equipment (EFS.10–12, DAS.05, DAS.09): each evidence item with have, partly or missing, a count or percentage, and links to the records.",
+    filters: ["facility", "dateRange"], dateLabel: "Period",
+    defaults: (today) => ({ from: `${Number(today.slice(0, 4)) - 1}${today.slice(4)}`, to: today }),
+    load: gaharReport,
   },
 ];
 

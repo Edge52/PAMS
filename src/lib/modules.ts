@@ -68,6 +68,8 @@ export const MODULES: AppModule[] = [
     { href: "/assets/training", label: "User training", need: "assets.view" },
     { href: "/assets/security", label: "Device security", need: "assets.view" },
     { href: "/assets/maintenance/strategy", label: "Risk and strategy", need: "assets.view" },
+    { href: "/assets/equipment-plan", label: "Equipment plan", need: "assets.view" },
+    { href: "/assets/critical-backup", label: "Critical backups", need: "assets.view" },
   ] },
   { id: "buildings", name: "Buildings & 3D", description: "Hospitals, floors and rooms, the floor map and the 3D view.", links: [
     { href: "/facilities", label: "Facilities & floors", need: "assets.view" },
@@ -84,6 +86,7 @@ export const MODULES: AppModule[] = [
     { href: "/reports", label: "Reports", need: "reports.view" },
     { href: "/reports/executive", label: "Executive summary", need: "prices.view" },
     { href: "/reports/data-quality", label: "Data quality", need: "reports.view" },
+    { href: "/reports/gahar", label: "GAHAR evidence", need: "reports.view" },
     { href: "/analytics", label: "Analytics", need: "reports.view" },
   ] },
   { id: "admin", name: "Administration", description: "Users and roles, approval rules, settings, the audit log and backups.", links: [

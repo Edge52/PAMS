@@ -25,8 +25,8 @@ export type Actor = Pick<CurrentUser, "id" | "name" | "role" | "allFacilities">;
 export type Result = { ok: true; message: string } | { ok: false; error: string };
 
 /** Activity-log entity for each approval entity (the record the trail belongs to). */
-export const LOG_ENTITY: Record<ApprovalEntity, string> = { PO: "po", BOQ: "boq", AWARD: "offer", DISPOSAL: "disposal" };
-const ENTITY_LABEL: Record<ApprovalEntity, string> = { PO: "Purchase order", BOQ: "BOQ", AWARD: "Award recommendation", DISPOSAL: "Disposal request" };
+export const LOG_ENTITY: Record<ApprovalEntity, string> = { PO: "po", BOQ: "boq", AWARD: "offer", DISPOSAL: "disposal", EQUIPMENT_PLAN: "equipment_plan" };
+const ENTITY_LABEL: Record<ApprovalEntity, string> = { PO: "Purchase order", BOQ: "BOQ", AWARD: "Award recommendation", DISPOSAL: "Disposal request", EQUIPMENT_PLAN: "Equipment management plan" };
 
 async function who(actor?: Actor): Promise<Actor> {
   const a = actor ?? (await getCurrentUser());

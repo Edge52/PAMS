@@ -1384,7 +1384,8 @@ export const appSettings = pgTable("app_settings", {
   updatedAt: updatedAt(),
 });
 
-export const approvalEntity = pgEnum("approval_entity", ["PO", "BOQ", "AWARD", "DISPOSAL"]);
+/** Wave 40: EQUIPMENT_PLAN = the yearly medical equipment management plan (GAHAR EFS.10). */
+export const approvalEntity = pgEnum("approval_entity", ["PO", "BOQ", "AWARD", "DISPOSAL", "EQUIPMENT_PLAN"]);
 export const approvalStatus = pgEnum("approval_status", ["PENDING", "APPROVED", "REJECTED", "CANCELLED"]);
 export const approvalStepStatus = pgEnum("approval_step_status", ["WAITING", "PENDING", "APPROVED", "REJECTED", "SKIPPED"]);
 
@@ -2218,3 +2219,4 @@ export * from "./schema-wave38-l";
 export * from "./schema-wave39-a";
 export * from "./schema-wave39-c";
 export * from "./schema-wave39-d";
+export * from "./schema-wave40-h";
