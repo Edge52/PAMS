@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { departments, deliveries, frameworkItems, frameworks, offerLines, offers, poLines, projects, purchaseOrders, suppliers } from "@/db/schema";
+import { departments, deliveries, frameworkItems, frameworks, offerLines, offers, poLines, poPenaltyTerms, projects, purchaseOrders, suppliers } from "@/db/schema";
 import { formatDate, formatMoney, round2, todayISO } from "@/lib/format";
 import { convert, logActivity, nextNumber } from "@/lib/server-utils";
 import { changeSummary, diff } from "@/lib/audit-diff";
@@ -14,6 +14,7 @@ import { cancelApproval, startApproval } from "@/lib/approvals/server";
 import { fail, formObject, idParam, isUniqueViolation, optDate, optInt, optStr, reqDate, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { humanizeEnum, INCOTERMS } from "@/lib/procurement/labels";
 import { checkCallOff, orderLinePrices } from "@/lib/procurement/money";
+import { CONTRACT_TYPES, waiverProblem } from "@/lib/procurement/delay-penalty";
 import { calledOff } from "@/lib/procurement/money-server";
 import { canSubmit, canTransition, isEditable, transitionPermission, type PoStatus, PO_STATUSES } from "@/lib/procurement/po-status";
 import { parseSerials, validateOrderQty } from "@/lib/procurement/receipt";
@@ -394,15 +395,16 @@ export async function retryAssets(_prev: ActionState, fd: FormData): Promise<Act
   return { message: n ? `Registered ${n} asset${n === 1 ? "" : "s"}.` : "Every received unit already has an asset." };
 }
 
-/* ── Wave 37: late-delivery penalty terms ── */
+/* ── Wave 37: late-delivery penalty terms; wave 39: contract type, basis and waiver (Law 182 art. 48) ── */
 
 const penaltySchema = z.object({
   poId: idParam("Choose a purchase order"),
+  contractType: z.enum(CONTRACT_TYPES, { error: "Choose the contract type" }),
   delayPenaltyRatePct: z.preprocess(blankToUndef, z.coerce.number({ error: "Enter the rate a week as a percentage" }).min(0, "The rate can't be below 0 %").max(100, "The rate is at most 100 %").optional()),
   delayPenaltyCapPct: z.preprocess(blankToUndef, z.coerce.number({ error: "Enter the cap as a percentage" }).min(0, "The cap can't be below 0 %").max(100, "The cap is at most 100 %").optional()),
 });
 
-/** Set this order's own delay penalty rate and cap (blank = the hospital default). */
+/** Set this order's contract type, penalty basis and own rate and cap (blank = the hospital rules). */
 export async function setDelayPenaltyTermsAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requirePermission("po.create");
   const parsed = penaltySchema.safeParse(formObject(fd));
@@ -411,14 +413,41 @@ export async function setDelayPenaltyTermsAction(_prev: ActionState, fd: FormDat
   const po = await loadPoForAction(d.poId, me);
   if (!po) return fail("This purchase order no longer exists.");
   if (po.status === "CANCELLED") return fail("A cancelled purchase order can't be changed.");
-  if (d.delayPenaltyRatePct != null && d.delayPenaltyCapPct != null && d.delayPenaltyCapPct < d.delayPenaltyRatePct) {
+  if (d.contractType === "WORKS" && d.delayPenaltyRatePct != null && d.delayPenaltyCapPct != null && d.delayPenaltyCapPct < d.delayPenaltyRatePct) {
     return { errors: ["The cap is normally at or above the weekly rate."], fields: { delayPenaltyCapPct: "The cap is normally at or above the weekly rate." } };
   }
-  const next = { delayPenaltyRatePct: d.delayPenaltyRatePct ?? null, delayPenaltyCapPct: d.delayPenaltyCapPct ?? null };
-  const changes = diff(po, next);
+  const blocksUse = fd.get("blocksUse") === "on";
+  const next = { delayPenaltyRatePct: d.contractType === "WORKS" ? d.delayPenaltyRatePct ?? null : po.delayPenaltyRatePct, delayPenaltyCapPct: d.delayPenaltyCapPct ?? null };
+  const [cur] = await db.select().from(poPenaltyTerms).where(eq(poPenaltyTerms.poId, po.id));
+  const changes = diff({ ...po, contractType: cur?.contractType ?? null, blocksUse: cur?.blocksUse ?? false }, { ...next, contractType: d.contractType, blocksUse });
   if (!changes) return { message: "Nothing changed." };
-  await db.update(purchaseOrders).set(next).where(eq(purchaseOrders.id, po.id));
-  await logActivity("po", po.id, "penalty_terms", `Delay penalty terms changed. ${changeSummary(changes)}`, me.name, db, changes);
+  await db.transaction(async (tx) => {
+    await tx.update(purchaseOrders).set(next).where(eq(purchaseOrders.id, po.id));
+    await tx.insert(poPenaltyTerms).values({ poId: po.id, contractType: d.contractType, blocksUse })
+      .onConflictDoUpdate({ target: poPenaltyTerms.poId, set: { contractType: d.contractType, blocksUse } });
+    await logActivity("po", po.id, "penalty_terms", `Delay penalty terms changed. ${changeSummary(changes)}`, me.name, tx, changes);
+  });
   revalidatePath(`/procurement/purchase-orders/${po.id}`);
   return { message: "Penalty terms saved." };
+}
+
+/** Waive the order's delay penalty (a reason is required), or take the waiver back. Finance decides deductions. */
+export async function waiveDelayPenaltyAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const me = await requirePermission("invoices.approve");
+  const id = Number(fd.get("poId"));
+  const po = Number.isInteger(id) && id > 0 ? await loadPoForAction(id, me) : null;
+  if (!po) return fail("This purchase order no longer exists.");
+  const undo = fd.get("undo") === "1";
+  const reason = String(fd.get("reason") ?? "").trim().slice(0, 2000);
+  if (!undo) {
+    const problem = waiverProblem(reason);
+    if (problem) return { errors: [problem], fields: { reason: problem } };
+  }
+  const set = undo ? { waivedReason: null, waivedByName: null, waivedAt: null } : { waivedReason: reason, waivedByName: me.name, waivedAt: new Date() };
+  await db.transaction(async (tx) => {
+    await tx.insert(poPenaltyTerms).values({ poId: po.id, ...set }).onConflictDoUpdate({ target: poPenaltyTerms.poId, set });
+    await logActivity("po", po.id, "penalty_waiver", undo ? "Delay penalty waiver taken back" : `Delay penalty waived: ${reason}`, me.name, tx);
+  });
+  revalidatePath(`/procurement/purchase-orders/${po.id}`);
+  return { message: undo ? "Waiver taken back: the penalty can be deducted again." : "Penalty waived." };
 }

@@ -7,11 +7,12 @@ import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { SortTh } from "@/components/ui/sort-th";
 import { Notice } from "@/components/assets/bits";
 import { scopeWhere } from "@/lib/assets/access";
-import { emNumber, FUNCTION_SCORES, INCLUDE_AT, MAINTENANCE_SCORES, PHYSICAL_SCORES, riskLevel, STRATEGIES, STRATEGY_HINTS, STRATEGY_LABELS, strategyProblems, suggestedIntervalMonths } from "@/lib/assets/risk";
+import { emNumber, FUNCTION_SCORES, INCLUDE_AT, MAINTENANCE_SCORES, PHYSICAL_SCORES, makerOnlyReason, riskLevel, STRATEGIES, STRATEGY_HINTS, STRATEGY_LABELS, strategyProblems, suggestedIntervalMonths } from "@/lib/assets/risk";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { parseSort, sortRows } from "@/lib/list";
 import { saveRiskAction } from "./actions";
+import { evidenceFor, fleetHistory, historyRule } from "@/lib/assets/strategy-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Risk and strategy" };
@@ -33,7 +34,9 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
   const types = await db.select({ t: deviceTypes, n: sql<number>`count(${assets.id})::int` }).from(deviceTypes)
     .innerJoin(assets, and(eq(assets.deviceTypeId, deviceTypes.id), ne(assets.status, "DISPOSED"), scopeWhere(assets.facilityId, scope)))
     .groupBy(deviceTypes.id).orderBy(deviceTypes.name);
-  const all = types.map(({ t, n }) => ({ t, n, em: emNumber(t), problems: strategyProblems(t) }));
+  const ids = types.map((x) => x.t.id);
+  const [fleet, rule, evidence] = await Promise.all([fleetHistory(ids, scope), historyRule(), evidenceFor(ids)]);
+  const all = types.map(({ t, n }) => ({ t, n, em: emNumber(t), evidence: evidence.get(t.id) ?? null, makerOnly: makerOnlyReason(t.code), problems: strategyProblems({ ...t, evidence: evidence.get(t.id), fleet: fleet.get(t.id), rule }) }));
   const todo = all.filter((r) => r.problems.length > 0);
   const sort = parseSort(sp, ["type", "devices", "score", "strategy", "interval"] as const);
   const rows = sortRows(tab === "todo" ? todo : all, sort, { type: (r) => r.t.name, devices: (r) => r.n, score: (r) => r.em, strategy: (r) => r.t.maintenanceStrategy, interval: (r) => r.t.ppmIntervalMonths });
@@ -76,6 +79,10 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
             <Field label="Reason for the strategy" hint="For example: the maker requires six-monthly calibration; or 5 years of records show no failure found at planned visits.">
               <Textarea name="strategyReason" rows={3} defaultValue={editing.t.strategyReason ?? ""} maxLength={1000} />
             </Field>
+            <Field label="Evidence and risk basis (needed for the hospital's own schedule)" hint="What the different schedule rests on: failure and PPM records (how many devices, how many years), the maker's guidance, the risk review and who approved it.">
+              <Textarea name="evidence" rows={3} defaultValue={editing.evidence ?? ""} maxLength={4000} />
+            </Field>
+            {editing.makerOnly && <p className="text-sm text-warn">{editing.makerOnly}: only the maker&apos;s schedule is allowed (CMS S&amp;C 14-07).</p>}
             <div className="flex gap-2"><SubmitButton pendingLabel="Saving…">Save</SubmitButton><LinkButton href={q({ edit: undefined })} variant="ghost">Cancel</LinkButton></div>
           </ActionForm>
         </Panel>
@@ -108,6 +115,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
       )}
       <Panel title="Where the score comes from" className="mt-6">
         <p className="text-sm text-muted">The score is the equipment management number of Fennigkoh and Smith, the method most hospital equipment programmes start from. AAMI EQ89 asks that the strategy chosen for each type, and the reason, be written down. The score is a starting point: a maker&apos;s requirement, or the hospital&apos;s own failure history, can justify a different choice, and that is what the reason is for.</p>
+        <p className="mt-2 text-sm text-muted">The hospital&apos;s own schedule and repair when it fails are not allowed for imaging and radiation equipment, MRI and medical lasers (CMS S&amp;C 14-07), nor while any device of the type was installed less than {rule.minMonths} months ago or has fewer than {rule.minPpms} completed planned visits (Joint Commission). The hospital&apos;s own schedule needs its evidence written down. Change the limits in Administration › Settings.</p>
       </Panel>
     </>
   );

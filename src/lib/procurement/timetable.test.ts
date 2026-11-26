@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  actualFor, checkPlan, cleanMinDays, DEFAULT_MIN_DAYS, knownActuals, methodOf, needsJustification, overdueStepAlerts,
-  stepsFor, stepState, stateLabel, suggestPlan,
+  actualFor, checkPlan, cleanMinDays, DEFAULT_MIN_DAYS, knownActuals, LEGAL_MIN_DAYS, LEGAL_MIN_DAYS_URGENT, legalMinDays, methodOf,
+  needsJustification, overdueStepAlerts, planningDays, PROCUREMENT_METHODS, stepsFor, stepState, stateLabel, suggestPlan, urgentProblem,
 } from "./timetable";
 import { addendumLabel, answerWarnings, checkAddendum, nextAddendumNumber, registerCounts } from "./clarifications";
 
@@ -54,7 +54,7 @@ describe("plan checks", () => {
     expect(probs).toHaveLength(1);
     expect(probs[0].step).toBe("SUBMISSION");
     expect(probs[0].text).toContain("Only 19 days");
-    expect(probs[0].text).toContain("30 days");
+    expect(probs[0].text).toContain("legal minimum for a public tender is 20 days");
     expect(checkPlan({ ANNOUNCEMENT: "2026-01-01", SUBMISSION: "2026-01-20" }, { ...base, method: "LIMITED_TENDER" })).toEqual([]);
   });
   it("flags steps out of order, late questions and a short complaint period", () => {
@@ -68,6 +68,47 @@ describe("plan checks", () => {
     expect(stepsFor(false)).not.toContain("FINANCIAL_OPENING");
     expect(checkPlan({ TECHNICAL_OPENING: "2026-02-01", FINANCIAL_OPENING: "2026-01-01" }, { ...base, twoEnvelope: false })).toEqual([]);
     expect(checkPlan({ TECHNICAL_OPENING: "2026-02-01", FINANCIAL_OPENING: "2026-01-01" }, base)).toHaveLength(1);
+  });
+});
+
+describe("legal minimum days (wave 39, Reg. of Law 182/2018)", () => {
+  it("has the legal figures, with shorter urgent ones", () => {
+    expect(LEGAL_MIN_DAYS).toMatchObject({ PUBLIC_TENDER: 20, LIMITED_TENDER: 14, LOCAL_TENDER: 14, TWO_STAGE_TENDER: 20, PUBLIC_PRACTICE: 20, LIMITED_PRACTICE: 14 });
+    expect(LEGAL_MIN_DAYS_URGENT).toMatchObject({ PUBLIC_TENDER: 14, LIMITED_TENDER: 10, LOCAL_TENDER: 10, PUBLIC_PRACTICE: 14, LIMITED_PRACTICE: 10 });
+    expect(legalMinDays("PUBLIC_TENDER", true)).toBe(14);
+    for (const m of PROCUREMENT_METHODS) {
+      expect(DEFAULT_MIN_DAYS[m]).toBeGreaterThanOrEqual(LEGAL_MIN_DAYS[m]);
+      expect(LEGAL_MIN_DAYS_URGENT[m]).toBeLessThanOrEqual(LEGAL_MIN_DAYS[m]);
+    }
+  });
+  it("never lets a planning figure fall below the law", () => {
+    expect(cleanMinDays({ PUBLIC_TENDER: 10, LIMITED_PRACTICE: 3 })).toMatchObject({ PUBLIC_TENDER: 20, LIMITED_PRACTICE: 14 });
+    expect(planningDays("PUBLIC_TENDER", { ...DEFAULT_MIN_DAYS, PUBLIC_TENDER: 5 })).toBe(20);
+    expect(planningDays("PUBLIC_TENDER", DEFAULT_MIN_DAYS)).toBe(30);
+    expect(planningDays("PUBLIC_TENDER", DEFAULT_MIN_DAYS, true)).toBe(14);
+  });
+  it("suggests the urgent minimum only when urgent, and never an opening before the minimum", () => {
+    expect(suggestPlan({ ...base, announcement: "2026-01-01", urgent: true }).TECHNICAL_OPENING).toBe("2026-01-15");
+    const typed = suggestPlan({ ...base, announcement: "2026-01-01", current: { SUBMISSION: "2026-01-05" } });
+    expect(typed.TECHNICAL_OPENING).toBe("2026-01-31");
+  });
+  it("counts to the technical opening and uses the urgent figure when urgent", () => {
+    // Submission on day 15, opening on day 15: below 20, within the urgent 14.
+    const p = { ANNOUNCEMENT: "2026-01-01", SUBMISSION: "2026-01-16", TECHNICAL_OPENING: "2026-01-16" };
+    expect(checkPlan(p, base)[0]).toMatchObject({ step: "TECHNICAL_OPENING" });
+    expect(checkPlan(p, { ...base, urgent: true })).toEqual([]);
+    expect(checkPlan({ ANNOUNCEMENT: "2026-01-01", TECHNICAL_OPENING: "2026-01-10" }, { ...base, urgent: true })[0].text).toContain("an urgent public tender is 14 days");
+  });
+  it("notes a date within the law but under the planning figure", () => {
+    const probs = checkPlan({ ANNOUNCEMENT: "2026-01-01", TECHNICAL_OPENING: "2026-01-25" }, base);
+    expect(probs).toHaveLength(1);
+    expect(probs[0].text).toContain("within the law (20 days)");
+    expect(probs[0].text).toContain("planning figure of 30 days");
+  });
+  it("needs a reason to mark a tender urgent", () => {
+    expect(urgentProblem(true, "")).toMatch(/reason/);
+    expect(urgentProblem(true, "Decision 14/2026: outbreak response")).toBeNull();
+    expect(urgentProblem(false, "")).toBeNull();
   });
 });
 

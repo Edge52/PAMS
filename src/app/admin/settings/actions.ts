@@ -11,6 +11,7 @@ import { formatMoney } from "@/lib/format";
 import { fail, formObject, optNum, reqStr, type ActionState, zodFail } from "@/lib/procurement/forms";
 import { logActivity } from "@/lib/server-utils";
 import { DEFAULT_SETTINGS, getSettings, setSetting, type Settings } from "@/lib/settings";
+import { penaltySettingsProblem } from "@/lib/procurement/delay-penalty";
 
 const blank = (v: unknown) => (v === "" ? undefined : v);
 const policySchema = z.object({
@@ -106,8 +107,22 @@ const settingsSchema = z.object({
   assistantHourlyLimit: num("Questions per hour must be between 0 and 1,000", 0, 1000).int("Questions per hour must be a whole number"),
   assistantModel: z.string().trim().regex(/^[a-z0-9][a-z0-9.\-]{2,63}$/, "Enter a model name such as claude-sonnet-5-5"),
   // Wave 37: delay penalties and landed cost
-  delayPenaltyRatePct: num("The delay penalty rate must be between 0 and 100 % a week", 0, 100),
-  delayPenaltyCapPct: num("The delay penalty cap must be between 0 and 100 %", 0, 100),
+  delayPenaltyRatePct: num("The works delay penalty rate must be between 0 and 100 % a week", 0, 100),
+  delayPenaltyCapPct: num("The works delay penalty cap must be between 0 and 100 %", 0, 100),
+  // Wave 39: Law 182 art. 48 / Reg. art. 98 steps for supply and services, and the works cap for long delays
+  delaySupplyStep1UpToPct: num("Supply step 1: the delay limit must be between 0 and 100 % of the period", 0, 100),
+  delaySupplyStep1Pct: num("Supply step 1: the penalty must be between 0 and 100 %", 0, 100),
+  delaySupplyStep2UpToPct: num("Supply step 2: the delay limit must be between 0 and 100 % of the period", 0, 100),
+  delaySupplyStep2Pct: num("Supply step 2: the penalty must be between 0 and 100 %", 0, 100),
+  delaySupplyStep3UpToPct: num("Supply step 3: the delay limit must be between 0 and 100 % of the period", 0, 100),
+  delaySupplyStep3Pct: num("Supply step 3: the penalty must be between 0 and 100 %", 0, 100),
+  delaySupplyOverPct: num("The penalty above the last supply step must be between 0 and 100 %", 0, 100),
+  delaySupplyCapPct: num("The supply cap must be between 0 and 100 %", 0, 100),
+  delayWorksLongFromPct: num("The works long-delay limit must be between 0 and 100 % of the period", 0, 100),
+  delayWorksLongCapPct: num("The works cap for long delays must be between 0 and 100 %", 0, 100),
+  // Wave 39: maintenance strategy guard
+  strategyMinMonthsInstalled: num("Months installed must be a whole number from 0 to 120", 0, 120).int("Months installed must be a whole number from 0 to 120"),
+  strategyMinPpms: num("Completed planned visits must be a whole number from 0 to 20", 0, 20).int("Completed planned visits must be a whole number from 0 to 20"),
   priceBasis: z.enum(["NET", "LANDED"], { error: "Choose how prices are ranked" }),
   landedFreightPct: num("Freight must be between 0 and 100 % of the price", 0, 100),
   landedInsurancePct: num("Insurance must be between 0 and 100 % of the price", 0, 100),
@@ -125,7 +140,8 @@ export async function saveSettings(_prev: ActionState, fd: FormData): Promise<Ac
   const before = await getSettings();
   const next: Settings = { ...p.data, tenderMinDays: before.tenderMinDays, emailEnabled: fd.get("emailEnabled") === "on", assistantEnabled: fd.get("assistantEnabled") === "on", demoAccounts: fd.get("demoAccounts") === "on", breachedPasswordCheck: fd.get("breachedPasswordCheck") === "on" };
   if (next.stateCouncilFromEgp < next.mofRepFromEgp) return fail("The State Council threshold is normally at or above the Ministry of Finance threshold. Check the amounts.");
-  if (next.delayPenaltyCapPct < next.delayPenaltyRatePct) return fail("The delay penalty cap is normally at or above the weekly rate. Check the two figures.");
+  const penaltyProblem = penaltySettingsProblem(next);
+  if (penaltyProblem) return fail(penaltyProblem);
   const changed = (Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]).filter((k) => before[k] !== next[k]);
   for (const k of changed) await setSetting(k, next[k] as never);
   if (changed.length) await logActivity("settings", 0, "updated", `Settings changed: ${changed.map((k) => `${k} ${String(before[k])} → ${String(next[k])}`).join("; ")}`, me.name);

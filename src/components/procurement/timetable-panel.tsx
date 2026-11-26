@@ -9,7 +9,7 @@ import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { formatDate, todayISO } from "@/lib/format";
 import { loadTimetable, projectClarificationCounts } from "@/lib/procurement/timetable-server";
 import {
-  ANSWER_LEAD_DAYS, METHOD_LABELS, METHOD_LAW, needsJustification, PROCUREMENT_METHODS, STEP_LABELS, STEP_SOURCE, stateLabel,
+  ANSWER_LEAD_DAYS, LEGAL_DAYS_NOTE, METHOD_LABELS, METHOD_LAW, needsJustification, PROCUREMENT_METHODS, STEP_LABELS, STEP_SOURCE, stateLabel,
 } from "@/lib/procurement/timetable";
 import { saveMethodAction, saveTimetableAction, suggestDatesAction } from "@/app/procurement/timetable-actions";
 
@@ -29,7 +29,8 @@ export async function MethodAndTimetable({ project: p, canEdit }: { project: Pro
           { label: "Method", value: <>{METHOD_LABELS[t.method]}<span className="block text-xs text-muted">Law 182/2018 {METHOD_LAW[t.method]}</span></> },
           { label: "Reason for this method", value: p.methodJustification ? <span className="whitespace-pre-line">{p.methodJustification}</span> : needsJustification(t.method) ? <span className="text-danger">Missing</span> : "Not needed for a public tender" },
           { label: "Approved by", value: p.approvingAuthority },
-          { label: "Minimum days to submission", value: `${t.minDays[t.method]} days from the announcement` },
+          { label: "Urgent", value: t.urgent ? <>Yes<span className="block whitespace-pre-line text-xs text-muted">{t.urgentReason}</span></> : "No" },
+          { label: "Days to the envelope opening", value: <>Legal minimum {t.legalDays} days{t.urgent ? " (urgent)" : ""}; planned with {t.planDays} days<span className="block text-xs text-muted">{LEGAL_DAYS_NOTE}</span></> },
         ]} />
         {missingReason && <p className="mt-3 text-sm text-danger">Any method other than a public tender needs a reasoned decision of the competent authority (art. 7). Record the reason.</p>}
         {canEdit && (
@@ -45,6 +46,11 @@ export async function MethodAndTimetable({ project: p, canEdit }: { project: Pro
               </Field>
               <Field label="Approved by" hint="Who approved the method, e.g. the hospital director, with the decision number and date.">
                 <Input name="approvingAuthority" defaultValue={p.approvingAuthority ?? ""} maxLength={300} />
+              </Field>
+              <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="urgent" defaultChecked={t.urgent} className="mt-1" />
+                <span>Urgent<span className="block text-xs text-muted">The shorter legal minimum days apply (for example 14 instead of 20 for a public tender). Needs a reason.</span></span></label>
+              <Field label="Reason it is urgent" hint="The competent authority's decision and why the normal period can't be kept.">
+                <Textarea name="urgentReason" defaultValue={t.urgentReason ?? ""} maxLength={2000} rows={2} />
               </Field>
               <SubmitButton variant="secondary">Save method</SubmitButton>
             </ActionForm>
@@ -88,7 +94,7 @@ export async function MethodAndTimetable({ project: p, canEdit }: { project: Pro
           <ActionForm action={suggestDatesAction} className="px-4 pb-4">
             <input type="hidden" name="projectId" value={p.id} />
             <SubmitButton variant="secondary">Suggest blank planned dates</SubmitButton>
-            <p className="mt-1 text-xs text-muted">From the announcement date, the method&apos;s minimum of {t.minDays[t.method]} days to submission, answers {ANSWER_LEAD_DAYS} days before the opening and the {t.complaintDays}-day complaint period. Dates already planned are kept.</p>
+            <p className="mt-1 text-xs text-muted">From the announcement date, {t.planDays} days to submission and the technical opening (never below the legal {t.legalDays}), answers {ANSWER_LEAD_DAYS} days before the opening and the {t.complaintDays}-day complaint period. Dates already planned are kept.</p>
           </ActionForm>
         )}
         <p className="border-t border-line px-4 py-3 text-xs text-muted">Dates the app already records (RFQ issue and closing, envelope openings, award approval, complaint period, first purchase order) fill the actual column by themselves. Overdue steps are sent to procurement as alerts.</p>

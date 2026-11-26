@@ -213,16 +213,23 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
   agreement, art. 65). Any method other than a public tender needs the reason and who approved it.
 - **Timetable**: a planned and an actual date for each step, from the announcement to the contract. Steps the app
   already knows (RFQ issue and closing, envelopes opened, award approved, complaint period, first purchase order) fill
-  the actual date by themselves. **Suggest blank planned dates** fills empty steps from the method's minimum days. A
-  date shorter than the minimum, out of order, or with less than 7 days between answers and the opening is marked.
+  the actual date by themselves. **Suggest blank planned dates** fills empty steps from the method's planning days. Days
+  are counted from the announcement to the (technical) envelope opening. A date below the legal minimum (public
+  tender 20, limited or local tender 14, two-stage 20, public practice 20, limited practice 14) is marked, and PAMS
+  never suggests one. A date within the law but under the planning figure gets a softer note. Tick **Urgent** (with
+  the reason) under **Change the method** to use the shorter urgent minimums (14 or 10 days).
   Overdue steps reach procurement as alerts. The Overview shows the method, the next step and open questions.
 - **RFQ page › Clarifications and addenda**: record each bidder's question (who asked stays inside the hospital),
   the answer and the day it went to all bidders. **Record addendum** numbers it (Addendum 1, 2…); tick "extends the
   submission deadline" to move the RFQ closing date (and the project deadline when it was the same). Nothing can be
   added after the technical envelopes are opened (art. 19). **Notice to all bidders** prints the addenda and answers
   without names; when email is switched on, **Email the notice to all bidders** sends each supplier their own copy.
-- Administrators set the minimum days per method under **Settings › Tender timetable**. The defaults are planning
-  figures: check them with your legal adviser.
+- Administrators set the planning days per method under **Settings › Tender timetable**; they can't go below the
+  legal minimum. The legal figures come from unofficial copies of the regulation: check them against the official
+  Gazette.
+- **Bid bond**: up to 1.5 % of the tender's estimated value (the project budget, else the linked BOQ), the same for
+  every bidder (Law 182 art. 16, Reg. art. 30), not a share of each offer. Under **Bonds and guarantees** enter the
+  amount the tender conditions ask for, if it is less; held bonds are checked against it.
 
 ---
 
@@ -312,6 +319,10 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
   EDA's medical device vigilance guideline and enter it as *Report to the EDA by*.
 - **Risk and strategy** lists every device type the hospital owns with its risk score, how it is maintained and
   why. Press *Score* or *Edit* on a row to fill it in.
+- The hospital's own schedule and *Repair when it fails* are refused for imaging and radiation equipment, MRI and
+  medical lasers, and for types where a device was installed less than 12 months ago or has fewer than 2 completed
+  planned visits (CMS S&C 14-07, Joint Commission). The hospital's own schedule also needs its **evidence and risk
+  basis** written down. Administrators change the 12 months and 2 visits under **Settings › Maintenance strategy**.
 - **Record a test** on a device's page stores an electrical safety test. Enter the readings; the app says pass or
   fail against the IEC 62353 limits. *Maintenance › Safety tests* shows what is due and what failed.
 - Mark the safety analyser as **Test equipment** on its own page and enter when its calibration runs out. A test
@@ -521,11 +532,17 @@ These pages show supplier prices, so only Administrator, Director, Procurement a
 - For a two-envelope tender whose financial envelopes are still sealed, the file has quantities and compliance only.
 
 ### Late delivery penalties
-- A purchase order's page shows **Late delivery penalty**: by default 1 % of the value of the late items for each
-  week of delay or part of a week, at most 15 %. Only late units count; each late delivery is counted on its own,
-  and units not delivered yet keep adding up (marked "so far") until they arrive.
-- Change the rate and the cap for one order under **Change this order's penalty terms**. The hospital defaults are
-  under **Approval rules & settings › Delivery penalties and landed cost**.
+- A purchase order's page shows **Late delivery penalty** (Law 182 art. 48, Reg. art. 98; wave 39). For supply and
+  services it goes by the delay as a share of the whole delivery period (order to expected delivery): up to 3 % → 1 %
+  of the value, up to 6 % → 2 %, up to 10 % → 3 %, more → 5 %, at most 5 %. For works: 1 % a week or part of a
+  week, at most 10 % (15 % when the delay is more than 10 % of the period). Only late units count, unless the order
+  says the late part prevents use of what was delivered: then the whole order's value is the basis. Units not
+  delivered yet keep adding up (marked "so far") until they arrive.
+- Under **Change this order's penalty terms** set the contract type (supply by default), the "prevents use" box, and
+  the order's own cap (and weekly rate for works). The hospital rules are under **Approval rules & settings ›
+  Delivery penalties and landed cost**; check the figures against the official Gazette.
+- **Finance** can **Waive the penalty** with a reason (for example the competent authority's decision). The
+  calculation stays on the page, nothing is left to deduct, and the waiver can be taken back.
 - **Finance** deducts it on the invoice before approving it: **Deduct delay penalty**. The calculation is kept on
   the invoice, and the invoice shows the amount payable. A penalty is never deducted twice across invoices of the
   same order; enter 0 to remove a deduction. The invoice CSV has the penalty and the amount payable.

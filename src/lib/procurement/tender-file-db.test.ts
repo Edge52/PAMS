@@ -15,7 +15,10 @@ import * as schema from "../../db/schema";
 import type { DB } from "../../db";
 
 const folder = path.resolve(__dirname, "..", "..", "..", "drizzle");
-const ready = fs.readdirSync(folder).some((f) => f.endsWith(".sql") && fs.readFileSync(path.join(folder, f), "utf8").includes("\"tender_addenda\""));
+const inMigrations = (name: string) => fs.readdirSync(folder).some((f) => f.endsWith(".sql") && fs.readFileSync(path.join(folder, f), "utf8").includes(`"${name}"`));
+const ready = inMigrations("tender_addenda");
+/** Wave 39: the timetable reads project_law_terms (urgent tenders); runs once the lead's migration has it. */
+const lawReady = inMigrations("project_law_terms");
 
 const h = vi.hoisted(() => ({ d: null as unknown as DB, log: [] as string[] }));
 vi.mock("server-only", () => ({}));
@@ -68,7 +71,7 @@ describe.skipIf(!ready)("tender file (wave 37)", () => {
     expect(bad?.errors?.[0]).toContain("after the current one");
   });
 
-  it("saves the timetable but keeps the app's own actual dates", async () => {
+  it.skipIf(!lawReady)("saves the timetable but keeps the app's own actual dates", async () => {
     const { saveTimetableAction } = await import("../../app/procurement/timetable-actions");
     const r = await saveTimetableAction(null, form({
       projectId: String(projectId), planned_ANNOUNCEMENT: "2029-12-20", actual_ANNOUNCEMENT: "2025-12-31",

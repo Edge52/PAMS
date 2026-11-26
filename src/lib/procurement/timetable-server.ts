@@ -2,13 +2,19 @@ import "server-only";
 /** Tender timetable loading (wave 37). Rules are pure in ./timetable.ts. */
 import { and, eq, inArray, isNull, lt, notInArray } from "drizzle-orm";
 import { db } from "@/db";
-import { offers, projects, purchaseOrders, rfqs, tenderClarifications, tenderTimetableSteps } from "@/db/schema";
+import { offers, projectLawTerms, projects, purchaseOrders, rfqs, tenderClarifications, tenderTimetableSteps } from "@/db/schema";
 import { getSettings } from "@/lib/settings";
 import {
-  actualFor, checkPlan, cleanMinDays, knownActuals, methodOf, overdueStepAlerts, stepsFor, stepState,
+  actualFor, checkPlan, cleanMinDays, knownActuals, legalMinDays, methodOf, planningDays, overdueStepAlerts, stepsFor, stepState,
   type Plan, type PlanProblem, type ProcurementMethod, type StepState, type TimetableStep,
 } from "./timetable";
 import { registerCounts } from "./clarifications";
+
+/** A tender's Law 182 details (wave 39): urgent with its reason, and the bid bond the conditions ask for. */
+export async function lawTermsFor(projectId: number) {
+  const [r] = await db.select().from(projectLawTerms).where(eq(projectLawTerms.projectId, projectId));
+  return { urgent: r?.urgent ?? false, urgentReason: r?.urgentReason ?? null, bidBondAmount: r?.bidBondAmount ?? null };
+}
 
 /** The actual dates the app already holds, per project. */
 export async function knownActualsFor(projectIds: number[], today: string): Promise<Map<number, Plan>> {
@@ -38,21 +44,24 @@ export type TimetableRow = {
 
 export type Timetable = {
   method: ProcurementMethod; minDays: Record<ProcurementMethod, number>; complaintDays: number;
+  /** Wave 39: urgent tender (shorter legal minimum), the legal minimum and the days used to suggest dates. */
+  urgent: boolean; urgentReason: string | null; legalDays: number; planDays: number;
   rows: TimetableRow[]; problems: PlanProblem[];
 };
 
 export async function loadTimetable(p: { id: number; procurementMethod: string | null; twoEnvelope: boolean }, today: string): Promise<Timetable> {
-  const [s, stored, known] = await Promise.all([
+  const [s, stored, known, law] = await Promise.all([
     getSettings(),
     db.select().from(tenderTimetableSteps).where(eq(tenderTimetableSteps.projectId, p.id)),
     knownActualsFor([p.id], today),
+    lawTermsFor(p.id),
   ]);
   const method = methodOf(p.procurementMethod);
   const minDays = cleanMinDays(s.tenderMinDays);
   const k = known.get(p.id) ?? {};
   const by = new Map(stored.map((r) => [r.step, r]));
   const plan: Plan = Object.fromEntries(stored.map((r) => [r.step, r.plannedDate]));
-  const problems = checkPlan(plan, { method, minDays, complaintDays: s.complaintDays, twoEnvelope: p.twoEnvelope });
+  const problems = checkPlan(plan, { method, minDays, complaintDays: s.complaintDays, twoEnvelope: p.twoEnvelope, urgent: law.urgent });
   const rows = stepsFor(p.twoEnvelope).map((step): TimetableRow => {
     const r = by.get(step);
     const a = actualFor(step, r?.actualDate, k);
@@ -61,7 +70,10 @@ export async function loadTimetable(p: { id: number; procurementMethod: string |
       state: stepState(r?.plannedDate, a.date, today), problems: problems.filter((x) => x.step === step).map((x) => x.text),
     };
   });
-  return { method, minDays, complaintDays: s.complaintDays, rows, problems };
+  return {
+    method, minDays, complaintDays: s.complaintDays, urgent: law.urgent, urgentReason: law.urgentReason,
+    legalDays: legalMinDays(method, law.urgent), planDays: planningDays(method, minDays, law.urgent), rows, problems,
+  };
 }
 
 /** Clarification counts for a project (all its RFQs): questions and those still without an answer sent. */

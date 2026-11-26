@@ -1,10 +1,10 @@
 "use server";
-/** Wave 37: minimum days from announcement to bid submission per procurement method. */
+/** Wave 37: planning days from announcement to the technical opening per procurement method (wave 39: never below the law). */
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth/session";
 import { fail, type ActionState, zodFail } from "@/lib/procurement/forms";
-import { cleanMinDays, METHOD_LABELS, PROCUREMENT_METHODS } from "@/lib/procurement/timetable";
+import { cleanMinDays, LEGAL_MIN_DAYS, METHOD_LABELS, PROCUREMENT_METHODS } from "@/lib/procurement/timetable";
 import { logActivity } from "@/lib/server-utils";
 import { getSetting, setSetting } from "@/lib/settings";
 
@@ -15,6 +15,8 @@ export async function saveTenderDaysAction(_prev: ActionState, fd: FormData): Pr
   const p = z.object(Object.fromEntries(PROCUREMENT_METHODS.map((m) => [m, day])) as Record<string, typeof day>)
     .safeParse(Object.fromEntries(PROCUREMENT_METHODS.map((m) => [m, fd.get(`min_${m}`) ?? ""])));
   if (!p.success) return zodFail(p.error);
+  const low = PROCUREMENT_METHODS.find((m) => p.data[m] < LEGAL_MIN_DAYS[m]);
+  if (low) return { errors: [`${METHOD_LABELS[low]}: the legal minimum is ${LEGAL_MIN_DAYS[low]} days. Enter at least that.`], fields: { [`min_${low}`]: `At least ${LEGAL_MIN_DAYS[low]} days.` } };
   const before = cleanMinDays(await getSetting("tenderMinDays"));
   const next = cleanMinDays(p.data);
   const changed = PROCUREMENT_METHODS.filter((m) => before[m] !== next[m]);

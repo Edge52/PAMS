@@ -47,6 +47,7 @@ vi.mock("@/lib/safe-path", () => import("../safe-path"));
 vi.mock("@/lib/client-address", () => import("../client-address"));
 vi.mock("@/lib/server-utils", () => import("../server-utils"));
 vi.mock("@/lib/procurement/forms", () => import("../procurement/forms"));
+vi.mock("@/lib/procurement/delay-penalty", () => import("../procurement/delay-penalty")); // wave 39: settings checks
 vi.mock("@/lib/auth/permissions", () => import("./permissions"));
 vi.mock("@/lib/auth/session", () => import("./session"));
 vi.mock("@/lib/auth/two-step", () => import("./two-step"));

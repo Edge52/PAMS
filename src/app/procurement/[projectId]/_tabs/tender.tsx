@@ -15,10 +15,11 @@ import { CURRENCIES, formatDate, formatDateTime, num, todayISO } from "@/lib/for
 import { convert } from "@/lib/server-utils";
 import { bondCover } from "@/lib/procurement/bond-cover";
 import { EXCLUDED_OFFER_STATUSES } from "@/lib/procurement/labels";
-import { BOND_RATE, requiredBond } from "@/lib/procurement/money";
+import { bidBond, BOND_RATE, requiredBond } from "@/lib/procurement/money";
+import { projectEstimate } from "@/lib/procurement/tender";
+import { lawTermsFor } from "@/lib/procurement/timetable-server";
 import { poValues } from "@/lib/procurement/money-server";
-import { offerTotals } from "@/lib/procurement/server";
-import { addBondAction, openEnvelopesAction, setBondStatusAction, setEnvelopesAction } from "../../tender-actions";
+import { addBondAction, openEnvelopesAction, setBidBondAction, setBondStatusAction, setEnvelopesAction } from "../../tender-actions";
 import { seesPrices, shownMoney } from "@/lib/auth/prices";
 import { MethodAndTimetable } from "@/components/procurement/timetable-panel";
 import { ResultLetters } from "@/components/procurement/result-letters";
@@ -35,7 +36,12 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
       .from(purchaseOrders).innerJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId)).where(eq(purchaseOrders.projectId, p.id)),
     db.select({ b: bonds, supplier: suppliers.name }).from(bonds).innerJoin(suppliers, eq(suppliers.id, bonds.supplierId)).where(eq(bonds.projectId, p.id)).orderBy(desc(bonds.id)),
   ]);
-  const [ot, pv] = await Promise.all([offerTotals(offs.map((o) => o.id)), poValues(pos.map((x) => x.id))]);
+  const [pv, estimate, law] = await Promise.all([poValues(pos.map((x) => x.id)), projectEstimate(p), lawTermsFor(p.id)]);
+  // Wave 39: the bid bond is up to 1.5 % of the ESTIMATED value (art. 16, Reg. art. 30), the same for every bidder, in
+  // the project currency.
+  const estInCur = estimate.amount != null && estimate.currency
+    ? (estimate.currency === p.currency ? estimate.amount : await convert(estimate.amount, estimate.currency, p.currency)) : null;
+  const bid = bidBond(estInCur, law.bidBondAmount != null ? num(law.bidBondAmount) : null);
   const live = offs.filter((o) => !EXCLUDED_OFFER_STATUSES.includes(o.status));
   const evaluated = live.filter((o) => o.ts != null).length;
   const sealed = p.twoEnvelope && !p.financialOpenedAt;
@@ -44,7 +50,7 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
   const held = (offerId: number | null, poId: number | null, kind: string) => bs.filter((x) => x.b.status === "HELD" && x.b.kind === kind && (offerId ? x.b.offerId === offerId : x.b.poId === poId));
   // Held bonds can be in another currency than the offer or order: convert before comparing (audit DL-07).
   const targets = [
-    ...live.map((o) => ({ cur: o.currency, h: held(o.id, null, "BID") })),
+    ...live.map((o) => ({ cur: p.currency, h: held(o.id, null, "BID") })),
     ...pos.map((x) => ({ cur: x.currency, h: held(null, x.id, "PERFORMANCE") })),
   ];
   const pairs = [...new Set(targets.flatMap((t) => t.h.filter((x) => x.b.currency !== t.cur).map((x) => `${x.b.currency}>${t.cur}`)))];
@@ -93,13 +99,13 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
           <thead className="bg-sunken text-left text-muted"><tr><th className="px-3 py-2">For</th><th className="px-3 py-2">Kind</th><th className="px-3 py-2 text-right">Required</th><th className="px-3 py-2">Held</th><th className="px-3 py-2">Expires</th></tr></thead>
           <tbody>
             {live.map((o) => {
-              const req = sealed ? null : requiredBond("BID", ot.get(o.id) ?? 0); const h = held(o.id, null, "BID");
+              const req = bid.required; const h = held(o.id, null, "BID");
               return (
                 <tr key={`o${o.id}`} className="border-t border-line">
                   <td className="px-3 py-2">{o.supplier}<div className="text-xs text-muted">offer {o.ref}{o.validUntil ? ` · valid to ${formatDate(o.validUntil)} · ` : " · "}<Link href={`/procurement/offers/${o.id}/extension-letter`} target="_blank" className="text-primary hover:underline">validity extension letter</Link></div></td>
-                  <td className="px-3 py-2">Bid bond ({BOND_RATE.BID * 100} %)</td>
-                  <td className="px-3 py-2 text-right">{req != null ? shownMoney(prices, req, o.currency) : <span className="text-muted">sealed</span>}</td>
-                  <td className="px-3 py-2">{heldCell(h, req, o.currency)}</td>
+                  <td className="px-3 py-2">Bid bond{law.bidBondAmount != null ? " (tender conditions)" : ` (${BOND_RATE.BID * 100} % of the estimate)`}</td>
+                  <td className="px-3 py-2 text-right">{req != null ? shownMoney(prices, req, p.currency) : <span className="text-muted">no estimate</span>}</td>
+                  <td className="px-3 py-2">{heldCell(h, req, p.currency)}</td>
                   <td className="px-3 py-2">{h.map((x) => <span key={x.b.id} className={soon(x.b.expiryDate) || (x.b.expiryDate && x.b.expiryDate < today) ? "text-danger" : ""}>{formatDate(x.b.expiryDate)} </span>)}</td>
                 </tr>
               );
@@ -143,7 +149,18 @@ export async function TenderTab({ project: p, me }: { project: Project; me: Curr
             <div><Button variant="secondary">Record bond</Button></div>
           </ActionForm>
         )}
-        <p className="px-4 pb-3 text-xs text-muted">Required amounts use {BOND_RATE.BID * 100} % of the offer total for a bid bond and {BOND_RATE.PERFORMANCE * 100} % of the order value for a performance bond (Law 182/2018 art. 16 and 40).</p>
+        <div className="border-t border-line px-4 py-3 text-sm">
+          <p>Bid bond: up to {BOND_RATE.BID * 100} % of the estimated value{bid.max != null ? <> ({shownMoney(prices, bid.max, p.currency)}, from the {estimate.source})</> : ""}, the same for every bidder (Law 182/2018 art. 16, Reg. art. 30). {law.bidBondAmount != null ? <>The tender conditions ask for <b>{shownMoney(prices, law.bidBondAmount, p.currency)}</b>.</> : "Set the amount the tender conditions ask for, if it is less."}</p>
+          {bid.problem && <p className="mt-1 text-warn">{bid.problem}</p>}
+          {canEdit && (
+            <ActionForm action={setBidBondAction} className="mt-2 flex flex-wrap items-end gap-2">
+              <input type="hidden" name="projectId" value={p.id} />
+              <Field label={`Bid bond in the conditions (${p.currency})`} hint="Blank = 1.5 % of the estimate"><Input name="bidBondAmount" inputMode="decimal" defaultValue={law.bidBondAmount ?? ""} className="w-40" /></Field>
+              <Button variant="secondary">Save bid bond</Button>
+            </ActionForm>
+          )}
+          <p className="mt-2 text-xs text-muted">Performance bond: {BOND_RATE.PERFORMANCE * 100} % of the order value (art. 40).</p>
+        </div>
       </Panel>
     </div>
   );

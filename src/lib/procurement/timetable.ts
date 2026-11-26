@@ -3,8 +3,12 @@
  *
  * Methods: Law 182/2018 art. 7 (public tender by default; the others "by a reasoned decision of the competent
  * authority") and art. 65 (framework agreements, with orders called off under them).
- * Minimum days between announcement and bid submission are admin settings (`tenderMinDays`); the defaults below are
- * planning figures to be confirmed by the hospital's legal adviser against the executive regulations.
+ * Minimum days (wave 39): from the announcement (or invitation) to the opening of the (technical) envelopes.
+ *   - Legal minimums (Executive Regulation, Decree 692/2019, from unofficial copies): `LEGAL_MIN_DAYS`, and the shorter
+ *     `LEGAL_MIN_DAYS_URGENT` when the tender is marked urgent with a reason. The plan check always uses these, and
+ *     PAMS never suggests a date below them.
+ *   - Planning figures: admin settings (`tenderMinDays`), defaults `DEFAULT_MIN_DAYS`, never below the legal minimum.
+ *     Suggested dates use them unless the tender is urgent.
  */
 import { addDaysISO, todayISO } from "../format";
 import type { NewNotification } from "../notifications/types";
@@ -37,17 +41,57 @@ export const METHOD_LAW: Record<ProcurementMethod, string> = {
   FRAMEWORK_CALL_OFF: "Art. 65: an order under a framework agreement already concluded.",
 };
 
-/** Planning defaults (days from announcement to bid submission). Admins change them in Settings. */
+/** Legal minimum days from the announcement to the (first technical) envelope opening. */
+export const LEGAL_MIN_DAYS: Record<ProcurementMethod, number> = {
+  PUBLIC_TENDER: 20,
+  LIMITED_TENDER: 14,
+  LOCAL_TENDER: 14,
+  TWO_STAGE_TENDER: 20,
+  PUBLIC_PRACTICE: 20,
+  LIMITED_PRACTICE: 14,
+  DIRECT_AGREEMENT: 0,
+  FRAMEWORK_CALL_OFF: 0,
+};
+
+/** The same when the tender is urgent (a reason is required). A two-stage tender has no shorter period. */
+export const LEGAL_MIN_DAYS_URGENT: Record<ProcurementMethod, number> = {
+  PUBLIC_TENDER: 14,
+  LIMITED_TENDER: 10,
+  LOCAL_TENDER: 10,
+  TWO_STAGE_TENDER: 20,
+  PUBLIC_PRACTICE: 14,
+  LIMITED_PRACTICE: 10,
+  DIRECT_AGREEMENT: 0,
+  FRAMEWORK_CALL_OFF: 0,
+};
+
+export const LEGAL_DAYS_NOTE = "Legal minimums from the Executive Regulation of Law 182/2018 (Decree 692/2019) — check against the official Gazette.";
+
+export function legalMinDays(m: ProcurementMethod, urgent = false): number {
+  return (urgent ? LEGAL_MIN_DAYS_URGENT : LEGAL_MIN_DAYS)[m];
+}
+
+/** Planning defaults (days from announcement to the technical opening). Admins change them in Settings. */
 export const DEFAULT_MIN_DAYS: Record<ProcurementMethod, number> = {
   PUBLIC_TENDER: 30,
   LIMITED_TENDER: 15,
   LOCAL_TENDER: 15,
   TWO_STAGE_TENDER: 30,
-  PUBLIC_PRACTICE: 15,
-  LIMITED_PRACTICE: 7,
+  PUBLIC_PRACTICE: 20,
+  LIMITED_PRACTICE: 14,
   DIRECT_AGREEMENT: 0,
   FRAMEWORK_CALL_OFF: 0,
 };
+
+/** Days used to suggest dates: the legal urgent minimum when urgent, else the planning figure (never below the law). */
+export function planningDays(m: ProcurementMethod, minDays: Record<ProcurementMethod, number>, urgent = false): number {
+  return urgent ? legalMinDays(m, true) : Math.max(minDays[m] ?? DEFAULT_MIN_DAYS[m], legalMinDays(m));
+}
+
+/** Why an urgent mark can't be saved, or null. */
+export function urgentProblem(urgent: boolean, reason: string | null | undefined): string | null {
+  return urgent && (reason?.trim().length ?? 0) < 10 ? "Give the reason the tender is urgent (the competent authority's decision): the shorter legal periods need one." : null;
+}
 
 export function isMethod(v: unknown): v is ProcurementMethod {
   return typeof v === "string" && (PROCUREMENT_METHODS as readonly string[]).includes(v);
@@ -63,13 +107,14 @@ export function needsJustification(m: ProcurementMethod): boolean {
   return m !== "PUBLIC_TENDER";
 }
 
-/** The stored setting, read defensively: unknown keys dropped, bad values fall back to the default. */
+/** The stored setting, read defensively: unknown keys dropped, bad values fall back to the default, and nothing
+ *  below the legal minimum. */
 export function cleanMinDays(v: unknown): Record<ProcurementMethod, number> {
   const src = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
   const out = { ...DEFAULT_MIN_DAYS };
   for (const m of PROCUREMENT_METHODS) {
     const n = Number(src[m]);
-    if (src[m] != null && src[m] !== "" && Number.isFinite(n) && n >= 0 && n <= 365) out[m] = Math.round(n);
+    if (src[m] != null && src[m] !== "" && Number.isFinite(n) && n >= 0 && n <= 365) out[m] = Math.max(Math.round(n), LEGAL_MIN_DAYS[m]);
   }
   return out;
 }
@@ -128,13 +173,15 @@ const days = (from: string, to: string) => Math.round((Date.parse(to + "T00:00:0
  */
 export function suggestPlan(o: {
   announcement: string; method: ProcurementMethod; minDays: Record<ProcurementMethod, number>;
-  complaintDays: number; twoEnvelope: boolean; current?: Plan;
+  complaintDays: number; twoEnvelope: boolean; current?: Plan; urgent?: boolean;
 }): Record<TimetableStep, string | null> {
   const cur = o.current ?? {};
   const pick = (s: TimetableStep, fallback: string) => cur[s] || fallback;
   const announcement = pick("ANNOUNCEMENT", o.announcement);
-  const submission = pick("SUBMISSION", addDaysISO(announcement, o.minDays[o.method]));
-  const technical = pick("TECHNICAL_OPENING", submission);
+  const earliest = addDaysISO(announcement, planningDays(o.method, o.minDays, o.urgent));
+  const submission = pick("SUBMISSION", earliest);
+  // The opening is never suggested before the minimum period, even after a submission date typed by hand.
+  const technical = pick("TECHNICAL_OPENING", submission < earliest ? earliest : submission);
   const clarLatest = addDaysISO(technical, -ANSWER_LEAD_DAYS);
   const clarification = pick("CLARIFICATION_DEADLINE", clarLatest < announcement ? announcement : clarLatest);
   const financial = o.twoEnvelope ? pick("FINANCIAL_OPENING", addDaysISO(technical, PLAN_GAPS.financialAfterTechnical)) : null;
@@ -151,7 +198,7 @@ export type PlanProblem = { step: TimetableStep; text: string };
 
 /** Problems with the planned dates: below the minimum period, out of order, too little time for answers or complaints. */
 export function checkPlan(plan: Plan, o: {
-  method: ProcurementMethod; minDays: Record<ProcurementMethod, number>; complaintDays: number; twoEnvelope: boolean;
+  method: ProcurementMethod; minDays: Record<ProcurementMethod, number>; complaintDays: number; twoEnvelope: boolean; urgent?: boolean;
 }): PlanProblem[] {
   const out: PlanProblem[] = [];
   const steps = stepsFor(o.twoEnvelope);
@@ -164,9 +211,19 @@ export function checkPlan(plan: Plan, o: {
     prev = s;
   }
   const a = plan.ANNOUNCEMENT, sub = plan.SUBMISSION, tech = plan.TECHNICAL_OPENING, clar = plan.CLARIFICATION_DEADLINE;
-  const min = o.minDays[o.method];
-  if (a && sub && days(a, sub) < min) {
-    out.push({ step: "SUBMISSION", text: `Only ${days(a, sub)} days after the announcement. The minimum for a ${METHOD_LABELS[o.method].toLowerCase()} is ${min} days.` });
+  // Counted to the (technical) envelope opening; the submission date when no opening is planned.
+  const end = tech ? "TECHNICAL_OPENING" as const : sub ? "SUBMISSION" as const : null;
+  const endDate = tech ?? sub;
+  if (a && end && endDate) {
+    const n = days(a, endDate);
+    const legal = legalMinDays(o.method, o.urgent);
+    const plan = planningDays(o.method, o.minDays);
+    const what = `${o.urgent ? "urgent " : ""}${METHOD_LABELS[o.method].toLowerCase()}`;
+    if (n < legal) {
+      out.push({ step: end, text: `Only ${n} days after the announcement. The legal minimum for a${/^[aeiou]/.test(what) ? "n" : ""} ${what} is ${legal} days to the envelope opening.` });
+    } else if (!o.urgent && n < plan) {
+      out.push({ step: end, text: `${n} days after the announcement: within the law (${legal} days), but shorter than the hospital's planning figure of ${plan} days.` });
+    }
   }
   if (clar && tech && days(clar, tech) < ANSWER_LEAD_DAYS) {
     out.push({ step: "CLARIFICATION_DEADLINE", text: `Less than ${ANSWER_LEAD_DAYS} days before the technical opening: answers and amendments must reach bidders at least ${ANSWER_LEAD_DAYS} days before it (art. 19).` });

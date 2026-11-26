@@ -1,7 +1,8 @@
 /**
  * Wave 37: the late-delivery penalty of a purchase order from its goods receipts, and Finance deducting it on an
  * invoice. Real actions against in-memory PGlite with the real migrations; sign-in and the activity log are stubbed
- * (as in duties-db.test.ts). Skipped until the migration with the wave 37 columns exists (the lead generates it).
+ * (as in duties-db.test.ts). Skipped until the migration with the wave 39 table po_penalty_terms exists (the lead
+ * generates it).
  */
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -14,7 +15,7 @@ import * as schema from "../../db/schema";
 import type { DB } from "../../db";
 
 const MIGRATIONS = path.resolve(__dirname, "..", "..", "..", "drizzle");
-const ready = readdirSync(MIGRATIONS).some((f) => f.endsWith(".sql") && readFileSync(path.join(MIGRATIONS, f), "utf8").includes("\"delay_penalty_rate_pct\""));
+const ready = readdirSync(MIGRATIONS).some((f) => f.endsWith(".sql") && readFileSync(path.join(MIGRATIONS, f), "utf8").includes("\"po_penalty_terms\""));
 
 type Me = { id: number; name: string; role: string; scope: number[] | null };
 const h = vi.hoisted(() => ({ d: null as unknown as DB, me: { id: 1, name: "Finance", role: "FINANCE", scope: null } as Me }));
@@ -31,7 +32,14 @@ vi.mock("@/lib/server-utils", () => ({ logActivity: async () => {}, nextNumber: 
 vi.mock("@/lib/auth/session", () => ({ requirePermission: async () => h.me, requireFacilityAccess: async () => {} }));
 vi.mock("@/lib/notifications", () => ({ notifyRole: async () => {} }));
 vi.mock("@/lib/procurement/budget-year-server", () => ({ budgetYear: async () => ({ startMonth: 7, current: 2026, label: (y: number) => `FY ${y}` }) })); // wave 38
-vi.mock("@/lib/procurement/server", () => ({ fxFactors: async (cs: string[]) => Object.fromEntries(cs.map((c) => [c, 1])) }));
+vi.mock("@/lib/procurement/server", () => ({ fxFactors: async (cs: string[]) => Object.fromEntries(cs.map((c) => [c, 1])), advanceProject: async () => {} }));
+// Wave 39: the purchase order actions (penalty terms and waiver).
+vi.mock("@/lib/approvals/server", () => ({ cancelApproval: async () => true, startApproval: async () => ({ status: "APPROVED" }) }));
+vi.mock("@/lib/procurement/forms", () => import("./forms"));
+vi.mock("@/lib/procurement/labels", () => import("./labels"));
+vi.mock("@/lib/procurement/po-status", () => import("./po-status"));
+vi.mock("@/lib/procurement/receipt", () => import("./receipt"));
+vi.mock("@/lib/procurement/receiving", () => ({ createMissingAssets: async () => 0, receiveGoods: async () => ({}) }));
 vi.mock("@/lib/procurement/money", () => import("./money"));
 vi.mock("@/lib/procurement/money-server", () => import("./money-server"));
 vi.mock("@/lib/procurement/delay-penalty", () => import("./delay-penalty"));
@@ -54,6 +62,8 @@ describe.skipIf(!ready)("delay penalty on a purchase order and its invoices (wav
     const [{ id: typeId }] = await d.insert(deviceTypes).values({ code: "MON-PEN-X", level: 3, name: "Monitor" }).returning({ id: deviceTypes.id });
     [{ id: poId }] = await d.insert(purchaseOrders).values({ number: "PO-T-1", supplierId, facilityId, status: "PARTIALLY_DELIVERED", currency: "USD", expectedDelivery: "2026-10-01", delayPenaltyRatePct: 1, delayPenaltyCapPct: 15 }).returning({ id: purchaseOrders.id });
     [{ id: lineId }] = await d.insert(poLines).values({ poId, deviceTypeId: typeId, description: "Monitor", quantity: 10, unitPrice: "1000.00", receivedQty: 10 }).returning({ id: poLines.id });
+    // Works: the weekly rate (supply steps are tested at the end).
+    await d.insert(schema.poPenaltyTerms).values({ poId, contractType: "WORKS" });
     const [d1] = await d.insert(deliveries).values({ poId, reference: "DN-1", deliveryDate: "2026-09-30" }).returning();
     const [d2] = await d.insert(deliveries).values({ poId, reference: "DN-2", deliveryDate: "2026-10-16" }).returning();
     await d.insert(deliveryLines).values([{ deliveryId: d1.id, poLineId: lineId, quantity: 6 }, { deliveryId: d2.id, poLineId: lineId, quantity: 4 }]);
@@ -78,7 +88,8 @@ describe.skipIf(!ready)("delay penalty on a purchase order and its invoices (wav
     expect(await setInvoicePenaltyAction(null, form({ invoiceId: invId, delayPenalty: "120" }))).toMatchObject({ ok: expect.stringContaining("deducted") });
     const [row] = await d.select().from(invoices).where(eq(invoices.id, invId));
     expect(row.delayPenalty).toBe("120.00");
-    expect(row.delayPenaltyNote).toContain("4 × Monitor: delivered 2026-10-16, 15 days late = 3 weeks × 1 % = 3 %");
+    expect(row.delayPenaltyNote).toContain("4 × Monitor: delivered 2026-10-16, 15 days late");
+    expect(row.delayPenaltyNote).toContain("= 3 weeks × 1 % = 3 %");
     const twice = await setInvoicePenaltyAction(null, form({ invoiceId: inv2Id, delayPenalty: "50" }));
     expect(twice?.error).toMatch(/left to deduct on this order is 0.00/);
     // 0 removes it, and then the other invoice may take it.
@@ -91,5 +102,22 @@ describe.skipIf(!ready)("delay penalty on a purchase order and its invoices (wav
     const { setInvoicePenaltyAction } = await import("../../app/procurement/invoices/actions");
     await d.update(invoices).set({ status: "APPROVED" }).where(eq(invoices.id, invId));
     expect((await setInvoicePenaltyAction(null, form({ invoiceId: invId, delayPenalty: "10" })))?.error).toMatch(/already decided/);
+  });
+
+  it("switches to supply steps on the whole order, and waives only with a reason (wave 39)", async () => {
+    const { setDelayPenaltyTermsAction, waiveDelayPenaltyAction } = await import("../../app/procurement/purchase-orders/actions");
+    const { poDelayPenalty } = await import("./penalty-server");
+    await d.update(purchaseOrders).set({ issueDate: "2026-07-23" }).where(eq(purchaseOrders.id, poId)); // a 70-day period
+    expect(await setDelayPenaltyTermsAction(null, form({ poId, contractType: "SUPPLY", delayPenaltyRatePct: "", delayPenaltyCapPct: "", blocksUse: "on" }))).toMatchObject({ message: "Penalty terms saved." });
+    let p = await poDelayPenalty(poId, { asOf: "2026-11-01" });
+    // 15 days late = 21 % of the period → 5 % of the whole order (10,000).
+    expect(p?.basis).toBe("WHOLE_ORDER");
+    expect(p?.amount).toBe(500);
+    expect(await waiveDelayPenaltyAction(null, form({ poId, reason: "late" }))).toMatchObject({ errors: [expect.stringMatching(/reason/)] });
+    expect(await waiveDelayPenaltyAction(null, form({ poId, reason: "Customs strike, director's decision 9/2026" }))).toMatchObject({ message: "Penalty waived." });
+    p = await poDelayPenalty(poId, { asOf: "2026-11-01" });
+    expect(p).toMatchObject({ amount: 0, grossAmount: 500, waivedByName: "Finance" });
+    expect(await waiveDelayPenaltyAction(null, form({ poId, undo: "1" }))).toMatchObject({ message: expect.stringMatching(/taken back/) });
+    expect((await poDelayPenalty(poId, { asOf: "2026-11-01" }))?.amount).toBe(500);
   });
 });

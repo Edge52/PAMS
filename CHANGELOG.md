@@ -1,5 +1,24 @@
 # Changelog
 
+## Wave 39 (not merged yet)
+
+### Law 182 and maintenance rules
+- **Delay penalties (Law 182 art. 48, Reg. art. 98).** Supply and services orders: steps by the delay as a share of
+  the delivery period (≤3 % → 1 %, ≤6 % → 2 %, ≤10 % → 3 %, more → 5 %, cap 5 %). Works: 1 % a week, cap 10 % (15 %
+  when the delay is over 10 % of the period). Basis: the late items, or the whole order when the late part prevents
+  use. Contract type and "prevents use" on the order; waiver with a required reason (Finance); per-order cap and rate
+  kept. All figures in Settings, with a note to check them against the Gazette.
+- **Tender minimum days.** Legal minimums to the (technical) envelope opening: public tender 20 (urgent 14), limited
+  and local tender 14 (10), two-stage 20, public practice 20 (14), limited practice 14 (10). The plan check uses
+  them; suggested dates and planning settings never go below them. **Urgent** flag with a required reason on the
+  method.
+- **Bid bond** is up to 1.5 % of the estimated value (art. 16, Reg. art. 30), not of each offer; the amount in the
+  tender conditions can be set on the Tender tab.
+- **Maintenance strategy guard.** No hospital schedule or run to failure for imaging/radiation, MRI and medical
+  lasers, or for types with a device installed under 12 months or with fewer than 2 completed PPMs (Settings). The
+  hospital's own schedule needs an evidence and risk basis (CMS S&C 14-07, Joint Commission FAQ).
+- New tables (migration to come from the lead): `po_penalty_terms`, `project_law_terms`, `strategy_evidence`.
+
 ## Wave 38 — the last missing features from the audit (not merged yet)
 
 Missing features 10–17 of the wave 30 audit. One migration (0050).

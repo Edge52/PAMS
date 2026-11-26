@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { budgetCrossing, budgetUse, checkCallOff, matchInvoice, orderLinePrices, poBudgetShare, requiredBond, scorecard, warrantyEndFrom } from "./money";
+import { bidBond, budgetCrossing, budgetUse, checkCallOff, matchInvoice, orderLinePrices, poBudgetShare, requiredBond, scorecard, warrantyEndFrom } from "./money";
 import { lineTotal } from "../format";
 
 const line = { poLineId: 1, description: "Monitor", ordered: 10, received: 6, poUnitPrice: 100, invoicedBefore: 0, quantity: 6, unitPrice: 100 };
@@ -46,6 +46,15 @@ describe("framework call-off", () => {
 
 describe("bonds, scorecards and warranty", () => {
   it("works out bonds", () => { expect(requiredBond("BID", 1_000_000)).toBe(15000); expect(requiredBond("PERFORMANCE", 1_000_000)).toBe(50000); });
+  it("takes the bid bond from the estimated value, up to 1.5 % (wave 39)", () => {
+    expect(bidBond(2_000_000)).toEqual({ max: 30000, required: 30000, problem: null });
+    expect(bidBond(2_000_000, 20000)).toEqual({ max: 30000, required: 20000, problem: null });
+    expect(bidBond(2_000_000, 30000.004).problem).toBeNull();
+    expect(bidBond(2_000_000, 31000).problem).toMatch(/at most 1.5 %/);
+    expect(bidBond(null)).toMatchObject({ max: null, required: null, problem: expect.stringMatching(/No estimated value/) });
+    expect(bidBond(null, 5000)).toEqual({ max: null, required: 5000, problem: null });
+    expect(bidBond(0).required).toBeNull();
+  });
   it("scores a supplier", () => {
     const s = scorecard({ deliveries: [{ daysLate: 0 }, { daysLate: 10 }], accepted: 9, acceptanceIssues: 1, warrantyResponseHours: [12, 24, 48], invoices: 4, invoiceExceptions: 1 });
     expect(s.onTimePct).toBe(50); expect(s.acceptancePct).toBe(90); expect(s.warrantyMedianH).toBe(24); expect(s.invoiceMatchPct).toBe(75);

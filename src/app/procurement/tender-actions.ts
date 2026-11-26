@@ -7,11 +7,13 @@ import { todayISO } from "@/lib/format";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { bonds, offers, projects, purchaseOrders } from "@/db/schema";
+import { bonds, offers, projectLawTerms, projects, purchaseOrders } from "@/db/schema";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import type { FormState } from "@/lib/assets/forms";
 import { EXCLUDED_OFFER_STATUSES } from "@/lib/procurement/labels";
-import { logActivity } from "@/lib/server-utils";
+import { convert, logActivity } from "@/lib/server-utils";
+import { bidBond } from "@/lib/procurement/money";
+import { projectEstimate } from "@/lib/procurement/tender";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const str = (fd: FormData, k: string, max = 500) => String(fd.get(k) ?? "").trim().slice(0, max);
@@ -89,4 +91,28 @@ export async function setBondStatusAction(_: FormState, fd: FormData): Promise<F
   await logActivity("project", p.id, "bond", `Bond ${status.toLowerCase()}`, me.name);
   revalidatePath(tab(p.id));
   return { ok: status === "RELEASED" ? "Bond released to the supplier." : status === "CALLED" ? "Bond called." : "Bond held again." };
+}
+
+/**
+ * The bid bond the tender conditions ask for (wave 39; Law 182/2018 art. 16, Reg. art. 30): an amount in the project
+ * currency, at most 1.5 % of the estimated value. Blank = the 1.5 % maximum.
+ */
+export async function setBidBondAction(_: FormState, fd: FormData): Promise<FormState> {
+  const { me, p } = await project(fd);
+  if (!p) return { error: "That project no longer exists." };
+  const raw = str(fd, "bidBondAmount", 20).replace(/,/g, "");
+  const stated = raw === "" ? null : Number(raw);
+  if (stated != null && !(Number.isFinite(stated) && stated >= 0)) return { error: "Enter the bid bond as an amount, or leave it blank for 1.5 % of the estimated value." };
+  if (stated != null) {
+    const est = await projectEstimate(p);
+    const inCur = est.amount != null && est.currency ? (est.currency === p.currency ? est.amount : await convert(est.amount, est.currency, p.currency)) : null;
+    const problem = bidBond(inCur ?? null, stated).problem;
+    if (problem && inCur != null) return { error: problem };
+  }
+  const value = stated == null ? null : stated.toFixed(2);
+  await db.insert(projectLawTerms).values({ projectId: p.id, bidBondAmount: value })
+    .onConflictDoUpdate({ target: projectLawTerms.projectId, set: { bidBondAmount: value } });
+  await logActivity("project", p.id, "bond", value == null ? "Bid bond set to 1.5 % of the estimated value" : `Bid bond in the tender conditions set to ${p.currency} ${Number(value).toLocaleString("en")}`, me.name);
+  revalidatePath(tab(p.id));
+  return { ok: "Bid bond saved." };
 }

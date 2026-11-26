@@ -115,16 +115,27 @@ export default async function SettingsPage() {
             <fieldset className="space-y-3">
               <legend className="mb-2 text-sm font-bold">Delivery penalties and landed cost</legend>
               <FormGrid cols={3}>
-                <Field label="Delay penalty a week (%)" hint="Of the value of the late items, for each week of delay or part of a week. Each purchase order can set its own.">
-                  <Input type="number" min={0} max={100} step="0.1" name="delayPenaltyRatePct" defaultValue={s.delayPenaltyRatePct} />
-                </Field>
-                <Field label="Delay penalty at most (%)" hint="Cap, as a share of the value of the late items.">
-                  <Input type="number" min={0} max={100} step="0.1" name="delayPenaltyCapPct" defaultValue={s.delayPenaltyCapPct} />
-                </Field>
                 <Field label="Rank prices by" hint="Net price is the offer price after discounts. Landed cost adds freight, insurance, customs, clearance and local delivery the hospital pays under the offer's Incoterm. Changes the financial scores of every open tender.">
                   <Select name="priceBasis" defaultValue={s.priceBasis} options={(["NET", "LANDED"] as const).map((v) => ({ value: v, label: PRICE_BASIS_LABELS[v] }))} />
                 </Field>
               </FormGrid>
+              <p className="text-sm font-semibold">Delay penalties</p>
+              <p className="text-sm text-muted">Supply and services: a step by how long the delay is, as a share of the whole delivery period (order to expected delivery). Works: a rate for each week of delay or part of a week. The basis is the late items, or the whole order when the order says the late part prevents use. Each purchase order can set its contract type, its own cap and (works) its own rate.</p>
+              <FormGrid cols={4}>
+                {([1, 2, 3] as const).map((n) => (
+                  <div key={n} className="contents">
+                    <Field label={`Supply step ${n}: delay up to (% of period)`}><Input type="number" min={0} max={100} step="0.1" name={`delaySupplyStep${n}UpToPct`} defaultValue={s[`delaySupplyStep${n}UpToPct`]} /></Field>
+                    <Field label={`Supply step ${n}: penalty (%)`}><Input type="number" min={0} max={100} step="0.1" name={`delaySupplyStep${n}Pct`} defaultValue={s[`delaySupplyStep${n}Pct`]} /></Field>
+                  </div>
+                ))}
+                <Field label="Supply: longer delay, penalty (%)"><Input type="number" min={0} max={100} step="0.1" name="delaySupplyOverPct" defaultValue={s.delaySupplyOverPct} /></Field>
+                <Field label="Supply: at most (%)"><Input type="number" min={0} max={100} step="0.1" name="delaySupplyCapPct" defaultValue={s.delaySupplyCapPct} /></Field>
+                <Field label="Works: penalty a week (%)"><Input type="number" min={0} max={100} step="0.1" name="delayPenaltyRatePct" defaultValue={s.delayPenaltyRatePct} /></Field>
+                <Field label="Works: at most (%)"><Input type="number" min={0} max={100} step="0.1" name="delayPenaltyCapPct" defaultValue={s.delayPenaltyCapPct} /></Field>
+                <Field label="Works: long delay over (% of period)"><Input type="number" min={0} max={100} step="0.1" name="delayWorksLongFromPct" defaultValue={s.delayWorksLongFromPct} /></Field>
+                <Field label="Works: at most for a long delay (%)"><Input type="number" min={0} max={100} step="0.1" name="delayWorksLongCapPct" defaultValue={s.delayWorksLongCapPct} /></Field>
+              </FormGrid>
+              <p className="text-xs text-muted">Figures from Law 182 art. 48 and Reg. art. 98 — check against the official Gazette.</p>
               <p className="text-sm text-muted">Landed cost defaults, used when an offer doesn&apos;t state the cost. Each applies only where the offer&apos;s Incoterm leaves it to the hospital.</p>
               <FormGrid cols={3}>
                 <Field label="Freight (% of price)" hint="EXW, FCA, FOB."><Input type="number" min={0} max={100} step="0.1" name="landedFreightPct" defaultValue={s.landedFreightPct} /></Field>
@@ -149,6 +160,19 @@ export default async function SettingsPage() {
                 </Field>
                 <Field label="User training valid for (months)" hint="After this, a person's training on a device type shows as due again on the department page.">
                   <Input type="number" min={1} max={120} name="trainingValidMonths" defaultValue={s.trainingValidMonths} />
+                </Field>
+              </FormGrid>
+            </fieldset>
+
+            <fieldset className="space-y-3">
+              <legend className="mb-2 text-sm font-bold">Maintenance strategy</legend>
+              <p className="text-sm text-muted">The hospital&apos;s own schedule and repair when it fails are never allowed for imaging and radiation equipment, MRI and medical lasers (CMS S&amp;C 14-07, Joint Commission). They are also refused while the hospital has too little history of its own with a type.</p>
+              <FormGrid cols={3}>
+                <Field label="Installed at least (months)" hint="Every device of the type must have been installed this long.">
+                  <Input type="number" min={0} max={120} name="strategyMinMonthsInstalled" defaultValue={s.strategyMinMonthsInstalled} />
+                </Field>
+                <Field label="Completed planned visits at least" hint="Every device of the type must have this many planned maintenance visits done.">
+                  <Input type="number" min={0} max={20} name="strategyMinPpms" defaultValue={s.strategyMinPpms} />
                 </Field>
               </FormGrid>
             </fieldset>

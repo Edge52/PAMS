@@ -103,6 +103,20 @@ export function checkCallOff(fw: { startDate: string; endDate: string; ceiling: 
 export const BOND_RATE = { BID: 0.015, PERFORMANCE: 0.05, ADVANCE_PAYMENT: 1 } as const;
 export const requiredBond = (kind: keyof typeof BOND_RATE, value: number) => round2(value * BOND_RATE[kind]);
 
+/**
+ * Bid bond (Law 182/2018 art. 16, Reg. art. 30; wave 39): up to 1.5 % of the tender's ESTIMATED value — not of each
+ * offer. `estimate` and `stated` (the amount in the tender conditions, if set) are in the same currency.
+ * `required` is the stated amount, else the 1.5 % maximum; null when there's no estimate and nothing stated.
+ */
+export function bidBond(estimate: number | null, stated: number | null = null): { max: number | null; required: number | null; problem: string | null } {
+  const max = estimate != null && estimate > 0 ? requiredBond("BID", estimate) : null;
+  const s = stated != null && Number.isFinite(stated) && stated >= 0 ? round2(stated) : null;
+  const problem = s != null && max != null && s > max + 0.005
+    ? `The bid bond can be at most ${BOND_RATE.BID * 100} % of the estimated value (${max.toFixed(2)}).`
+    : s == null && max == null ? "No estimated value: set the project budget (or link a priced BOQ) to work out the bid bond." : null;
+  return { max, required: s ?? max, problem };
+}
+
 /* ── Supplier scorecard ── */
 
 export type ScoreInput = {
