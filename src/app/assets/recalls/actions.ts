@@ -13,6 +13,7 @@ import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/a
 import { firstError, formObject, id, isoDate, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
 import { criteriaProblem, matchRecall, parseSerials, RECALL_ACTIONS, RECALL_ASSET_STATUSES, recallProgress } from "@/lib/assets/recalls";
 import { applyAssetEffect, notifyAssigners } from "@/lib/assets/work-order-server";
+import { RECALL_SOURCES } from "@/lib/assets/vigilance";
 import { responseDue } from "@/lib/assets/work-orders";
 import { notifyRole } from "@/lib/notifications";
 import { logActivity, nextNumber } from "@/lib/server-utils";
@@ -22,7 +23,7 @@ const go = (rid: number, msg: string): never => redirect(`${path(rid)}?notice=${
 const flag = z.preprocess((v) => v === "on" || v === "true", z.boolean());
 
 const RecallSchema = z.object({
-  title: reqText("Title", 200), reference: text(120), source: text(80), description: text(6000), manufacturer: text(120), deviceTypeId: id(),
+  title: reqText("Title", 200), reference: text(120), source: oneOf("Source", RECALL_SOURCES), description: text(6000), manufacturer: text(120), deviceTypeId: id(),
   modelPattern: text(120), serials: text(100000), action: oneOf("Required action", RECALL_ACTIONS), urgent: flag,
   issuedDate: isoDate("Issued date"), dueDate: isoDate("Due date"),
 });

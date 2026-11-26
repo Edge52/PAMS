@@ -6,6 +6,7 @@ import { deviceTypes, recalls } from "@/db/schema";
 import { Badge, EmptyState, LinkButton, PageHeader, StatusBadge, TabLinks, Table, Td, Th, THead } from "@/components/ui";
 import { Meter, Notice } from "@/components/assets/bits";
 import { RECALL_ACTION_LABELS, type RecallAction } from "@/lib/assets/recalls";
+import { sourceLabel } from "@/lib/assets/vigilance";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -31,7 +32,7 @@ export default async function RecallsPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader title="Recalls and safety notices" description="Field safety notices from manufacturers and regulators, matched to the devices in your register, with each device tracked until it is dealt with."
-        actions={canEdit && <LinkButton href="/assets/recalls/new" variant="primary">Record a notice</LinkButton>} />
+        actions={canEdit && <span className="flex flex-wrap gap-2"><LinkButton href="/assets/recalls/import">Import an openFDA file</LinkButton><LinkButton href="/assets/recalls/new" variant="primary">Record a notice</LinkButton></span>} />
       {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
       <TabLinks active={tab} tabs={[{ key: "open", label: "Open", href: "/assets/recalls" }, { key: "closed", label: "Closed", href: "/assets/recalls?tab=closed" }, { key: "all", label: "All", href: "/assets/recalls?tab=all" }]} />
@@ -47,7 +48,7 @@ export default async function RecallsPage({ searchParams }: { searchParams: Prom
             return (
               <tr key={r.id}>
                 <Td><Link href={`/assets/recalls/${r.id}`} className="font-semibold text-primary hover:underline">{r.number}</Link> {r.urgent && <Badge tone="danger">Urgent</Badge>}
-                  <div className="max-w-72 text-[13px]">{r.title}</div><div className="text-xs text-muted">{[r.source, r.reference].filter(Boolean).join(" · ")}</div></Td>
+                  <div className="max-w-72 text-[13px]">{r.title}</div><div className="text-xs text-muted">{[sourceLabel(r.source), r.reference].filter(Boolean).join(" · ")}</div></Td>
                 <Td>{[r.manufacturer, r.modelPattern].filter(Boolean).join(" ") || typeName || "—"}<div className="text-xs text-muted">{typeName && (r.manufacturer || r.modelPattern) ? typeName : ""}</div></Td>
                 <Td className="text-[13px]">{RECALL_ACTION_LABELS[r.action as RecallAction]}</Td>
                 <Td className="whitespace-nowrap">{formatDate(r.dueDate)}</Td>
