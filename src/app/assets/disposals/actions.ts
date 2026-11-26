@@ -7,6 +7,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { quarantineFor } from "@/lib/assets/vigilance-server";
+import { quarantineBlock } from "@/lib/assets/vigilance";
 import { db } from "@/db";
 import { assets, disposals, recallAssets, workOrders } from "@/db/schema";
 import { cancelApproval, startApproval } from "@/lib/approvals/server";
@@ -47,6 +49,8 @@ export async function proposeDisposalAction(_: FormState, fd: FormData): Promise
   if (!a) return { error: "That device no longer exists." };
   await requireFacilityAccess(a.facilityId, me);
   if (a.status === "DISPOSED") return { error: `${a.tag} has already been disposed of.` };
+  const kept = quarantineBlock(await quarantineFor(a.id), "disposal"); // wave 40: kept as found (EDA vigilance)
+  if (kept) return { error: kept };
   const [open] = await db.select({ number: disposals.number }).from(disposals)
     .where(and(eq(disposals.assetId, a.id), inArray(disposals.status, ["DRAFT", "PENDING_APPROVAL", "APPROVED"]))).limit(1);
   if (open) return { error: `${a.tag} already has disposal request ${open.number}.` };
@@ -126,6 +130,8 @@ export async function completeDisposalAction(_: FormState, fd: FormData): Promis
   if (!p.success) return { error: firstError(p.error) };
   const d = p.data;
   if (r.d.status !== "APPROVED") return { error: "The disposal must be approved before it is recorded." };
+  const kept = quarantineBlock(await quarantineFor(r.d.assetId), "disposal"); // wave 40
+  if (kept) return { error: kept };
   if (!d.disposedOn) return { error: "Enter the date the device left the hospital." };
   if (d.disposedOn > todayISO()) return { error: "The disposal date can't be in the future." };
   if (!d.certificateRef) return { error: "Enter the reference of the disposal record (committee minutes, scrap certificate or receipt)." };

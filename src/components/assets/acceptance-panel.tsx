@@ -43,6 +43,7 @@ export async function AcceptancePanel({ assetId, status, me, departmentId }: { a
             </li>
           ))}</ol>
           <Field label="Issues for the supplier"><Textarea name="issues" rows={2} defaultValue={r?.issues ?? ""} /></Field>
+          {!r?.biomedSignedBy && <Field label="No electrical safety test yet? Say why" hint="IEC 62353 asks for a passed safety test before first use. Record it from the device page, or give the reason (kept on record)."><Input name="safetyTestReason" maxLength={500} /></Field>}
           <div className="flex flex-wrap gap-2">
             <Button name="intent" value="save" variant="secondary">Save checks</Button>
             {!r?.biomedSignedBy && <Button name="intent" value="sign_biomed">Sign for biomedical engineering as {me.name}</Button>}

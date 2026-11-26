@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { assets, deviceTypes } from "@/db/schema";
 import { Field, FormGrid, Input, LinkButton, PageHeader, Panel, Select, Textarea } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
-import { APPLIED_PART_LABELS, APPLIED_PARTS, CLASS_LABELS, EARTH_LIMIT_OHM, INSULATION_MIN_MOHM, METHOD_LABELS, METHODS, PROTECTION_CLASSES } from "@/lib/assets/safety-tests";
+import { APPLIED_PART_LABELS, APPLIED_PARTS, CLASS_LABELS, EARTH_LIMIT_OHM, INSULATION_MIN_MOHM, METHOD_LABELS, METHODS, PROTECTION_CLASSES, specialKind } from "@/lib/assets/safety-tests";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate, todayISO } from "@/lib/format";
 import { recordSafetyTestAction } from "../actions";
@@ -17,7 +17,7 @@ export default async function NewSafetyTestPage({ searchParams }: { searchParams
   const sp = await searchParams;
   const assetId = Number(sp.assetId);
   if (!Number.isInteger(assetId) || assetId <= 0) notFound();
-  const [a] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, typeName: deviceTypes.name, manufacturer: assets.manufacturer, model: assets.model })
+  const [a] = await db.select({ id: assets.id, tag: assets.assetTag, facilityId: assets.facilityId, typeName: deviceTypes.name, typeCode: deviceTypes.code, manufacturer: assets.manufacturer, model: assets.model })
     .from(assets).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId)).where(eq(assets.id, assetId));
   if (!a) notFound();
   await requireFacilityAccess(a.facilityId, me);
@@ -25,6 +25,7 @@ export default async function NewSafetyTestPage({ searchParams }: { searchParams
   const analysers = await db.select({ id: assets.id, tag: assets.assetTag, manufacturer: assets.manufacturer, model: assets.model, calibrationDue: assets.calibrationDue })
     .from(assets).where(and(eq(assets.isTestEquipment, true), eq(assets.facilityId, a.facilityId))).orderBy(asc(assets.assetTag));
   const workOrderId = Number(sp.workOrderId);
+  const kind = specialKind(a.typeCode);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -54,9 +55,12 @@ export default async function NewSafetyTestPage({ searchParams }: { searchParams
               <legend className="px-1 text-sm font-semibold">Readings</legend>
               <FormGrid cols={2}>
                 <Field label="Protective earth resistance (Ω)" hint={`Class I only. Limit ${EARTH_LIMIT_OHM} Ω with the mains cord.`}><Input name="earthResistanceOhm" inputMode="decimal" placeholder="0.12" /></Field>
-                <Field label="Insulation resistance (MΩ)" hint={`If measured. At least ${INSULATION_MIN_MOHM} MΩ unless the maker says otherwise.`}><Input name="insulationMOhm" inputMode="decimal" /></Field>
-                <Field label="Equipment leakage current (µA)" hint="Limit: class I 500, class II 100 (direct or differential); 1000 and 500 by the alternative method."><Input name="equipmentLeakageUa" inputMode="decimal" /></Field>
-                <Field label="Applied part leakage current (µA)" hint="Type BF limit 5000, type CF limit 50. Not needed for type B or no applied part."><Input name="appliedPartLeakageUa" inputMode="decimal" /></Field>
+                <Field label="Insulation, mains to earth (MΩ)" hint={`If measured. At least ${INSULATION_MIN_MOHM} MΩ (class I); 7 MΩ for class II.`}><Input name="insulationMOhm" inputMode="decimal" /></Field>
+                <Field label="Insulation, mains to accessible parts (MΩ)" hint="If measured. At least 7 MΩ."><Input name="insMainsAccessible" inputMode="decimal" /></Field>
+                <Field label="Insulation, applied parts to earth (MΩ)" hint="If measured. At least 70 MΩ."><Input name="insAppliedPe" inputMode="decimal" /></Field>
+                <Field label="Insulation, applied parts to mains (MΩ)" hint="If measured. BF and CF at least 70 MΩ; type B 2 MΩ (class I) or 7 MΩ (class II)."><Input name="insAppliedMains" inputMode="decimal" /></Field>
+                <Field label="Equipment leakage current (µA)" hint={kind.mobileXray ? "Mobile X-ray generator: limit 2000 (direct or differential), 5000 by the alternative method." : "Limit: class I 500, class II 100 (direct or differential); 1000 and 500 by the alternative method."}><Input name="equipmentLeakageUa" inputMode="decimal" /></Field>
+                <Field label="Applied part leakage current (µA)" hint={kind.defibPaddles ? "Defibrillator paddles (type CF): limit 100. Type BF limit 5000." : "Type BF limit 5000, type CF limit 50. Not needed for type B or no applied part."}><Input name="appliedPartLeakageUa" inputMode="decimal" /></Field>
               </FormGrid>
               <div className="mt-4 space-y-2">
                 <label className="flex min-h-6 items-center gap-2 text-sm"><input type="checkbox" name="visualOk" className="size-5" /> Visual inspection passed: casing, cord, plug, labels, accessories</label>
@@ -64,7 +68,7 @@ export default async function NewSafetyTestPage({ searchParams }: { searchParams
               </div>
             </fieldset>
             <Field label="Notes"><Textarea name="notes" rows={2} /></Field>
-            <p className="text-xs text-muted">The limits are the usual IEC 62353 figures. If the maker&apos;s manual states stricter values, judge against those and say so in the notes.</p>
+            <p className="text-xs text-muted">The limits are the usual IEC 62353 figures (Rigel IEC 62353 guide). If the maker&apos;s manual states stricter values, judge against those and say so in the notes.</p>
             <SubmitButton pendingLabel="Recording…">Record the test</SubmitButton>
           </ActionForm>
         </Panel>

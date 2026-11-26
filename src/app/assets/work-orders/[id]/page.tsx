@@ -131,7 +131,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
                 <input type="hidden" name="workOrderId" value={wo.id} />
                 <ChecklistInputs items={wo.checklist!} />
                 <p className="text-xs text-muted">A reading outside its range is recorded as failed. The checklist comes from the device type in the catalogue.</p>
-                <CompletionFields deviceDown={wo.deviceDown} optionalResolution partsCost={used.total} instruments={instruments} assetId={wo.assetId} />
+                <CompletionFields deviceDown={wo.deviceDown} optionalResolution partsCost={used.total} instruments={instruments} assetId={wo.assetId} repairOf={wo.type === "CORRECTIVE" ? wo.id : undefined} />
               </ActionForm>
             </Panel>
           )}
@@ -282,7 +282,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
             <Panel title="Complete the job">
               <ActionForm action={completeWorkOrderAction} className="space-y-3">
                 <input type="hidden" name="workOrderId" value={wo.id} />
-                <CompletionFields deviceDown={wo.deviceDown} partsCost={used.total} instruments={instruments} assetId={wo.assetId} />
+                <CompletionFields deviceDown={wo.deviceDown} partsCost={used.total} instruments={instruments} assetId={wo.assetId} repairOf={wo.type === "CORRECTIVE" ? wo.id : undefined} />
               </ActionForm>
             </Panel>
           )}
@@ -350,7 +350,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
   );
 }
 
-function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instruments, assetId }: { deviceDown: boolean; optionalResolution?: boolean; partsCost?: number; instruments: Instrument[]; assetId: number }) {
+function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instruments, assetId, repairOf }: { deviceDown: boolean; optionalResolution?: boolean; partsCost?: number; instruments: Instrument[]; assetId: number; repairOf?: number }) {
   return (
     <div className="space-y-3">
       <Field label={optionalResolution ? "What was done (optional)" : "What was done"} hint={optionalResolution ? "Left blank, the checklist result is recorded." : undefined}>
@@ -366,6 +366,11 @@ function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instr
       </FormGrid>
       <TestEquipmentField options={instruments} />
       <MeterAtVisit assetId={assetId} />
+      {repairOf != null && (
+        <Field label="No safety test after the repair? Say why" hint={<>IEC 62353 asks for a passed electrical safety test after every repair. <Link href={`/assets/safety-tests/new?assetId=${assetId}&workOrderId=${repairOf}`} className="text-primary hover:underline">Record the test</Link>, or give the reason here (kept on record).</>}>
+          <Input name="safetyTestReason" maxLength={500} placeholder="e.g. battery-powered part only, no mains parts touched" />
+        </Field>
+      )}
       {deviceDown && (
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="returnToService" defaultChecked className="mt-1" />
           <span>Device is back in service</span></label>
