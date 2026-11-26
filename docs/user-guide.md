@@ -716,3 +716,37 @@ https for the camera).
   mine**.
 - Test equipment and meter readings are recorded on the full job page (needs signal).
 - Signing out removes the kept jobs from the phone. Changes not yet sent stay and go out when you sign in again.
+
+## Analytics (wave 40)
+
+**Reports › Analytics** puts the main figures on tabs. You see only the tabs your role may open (Cost, Procurement
+and Budget need price access).
+
+- **Filters** at the top: hospital, department, device type and the period (the last 12 months unless you change
+  it). Press **Apply filters**. The filters stay when you switch tabs, so you can bookmark or share the address.
+- **Each figure** shows how it is worked out, the period, and **n** (how many items it rests on). Where there is a
+  benchmark, its source is given. A comparison resting on fewer than 5 items says **Not enough data (n < 5)**.
+- **Overview**: fleet uptime, PPM on time, open work orders, COSR per year (price access only) and the data-quality
+  score. Each card opens its detail.
+
+### Maintenance tab
+
+- **Uptime** is worked out from time, not from today's status: each device's hours in the period (from its install
+  date, up to now) minus the hours a work order marked it out of use. Overlapping downtime counts once; downtime
+  still open counts up to now. Shown for the fleet, imaging, each device type and each department, lowest first.
+  Benchmarks: above 94 % for the fleet, above 98 % for imaging.
+- **MTBF** (mean time between failures) and **MTTR** (mean time to repair, report to completion).
+- **Repeat failures**: devices with 3 or more corrective jobs in the period.
+- **Failures by failure code**, **PPM yield** (share of planned visits that found a fault; under 12 % is usual),
+  **No problem found** (about 19 % is usual) and **PPM on time** (done within 7 days of the date).
+
+### Failure codes on jobs
+
+When you complete a corrective job, choose its **failure code** (what caused the fault; **No problem found** when
+nothing was wrong). Older jobs without one show a warning at sign-off, and the code can be added or changed later
+on the job page. On **My jobs** the code is optional.
+
+### Labour cost (administrator)
+
+**Administration › Settings › In-house labour cost per hour (EGP)**. Empty by default. When set, the hours your
+own team books on jobs count in the service cost and COSR, and the report says so.

@@ -11,7 +11,7 @@ import { EGP_NOTE, facilityCond, missingRatesNote, ratesFor } from "./shared";
 import type { Column, ReportContext, ReportResult, Row } from "./types";
 
 /** Service cost and COSR (wave 27) by device type, department, the supplier who supplied the device, and (wave 29) who did the work. */
-export async function serviceCostReport({ filters: f, scope, today }: ReportContext): Promise<ReportResult> {
+async function loadServiceCost({ filters: f, scope, today }: ReportContext) {
   const to = f.to ?? today;
   const from = f.from ?? addDays(to, -364);
   const days = periodDays(from, to);
@@ -72,6 +72,17 @@ export async function serviceCostReport({ filters: f, scope, today }: ReportCont
   const list = devices.filter((d) => d.status !== "DISPOSED" || withCost.has(d.id))
     .map((d) => ({ ...d, acquisition: d.cost != null ? toEgp(num(d.cost), d.currency, rates) : null }));
   for (const d of list) if (d.cost != null && d.acquisition == null) missing.add(d.currency || "EGP");
+  return { list, lines, days, missing, labourRate };
+}
+
+/** Wave 40: the totals alone (Analytics overview), same rules as the report. */
+export async function serviceCostTotal(ctx: ReportContext): Promise<CostRollup & { days: number }> {
+  const { list, lines, days } = await loadServiceCost(ctx);
+  return { ...grandTotal(list, lines, days), days };
+}
+
+export async function serviceCostReport(ctx: ReportContext): Promise<ReportResult> {
+  const { list, lines, days, missing, labourRate } = await loadServiceCost(ctx);
 
   const asRow = (g: { label: string } & CostRollup, extra: Row): Row => ({
     ...extra, label: g.label, devices: g.devices, priced: g.priced, acquisitionEgp: g.acquisition, inHouseEgp: g.inHouse, contractEgp: g.contract,
