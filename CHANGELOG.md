@@ -1,5 +1,33 @@
 # Changelog
 
+## Wave 40 (not merged yet)
+
+### Competency, imaging QC, vigilance and recalls
+- **Technician competency** (`/assets/competency`, GAHAR EFS.10): training per person and device type or category
+  (maker / in-house / on the job, date, expiry, certificate, authorised to service). Assigning a job or PPM jobs to
+  someone not authorised warns and records an override (`competency_overrides`); the assign list marks them.
+  Expiry reminders to the person and biomedical. Rules `src/lib/assets/competency.ts` (tested).
+- **Imaging QC** (`/assets/imaging-qc`, GAHAR DAS.05): technologist templates per modality and frequency with
+  pass/fail or measured items with limits (generic example templates, marked as examples), runs per scanner, due
+  list, failed run → work order in one click, monthly review sign-off per department, trend of a measured item.
+  The physicist QC on Radiation safety is unchanged. Rules `src/lib/assets/imaging-qc.ts` (tested).
+- **EDA vigilance** (GL.CAP.Care.040): safety contact officer and radiation protection officer per hospital
+  (Incidents › Safety contacts); devices kept as found (`asset_quarantines`) block repair work and disposal until
+  released with a reason; incident print in the EDA Annex 2 layout with maker's and EDA references, lot, UDI and
+  where the device is kept (`incident_vigilance`). Rules `src/lib/assets/vigilance.ts` (tested).
+- **Recalls**: source list (FDA, MHRA, EDA, maker FSN, other); department acknowledgements; openFDA recall or
+  enforcement file import (JSON or CSV, uploaded, no live fetch) matched by fuzzy maker + model, with candidates to
+  confirm or dismiss. Matcher `src/lib/assets/openfda.ts` (tested).
+- **Electrical safety (IEC 62353)**: insulation limits by test path, mobile X-ray leakage (2000/5000 µA),
+  defibrillator CF paddles 100 µA (Rigel IEC 62353 guide); a passed test at acceptance and after a repair, or a
+  reason (`safety_test_waivers`).
+- **Dosimetry**: eye lens and extremity readings, five-year (100 mSv) and single-year (50 mSv) checks per person,
+  declared pregnancy flag seen only by the radiation protection officer and administrators (`src/lib/assets/dosimetry.ts`).
+- New tables (migration to come from the lead): `competencies`, `competency_overrides`, `imaging_qc_templates`,
+  `imaging_qc_records`, `imaging_qc_reviews`, `facility_safety_contacts`, `asset_quarantines`, `incident_vigilance`,
+  `recall_acknowledgements`, `recall_imports`, `recall_import_rows`, `safety_test_insulation`, `safety_test_waivers`,
+  `dosimetry_extra`, `dosimetry_declarations` (`src/db/schema-wave40-i.ts`). Documents entity type `competency`.
+
 ## Wave 39 (not merged yet)
 
 ### Law 182 and maintenance rules

@@ -8,13 +8,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, buildings, departments, deviceTypes, dosimetryPeriods, floors, protectiveChecks, protectiveItems, radiationLicences, radiationQcTests, rooms } from "@/db/schema";
+import { assets, buildings, departments, deviceTypes, dosimetryDeclarations, dosimetryExtra, dosimetryPeriods, floors, protectiveChecks, protectiveItems, radiationLicences, radiationQcTests, rooms } from "@/db/schema";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formObject, id, int, isoDate, num, reqId, text } from "@/lib/assets/forms";
 import { doseFlag, isRadiationType, nextCheckDue, periodLimit, PROTECTIVE_KIND_LABELS, PROTECTIVE_KINDS, QC_DEFAULT_MONTHS } from "@/lib/assets/radiation";
 import { fail, zodFail, type ActionState } from "@/lib/procurement/forms";
 import { formatDate, todayISO } from "@/lib/format";
 import { logActivity } from "@/lib/server-utils";
+import { extraFlags, personKey, seesPregnancy } from "@/lib/assets/dosimetry";
+import { safetyContacts } from "@/lib/assets/vigilance-server";
 
 const blank = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 const reqDate = (label: string) => z.preprocess(blank, z.string({ error: `Enter the ${label}.` }).regex(/^\d{4}-\d{2}-\d{2}$/, `Enter the ${label}.`));
@@ -135,6 +137,8 @@ const DoseSchema = z.object({
   periodStart: reqDate("period start"), periodEnd: reqDate("period end"),
   doseMsv: z.preprocess((v) => (blank(v) === undefined ? undefined : Number(blank(v))), z.number({ error: "Enter the dose in mSv." }).min(0, "The dose can't be negative.").max(1000, "Check the dose: over 1000 mSv.")),
   limitMsv: num("Limit", 0.01, 1000), notes: text(1000),
+  // Wave 40: eye lens Hp(3) and extremity Hp(0.07), when the badge reports them.
+  eyeLensMsv: num("Eye lens dose", 0, 5000), extremityMsv: num("Extremity dose", 0, 50000),
 });
 
 export async function recordDoseAction(_: ActionState, fd: FormData): Promise<ActionState> {
@@ -151,11 +155,37 @@ export async function recordDoseAction(_: ActionState, fd: FormData): Promise<Ac
     facilityId: d.facilityId, departmentId: d.departmentId ?? null, personName: d.personName, personRole: d.personRole ?? null,
     periodStart: d.periodStart, periodEnd: d.periodEnd, doseMsv: d.doseMsv, limitMsv: limit, flag, notes: d.notes ?? null, recordedByName: me.name,
   }).returning({ id: dosimetryPeriods.id });
+  if (d.eyeLensMsv != null || d.extremityMsv != null) await db.insert(dosimetryExtra).values({ periodId: r.id, eyeLensMsv: d.eyeLensMsv ?? null, extremityMsv: d.extremityMsv ?? null });
+  const extra = extraFlags({ ...d, eyeLensMsv: d.eyeLensMsv ?? null, extremityMsv: d.extremityMsv ?? null }, (annual) => periodLimit(d.periodStart, d.periodEnd, annual));
   await logActivity("dosimetry", r.id, "created", `Badge reading ${d.periodStart} to ${d.periodEnd}: ${d.doseMsv} mSv (${flag.toLowerCase()})`, me.name);
   revalidatePath("/assets/radiation");
   const msg = flag === "OVER" ? `Over the limit of ${limit} mSv for the period. Investigate and report it to the radiation protection officer.`
     : flag === "INVESTIGATE" ? `At or above the investigation level (limit ${limit} mSv). Look into it.` : "Saved.";
-  return done(page(d.facilityId, "dosimetry"), msg, flag === "OK" ? "notice" : "error");
+  const all = [msg === "Saved." && extra.length ? "" : msg, ...extra].filter(Boolean).join(" ");
+  return done(page(d.facilityId, "dosimetry"), all || "Saved.", flag === "OK" && !extra.length ? "notice" : "error");
+}
+
+/* ── Wave 40: declared pregnancy (a flag and a date, no medical detail) ── */
+
+const PregnancySchema = z.object({ facilityId: reqId("Hospital"), personName: reqStr("the name", 120), declared: z.preprocess((v) => v === "on" || v === "true", z.boolean()), declaredOn: isoDate("Declared on") });
+
+/** Only the hospital's radiation protection officer and administrators may set or see it. */
+export async function setPregnancyAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  const p = PregnancySchema.safeParse(formObject(fd));
+  if (!p.success) return zodFail(p.error);
+  const d = p.data;
+  const me = await start(d.facilityId);
+  const contacts = await safetyContacts(d.facilityId);
+  if (!seesPregnancy(me, contacts?.rpoUserId)) return fail("Only the radiation protection officer or an administrator can record this.");
+  if (d.declared && !d.declaredOn) return { errors: ["Enter the date it was declared."], fields: { declaredOn: "Enter the date." } };
+  const key = personKey(d.personName);
+  const next = { personName: d.personName, pregnancyDeclared: d.declared, declaredOn: d.declared ? d.declaredOn ?? null : null, updatedByName: me.name };
+  await db.insert(dosimetryDeclarations).values({ facilityId: d.facilityId, personKey: key, ...next })
+    .onConflictDoUpdate({ target: [dosimetryDeclarations.facilityId, dosimetryDeclarations.personKey], set: next });
+  // The log says only that the flag changed, never for whom it was set on a page others see.
+  await logActivity("facility", d.facilityId, "dosimetry_declaration", "A dosimetry declaration was updated by the radiation protection officer", me.name);
+  revalidatePath("/assets/radiation");
+  return done(page(d.facilityId, "dosimetry"), d.declared ? "Saved. Readings after the date are checked against 1 mSv." : "Declaration ended.");
 }
 
 /* ── Protective equipment ── */

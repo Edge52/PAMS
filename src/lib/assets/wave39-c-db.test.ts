@@ -35,6 +35,7 @@ vi.mock("@/lib/assets/request-rules", () => import("./request-rules"));
 vi.mock("@/lib/assets/checklists", () => import("./checklists"));
 vi.mock("@/lib/assets/dates", () => import("./dates"));
 vi.mock("@/lib/procurement/acceptance-server", () => import("../procurement/acceptance-server"));
+vi.mock("@/lib/assets/vigilance-server", () => import("./vigilance-server"));
 vi.mock("@/lib/auth/session", async () => {
   const { can } = await import("../auth/permissions");
   return {

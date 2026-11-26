@@ -46,7 +46,7 @@ export default async function RecallImportPage({ searchParams }: { searchParams:
             </ol>
           </div>
           <ActionForm action={importOpenFdaAction} className="flex flex-wrap items-end gap-3">
-            <Field label="File"><input type="file" name="file" required accept=".json,.csv,application/json,text/csv" className="text-sm" /></Field>
+            <Field label="File"><input type="file" name="file" required accept=".json,.csv" className="text-sm" /></Field>
             <SubmitButton pendingLabel="Reading…">Find matches</SubmitButton>
           </ActionForm>
         </Panel>
