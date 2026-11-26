@@ -3,9 +3,10 @@ import "server-only";
  * Who may see and change attachments. Kept out of the "use server" documents module on purpose: every export of a
  * "use server" file becomes a callable endpoint, and these are internal helpers.
  */
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, boqs, calibrations, radiationLicences, frameworks, disposals, facilities, twinNotes, serviceContracts, workOrders, deliveries, documents, offers, projects, purchaseOrders, rfqs, techSpecs, trainingSessions } from "@/db/schema";
+import { assets, boqs, calibrations, radiationLicences, frameworks, disposals, facilities, twinNotes, serviceContracts, workOrders, deliveries, documents, offers, projects, purchaseOrders, rfqs, techSpecs, trainingSessions, documentVersions, users } from "@/db/schema";
 import { can, type Permission } from "./auth/permissions";
 import { facilityScope, getCurrentUser, requireFacilityAccess, requirePermission, type CurrentUser } from "./auth/session";
 
@@ -57,15 +58,18 @@ export async function facilityOfEntity(entityType: string, id: number): Promise<
   }
 }
 
-/** Permission + facility check for changing a record's attachments. Redirects when not allowed. */
-export async function requireDocumentEdit(entityType: string, entityId: number): Promise<boolean> {
+/**
+ * Permission + facility check for changing a record's attachments. Redirects when not allowed; null when the record
+ * doesn't exist. Returns the signed-in user.
+ */
+export async function requireDocumentEdit(entityType: string, entityId: number): Promise<CurrentUser | null> {
   const perm = EDIT_PERMISSION[entityType as EntityType];
-  if (!perm) return false;
+  if (!perm) return null;
   const me = await requirePermission(perm);
   const facilityId = await facilityOfEntity(entityType, entityId);
-  if (facilityId === undefined) return false;
+  if (facilityId === undefined) return null;
   await requireFacilityAccess(facilityId, me);
-  return true;
+  return me;
 }
 
 /** Whether the signed-in user may add/remove attachments on this kind of record (for hiding the controls). */
@@ -87,9 +91,27 @@ export async function canViewDocumentsOf(me: CurrentUser, entityType: string, en
   return scope === null || scope.includes(facilityId);
 }
 
-/** Attachments of a record. Callers are pages that already checked access to the record itself. */
+/** Attachments of a record (removed ones left out). Callers are pages that already checked access to the record itself. */
 export async function listDocuments(entityType: string, entityId: number) {
-  return db.select().from(documents)
-    .where(and(eq(documents.entityType, entityType), eq(documents.entityId, entityId)))
+  const rows = await db.select({ d: documents, by: users.name }).from(documents).leftJoin(users, eq(users.id, documents.uploadedById))
+    .where(and(eq(documents.entityType, entityType), eq(documents.entityId, entityId), isNull(documents.deletedAt)))
     .orderBy(desc(documents.uploadedAt));
+  return rows.map((r) => ({ ...r.d, uploadedByName: r.by }));
+}
+
+/** Earlier files of these documents (wave 39), newest first, with who uploaded each. */
+export async function listVersions(documentIds: number[]) {
+  if (!documentIds.length) return [];
+  const rows = await db.select({ v: documentVersions, by: users.name }).from(documentVersions).leftJoin(users, eq(users.id, documentVersions.uploadedById))
+    .where(inArray(documentVersions.documentId, documentIds)).orderBy(desc(documentVersions.version));
+  return rows.map((r) => ({ ...r.v, uploadedByName: r.by }));
+}
+
+const remover = alias(users, "remover");
+
+/** Removed documents for the administrators' "Deleted documents" page, newest removal first. */
+export async function listDeletedDocuments(limit = 500) {
+  const rows = await db.select({ d: documents, by: remover.name }).from(documents).leftJoin(remover, eq(remover.id, documents.deletedById))
+    .where(isNotNull(documents.deletedAt)).orderBy(desc(documents.deletedAt)).limit(limit);
+  return rows.map((r) => ({ ...r.d, deletedByName: r.by }));
 }

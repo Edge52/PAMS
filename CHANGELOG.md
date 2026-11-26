@@ -1,6 +1,34 @@
 # Changelog
 
-## Wave 38 — the last missing features from the audit (not merged yet)
+## Wave 39 (not merged yet)
+
+### Documents, permissions and running it
+
+- **Document versions.** Each attachment has "Upload a new version": the old file is kept as an earlier version with
+  who uploaded it, when and their note; every version can be listed and downloaded (table `document_versions`;
+  `documents.version`, `uploaded_by_id`, `note`).
+- **Removing a document hides it** (`documents.deleted_at`, `deleted_by_id`) and keeps its files. Administration ›
+  Deleted documents lists them: Restore, or Delete for good (asks first; files go only when no other document uses them).
+- **Department heads** may request equipment and approve requests for the departments they look after
+  (`requests.create`, `requests.approve`); the director still decides. Their own requests count as approved by the
+  department. They open the Department page on their own department, sign acceptances only for it, and still see no prices.
+- **Viewers and technicians can't request equipment** (new `requests.create` permission instead of a role check).
+- **Acceptance signatures** are the signed-in account (id, name, time), not a typed name. An optional outside witness
+  can be named; signing both sides yourself needs one.
+- **A test checks every server action** (`src/test/actions-permission.test.ts`) calls `requirePermission` or an
+  approved helper; the exceptions (sign-in, set-up, own account, a display cookie) are listed with reasons.
+- **Health check** `GET /api/health` (no sign-in): `{ ok, db, version, time }`, 503 when the database is down. Docker's
+  health check uses it instead of `/login`.
+- **System errors.** Server errors (pages, forms, route handlers) are saved through `onRequestError` in
+  `src/instrumentation.ts` (table `error_log`, 90 days) and listed under Administration › System errors: time, page,
+  message, digest; the stack for administrators only. Passwords in connection strings are masked.
+- **Off-site backup.** The nightly job can copy each good backup to an S3-compatible bucket or an rsync/ssh target
+  (`BACKUP_REMOTE_*` in `.env`, see `docs/deploy.md`). Administration › Backups shows the last copy; a failed copy
+  alerts administrators.
+- **Fixes**: money shows in EGP when no currency is given (was USD); equipment request plan years are budget years
+  ("FY 2026/27"); waves 32–38 are no longer marked "not merged yet" here.
+
+## Wave 38 — the last missing features from the audit
 
 Missing features 10–17 of the wave 30 audit. One migration (0050).
 
@@ -37,7 +65,7 @@ Missing features 10–17 of the wave 30 audit. One migration (0050).
 - Figures to confirm: helium limits (70 %, 2 points in 30 days, a reading every 7 days); tube warning window (8 weeks).
 - Checked: typecheck, lint, 1,091 tests, page check as three accounts on the demo.
 
-## Wave 37 — missing features from the audit, and the last two security items (not merged yet)
+## Wave 37 — missing features from the audit, and the last two security items
 
 Missing features 2–9 of the wave 30 audit, plus S13 and S15. Two migrations: 0048 (Microsoft/Google account link) and
 0049 (tender file, calibration, radiation safety, delay penalties, landed cost).
@@ -80,7 +108,7 @@ Missing features 2–9 of the wave 30 audit, plus S13 and S15. Two migrations: 0
   figures) and Tender timetable (minimum days).
 - Checked: typecheck, lint, 1,007 tests, page check as three accounts on the demo.
 
-## Wave 36 — the rest of the wave 30 audit (not merged yet)
+## Wave 36 — the rest of the wave 30 audit
 
 Medium and low findings left after waves 32–35. One migration (0047: indexes and data checks).
 
@@ -122,7 +150,7 @@ for the money, and no Offers, Invoices, Budgets or Framework pages.
   sign-in to the account's subject id (needs a column), and the missing-features list.
 - Checked: typecheck, lint, 919 tests (3 more run with PostgreSQL), page check as three accounts, demo build offline.
 
-## Waves 34 and 35 — sign-in, sealed bids, assets and history (audit fixes, not merged yet)
+## Waves 34 and 35 — sign-in, sealed bids, assets and history (audit fixes)
 
 Last two waves that fix the wave 30 audit. Built on wave 33. One migration (0046: who recorded and approved each
 invoice).
@@ -160,7 +188,7 @@ invoice).
   the 3D view opened and left twice with no errors. Not tried on screen: sealed prices (the demo has no two-envelope
   tender) and the Microsoft/Google two-step path (needs a real sign-in provider).
 
-## Wave 33 — money right (audit fixes, not merged yet)
+## Wave 33 — money right (audit fixes)
 
 Second of four waves that fix the wave 30 audit. Built on wave 32. No migration.
 
@@ -190,7 +218,7 @@ Second of four waves that fix the wave 30 audit. Built on wave 32. No migration.
 - Checked: typecheck, lint, 801 tests (about 30 new, each failing on the old code), page check of 123 page kinds,
   the register and the comparison tried in the demo.
 
-## Wave 32 — data safety (audit fixes, not merged yet)
+## Wave 32 — data safety (audit fixes)
 
 First of four waves that fix the critical and high findings of the wave 30 audit. No migration.
 

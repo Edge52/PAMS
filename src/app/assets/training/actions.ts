@@ -3,7 +3,7 @@
  * User training actions (wave 27). Recording a session and its attendees needs `maintenance.edit` (biomedical
  * engineers and technicians run or arrange the training); the sign-in sheet is attached as a document.
  */
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { diff } from "@/lib/audit-diff";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -128,7 +128,7 @@ export async function deleteTrainingAction(_: ActionState, fd: FormData): Promis
   const [s] = await db.select().from(trainingSessions).where(eq(trainingSessions.id, sid));
   if (!s) return fail("That training session no longer exists.");
   await requireFacilityAccess(s.facilityId, me);
-  const [doc] = await db.select({ id: documents.id }).from(documents).where(and(eq(documents.entityType, "training"), eq(documents.entityId, sid))).limit(1);
+  const [doc] = await db.select({ id: documents.id }).from(documents).where(and(eq(documents.entityType, "training"), eq(documents.entityId, sid), isNull(documents.deletedAt))).limit(1);
   if (doc) return fail("Remove the attached sign-in sheet first, so no file is left without its session.");
   const [n] = await db.select({ n: count() }).from(trainingAttendees).where(eq(trainingAttendees.sessionId, sid));
   await db.transaction(async (tx) => {

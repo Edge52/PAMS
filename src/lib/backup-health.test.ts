@@ -44,3 +44,22 @@ describe("backup alert (CO-07)", () => {
     expect(backupAlert({ nightly: null, now, today: "2026-11-21" })?.title).toBe("There is no database backup");
   });
 });
+
+describe("off-site copy (wave 39)", () => {
+  it("reads the remote status file", async () => {
+    const { parseRemoteStatus } = await import("./backup-health");
+    const r = parseRemoteStatus("status=failed\nat=2026-11-21T02:05:00Z\nmessage=upload refused (403)\ntarget=s3 https://s3.example/bucket\nlast_ok=2026-11-19T02:05:00Z\n");
+    expect(r).toMatchObject({ ok: false, target: "s3 https://s3.example/bucket", lastOkAt: new Date("2026-11-19T02:05:00Z") });
+    expect(parseRemoteStatus("status=ok\nat=2026-11-21T02:05:00Z\nmessage=2 files\ntarget=rsync nas:/b")?.lastOkAt).toEqual(new Date("2026-11-21T02:05:00Z"));
+    expect(parseRemoteStatus(null)).toBeNull();
+  });
+  it("alerts when the copy failed but the local backup is good", async () => {
+    const { parseRemoteStatus } = await import("./backup-health");
+    const remote = parseRemoteStatus("status=failed\nat=2026-11-21T02:05:00Z\nmessage=no route to host\ntarget=rsync nas:/b\n");
+    const good = { name: "hpams-20261121-0200.dump", at: new Date(now.getTime() - 8 * 3_600_000) };
+    const a = backupAlert({ lastUsable: good, nightly: { ok: true, at: good.at, message: "" }, now, today: "2026-11-21", remote });
+    expect(a?.title).toBe("The off-site backup copy failed");
+    expect(a?.dedupeKey).toBe("backup_remote_failed:2026-11-21T02:05:00.000Z");
+    expect(backupAlert({ lastUsable: good, nightly: null, now, today: "2026-11-21", remote: null })).toBeNull();
+  });
+});

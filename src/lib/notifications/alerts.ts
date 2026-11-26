@@ -113,7 +113,7 @@ async function loadData(today: string, w: AlertWindows): Promise<AlertData> {
       .where(sql`${serviceContracts.endDate} between ${today} and ${contractHorizon}`),
     db.select({ id: documents.id, supplierId: suppliers.id, supplierName: suppliers.name, kind: documents.kind, fileName: documents.fileName,
       expiresOn: sql<string>`${documents.expiresOn}` }).from(documents).innerJoin(suppliers, eq(suppliers.id, documents.entityId))
-      .where(and(eq(documents.entityType, "supplier"), eq(suppliers.active, true), sql`${documents.expiresOn} between ${today} and ${docHorizon}`)),
+      .where(and(eq(documents.entityType, "supplier"), eq(suppliers.active, true), isNull(documents.deletedAt), sql`${documents.expiresOn} between ${today} and ${docHorizon}`)),
   ]);
   return { offers: offerRows, rfqs: rfqRows, pos: poRows, warranties: warrantyRows, maintenance: maintRows, awards: awardRows, contracts: contractRows, supplierDocs: docRows };
 }
@@ -179,8 +179,8 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
     // Backups (audit CO-07): a failed nightly run, or no good database backup for two days, to every administrator.
     // Only for PostgreSQL servers: the laptop/demo install has no nightly job.
     if (!isPglite) {
-      const { lastUsable, nightly } = await backupHealth();
-      const b = backupAlert({ lastUsable, nightly, now: new Date(), today });
+      const { lastUsable, nightly, remote } = await backupHealth();
+      const b = backupAlert({ lastUsable, nightly, remote, now: new Date(), today });
       if (b) {
         const n = await notifyUsers(await who("ADMIN", null), b);
         if (n) { created += n; byKind.backup_failed = (byKind.backup_failed ?? 0) + n; }

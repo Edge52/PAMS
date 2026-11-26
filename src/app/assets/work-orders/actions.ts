@@ -94,7 +94,7 @@ export async function reportFaultAction(_: FormState, fd: FormData): Promise<For
         .where(and(eq(twinNotes.id, d.noteId), eq(twinNotes.facilityId, a.facilityId), isNull(twinNotes.workOrderId))).returning({ id: twinNotes.id });
       // The note's photos go with it (wave 8): same files, listed on the job too.
       if (linked.length) {
-        const ph = await tx.select().from(documents).where(and(eq(documents.entityType, "twin_note"), eq(documents.entityId, d.noteId)));
+        const ph = await tx.select().from(documents).where(and(eq(documents.entityType, "twin_note"), eq(documents.entityId, d.noteId), isNull(documents.deletedAt)));
         if (ph.length) await tx.insert(documents).values(ph.map((p) => ({ entityType: "work_order", entityId: row.id, kind: "photo", fileName: p.fileName, sizeBytes: p.sizeBytes, url: p.url })));
       }
     }

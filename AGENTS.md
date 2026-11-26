@@ -606,3 +606,16 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - Budget years: `budgetYear()` from `@/lib/procurement/budget-year-server`, helpers in `@/lib/fiscal-year`.
 - Arabic only inside formal documents, through `<LegalNameAr>`; never in the interface.
 
+
+## Wave 39 notes (documents, permissions, running it)
+- **Documents are soft-deleted**: any new query on `documents` must add `isNull(documents.deletedAt)`. A new file for an
+  existing document goes through `uploadDocument` with `documentId` (the old file moves to `document_versions`).
+  Restore and purge (`restoreDocument`, `purgeDocument` in `lib/documents.ts`) need `settings.manage`.
+- **Server actions**: `src/test/actions-permission.test.ts` fails when an exported action in a `"use server"` file
+  doesn't call `requirePermission` / `requireUser` / `requireDocumentEdit` (or a local helper that does). Add a real
+  exception to its `EXCEPTIONS` list with the reason only when the action is meant to be open.
+- **Equipment requests**: `requests.create` / `requests.approve`; department scope through `mayRequestFor` /
+  `mayApproveForDepartment` (`lib/assets/request-rules.ts`) with `myDepartments(me.id)`.
+- **Signatures** store the account (`…SignedById`) and the name at the time; never take who signed from a form field.
+- **Errors**: `onRequestError` (instrumentation) → `error_log`; `errorEntry` (`lib/error-log.ts`) leaves out
+  redirects and not-found and masks secrets.

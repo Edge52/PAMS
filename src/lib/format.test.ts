@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMonthsISO, todayISO } from "./format";
+import { addMonthsISO, formatMoney, todayISO } from "./format";
 
 describe("todayISO (hospital time zone)", () => {
   it("uses Cairo, not UTC: 23:30 UTC on 27 Oct is already 28 Oct in Cairo", () => {
@@ -30,5 +30,13 @@ describe("Cairo dates (CO-09)", () => {
     const { zonedInstant } = await import("./format");
     expect(zonedInstant("2026-11-21", "01:30").toISOString()).toBe("2026-11-20T23:30:00.000Z"); // winter, UTC+2
     expect(zonedInstant("2026-07-15", "12:00").toISOString()).toBe("2026-07-15T09:00:00.000Z"); // summer time, UTC+3
+  });
+});
+
+describe("formatMoney", () => {
+  it("defaults to Egyptian pounds (wave 39)", () => {
+    expect(formatMoney(1234.5).replace(/\s/g, " ")).toBe("EGP 1,234.50");
+    expect(formatMoney("10", "USD")).toBe("$10.00");
+    expect(formatMoney(null)).toBe("—");
   });
 });

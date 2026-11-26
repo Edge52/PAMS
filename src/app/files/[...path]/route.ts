@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { buildings, documents, equipmentModels, floors } from "@/db/schema";
+import { buildings, documents, documentVersions, equipmentModels, floors } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, getCurrentUser, type CurrentUser } from "@/lib/auth/session";
 import { canViewDocumentsOf } from "@/lib/documents-access";
@@ -32,9 +32,17 @@ async function mayRead(me: CurrentUser, segments: string[], url: string): Promis
   const [entityType, idText] = segments;
   const entityId = Number(idText);
   if (!Number.isInteger(entityId) || entityId <= 0) return false;
-  const [doc] = await db.select({ id: documents.id }).from(documents)
-    .where(and(eq(documents.entityType, entityType), eq(documents.entityId, entityId), eq(documents.url, url))).limit(1);
-  return !!doc && (await canViewDocumentsOf(me, entityType, entityId));
+  // Wave 39: the current file or an earlier version of a document. Removed documents only for administrators
+  // (Administration › Deleted documents).
+  const same = and(eq(documents.entityType, entityType), eq(documents.entityId, entityId));
+  const rows = [
+    ...await db.select({ deletedAt: documents.deletedAt }).from(documents).where(and(same, eq(documents.url, url))).limit(5),
+    ...await db.select({ deletedAt: documents.deletedAt }).from(documentVersions)
+      .innerJoin(documents, eq(documents.id, documentVersions.documentId)).where(and(same, eq(documentVersions.url, url))).limit(5),
+  ];
+  if (!rows.length) return false;
+  if (rows.every((r) => r.deletedAt) && !can(me.role, "settings.manage")) return false;
+  return canViewDocumentsOf(me, entityType, entityId);
 }
 
 export const dynamic = "force-dynamic";

@@ -128,7 +128,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     .orderBy(sql`${twinNotes.createdAt} desc`).limit(500)).map(noteOf);
   if (notes.length) {
     const photos = await db.select({ id: documents.id, entityId: documents.entityId, url: documents.url, name: documents.fileName }).from(documents)
-      .where(sql`${documents.entityType} = 'twin_note' and ${inArray(documents.entityId, notes.map((n) => n.id))}`);
+      .where(sql`${documents.entityType} = 'twin_note' and ${documents.deletedAt} is null and ${inArray(documents.entityId, notes.map((n) => n.id))}`);
     for (const n of notes) n.photos = photos.filter((p) => p.entityId === n.id).map(({ id, url, name }) => ({ id, url, name }));
   }
   const people = await db.select({ id: users.id, name: users.name }).from(users)

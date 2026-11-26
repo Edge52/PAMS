@@ -345,7 +345,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
             </ActionForm>}
           </Panel>
 
-          <AcceptancePanel assetId={x.id} status={x.status} me={me} />
+          <AcceptancePanel assetId={x.id} status={x.status} me={me} departmentId={x.departmentId} />
           <DocumentsPanel entityType="asset" entityId={x.id} returnPath={path} title="Documents and photos" />
         </div>
 
