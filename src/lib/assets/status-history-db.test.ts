@@ -35,6 +35,8 @@ beforeAll(async () => {
   d = drizzle(client, { schema, casing: "snake_case" }) as unknown as DB;
   h.d = d;
   await migrate(d as never, { migrationsFolder: path.resolve(__dirname, "..", "..", "..", "drizzle") });
+  // Wave 40: work_orders.failure_code until its migration is generated at merge (harmless afterwards).
+  await client.query("alter table work_orders add column if not exists failure_code text");
   [{ id: facilityId }] = await d.insert(facilities).values({ code: "TST", name: "Test hospital" }).returning({ id: facilities.id });
   [{ id: typeId }] = await d.insert(deviceTypes).values({ code: "IMG-MRI-TEST", level: 3, name: "Test MRI" }).returning({ id: deviceTypes.id });
 }, 180_000);

@@ -31,7 +31,7 @@ const ChangeSchema = z.object({
   partId: z.number().int().positive().optional(),
   quantity: z.number().int().min(1).max(1000).optional(),
   complete: z.object({
-    resolution: z.string().max(4000).optional(), rootCause: z.string().max(500).optional(),
+    resolution: z.string().max(4000).optional(), rootCause: z.string().max(500).optional(), failureCode: z.string().max(32).optional(),
     laborHours: z.number().min(0).max(1000).optional(), returnToService: z.boolean(),
     checklist: z.array(AnswerSchema).max(300).optional(),
   }).optional(),
@@ -106,6 +106,7 @@ async function syncOne(me: CurrentUser, c: Change, scope: number[] | null, moved
       fd.set("workOrderId", String(wo.id));
       if (d.resolution) fd.set("resolution", d.resolution);
       if (d.rootCause) fd.set("rootCause", d.rootCause);
+      if (d.failureCode) fd.set("failureCode", d.failureCode);
       if (d.laborHours != null) fd.set("laborHours", String(d.laborHours));
       if (d.returnToService) fd.set("returnToService", "on");
       (d.checklist ?? []).forEach((a, i) => {
@@ -113,7 +114,8 @@ async function syncOne(me: CurrentUser, c: Change, scope: number[] | null, moved
         if (a.value != null && a.value !== "") fd.set(`ck_value_${i}`, String(a.value));
         if (a.note) fd.set(`ck_note_${i}`, a.note);
       });
-      r = await completeJob(me, fd, record);
+      // Wave 40: the failure code is optional from a phone (older phones don't send it); it can be added on the job page.
+      r = await completeJob(me, fd, record, { failureCodeOptional: true });
       break;
     }
   }

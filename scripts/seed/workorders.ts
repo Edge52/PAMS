@@ -22,15 +22,21 @@ function rng(seed: number) {
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; };
 }
 
+/** Fault, what was done, and the failure code (wave 40). */
 const FAULTS = [
-  ["Screen stays black after power on", "Power supply board replaced; tested against the checklist."],
-  ["Alarm sounds with no reading", "SpO2 sensor cable damaged; cable replaced and alarms tested."],
-  ["Battery drains within 20 minutes", "Battery pack past its life; new pack fitted and calibrated."],
-  ["Error E-21 on start-up", "Firmware fault; reflashed with the vendor's current version."],
-  ["Occlusion alarm on every syringe", "Plunger sensor cleaned and recalibrated."],
-  ["Cracked housing after a fall", "Front housing replaced; electrical safety test passed."],
-  ["Readings drift from the reference", "Recalibrated against the reference standard."],
-  ["Won't charge on the dock", "Dock contacts cleaned; charging circuit fuse replaced."],
+  ["Screen stays black after power on", "Power supply board replaced; tested against the checklist.", "PART_FAILURE"],
+  ["Alarm sounds with no reading", "SpO2 sensor cable damaged; cable replaced and alarms tested.", "ACCESSORY"],
+  ["Battery drains within 20 minutes", "Battery pack past its life; new pack fitted and calibrated.", "BATTERY"],
+  ["Error E-21 on start-up", "Firmware fault; reflashed with the vendor's current version.", "SOFTWARE"],
+  ["Occlusion alarm on every syringe", "Plunger sensor cleaned and recalibrated.", "MECHANICAL"],
+  ["Cracked housing after a fall", "Front housing replaced; electrical safety test passed.", "DAMAGE_ABUSE"],
+  ["Readings drift from the reference", "Recalibrated against the reference standard.", "CALIBRATION_DRIFT"],
+  ["Won't charge on the dock", "Dock contacts cleaned; charging circuit fuse replaced.", "ELECTRICAL"],
+  ["Alarm reported by the ward", "Tested in the workshop for two hours; no fault found. Returned to the ward.", "NO_PROBLEM_FOUND"],
+  ["Device \"not working\"", "Settings had been changed; reset and showed the staff how to use it.", "USER_ERROR"],
+  ["Results not reaching the central station", "Network cable unplugged in the room; reconnected and tested.", "NETWORK"],
+  ["Trips the room's power", "Socket in the room found faulty; estates fixed it. Device fine.", "ENVIRONMENT"],
+  ["Pump door hinge loose", "Worn hinge pin replaced.", "WEAR"],
 ] as const;
 const HOLD = ["Waiting for a spare part from the vendor", "Vendor engineer visit booked", "Waiting for a quotation approval"];
 
@@ -112,8 +118,10 @@ export default async function seed(db: DB) {
 
   // Finished jobs over the last 90 days.
   for (let i = 0; i < Math.min(40, working.length); i++) {
-    const a = working[Math.floor(r() * working.length)];
-    const [title, resolution] = FAULTS[Math.floor(r() * FAULTS.length)];
+    // Wave 40: the first few jobs land on one device, so the repeat-failure list has an example.
+    const pick = working[Math.floor(r() * working.length)];
+    const a = i < 4 ? working[0] : pick;
+    const [title, resolution, failureCode] = FAULTS[Math.floor(r() * FAULTS.length)];
     const deviceDown = r() < 0.7;
     const priority: WorkOrderPriority = suggestedPriority(a.criticality, deviceDown);
     const reportedAt = new Date(now - (5 + r() * 85) * 24 * H);
@@ -132,7 +140,7 @@ export default async function seed(db: DB) {
       reportedById: reporter?.id ?? null, reportedByName: reporter?.name ?? "Ward nurse", assignedToId: tech?.id ?? null,
       reportedAt, dueAt: responseDue(reportedAt, priority), assignedAt: new Date(reportedAt.getTime() + 0.3 * H), startedAt, completedAt, closedAt,
       downtimeStart: deviceDown ? reportedAt : null, downtimeEnd: deviceDown ? completedAt : null,
-      resolution, rootCause: r() < 0.5 ? "Wear" : "User handling", laborHours: Math.round((1 + r() * 6) * 4) / 4, cost, currency: cost ? "EGP" : null,
+      resolution, rootCause: r() < 0.5 ? "Wear" : "User handling", failureCode, laborHours: Math.round((1 + r() * 6) * 4) / 4, cost, currency: cost ? "EGP" : null,
       maintenanceEventId: ev.id, ...coverFor(a.id, reportedAt),
     }).returning({ id: workOrders.id });
     log.push(
@@ -189,6 +197,32 @@ export default async function seed(db: DB) {
       checklist: blankResults(defaultChecklist([v.code, v.grpCode, v.catCode], { requiresCalibration: v.calib })), ...coverFor(v.assetId, at),
     }).returning({ id: workOrders.id });
     log.push({ entityType: "work_order", entityId: wo.id, action: "reported", summary: `Raised from the maintenance schedule (visit due ${v.date})`, actor: lead?.name ?? null, at });
+    created++;
+  }
+  // Wave 40: closed PPM jobs for a sample of the past year's completed visits, a few finding a fault, so the PPM
+  // yield on Analytics › Maintenance has something to show.
+  const donePpm = await db.select({
+    id: maintenanceEvents.id, date: maintenanceEvents.completedDate, assetId: assets.id, facilityId: assets.facilityId,
+    typeName: deviceTypes.name, code: deviceTypes.code, grpCode: grp.code, catCode: cat.code, calib: deviceTypes.requiresCalibration,
+  }).from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId)).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
+    .leftJoin(grp, eq(grp.id, deviceTypes.parentId)).leftJoin(cat, eq(cat.id, grp.parentId))
+    .where(and(eq(maintenanceEvents.type, "PPM"), eq(maintenanceEvents.status, "COMPLETED"), sql`${maintenanceEvents.completedDate} >= ${shift(-330)}`,
+      sql`not exists (select 1 from work_orders w where w.maintenance_event_id = ${maintenanceEvents.id} or w.planned_event_id = ${maintenanceEvents.id})`))
+    .orderBy(maintenanceEvents.id).limit(30);
+  for (const [i, v] of donePpm.entries()) {
+    const at = new Date(`${v.date}T09:00:00Z`);
+    const fault = i % 9 === 4;
+    const list = blankResults(defaultChecklist([v.code, v.grpCode, v.catCode], { requiresCalibration: v.calib }))
+      .map((c, k) => ({ ...c, result: fault && k === 0 ? "FAIL" as const : "PASS" as const }));
+    const [wo] = await db.insert(workOrders).values({
+      number: nextNo(), assetId: v.assetId, facilityId: v.facilityId, type: "PPM", priority: "NORMAL", status: "CLOSED",
+      title: `Planned preventive maintenance — ${v.typeName}`.slice(0, 160), reportedById: lead?.id ?? null, reportedByName: lead?.name ?? "Biomedical engineering",
+      reportedAt: at, assignedToId: tech?.id ?? null, assignedAt: at, startedAt: at, completedAt: new Date(at.getTime() + 2 * H), closedAt: new Date(at.getTime() + 26 * H),
+      plannedEventId: v.id, maintenanceEventId: v.id, checklist: list, laborHours: 1.5,
+      resolution: fault ? "Checklist done: one check failed; worn part replaced during the visit." : "Checklist done: all checks passed.",
+      failureCode: fault ? (i % 2 ? "WEAR" : "CALIBRATION_DRIFT") : null, ...coverFor(v.assetId, at),
+    }).returning({ id: workOrders.id });
+    log.push({ entityType: "work_order", entityId: wo.id, action: "completed", summary: "Planned maintenance done", actor: tech?.name ?? null, at });
     created++;
   }
   // Spare parts in the main hospital's store; some used on closed jobs, a few low or out of stock.

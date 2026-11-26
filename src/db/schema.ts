@@ -877,6 +877,8 @@ export const workOrders = pgTable("work_orders", {
   holdReason: text("hold_reason"),
   resolution: text("resolution"),
   rootCause: text("root_cause"),
+  /** Wave 40: standard failure code (lib/assets/failure-codes.ts); asked for when a corrective job is completed. */
+  failureCode: text("failure_code"),
   laborHours: real("labor_hours"),
   cost: money("cost"),
   currency: varchar("currency", { length: 3 }),

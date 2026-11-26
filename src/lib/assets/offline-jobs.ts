@@ -15,7 +15,7 @@ export type ChangeKind = (typeof CHANGE_KINDS)[number];
 export type SyncStatus = "queued" | "synced" | "conflict";
 
 export type CompletePayload = {
-  resolution?: string; rootCause?: string; laborHours?: number; returnToService: boolean; checklist?: Answer[];
+  resolution?: string; rootCause?: string; failureCode?: string; laborHours?: number; returnToService: boolean; checklist?: Answer[];
 };
 
 /** What the server says the job looks like now, for the technician to compare with their change. */

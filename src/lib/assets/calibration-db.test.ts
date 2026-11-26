@@ -39,6 +39,8 @@ const client = new PGlite();
 const d = drizzle(client, { schema, casing: "snake_case" }) as unknown as DB;
 h.d = d;
 await migrate(d as never, { migrationsFolder: path.resolve(__dirname, "..", "..", "..", "drizzle") });
+// Wave 40: work_orders.failure_code until its migration is generated at merge (harmless afterwards).
+await client.query("alter table work_orders add column if not exists failure_code text");
 const ready = (await client.query<{ t: string | null }>("select to_regclass('public.calibrations')::text as t")).rows[0]?.t != null;
 
 afterAll(async () => { await client.close(); });

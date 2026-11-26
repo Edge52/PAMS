@@ -12,6 +12,7 @@ import { Badge, StatusBadge } from "@/components/ui";
 import { useCanScan, useQrCamera } from "@/components/qr-camera";
 import { parseScan } from "@/lib/assets/rounds";
 import { isMeasurement, rangeLabel, type Answer } from "@/lib/assets/checklists";
+import { FAILURE_CODE_OPTIONS } from "@/lib/assets/failure-codes";
 import {
   applyResults, changeLabel, dropChange, jobForScan, keepMine, makeChange, newerData, pendingOn, prune, queueSummary, toSend, withVersions,
   type JobChange, type MyJobsData, type NewChange, type OfflineJob, type OfflinePart,
@@ -307,6 +308,7 @@ function CompleteForm({ job, onAdd }: { job: OfflineJob; onAdd: PanelProps["onAd
   const [answers, setAnswers] = useState<Answer[]>(() => items.map(() => ({})));
   const [resolution, setResolution] = useState("");
   const [rootCause, setRootCause] = useState("");
+  const [failureCode, setFailureCode] = useState("");
   const [hours, setHours] = useState("");
   const [back, setBack] = useState(true);
   const set = (i: number, a: Answer) => setAnswers((cur) => cur.map((x, k) => (k === i ? { ...x, ...a } : x)));
@@ -315,7 +317,7 @@ function CompleteForm({ job, onAdd }: { job: OfflineJob; onAdd: PanelProps["onAd
     <form className="space-y-3 rounded-[var(--radius-panel)] border border-line bg-surface p-4" onSubmit={(e) => {
       e.preventDefault();
       onAdd({ jobId: job.id, baseVersion: job.version, kind: "complete", complete: {
-        resolution, rootCause, laborHours: hours.trim() ? Number(hours.replace(",", ".")) : undefined, returnToService: job.deviceDown ? back : false,
+        resolution, rootCause, failureCode: failureCode || undefined, laborHours: hours.trim() ? Number(hours.replace(",", ".")) : undefined, returnToService: job.deviceDown ? back : false,
         checklist: items.length ? answers : undefined,
       } });
     }}>
@@ -350,6 +352,11 @@ function CompleteForm({ job, onAdd }: { job: OfflineJob; onAdd: PanelProps["onAd
       )}
       <label className="block text-sm"><span className="font-semibold">What was done{items.length ? " (optional)" : ""}</span>
         <textarea value={resolution} onChange={(e) => setResolution(e.target.value)} rows={3} maxLength={4000} className={`${field} mt-1 py-2`} /></label>
+      <label className="block text-sm"><span className="font-semibold">Failure code{job.type === "CORRECTIVE" ? "" : " (if a fault was found)"}</span>
+        <select value={failureCode} onChange={(e) => setFailureCode(e.target.value)} className={`${field} mt-1`}>
+          <option value="">{job.type === "CORRECTIVE" ? "Choose what caused the fault…" : "None"}</option>
+          {FAILURE_CODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select></label>
       <label className="block text-sm"><span className="font-semibold">Root cause (optional)</span>
         <input value={rootCause} onChange={(e) => setRootCause(e.target.value)} maxLength={500} className={`${field} mt-1`} placeholder="e.g. wear, user error" /></label>
       <label className="block text-sm"><span className="font-semibold">Total labour hours (optional)</span>
