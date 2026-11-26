@@ -1,5 +1,22 @@
 # Changelog
 
+## Wave 40 (not merged yet)
+
+### Analytics: budget, imaging, lifecycle, comparison, export
+- **Budget** (`/analytics/budget`, prices only): per budget line for a budget year: budget, committed, spent, used %
+  and a year-end forecast, straight line (spent ÷ months gone × 12 + committed) or seasonal (last year's monthly
+  pattern of invoices). Lines forecast over 100 % or under 70 % are flagged. EGP at today's rate.
+- **Imaging** (`/analytics/imaging`): exams by weekday × month (the exam file has daily counts, no time of day, so
+  no hour × weekday), idle capacity per scanner against the hospital's capacity or the hints (CT 12,000, MRI 6,000
+  a year), and exams per scanner a year against CDA-AMC (about 11,400 CT, 5,125 MRI).
+- **Lifecycle** (`/analytics/lifecycle`): devices due for replacement per budget year over ten years (capital plan
+  rules), with cost for people who see prices; a capital what-if (delay, yearly budget cap, device types) showing
+  the backlog and the year each device is replaced. Scenarios are saved per hospital (table `capital_scenarios`).
+- **Compare hospitals** (`/analytics/compare`): devices, devices per bed, PPM on time, open jobs per 100 devices,
+  uptime, and with prices COSR a year and spend per bed, side by side; hidden below 5 items.
+- **Export** (`/analytics/export`): one Excel file of these figures for the current filters; read-only `bi_` views
+  for Power BI (`docs/bi-views.sql`, role `pams_bi` in `docs/deploy.md`). BI access shows prices.
+
 ## Wave 39 (not merged yet)
 
 ### Law 182 and maintenance rules

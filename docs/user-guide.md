@@ -716,3 +716,36 @@ https for the camera).
   mine**.
 - Test equipment and meter readings are recorded on the full job page (needs signal).
 - Signing out removes the kept jobs from the phone. Changes not yet sent stay and go out when you sign in again.
+
+## Analytics: budget, imaging, lifecycle, comparison and export (wave 40)
+
+Open **Analytics** in the menu. The filter bar (hospital, department, device type, period) applies to every tab.
+
+### Budget (people who see prices)
+Each budget line of the budget year: budget, committed (approved orders not yet invoiced), spent (approved and paid
+invoices), used %, and a year-end forecast. **Straight line** = spent ÷ months gone × 12 + committed. **Seasonal**
+uses last year's pattern of invoices (the same line by name, else all lines of that kind) when there is one. Lines
+forecast over 100 % are flagged **Over budget**, under 70 % **Under 70 %** (money that may be lost or could move).
+Pick the budget year above the table; budgets ignore the period filter.
+
+### Imaging
+Exams per day by weekday and month (the exam import has one count per day, so there is no time of day), idle
+capacity per scanner (capacity − exams), and exams per scanner a year against the Canadian CDA-AMC figures (about
+11,400 CT and 5,125 MRI). Capacity is your own per device type (Imaging use › Planning capacity), else 12,000 CT and
+6,000 MRI a year, marked "hint".
+
+### Lifecycle and risk
+The **replacement wave**: devices due per budget year for ten years, by the same rules as the capital plan (score,
+end of life, maker support end). With price access, each year's estimated cost and the **capital what-if**: set a
+delay, a yearly budget (empty = no cap) and the type codes to include, then **Run what-if**. Each year the devices
+due queue by due year and score and are funded until the budget runs out; the table shows what is replaced and what
+is still waiting. Pick one hospital to **Save scenario** (planners, biomedical and admin); saved ones are listed above.
+
+### Compare hospitals
+The same figures for every hospital you may see: devices, devices per bed, PPM on time, open jobs per 100 devices,
+uptime and, with price access, COSR a year and spend per bed. A figure on fewer than 5 items shows "n < 5". The best
+value is in green.
+
+### Export
+**Download Excel file** gives these figures for the current filters (money only if you may see prices). For Power BI,
+your administrator sets up the read-only `pams_bi` account (deploy guide); it shows prices and every hospital.
