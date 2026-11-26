@@ -9,7 +9,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, incidents } from "@/db/schema";
+import { assetQuarantines, assets, incidents } from "@/db/schema";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formObject, isoDate, oneOf, reqId, reqText, text } from "@/lib/assets/forms";
 import { closeProblem, HARMS, reportable } from "@/lib/assets/incidents";
@@ -50,6 +50,11 @@ export async function reportIncidentAction(_: ActionState, fd: FormData): Promis
     if (d.deviceQuarantined && (a.status === "IN_SERVICE" || a.status === "INSTALLED")) {
       await tx.update(assets).set({ status: "OUT_OF_SERVICE" }).where(eq(assets.id, a.id));
       await logActivity("asset", a.id, "status_changed", `Out of service: quarantined after incident ${r.number}`, me.name, tx);
+    }
+    // Wave 40 (EDA vigilance): kept as found — no repair or disposal until released (one open hold per device).
+    if (d.deviceQuarantined) {
+      await tx.insert(assetQuarantines).values({ assetId: a.id, facilityId: a.facilityId, incidentId: r.id, reason: `Incident ${r.number}: ${d.title}`.slice(0, 300), placedById: me.id, placedByName: me.name })
+        .onConflictDoNothing();
     }
     await logActivity("incident", r.id, "created", `${r.number} reported on ${a.tag}: ${d.title}`.slice(0, 300), me.name, tx);
     await logActivity("asset", a.id, "incident", `Incident ${r.number}: ${d.title}`.slice(0, 300), me.name, tx);

@@ -44,7 +44,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader title="Incidents" description="Something went wrong with a device, or nearly did. Record it here, keep the device as found, and note who was told. Serious harm is reported to the manufacturer and the Egyptian Drug Authority."
-        actions={can(me.role, "workorders.report") ? <LinkButton href="/assets/incidents/new" variant="primary">Report an incident</LinkButton> : undefined} />
+        actions={<span className="flex flex-wrap gap-2"><LinkButton href="/assets/incidents/contacts">Safety contacts</LinkButton>{can(me.role, "workorders.report") && <LinkButton href="/assets/incidents/new" variant="primary">Report an incident</LinkButton>}</span>} />
       {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

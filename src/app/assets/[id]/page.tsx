@@ -38,6 +38,8 @@ import { TestEquipmentField } from "@/components/assets/test-equipment-field";
 import { MeterAtVisit } from "@/components/assets/meter-at-visit";
 import { usageIntervalLabel } from "@/lib/assets/meters";
 import { ActionForm } from "@/components/assets/action-form";
+import { quarantineFor } from "@/lib/assets/vigilance-server";
+import { placeQuarantineAction, releaseQuarantineAction } from "@/app/assets/incidents/vigilance-actions";
 import { Crumbs, enumOptions, Meter, NativeSelect, Notice, RoomSelect } from "@/components/assets/bits";
 import { MiniMap } from "@/components/assets/mini-map";
 import { ASSET_CONDITIONS, MANUAL_ASSET_STATUSES, MAINTENANCE_TYPES } from "@/lib/assets/filters";
@@ -160,6 +162,8 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
   const ppmState = x.status === "IN_STOCK" ? "NONE" : dueState(next.due, today);
   const edit = sp.edit === "1" && canEdit;
   const path = `/assets/${x.id}`;
+  const hold = await quarantineFor(x.id); // wave 40: kept as found (EDA vigilance)
+  const canHold = can(me.role, "incidents.manage");
 
   return (
     <>
@@ -177,6 +181,25 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
         </>}
       />
       <Notice sp={sp} />
+      {hold ? (
+        <div role="alert" className="mb-4 rounded-[var(--radius-control)] border border-danger bg-danger-soft px-3 py-2 text-sm">
+          <b className="text-danger">Kept as found (quarantined)</b> since {formatDateTime(hold.placedAt)}{hold.placedByName ? ` by ${hold.placedByName}` : ""}: {hold.reason}{hold.keptAt ? `. Kept at ${hold.keptAt}` : ""}. No repair, maintenance or disposal until it is released.
+          {canHold && <ActionForm action={releaseQuarantineAction} className="mt-2 flex flex-wrap items-end gap-2">
+            <input type="hidden" name="assetId" value={x.id} />
+            <label className="text-xs">Why it can be released<input name="releaseReason" required maxLength={500} className="ml-2 w-64 rounded-[var(--radius-control)] border border-line bg-surface px-2 py-1 text-sm" /></label>
+            <button className="text-sm text-primary hover:underline">Release</button>
+          </ActionForm>}
+        </div>
+      ) : canHold && x.status !== "DISPOSED" ? (
+        <details className="mb-4 text-sm"><summary className="cursor-pointer text-muted">Keep this device as found (quarantine)</summary>
+          <ActionForm action={placeQuarantineAction} className="mt-2 flex flex-wrap items-end gap-2">
+            <input type="hidden" name="assetId" value={x.id} />
+            <label className="text-xs">Reason<input name="reason" required maxLength={300} className="ml-2 w-56 rounded-[var(--radius-control)] border border-line bg-surface px-2 py-1 text-sm" /></label>
+            <label className="text-xs">Kept at<input name="keptAt" maxLength={200} className="ml-2 w-48 rounded-[var(--radius-control)] border border-line bg-surface px-2 py-1 text-sm" /></label>
+            <button className="text-sm text-danger hover:underline">Keep as found</button>
+          </ActionForm>
+        </details>
+      ) : null}
       {label?.tagChanged && labelTag && (
         <p role="alert" className="mb-4 rounded-[var(--radius-control)] border border-warn bg-warn-soft px-3 py-2 text-sm text-warn">
           This label says {labelTag}, but this device&apos;s tag is now {x.assetTag}. Check it is the right device, then print a new label.
