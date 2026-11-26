@@ -84,6 +84,7 @@ export const MODULES: AppModule[] = [
     { href: "/reports", label: "Reports", need: "reports.view" },
     { href: "/reports/executive", label: "Executive summary", need: "prices.view" },
     { href: "/reports/data-quality", label: "Data quality", need: "reports.view" },
+    { href: "/analytics", label: "Analytics", need: "reports.view" },
   ] },
   { id: "admin", name: "Administration", description: "Users and roles, approval rules, settings, the audit log and backups.", links: [
     { href: "/admin/users", label: "Users", need: "users.manage" },
@@ -99,7 +100,7 @@ export const MODULES: AppModule[] = [
 /** Pages that sit under a module without being in its menu. */
 const PREFIXES: [string, ModuleId][] = [
   ["/procurement", "procurement"], ["/assets", "assets"], ["/boq", "planning"], ["/facilities", "buildings"],
-  ["/flows", "pathways"], ["/reports", "reports"], ["/admin", "admin"], ["/catalogue", "assets"],
+  ["/flows", "pathways"], ["/reports", "reports"], ["/analytics", "reports"], ["/admin", "admin"], ["/catalogue", "assets"],
 ];
 
 const under = (pathname: string, href: string) => pathname === href || pathname.startsWith(href + "/");
