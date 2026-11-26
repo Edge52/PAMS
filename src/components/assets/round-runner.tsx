@@ -1,15 +1,15 @@
 "use client";
 /**
- * The phone page of a round or stock-take (wave 12, D7). Scan a label (camera where the browser can read QR codes, or
- * a handheld scanner / typing), then mark the device OK, faulty or moved. Results are kept on the phone and sent when
+ * The phone page of a round or stock-take (wave 12, D7). Scan a label (camera on any phone, or a handheld scanner /
+ * typing), then mark the device OK, faulty or moved. Results are kept on the phone and sent when
  * there is signal; nothing is lost if the connection drops.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { parseScan } from "@/lib/assets/rounds";
+import { useQrCamera } from "@/components/qr-camera";
 
 export type RoundAsset = { id: number; tag: string; typeName: string; room: string | null; result: string | null };
 type Pending = { assetId?: number; tag?: string; result: "OK" | "FAULT" | "MOVED"; roomId?: number | null; note?: string; checkedAt: string; label: string };
-type Detector = { detect: (src: CanvasImageSource) => Promise<{ rawValue: string }[]> };
 
 const noop = () => () => {};
 export function RoundRunner({ roundId, expected, rooms, finished, finish }: { roundId: number; expected: RoundAsset[]; rooms: { id: number; name: string }[]; finished: boolean;
@@ -25,7 +25,6 @@ export function RoundRunner({ roundId, expected, rooms, finished, finish }: { ro
   const [camera, setCamera] = useState(false);
   const [note, setNote] = useState("");
   const [room, setRoom] = useState("");
-  const video = useRef<HTMLVideoElement>(null);
   const sending = useRef(false);
   const queueRef = useRef(queue);
   useEffect(() => { queueRef.current = queue; }, [queue]);
@@ -64,25 +63,8 @@ export function RoundRunner({ roundId, expected, rooms, finished, finish }: { ro
     setTimeout(send, 50);
   };
 
-  useEffect(() => {
-    if (!camera) return;
-    const D = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => Detector }).BarcodeDetector!;
-    let stop = false, stream: MediaStream | null = null;
-    const det = new D({ formats: ["qr_code"] });
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(async (s) => {
-      stream = s; if (!video.current) return;
-      video.current.srcObject = s; await video.current.play();
-      const loop = async () => {
-        if (stop || !video.current) return;
-        const codes = await det.detect(video.current).catch(() => []);
-        if (codes[0]) { pick(codes[0].rawValue); setCamera(false); return; }
-        requestAnimationFrame(loop);
-      };
-      loop();
-    }).catch(() => { setLog((l) => ["The camera isn't available: type the tag or use a scanner.", ...l]); setCamera(false); });
-    return () => { stop = true; stream?.getTracks().forEach((t) => t.stop()); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera]);
+  const video = useQrCamera(camera, (raw) => { setCamera(false); pick(raw); },
+    (m) => { setLog((l) => [m, ...l]); setCamera(false); });
 
   const left = expected.filter((e) => !done[e.tag]);
   const btn = "rounded-lg px-4 py-3 text-base font-semibold";
@@ -99,7 +81,7 @@ export function RoundRunner({ roundId, expected, rooms, finished, finish }: { ro
             <button className={`${btn} border border-line`}>Find</button>
           </form>
           <button type="button" onClick={() => {
-            if (!camera && !("BarcodeDetector" in window)) { setLog((l) => ["This browser can't read QR codes with the camera: type the tag or use a scanner.", ...l]); return; }
+            if (!camera && !navigator.mediaDevices?.getUserMedia) { setLog((l) => ["This browser can't use the camera here: type the tag or use a scanner.", ...l]); return; }
             setCamera((c) => !c);
           }} className={`${btn} mt-2 w-full border border-line`}>{camera ? "Stop camera" : "Scan with the camera"}</button>
           {camera && <video ref={video} className="mt-2 w-full rounded-lg bg-black" playsInline muted />}

@@ -146,6 +146,7 @@ Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `fin
   **Resume work** later; **Book part** for parts used from stock; then **Complete job** with the work done, downtime
   and, for planned maintenance, the checklist results.
 - Move a device from its page (**Record movement**), or in 3D (*Move to another room*, *Set exact spot*).
+- On a phone, use **My jobs** (see *My jobs on the phone* below).
 
 ---
 
@@ -421,7 +422,8 @@ incidents* and *Device security*. Each one prints, saves as PDF and exports to E
 
 **On your phone.** Open PAMS in the phone's browser and add it to the home screen (Android: Chrome menu › *Add to
 home screen*; iPhone: Safari's share button › *Add to Home Screen*). *Assets › Scan a label* opens a device's page
-from its QR label: on Android Chrome with the camera; on other phones type the tag or use a hand scanner.
+from its QR label with the camera, on Android and iPhone (from wave 39); you can also type the tag or use a hand
+scanner.
 
 
 
@@ -655,3 +657,20 @@ three of one kind in a hospital come as one summary.
   page.
 - Importing is data entry, so it works on a sealed two-envelope tender too, but the check shows prices only to
   people who see supplier prices, and only once the financial envelopes are open.
+
+## My jobs on the phone (wave 39)
+
+*Maintenance › My jobs* (technicians land there after signing in) lists your open jobs: repairs first, then planned
+maintenance. Tap a job, or press **Scan a device** and point the camera at its label (any phone; the site must use
+https for the camera).
+
+- In a job: **Save note**, add **Labour time**, add a **Part used**, and **Complete job** (with the checklist for
+  planned maintenance). A job not started yet is started when you complete it.
+- **No signal?** Open My jobs once while online and it keeps working offline. Everything you do waits on the phone
+  and is sent when you are back online. The top line shows *Offline*, how many changes are *waiting to send*, or
+  *All sent*. Each change in a job shows *Queued*, *Synced* or *Conflict*.
+- **Conflict** means someone changed the job after you opened it (for example the lead put it on hold or gave it to
+  someone else). Nothing is overwritten. The job shows what it says now; choose **Send mine anyway** or **Drop
+  mine**.
+- Test equipment and meter readings are recorded on the full job page (needs signal).
+- Signing out removes the kept jobs from the phone. Changes not yet sent stay and go out when you sign in again.

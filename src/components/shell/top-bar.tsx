@@ -5,6 +5,7 @@ import { signOut } from "@/app/login/actions";
 import { NotificationBell } from "@/components/notification-bell";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { PathBar } from "@/components/shell/path-bar";
+import { SignOutButton } from "@/components/shell/sign-out-button";
 import { ThemeChoice } from "@/components/shell/theme-choice";
 import type { Theme } from "@/lib/theme";
 
@@ -33,7 +34,7 @@ export function TopBar({ user, assistant = false, theme = "light" }: { user: Cur
           <Link href="/account" className="block rounded-[var(--radius-control)] px-3 py-2 text-sm hover:bg-sunken">Your account</Link>
           <ThemeChoice theme={theme} />
           <form action={signOut} className="border-t border-line pt-1">
-            <button type="submit" className="block w-full rounded-[var(--radius-control)] px-3 py-2 text-left text-sm hover:bg-sunken">Sign out</button>
+            <SignOutButton />
           </form>
         </div>
       </details>

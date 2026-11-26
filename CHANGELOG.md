@@ -1,5 +1,26 @@
 # Changelog
 
+## Wave 39 (not merged yet)
+
+### Phones and offline
+
+- **Camera scanning on every phone**: scanning uses the browser's `BarcodeDetector` where it has one (Chrome on
+  Android) and otherwise reads video frames with jsQR about 6 times a second (iPhone Safari, Firefox). One hook,
+  `useQrCamera` in `src/components/qr-camera.tsx`, used by Scan a label, rounds and stock-takes, and My jobs. New
+  package: `jsqr`.
+- **My jobs** (`/assets/my-jobs`, Maintenance menu; the technician's start page): open jobs and planned maintenance
+  assigned to you, large buttons, a **Scan a device** button that opens the job for that label.
+- **Works offline**: open My jobs once with signal; after that it opens without (a small service worker,
+  `public/sw.js`, keeps only this page and the app's built files). Notes, labour time, parts used, checklist results
+  and completing a job are queued on the phone (IndexedDB) and sent when back online, each marked *Queued*,
+  *Synced* or *Conflict*. A change to a job someone else changed meanwhile is not applied: the technician sees the
+  job as it is now and chooses **Send mine anyway** or **Drop mine**. Signing out forgets the kept jobs (unsent
+  changes stay until their owner signs in again).
+- Sync goes through the same steps as the work order page (`src/lib/assets/work-order-steps-server.ts`, now shared
+  by both); queue and conflict rules are pure in `src/lib/assets/offline-jobs.ts`. New table `offline_sync_log`
+  (`src/db/schema-wave39-d.ts`, migration to generate) so a change sent twice is applied once.
+- Completing a job with the labour box empty keeps labour booked earlier (it used to clear it).
+
 ## Wave 38 — the last missing features from the audit (not merged yet)
 
 Missing features 10–17 of the wave 30 audit. One migration (0050).

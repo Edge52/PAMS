@@ -9,36 +9,27 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { assets, deviceTypes, documents, maintenanceEvents, recallAssets, twinNotes, users, workOrders } from "@/db/schema";
+import { assets, deviceTypes, documents, maintenanceEvents, recallAssets, twinNotes, workOrders } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
-import { facilityScope, requireFacilityAccess, requirePermission, type CurrentUser } from "@/lib/auth/session";
-import { firstError, formObject, isoDate, num, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
+import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
+import { firstError, formObject, isoDate, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
 import { calibrationHeld } from "@/lib/assets/calibration-server";
 import { applyAssetEffect, assignableUsers, checklistForType, coverForAsset, notifyAssigners } from "@/lib/assets/work-order-server";
-import { blankResults, CHECKLIST_TYPES, checklistSummary, fillChecklist, type Answer } from "@/lib/assets/checklists";
+import { completeJob, guardedUpdate, loadForAction, progressJob, RACE, refreshJob, woPath } from "@/lib/assets/work-order-steps-server";
+import { blankResults, CHECKLIST_TYPES } from "@/lib/assets/checklists";
 import { CLAIM_STATUSES } from "@/lib/assets/contracts";
 import {
-  actionProblem, downtimeHours, nextStatus, responseDue, suggestedPriority, WORK_ORDER_PRIORITIES, WORK_ORDER_TYPES,
-  type WorkOrderAction, type WorkOrderPriority,
+  responseDue, suggestedPriority, WORK_ORDER_PRIORITIES, WORK_ORDER_TYPES, type WorkOrderPriority,
 } from "@/lib/assets/work-orders";
 import { notifyUsers } from "@/lib/notifications";
-import { checkInstruments, saveInstruments } from "@/lib/assets/test-equipment-server";
-import { readingAtVisit } from "@/lib/assets/meters-server";
+import { saveInstruments } from "@/lib/assets/test-equipment-server";
 import { logActivity, nextNumber } from "@/lib/server-utils";
 import { todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
 
-const actor = (me: CurrentUser) => ({ id: me.id, canAssign: can(me.role, "workorders.assign"), canWork: can(me.role, "maintenance.edit") });
-const path = (id: number) => `/assets/work-orders/${id}`;
+const path = woPath;
 const done = (id: number, msg: string): never => redirect(`${path(id)}?notice=${encodeURIComponent(msg)}`);
-
-function refresh(id: number, assetId: number) {
-  revalidatePath(path(id));
-  revalidatePath("/assets/work-orders");
-  revalidatePath(`/assets/${assetId}`);
-  revalidatePath("/assets/3d");
-  revalidatePath("/assets/map");
-}
+const refresh = refreshJob;
 
 /* ── Report a fault ── */
 
@@ -109,28 +100,6 @@ export async function reportFaultAction(_: FormState, fd: FormData): Promise<For
   return done(wo.id, `${wo.number} reported. The biomedical team has been told.`);
 }
 
-/* ── Load + guard ── */
-
-async function loadForAction(woId: number, action: WorkOrderAction, me: CurrentUser) {
-  const [wo] = await db.select().from(workOrders).where(eq(workOrders.id, woId));
-  if (!wo) return { error: "That work order no longer exists." } as const;
-  await requireFacilityAccess(wo.facilityId, me);
-  const problem = actionProblem(wo, action, actor(me));
-  if (problem) return { error: problem } as const;
-  return { wo, next: nextStatus(wo.status, action)! } as const;
-}
-
-/**
- * Inside a transaction always pass the actor to logActivity: looking up the signed-in user would query outside the
- * transaction, which deadlocks on PGlite's single connection.
- */
-/** Update only if nobody changed the status meanwhile. */
-async function guardedUpdate(tx: Pick<typeof db, "update">, wo: { id: number; status: typeof workOrders.$inferSelect.status }, set: Partial<typeof workOrders.$inferInsert>) {
-  const rows = await tx.update(workOrders).set(set).where(and(eq(workOrders.id, wo.id), eq(workOrders.status, wo.status))).returning({ id: workOrders.id });
-  return rows.length === 1;
-}
-const RACE = "Someone else changed this job a moment ago. Reload the page to see its current state.";
-
 /* ── Assign / reassign ── */
 
 const AssignSchema = z.object({ workOrderId: reqId("Work order"), assigneeId: reqId("Person"), priority: oneOf("Priority", WORK_ORDER_PRIORITIES), note: text(500) });
@@ -177,105 +146,18 @@ export async function progressWorkOrderAction(_: FormState, fd: FormData): Promi
   const p = ProgressSchema.safeParse(formObject(fd));
   if (!p.success) return { error: firstError(p.error) };
   const { step, holdReason } = p.data;
-  if (step === "hold" && !holdReason) return { error: "Say why the job is on hold (for example: waiting for a spare part)." };
-  const r = await loadForAction(p.data.workOrderId, step, me);
+  const r = await progressJob(me, p.data.workOrderId, step, holdReason);
   if ("error" in r) return { error: r.error };
-  const { wo, next } = r;
-  const ok = await db.transaction(async (tx) => {
-    const set: Partial<typeof workOrders.$inferInsert> = { status: next };
-    if (step === "start") { set.startedAt = new Date(); if (!wo.assignedToId) { set.assignedToId = me.id; set.assignedAt = new Date(); } }
-    if (step === "hold") set.holdReason = holdReason!;
-    if (step === "resume") set.holdReason = null;
-    if (!(await guardedUpdate(tx, wo, set))) return false;
-    await logActivity("work_order", wo.id, step === "start" ? "started" : step === "hold" ? "on_hold" : "resumed",
-      step === "start" ? `Work started by ${me.name}` : step === "hold" ? `On hold — ${holdReason}` : "Work resumed", me.name, tx);
-    if (step === "start") await applyAssetEffect("start", wo, { actor: me.name }, tx);
-    return true;
-  });
-  if (!ok) return { error: RACE };
-  refresh(wo.id, wo.assetId);
-  return done(wo.id, step === "start" ? "Work started." : step === "hold" ? "Job put on hold." : "Work resumed.");
+  return done(p.data.workOrderId, step === "start" ? "Work started." : step === "hold" ? "Job put on hold." : "Work resumed.");
 }
 
 /* ── Complete ── */
 
-const CompleteSchema = z.object({
-  workOrderId: reqId("Work order"), resolution: text(4000), rootCause: text(500),
-  laborHours: num("Labour hours", 0, 1000), cost: num("Cost", 0, 1e10), currency: text(3),
-  returnToService: z.preprocess((v) => v === "on" || v === "true" || v === "1", z.boolean()),
-});
-
 export async function completeWorkOrderAction(_: FormState, fd: FormData): Promise<FormState> {
   const me = await requirePermission("maintenance.edit");
-  const p = CompleteSchema.safeParse(formObject(fd));
-  if (!p.success) return { error: firstError(p.error) };
-  const d = p.data;
-  const r = await loadForAction(d.workOrderId, "complete", me);
-  if ("error" in r) return { error: r.error };
-  const { wo, next } = r;
-  // Checklist answers arrive as ck_result_<i>, ck_value_<i>, ck_note_<i>.
-  let checklist = wo.checklist;
-  let failed = 0;
-  if (wo.checklist?.length) {
-    const answers: Answer[] = wo.checklist.map((_, i) => ({
-      result: fd.get(`ck_result_${i}`)?.toString() ?? null, value: fd.get(`ck_value_${i}`)?.toString() ?? null, note: fd.get(`ck_note_${i}`)?.toString() ?? null,
-    }));
-    const filled = fillChecklist(wo.checklist, answers);
-    if (filled.problems.length) return { error: `Finish the checklist first. ${filled.problems.join(" ")}` };
-    checklist = filled.results;
-    failed = filled.failed;
-  }
-  const sum = checklistSummary(checklist);
-  const resolution = d.resolution ?? (checklist?.length ? `Checklist done: ${sum.pass} passed, ${sum.fail} failed${sum.na ? `, ${sum.na} not applicable` : ""}.` : undefined);
-  if (!resolution) return { error: "Say what was done." };
-  const now = new Date();
-  // Wave 27: test equipment used must be in calibration today.
-  const used = await checkInstruments(fd, wo.facilityId, todayISO(now));
-  if ("problem" in used) return { error: used.problem, fields: { testEquipment: used.problem } };
-  const meter = await readingAtVisit(fd, wo.assetId, todayISO(now), me);
-  if ("problem" in meter) return { error: meter.problem, fields: { meterReading: meter.problem } };
-  const [assignee] = wo.assignedToId ? await db.select({ name: users.name }).from(users).where(eq(users.id, wo.assignedToId)) : [];
-  const currency = d.cost != null ? (d.currency ?? "EGP").toUpperCase() : null;
-  const held = await calibrationHeld(wo.assetId); // wave 37: a failed calibration keeps it out of service
-  const ok = await db.transaction(async (tx) => {
-    const downtimeEnd = wo.deviceDown && d.returnToService ? now : wo.downtimeEnd;
-    if (!(await guardedUpdate(tx, wo, {
-      status: next, completedAt: now, startedAt: wo.startedAt ?? now, resolution, rootCause: d.rootCause ?? null,
-      laborHours: d.laborHours ?? null, cost: d.cost != null ? String(d.cost) : null, currency, downtimeEnd, checklist,
-    }))) return false;
-    // The maintenance history (and PPM due dates) read from maintenance_events, so every finished job writes one —
-    // or completes the scheduled visit it was raised for.
-    const event = {
-      status: "COMPLETED" as const, completedDate: todayISO(now), performedBy: assignee?.name ?? me.name, cost: d.cost != null ? String(d.cost) : null, currency,
-      downtimeHours: wo.deviceDown ? Math.round(downtimeHours({ downtimeStart: wo.downtimeStart, downtimeEnd: downtimeEnd ?? now }, now) * 10) / 10 : null,
-      findings: `${wo.number}: ${resolution}${failed ? ` (${failed} checklist item${failed === 1 ? "" : "s"} failed)` : ""}`.slice(0, 4000),
-    };
-    let eventId = wo.plannedEventId;
-    if (eventId) await tx.update(maintenanceEvents).set(event).where(eq(maintenanceEvents.id, eventId));
-    else eventId = (await tx.insert(maintenanceEvents).values({ ...event, assetId: wo.assetId, type: wo.type, scheduledDate: todayISO(wo.reportedAt) })
-      .returning({ id: maintenanceEvents.id }))[0].id;
-    await tx.update(workOrders).set({ maintenanceEventId: eventId }).where(eq(workOrders.id, wo.id));
-    await saveInstruments(tx, eventId, used.ok);
-    await meter.save(tx);
-    // A recall job done = that device is actioned for the recall.
-    await tx.update(recallAssets).set({ status: "ACTIONED", actionedAt: now, note: `Done under ${wo.number}` })
-      .where(and(eq(recallAssets.workOrderId, wo.id), eq(recallAssets.status, "PENDING")));
-    await logActivity("work_order", wo.id, "completed", `Completed by ${me.name}: ${resolution.slice(0, 200)}${failed ? ` — ${failed} checklist item${failed === 1 ? "" : "s"} failed` : ""}${wo.deviceDown ? (d.returnToService ? " — back in service" : " — still out of use") : ""}`, me.name, tx);
-    await logActivity("asset", wo.assetId, "maintenance", `${wo.number} completed — ${resolution.slice(0, 120)}`, me.name, tx);
-    await applyAssetEffect("complete", wo, { returnToService: d.returnToService, actor: me.name, calibrationHeld: held }, tx);
-    return true;
-  });
-  if (!ok) return { error: RACE };
-  if (wo.reportedById && wo.reportedById !== me.id) {
-    await notifyUsers([wo.reportedById], {
-      kind: "work_order_completed", title: `${wo.number} is fixed: ${wo.title}`.slice(0, 200),
-      body: held && wo.deviceDown ? "The job is done. The device stays out of service until a passing calibration is recorded." : d.returnToService || !wo.deviceDown ? "The device is back in service." : "The job is done but the device is still out of use.", href: path(wo.id),
-      dedupeKey: `wo_completed:${wo.id}:${now.getTime()}`,
-    });
-  }
-  refresh(wo.id, wo.assetId);
-  revalidatePath("/assets/maintenance");
-  return done(wo.id, "Job completed and added to the maintenance history.");
+  const r = await completeJob(me, fd);
+  if ("error" in r) return r;
+  return done(Number(fd.get("workOrderId")), "Job completed and added to the maintenance history.");
 }
 
 /* ── Close (sign-off) / reopen / cancel ── */

@@ -147,9 +147,8 @@ no finance export or e-procurement portal yet.
 
 ### Ready to build (no input needed)
 
-| Item | Notes | Size |
-| --- | --- | --- |
-| Camera scanning on every phone | Needs a small QR-reading library in the browser (for example `jsqr`); waits on Hisham's OK to add a package. Chrome on Android already scans. | S |
+Nothing at the moment. Camera scanning on every phone was done in wave 39 (jsQR where the browser has no
+`BarcodeDetector`, e.g. iPhone Safari), with offline My jobs.
 
 ### To check with Hisham (wave 16)
 
