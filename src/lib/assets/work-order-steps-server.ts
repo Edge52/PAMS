@@ -17,6 +17,7 @@ import { applyAssetEffect } from "./work-order-server";
 import { checklistSummary, fillChecklist, type Answer } from "./checklists";
 import { actionProblem, downtimeHours, isActive, nextStatus, type WorkOrderAction } from "./work-orders";
 import { completedLabour } from "./offline-jobs";
+import { failureCodeLabel, failureCodeProblem, isFailureCode } from "./failure-codes";
 import { applyMovement, issuedToJob, notifyIfLow } from "./parts-server";
 import { notifyUsers } from "@/lib/notifications";
 import { checkInstruments, saveInstruments } from "./test-equipment-server";
@@ -93,7 +94,7 @@ export async function progressJob(me: CurrentUser, woId: number, step: "start" |
 /* ── Complete ── */
 
 const CompleteSchema = z.object({
-  workOrderId: reqId("Work order"), resolution: text(4000), rootCause: text(500),
+  workOrderId: reqId("Work order"), resolution: text(4000), rootCause: text(500), failureCode: text(32),
   laborHours: num("Labour hours", 0, 1000), cost: num("Cost", 0, 1e10), currency: text(3),
   returnToService: z.preprocess((v) => v === "on" || v === "true" || v === "1", z.boolean()),
   /** Wave 40: why the job is finished without a passed electrical safety test after the repair. */
@@ -103,14 +104,17 @@ const CompleteSchema = z.object({
 /**
  * Complete a job from the completion form's fields (checklist answers as ck_result_<i>, ck_value_<i>, ck_note_<i>).
  * Writes the maintenance history entry, completes a PPM visit, actions a recall, and tells the reporter.
+ * Wave 40: a corrective job needs a failure code (`failureCode`), unless `opts.failureCodeOptional` (the My jobs sync).
  */
-export async function completeJob(me: CurrentUser, fd: FormData, inTx?: InTx): Promise<StepResult> {
+export async function completeJob(me: CurrentUser, fd: FormData, inTx?: InTx, opts: { failureCodeOptional?: boolean } = {}): Promise<StepResult> {
   const p = CompleteSchema.safeParse(formObject(fd));
   if (!p.success) return { error: firstError(p.error) };
   const d = p.data;
   const r = await loadForAction(d.workOrderId, "complete", me);
   if (r.error !== undefined) return { error: r.error };
   const { wo, next } = r;
+  const codeProblem = failureCodeProblem(wo.type, d.failureCode, opts.failureCodeOptional);
+  if (codeProblem) return { error: codeProblem, fields: { failureCode: codeProblem } };
   let checklist = wo.checklist;
   let failed = 0;
   if (wo.checklist?.length) {
@@ -143,6 +147,7 @@ export async function completeJob(me: CurrentUser, fd: FormData, inTx?: InTx): P
     const downtimeEnd = wo.deviceDown && d.returnToService ? now : wo.downtimeEnd;
     if (!(await guardedUpdate(tx, wo, {
       status: next, completedAt: now, startedAt: wo.startedAt ?? now, resolution, rootCause: d.rootCause ?? null,
+      failureCode: d.failureCode ?? wo.failureCode ?? null,
       // Wave 39: labour booked earlier (from My jobs) stays when the form leaves the hours empty.
       laborHours: completedLabour(d.laborHours, wo.laborHours), cost: d.cost != null ? String(d.cost) : null, currency, downtimeEnd, checklist,
     }))) return false;
@@ -180,6 +185,26 @@ export async function completeJob(me: CurrentUser, fd: FormData, inTx?: InTx): P
   }
   refreshJob(wo.id, wo.assetId);
   revalidatePath("/assets/maintenance");
+  return { ok: true };
+}
+
+/* ── Failure code (wave 40) ── */
+
+/** Set or change a job's failure code after it is finished (or while it is open). Cancelled jobs are left alone. */
+export async function setFailureCode(me: CurrentUser, woId: number, code: string, inTx?: InTx): Promise<StepResult> {
+  if (!isFailureCode(code)) return { error: "Choose a failure code from the list.", fields: { failureCode: "Choose a failure code from the list." } };
+  const [wo] = await db.select({ id: workOrders.id, facilityId: workOrders.facilityId, assetId: workOrders.assetId, status: workOrders.status, failureCode: workOrders.failureCode })
+    .from(workOrders).where(eq(workOrders.id, woId));
+  if (!wo) return { error: "That work order no longer exists." };
+  await requireFacilityAccess(wo.facilityId, me);
+  if (wo.status === "CANCELLED") return { error: "A cancelled job has no failure code." };
+  if (wo.failureCode === code) return { ok: true };
+  await db.transaction(async (tx) => {
+    await tx.update(workOrders).set({ failureCode: code }).where(eq(workOrders.id, wo.id));
+    await logActivity("work_order", wo.id, "failure_code", `Failure code ${wo.failureCode ? `changed from ${failureCodeLabel(wo.failureCode)} ` : ""}set to ${failureCodeLabel(code)} by ${me.name}`, me.name, tx);
+    if (inTx) await inTx(tx);
+  });
+  refreshJob(wo.id, wo.assetId);
   return { ok: true };
 }
 

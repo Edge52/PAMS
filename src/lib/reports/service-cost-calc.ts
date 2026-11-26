@@ -17,6 +17,22 @@ export const COSR_NOTE = `As a guide, a yearly COSR under about 5–6 % is usual
 
 export type CostSource = "IN_HOUSE" | "CONTRACT";
 
+/**
+ * Wave 40: in-house labour = hours the hospital's own team booked on a job × the labour rate (Administration ›
+ * Settings). Zero without a rate, and for jobs done under a contract, a warranty or by a vendor (their labour is in
+ * the contract or the invoice).
+ */
+export function labourCost(hours: number | null | undefined, rate: number | null | undefined, inHouse: boolean): number {
+  if (!inHouse || rate == null || !(rate > 0) || hours == null || !(hours > 0)) return 0;
+  return Math.round(hours * rate * 100) / 100;
+}
+
+export function labourNote(rate: number | null | undefined): string {
+  return rate != null && rate > 0
+    ? `In-house labour is counted: hours the hospital's own team booked on jobs × ${rate.toLocaleString("en-US")} EGP an hour (Administration › Settings).`
+    : "In-house labour is not counted: set the labour cost per hour in Administration › Settings to include it.";
+}
+
 /** Part of a contract's value that falls in [from, to] (inclusive days), per covered device. */
 export function contractShare(c: { value: number | null; start: string; end: string; devices: number }, from: string, to: string): number {
   if (c.value == null || !(c.value > 0) || c.end < c.start) return 0;

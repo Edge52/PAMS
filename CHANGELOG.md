@@ -80,6 +80,25 @@
 - **Export** (`/analytics/export`): one Excel file of these figures for the current filters; read-only `bi_` views
   for Power BI (`docs/bi-views.sql`, role `pams_bi` in `docs/deploy.md`). BI access shows prices.
 
+### Analytics: shell and maintenance
+- **Analytics** (Reports › Analytics, `/analytics`): one tab bar (only the tabs your role may open; Cost, Procurement
+  and Budget need price access), one filter bar (hospital, department, device type, from, to; kept in the address and
+  when you switch tabs), and figure cards that show the formula, period, count (n) and benchmark with its source.
+  A comparison on fewer than 5 items says "Not enough data (n < 5)". Shared parts: `components/analytics/`
+  (`AnalyticsFilters`, `KpiCard`, `KpiGrid`, `AnalyticsShell`), `lib/analytics/scope-server.ts` (`analyticsScope`).
+- **Overview**: fleet uptime, PPM on time, open work orders, COSR per year (price access only) and the data-quality
+  score, with a link to each tab.
+- **Maintenance tab**: uptime from downtime over the period (not today's status), per device and rolled up by device
+  type and department; MTBF, MTTR, repeat failures (3 or more corrective jobs), failures by failure code, PPM yield
+  (benchmark under 12 %, Iadanza 2019), no problem found (about 19 %), PPM on time. Uptime benchmarks 94 % fleet,
+  98 % imaging. Sums in `lib/analytics/maintenance.ts` (tested: overlapping and open downtime, mid-period installs).
+- **Failure codes** on work orders (14 standard codes, `lib/assets/failure-codes.ts`): needed to complete a corrective
+  job; older jobs get a warning at sign-off; can be changed later on the job page; optional from My jobs offline.
+  Demo jobs carry a spread of codes, and closed PPM jobs (a few finding a fault).
+- **Labour cost per hour** (Administration › Settings, empty by default): when set, hours the hospital's own team books
+  on jobs count in the service cost and COSR; the report says whether labour is in.
+- Schema: `work_orders.failure_code` (text, nullable). Migration to come from the lead.
+
 ## Wave 39 (not merged yet)
 
 ### Law 182 and maintenance rules

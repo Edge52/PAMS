@@ -30,8 +30,9 @@ import { MeterAtVisit } from "@/components/assets/meter-at-visit";
 import type { Instrument } from "@/lib/assets/test-equipment";
 import { formatDuration } from "@/components/assets/twin/nav/route";
 import {
-  assignWorkOrderAction, cancelWorkOrderAction, completeWorkOrderAction, progressWorkOrderAction, signOffWorkOrderAction, updateClaimAction,
+  assignWorkOrderAction, cancelWorkOrderAction, completeWorkOrderAction, progressWorkOrderAction, setFailureCodeAction, signOffWorkOrderAction, updateClaimAction,
 } from "../actions";
+import { FAILURE_CODE_OPTIONS, failureCodeLabel, failureCodeWarning } from "@/lib/assets/failure-codes";
 
 export const dynamic = "force-dynamic";
 
@@ -136,7 +137,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
                 <input type="hidden" name="workOrderId" value={wo.id} />
                 <ChecklistInputs items={wo.checklist!} />
                 <p className="text-xs text-muted">A reading outside its range is recorded as failed. The checklist comes from the device type in the catalogue.</p>
-                <CompletionFields deviceDown={wo.deviceDown} optionalResolution partsCost={used.total} instruments={instruments} assetId={wo.assetId} repairOf={wo.type === "CORRECTIVE" ? wo.id : undefined} />
+                <CompletionFields deviceDown={wo.deviceDown} corrective={wo.type === "CORRECTIVE"} optionalResolution partsCost={used.total} instruments={instruments} assetId={wo.assetId} repairOf={wo.type === "CORRECTIVE" ? wo.id : undefined} />
               </ActionForm>
             </Panel>
           )}
@@ -153,11 +154,21 @@ export default async function WorkOrderPage({ params, searchParams }: {
             <Panel title="Resolution">
               <p className="mb-4 whitespace-pre-wrap text-[14px]">{wo.resolution}</p>
               <Details items={[
+                { label: "Failure code", value: failureCodeLabel(wo.failureCode) ?? (wo.type === "CORRECTIVE" ? <span className="text-warn">Not recorded</span> : null) },
                 { label: "Root cause", value: wo.rootCause },
                 { label: "Labour", value: wo.laborHours != null ? `${wo.laborHours} h` : null },
                 { label: "Cost", value: wo.cost != null ? formatMoney(wo.cost, wo.currency ?? "EGP") : null },
                 { label: "Test equipment", value: usedInstruments.length ? usedInstruments.map((t) => <span key={t.label} className="block">{t.label}{t.calibrationDue ? <span className="text-xs text-muted"> · calibrated to {formatDate(t.calibrationDue)}</span> : null}</span>) : null },
               ]} />
+              {canWork && wo.status !== "CANCELLED" && (wo.status === "COMPLETED" || wo.status === "CLOSED") && (
+                <ActionForm action={setFailureCodeAction} className="mt-4 flex flex-wrap items-end gap-2">
+                  <input type="hidden" name="workOrderId" value={wo.id} />
+                  <Field label={wo.failureCode ? "Change the failure code" : "Add a failure code"}>
+                    <NativeSelect name="failureCode" required value={wo.failureCode ?? ""} placeholder="Choose…" options={FAILURE_CODE_OPTIONS} />
+                  </Field>
+                  <Button variant="secondary">Save failure code</Button>
+                </ActionForm>
+              )}
             </Panel>
           )}
 
@@ -287,7 +298,7 @@ export default async function WorkOrderPage({ params, searchParams }: {
             <Panel title="Complete the job">
               <ActionForm action={completeWorkOrderAction} className="space-y-3">
                 <input type="hidden" name="workOrderId" value={wo.id} />
-                <CompletionFields deviceDown={wo.deviceDown} partsCost={used.total} instruments={instruments} assetId={wo.assetId} repairOf={wo.type === "CORRECTIVE" ? wo.id : undefined} />
+                <CompletionFields deviceDown={wo.deviceDown} corrective={wo.type === "CORRECTIVE"} partsCost={used.total} instruments={instruments} assetId={wo.assetId} repairOf={wo.type === "CORRECTIVE" ? wo.id : undefined} />
               </ActionForm>
             </Panel>
           )}
@@ -297,6 +308,12 @@ export default async function WorkOrderPage({ params, searchParams }: {
             <Panel title="Sign off">
               <ActionForm action={signOffWorkOrderAction} className="space-y-3">
                 <input type="hidden" name="workOrderId" value={wo.id} /><input type="hidden" name="step" value="close" />
+                {failureCodeWarning(wo) && (
+                  <>
+                    <p className="rounded-[var(--radius-control)] border border-warn bg-warn-soft px-3 py-2 text-sm text-warn">{failureCodeWarning(wo)}</p>
+                    <Field label="Failure code (optional)"><NativeSelect name="failureCode" placeholder="Leave without one" options={FAILURE_CODE_OPTIONS} /></Field>
+                  </>
+                )}
                 <Field label="Note (optional)"><Input name="note" maxLength={500} /></Field>
                 <Button>Sign off and close</Button>
               </ActionForm>
@@ -355,14 +372,17 @@ export default async function WorkOrderPage({ params, searchParams }: {
   );
 }
 
-function CompletionFields({ deviceDown, optionalResolution, partsCost = 0, instruments, assetId, repairOf }: { deviceDown: boolean; optionalResolution?: boolean; partsCost?: number; instruments: Instrument[]; assetId: number; repairOf?: number }) {
+function CompletionFields({ deviceDown, corrective, optionalResolution, partsCost = 0, instruments, assetId, repairOf }: { deviceDown: boolean; corrective: boolean; optionalResolution?: boolean; partsCost?: number; instruments: Instrument[]; assetId: number; repairOf?: number }) {
   return (
     <div className="space-y-3">
       <Field label={optionalResolution ? "What was done (optional)" : "What was done"} hint={optionalResolution ? "Left blank, the checklist result is recorded." : undefined}>
         <Textarea name="resolution" rows={3} required={!optionalResolution} />
       </Field>
       <FormGrid cols={2}>
-        <Field label="Root cause"><Input name="rootCause" placeholder="e.g. user error, wear, power surge" /></Field>
+        <Field label={corrective ? "Failure code" : "Failure code (if a fault was found)"} hint={corrective ? "What caused the fault. Choose No problem found when nothing was wrong." : undefined}>
+          <NativeSelect name="failureCode" required={corrective} placeholder="Choose…" options={FAILURE_CODE_OPTIONS} />
+        </Field>
+        <Field label="Root cause (details)"><Input name="rootCause" placeholder="e.g. cable worn at the plug" /></Field>
         <Field label="Labour hours"><Input name="laborHours" type="number" min={0} step="0.25" inputMode="decimal" /></Field>
         <Field label="Parts and service cost" hint={partsCost > 0 ? "Includes the parts booked to this job." : undefined}>
           <Input name="cost" type="number" min={0} step="0.01" inputMode="decimal" defaultValue={partsCost > 0 ? partsCost : undefined} />

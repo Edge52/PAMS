@@ -15,7 +15,8 @@ import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/a
 import { firstError, formObject, isoDate, oneOf, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
 import { calibrationHeld } from "@/lib/assets/calibration-server";
 import { applyAssetEffect, assignableUsers, checklistForType, coverForAsset, notifyAssigners } from "@/lib/assets/work-order-server";
-import { completeJob, guardedUpdate, loadForAction, progressJob, RACE, refreshJob, woPath } from "@/lib/assets/work-order-steps-server";
+import { completeJob, guardedUpdate, loadForAction, progressJob, RACE, refreshJob, setFailureCode, woPath } from "@/lib/assets/work-order-steps-server";
+import { failureCodeWarning } from "@/lib/assets/failure-codes";
 import { blankResults, CHECKLIST_TYPES } from "@/lib/assets/checklists";
 import { CLAIM_STATUSES } from "@/lib/assets/contracts";
 import {
@@ -171,6 +172,17 @@ export async function completeWorkOrderAction(_: FormState, fd: FormData): Promi
   return done(Number(fd.get("workOrderId")), "Job completed and added to the maintenance history.");
 }
 
+/* ── Failure code (wave 40) ── */
+
+export async function setFailureCodeAction(_: FormState, fd: FormData): Promise<FormState> {
+  const me = await requirePermission("maintenance.edit");
+  const id = Number(fd.get("workOrderId"));
+  if (!Number.isInteger(id) || id <= 0) return { error: "Work order is missing." };
+  const r = await setFailureCode(me, id, fd.get("failureCode")?.toString() ?? "");
+  if ("error" in r) return r;
+  return done(id, "Failure code saved.");
+}
+
 /* ── Close (sign-off) / reopen / cancel ── */
 
 const DecideSchema = z.object({ workOrderId: reqId("Work order"), step: z.enum(["close", "reopen"]), note: text(500) });
@@ -184,6 +196,13 @@ export async function signOffWorkOrderAction(_: FormState, fd: FormData): Promis
   const r = await loadForAction(p.data.workOrderId, step, me);
   if ("error" in r) return { error: r.error };
   const { wo, next } = r;
+  // Wave 40: a failure code can be given at sign-off; an older corrective job without one is closed with a warning.
+  const code = fd.get("failureCode")?.toString();
+  if (step === "close" && code) {
+    const s = await setFailureCode(me, wo.id, code);
+    if ("error" in s) return s;
+    wo.failureCode = code;
+  }
   const now = new Date();
   const ok = await db.transaction(async (tx) => {
     const set: Partial<typeof workOrders.$inferInsert> = step === "close"
@@ -213,7 +232,8 @@ export async function signOffWorkOrderAction(_: FormState, fd: FormData): Promis
   }
   refresh(wo.id, wo.assetId);
   revalidatePath("/assets/maintenance");
-  return done(wo.id, step === "close" ? "Job signed off and closed." : "Job reopened.");
+  const warn = step === "close" ? failureCodeWarning(wo) : null;
+  return done(wo.id, step === "close" ? `Job signed off and closed.${warn ? " It has no failure code yet: add one on this page." : ""}` : "Job reopened.");
 }
 
 const CancelSchema = z.object({ workOrderId: reqId("Work order"), reason: reqText("Reason", 500) });
