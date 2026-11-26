@@ -54,6 +54,7 @@ export const MODULES: AppModule[] = [
   ] },
   { id: "maintenance", name: "Maintenance", description: "Fault reports, planned maintenance, safety tests, incidents and recalls.", links: [
     { href: "/assets/work-orders", label: "Work orders", need: "assets.view" },
+    { href: "/assets/my-jobs", label: "My jobs", need: "maintenance.edit" },
     { href: "/assets/maintenance", label: "Planned maintenance", need: "assets.view" },
     { href: "/assets/contracts", label: "Service contracts", need: "assets.view" },
     { href: "/assets/contracts/holidays", label: "Public holidays", need: "assets.view" },
@@ -157,7 +158,7 @@ export function pathOf(pathname: string, perms?: Permission[]): { label: string;
 
 /** Each role's usual first page. Roles not listed start on the dashboard. */
 export const ROLE_HOME: Record<string, string> = {
-  TECHNICIAN: "/assets/work-orders",
+  TECHNICIAN: "/assets/my-jobs",
   BIOMEDICAL: "/assets/maintenance",
   DEPARTMENT_HEAD: "/assets/department",
   PROCUREMENT: "/procurement",

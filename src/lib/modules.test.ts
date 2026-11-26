@@ -36,7 +36,7 @@ describe("start page (wave 26)", () => {
   it("sends each role to its usual page", async () => {
     const { landingPage } = await import("./modules");
     const { permissionsOf } = await import("./auth/permissions");
-    expect(landingPage("/", null, "TECHNICIAN", permissionsOf("TECHNICIAN"))).toBe("/assets/work-orders");
+    expect(landingPage("/", null, "TECHNICIAN", permissionsOf("TECHNICIAN"))).toBe("/assets/my-jobs");
     expect(landingPage(null, null, "FINANCE", permissionsOf("FINANCE"))).toBe("/procurement/invoices");
     expect(landingPage(null, null, "DIRECTOR", permissionsOf("DIRECTOR"))).toBe("/reports/executive");
     expect(landingPage(null, null, "ADMIN", permissionsOf("ADMIN"))).toBe("/");
@@ -52,7 +52,7 @@ describe("start page (wave 26)", () => {
   it("ignores a chosen page the person can no longer open", async () => {
     const { landingPage, startPageOptions } = await import("./modules");
     const { permissionsOf } = await import("./auth/permissions");
-    expect(landingPage(null, "/admin/users", "TECHNICIAN", permissionsOf("TECHNICIAN"))).toBe("/assets/work-orders");
+    expect(landingPage(null, "/admin/users", "TECHNICIAN", permissionsOf("TECHNICIAN"))).toBe("/assets/my-jobs");
     expect(startPageOptions(permissionsOf("TECHNICIAN")).some((o) => o.href === "/admin/users")).toBe(false);
     expect(startPageOptions(permissionsOf("ADMIN"))[0]).toEqual({ href: "/", label: "Dashboard", group: "Overview" });
   });

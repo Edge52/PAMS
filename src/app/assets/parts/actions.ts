@@ -5,11 +5,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { spareParts, workOrders } from "@/db/schema";
+import { spareParts } from "@/db/schema";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { dbError, firstError, formObject, id, int, num, reqId, reqText, text, type FormState } from "@/lib/assets/forms";
-import { applyMovement, issuedToJob, notifyIfLow } from "@/lib/assets/parts-server";
-import { isActive } from "@/lib/assets/work-orders";
+import { applyMovement, notifyIfLow } from "@/lib/assets/parts-server";
+import { bookJobPart, JobPartSchema } from "@/lib/assets/work-order-steps-server";
 import { logActivity } from "@/lib/server-utils";
 
 const partPath = (pid: number) => `/assets/parts/${pid}`;
@@ -92,36 +92,12 @@ export async function moveStockAction(_: FormState, fd: FormData): Promise<FormS
   redirect(`${partPath(p.data.partId)}?notice=${encodeURIComponent(`Stock is now ${r.after}.`)}`);
 }
 
-const JobSchema = z.object({ workOrderId: reqId("Work order"), partId: reqId("Part"), quantity: int("Quantity", 1, 10000), step: z.enum(["issue", "return"]) });
-
 /** Use parts on a job, or return unused ones. Only while the job is open; the part must be in the job's hospital. */
 export async function jobPartsAction(_: FormState, fd: FormData): Promise<FormState> {
   const me = await requirePermission("maintenance.edit");
-  const p = JobSchema.safeParse(formObject(fd));
+  const p = JobPartSchema.safeParse(formObject(fd));
   if (!p.success) return { error: firstError(p.error) };
-  const { workOrderId, partId, step } = p.data;
-  const quantity = p.data.quantity ?? 1;
-  const [wo] = await db.select({ id: workOrders.id, number: workOrders.number, facilityId: workOrders.facilityId, status: workOrders.status, assetId: workOrders.assetId })
-    .from(workOrders).where(eq(workOrders.id, workOrderId));
-  if (!wo) return { error: "That work order no longer exists." };
-  await requireFacilityAccess(wo.facilityId, me);
-  if (!isActive(wo.status) && wo.status !== "COMPLETED") return { error: "Parts can only be booked on an open or just-completed job." };
-  const [part] = await db.select({ facilityId: spareParts.facilityId, active: spareParts.active }).from(spareParts).where(eq(spareParts.id, partId));
-  if (!part || part.facilityId !== wo.facilityId) return { error: "That part isn't stocked in this hospital." };
-  const r = await db.transaction(async (tx) => {
-    // Lock the part first (audit wave 36): two returns at once can't both pass "not more than issued to this job".
-    await tx.select({ id: spareParts.id }).from(spareParts).where(eq(spareParts.id, partId)).for("update");
-    const used = step === "return" ? await issuedToJob(partId, wo.id, tx) : 0;
-    const res = await applyMovement({ partId, kind: step === "issue" ? "ISSUE" : "RETURN", quantity, workOrderId: wo.id, actor: me.name }, tx, used);
-    if (res.ok) {
-      await logActivity("work_order", wo.id, step === "issue" ? "part_used" : "part_returned", `${step === "issue" ? "Used" : "Returned"} ${quantity} × ${res.partName}`, me.name, tx);
-      await logActivity("part", partId, step === "issue" ? "issued" : "returned", `${quantity} ${step === "issue" ? "issued to" : "returned from"} ${wo.number} (stock ${res.after})`, me.name, tx);
-    }
-    return res;
-  });
-  if (!r.ok) return { error: r.error };
-  await notifyIfLow(r, partId);
-  revalidatePath(`/assets/work-orders/${wo.id}`);
-  revalidatePath(partPath(partId));
-  redirect(`/assets/work-orders/${wo.id}?notice=${encodeURIComponent(step === "issue" ? `${quantity} × ${r.partName} booked to the job.` : "Part returned to stock.")}#parts`);
+  const r = await bookJobPart(me, p.data);
+  if ("error" in r) return { error: r.error };
+  redirect(`/assets/work-orders/${p.data.workOrderId}?notice=${encodeURIComponent(p.data.step === "issue" ? `${r.quantity} × ${r.partName} booked to the job.` : "Part returned to stock.")}#parts`);
 }

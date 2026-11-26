@@ -191,7 +191,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
       {myJobs.length > 0 && (
         <Panel title={canAssignJobs ? "Jobs to assign or work on" : "Jobs assigned to you"} className="mb-6" padded={false}
-          actions={<Link href="/assets/work-orders" className="text-sm font-semibold text-primary hover:underline">All work orders</Link>}>
+          actions={<span className="flex gap-3">{can(me.role, "maintenance.edit") && <Link href="/assets/my-jobs" className="text-sm font-semibold text-primary hover:underline">My jobs</Link>}
+            <Link href="/assets/work-orders" className="text-sm font-semibold text-primary hover:underline">All work orders</Link></span>}>
           <ul className="divide-y divide-line">
             {myJobs.map((j) => (
               <li key={j.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm">

@@ -619,3 +619,14 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - **Signatures** store the account (`…SignedById`) and the name at the time; never take who signed from a form field.
 - **Errors**: `onRequestError` (instrumentation) → `error_log`; `errorEntry` (`lib/error-log.ts`) leaves out
   redirects and not-found and masks secrets.
+
+## Wave 39: phones and offline
+- Camera scanning: always `useQrCamera(active, onCode, onError, formats?)` and `useCanScan()` from
+  `@/components/qr-camera` (BarcodeDetector, else jsQR on a canvas ~6 fps; jsQR is imported only when needed).
+- Working a job: the steps live in `lib/assets/work-order-steps-server.ts` (`progressJob`, `completeJob`,
+  `bookJobPart`, `addJobNote`, `addJobLabour`; each takes an optional `inTx(tx)` run inside its transaction). The work
+  order and parts actions and the My jobs sync all call them: change a step there, not in a copy.
+- Offline My jobs: pure queue and conflict rules in `lib/assets/offline-jobs.ts` (`jobVersion` is the fingerprint a
+  change is checked against; notes and parts don't change it). Phone storage `lib/offline/store.ts`; service worker
+  `public/sw.js` (only `/assets/my-jobs` and `/_next/static/`; excluded from the sign-in check in `src/proxy.ts`).
+  Table `offline_sync_log` makes a re-sent change apply once.
