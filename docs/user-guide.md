@@ -716,3 +716,28 @@ https for the camera).
   mine**.
 - Test equipment and meter readings are recorded on the full job page (needs signal).
 - Signing out removes the kept jobs from the phone. Changes not yet sent stay and go out when you sign in again.
+
+## Analytics: cost and procurement (wave 40)
+
+Both tabs are for people who may see prices (Admin, Director, Procurement, Finance). Pick the hospital and period at
+the top. Every figure shows how it is worked out, its period and how many items it rests on.
+
+### Cost
+
+- **Ordered** counts approved and issued purchase orders by order date; **Invoiced** counts invoices that were not
+  rejected, by invoice date. Each amount is in EGP at the exchange rate of its own date.
+- Choose how to group: supplier, device category, department, year or currency. The 10 largest are shown; the rest
+  are added up as Other.
+- **COSR by device type** comes from the service cost report (Reports › Service cost and COSR). Open the report for
+  departments, suppliers and the Excel file.
+
+### Procurement
+
+- **Tender competition**: bids per RFQ, the share of RFQs with a single bid (10 % or less is good, over 20 % is poor),
+  RFQs with no offers, and days from the RFQ's issue to the award (aim for 120 or less), by method and category.
+- **Prices against earlier prices paid**: for each device type and model, the median and range of prices on orders
+  and awarded offers. Shown only with 5 or more prices. An offer far above them is listed, and its tender's comparison
+  shows a "Well above earlier prices" badge on that offer. Check the offer before you decide; it may include more.
+- **Supplier scorecard**: on-time delivery, average delay, penalties deducted, devices with a repair within 90 days
+  of installation, uptime targets met under service contracts, response time and awards. Suppliers are ranked only
+  when 5 or more of their orders were due in the period.

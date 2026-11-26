@@ -1,5 +1,21 @@
 # Changelog
 
+## Wave 40 (not merged yet)
+
+### Analytics: cost and procurement
+- **Analytics › Cost** (`/analytics/cost`, needs price access): spend on approved and issued orders, or on invoices,
+  in EGP at the rate on each date, by supplier, device category, department, year and currency; the 10 largest with
+  the rest as Other, a share strip and bars; top-3 supplier share. COSR by device type from the service cost report
+  (same figures), with a link to it.
+- **Analytics › Procurement** (`/analytics/procurement`, needs price access): bids per RFQ, single-bid share (EU
+  Single Market Scoreboard: 10 % or less good, over 20 % poor), RFQs with no offers and days from RFQ to award
+  (against 120), by method and by category. Prices paid per device type and model (median, range, n; hidden under 5)
+  and offers well above earlier prices (robust score over 3.5), also as a badge on a tender's comparison. Supplier
+  scorecard: on time, average delay, penalties, faults within 90 days of install, uptime targets met, response,
+  awards; ranked only with 5 or more orders due.
+- Pure rules in `src/lib/analytics/spend.ts` and `procurement.ts` (tested), queries in `cost-server.ts` and
+  `procurement-server.ts` (tested against PGlite). No new tables.
+
 ## Wave 39 (not merged yet)
 
 ### Law 182 and maintenance rules
