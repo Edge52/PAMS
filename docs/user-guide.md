@@ -192,8 +192,8 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 ## Procurement officer
 
 1. **Projects & tenders** › create the project; add specifications per device type.
-2. **RFQs** › **New RFQ** from the BOQ. Use the approved BOQ: the page warns, but does not stop you, when the BOQ
-   isn't approved yet.
+2. **RFQs** › **New RFQ** from the BOQ, or on the BOQ **Start a tender from this BOQ** (see wave 39 below). Use the
+   approved BOQ: the page warns, but does not stop you, when the BOQ isn't approved yet.
 3. **Offers**: record each offer and its compliance line by line; **Compare offers** for the weighted score. Add each
    offer's running costs (service after warranty, consumables, energy, other, uptime guarantee) to see the **total
    cost of ownership** over 5 or 10 years, next to what the same models have cost you to maintain.
@@ -672,3 +672,28 @@ three of one kind in a hospital come as one summary.
   page.
 - Importing is data entry, so it works on a sealed two-envelope tender too, but the check shows prices only to
   people who see supplier prices, and only once the financial envelopes are open.
+
+## Wave 39: data quality and BOQ to tender
+
+### Data quality
+
+- **Reports › Data quality** (also in the Reports menu) checks the records now: devices missing a serial number,
+  maker or model, install date, purchase cost, room, criticality or GMDN code; PPM due with no visit planned; the same
+  serial on two devices of one maker; devices out of service with no open job; finished jobs without labour hours or
+  downtime times; jobs open more than 90 days; orders received 60+ days ago with no invoice; offers with no exchange
+  rate; expired contracts still linked to devices in use.
+- Each rule shows a severity and a count. Click it for the list of records, each with a link to open and fix it.
+- The score per hospital is the share of its devices that pass every high and medium device rule (low ones, like
+  the GMDN code, are listed but not scored). Choose a hospital at the top.
+- Rules on offers and invoices show only for people who see supplier prices.
+
+### Start a tender from a BOQ
+
+- On a BOQ, **Start a tender from this BOQ** (procurement). Tick lines, or a device type to take all its lines. Lines
+  already in an RFQ are shown with its number and not ticked.
+- Choose an existing project, or a new one (code and title): a BOQ without a project is linked to it.
+- **Create the draft RFQ** makes one RFQ item per device type with the quantities added up and the departments listed.
+  Ticked "Start a draft specification…" adds a draft spec from the template for each item the project has none for.
+  Then invite suppliers and issue the RFQ from its page.
+- The BOQ's **Tender & orders** tab shows plan vs ordered per device type: planned, in an RFQ, ordered, received and
+  still to order.

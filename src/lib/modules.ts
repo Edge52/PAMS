@@ -82,6 +82,7 @@ export const MODULES: AppModule[] = [
   { id: "reports", name: "Reports", description: "Standard reports and the executive summary, to print or export.", links: [
     { href: "/reports", label: "Reports", need: "reports.view" },
     { href: "/reports/executive", label: "Executive summary", need: "prices.view" },
+    { href: "/reports/data-quality", label: "Data quality", need: "reports.view" },
   ] },
   { id: "admin", name: "Administration", description: "Users and roles, approval rules, settings, the audit log and backups.", links: [
     { href: "/admin/users", label: "Users", need: "users.manage" },
