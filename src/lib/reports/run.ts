@@ -1,8 +1,10 @@
 import "server-only";
+import { seesPrices } from "@/lib/auth/prices";
 import { facilityScope, type CurrentUser } from "@/lib/auth/session";
 import { todayISO } from "@/lib/format";
 import { facilityFilter } from "./calc";
 import { describeFilters, reportFilters, type ReportDef } from "./registry";
+import { hidePrices } from "./hide-prices";
 import { facilityName, facilityOptions } from "./shared";
 import type { ReportFilters, ReportResult } from "./types";
 
@@ -22,5 +24,6 @@ export async function runReport(def: ReportDef, params: URLSearchParams | Record
     facilityName(filters.facilityId),
     facilityOptions(scope),
   ]);
-  return { forbidden: false, filters, result, facility, facilities, today, lines: describeFilters(def, filters, facility) };
+  // Audit R9 (wave 40): money only for those who may see prices, on screen and in the export.
+  return { forbidden: false, filters, result: seesPrices(me.role) ? result : hidePrices(result), facility, facilities, today, lines: describeFilters(def, filters, facility) };
 }

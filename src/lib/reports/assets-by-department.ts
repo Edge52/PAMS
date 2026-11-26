@@ -91,7 +91,7 @@ export async function assetsByDepartmentReport({ filters: f, scope }: ReportCont
     summary: [
       { label: "Assets", value: formatNumber(totalAssets) },
       { label: "Departments", value: formatNumber(deptRows.length) },
-      { label: "Total cost", value: formatMoney(totalCost, "EGP", { compact: true }) },
+      { label: "Total cost", value: formatMoney(totalCost, "EGP", { compact: true }), money: true },
     ],
     sections: [
       {

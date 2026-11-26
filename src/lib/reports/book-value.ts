@@ -33,8 +33,8 @@ export async function bookValueReport({ filters: f, scope, today }: ReportContex
   return {
     summary: [
       { label: "Devices", value: formatNumber(rows.length) },
-      { label: "Cost", value: formatMoney(t?.costEgp ?? 0, "EGP", { compact: true }) },
-      { label: "Book value", value: formatMoney(t?.bookValueEgp ?? 0, "EGP", { compact: true }) },
+      { label: "Cost", value: formatMoney(t?.costEgp ?? 0, "EGP", { compact: true }), money: true },
+      { label: "Book value", value: formatMoney(t?.bookValueEgp ?? 0, "EGP", { compact: true }), money: true },
       { label: "Fully depreciated", value: formatNumber(rows.filter((r) => r.dep.state === "FULLY_DEPRECIATED").length) },
       { label: "Not worked out", value: formatNumber(unknown) },
     ],

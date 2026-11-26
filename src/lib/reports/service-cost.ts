@@ -118,9 +118,9 @@ export async function serviceCostReport(ctx: ReportContext): Promise<ReportResul
 
   return {
     summary: [
-      { label: "Service cost", value: formatMoney(total.total, "EGP", { compact: true }) },
-      { label: "In-house", value: formatMoney(total.inHouse, "EGP", { compact: true }) },
-      { label: "Contract and vendor", value: formatMoney(total.contract, "EGP", { compact: true }) },
+      { label: "Service cost", value: formatMoney(total.total, "EGP", { compact: true }), money: true },
+      { label: "In-house", value: formatMoney(total.inHouse, "EGP", { compact: true }), money: true },
+      { label: "Contract and vendor", value: formatMoney(total.contract, "EGP", { compact: true }), money: true },
       { label: "COSR in period", value: pct(total.cosr) },
       { label: "COSR per year", value: pct(total.cosrYear) },
     ],

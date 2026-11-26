@@ -42,7 +42,8 @@ export type Section = {
 export type ReportResult = {
   sections: Section[];
   /** Short facts above the table ("12 projects", "EGP 4.2M open"). */
-  summary?: { label: string; value: string }[];
+  /** `money`: an amount, hidden from people without price access (hidePrices). */
+  summary?: { label: string; value: string; money?: boolean }[];
   /** Footnotes, e.g. how compliance is counted, missing exchange rates. */
   notes?: string[];
 };

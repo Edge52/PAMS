@@ -39,7 +39,7 @@ export async function depreciationJournalReport({ filters: f, scope, today }: Re
   return {
     summary: [
       { label: "Journal lines", value: String(rows.length) },
-      { label: "Charge for the period", value: formatMoney(egp, "EGP") },
+      { label: "Charge for the period", value: formatMoney(egp, "EGP"), money: true },
       { label: "Method", value: DEPRECIATION_METHOD_LABELS[method].split(" (")[0] },
     ],
     sections: [{

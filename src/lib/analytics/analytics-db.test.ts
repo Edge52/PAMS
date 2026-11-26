@@ -21,6 +21,7 @@ vi.mock("@/lib/format", () => import("../format"));
 vi.mock("@/lib/assets/dates", () => import("../assets/dates"));
 vi.mock("@/lib/assets/planning", () => import("../assets/planning"));
 vi.mock("@/lib/reports/service-cost", () => import("../reports/service-cost"));
+vi.mock("@/lib/settings", () => import("../settings"));
 vi.mock("@/lib/auth/session", () => ({ facilityScope: async () => null, requireFacilityAccess: async () => {} }));
 vi.mock("@/lib/server-utils", async () => {
   const s = await import("../../db/schema");

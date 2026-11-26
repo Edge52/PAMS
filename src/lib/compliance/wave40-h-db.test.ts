@@ -30,7 +30,7 @@ describe.skipIf(!ready)("wave 40 GAHAR tables", async () => {
   let facilityId = 0, departmentId = 0, typeId = 0;
 
   it("sets up", async () => {
-    [{ id: facilityId }] = await d.insert(facilities).values({ code: "W40", name: "Wave 40 hospital", type: "GENERAL" } as never).returning({ id: facilities.id });
+    [{ id: facilityId }] = await d.insert(facilities).values({ code: "W40", name: "Wave 40 hospital", type: "GENERAL_HOSPITAL" }).returning({ id: facilities.id });
     [{ id: departmentId }] = await d.insert(departments).values({ facilityId, code: "ICU", name: "ICU" } as never).returning({ id: departments.id });
     [{ id: typeId }] = await d.insert(deviceTypes).values({ code: "W40-VENT", level: 3, name: "Ventilator", criticality: "LIFE_SUPPORT" }).returning({ id: deviceTypes.id });
     await d.insert(assets).values(["IN_SERVICE", "IN_SERVICE", "OUT_OF_SERVICE"].map((status, i) => ({ assetTag: `W40-${i}`, deviceTypeId: typeId, facilityId, departmentId, status: status as never })));

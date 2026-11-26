@@ -6,7 +6,7 @@
  */
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -66,6 +66,8 @@ describe.skipIf(!ready)("wave 40 (I): kept as found, competency overrides, imagi
 
   it("sets up", async () => {
     await d.insert(users).values({ id: 1, name: "Admin", email: "a@t.hpams", role: "ADMIN" }).onConflictDoNothing();
+    // The admin's fixed id doesn't move the sequence: move it on so the next user gets a new id.
+    await d.execute(sql`select setval('users_id_seq', (select max(id) from users))`);
     [{ id: tech }] = await d.insert(users).values({ name: "Tech", email: "t@t.hpams", role: "TECHNICIAN" }).returning({ id: users.id });
     [{ id: fac }] = await d.insert(facilities).values({ code: "W40I", name: "Wave 40 hospital" }).returning({ id: facilities.id });
     [{ id: ct }] = await d.insert(deviceTypes).values({ code: "IMG-CT-W40", level: 3, name: "CT scanner" }).returning({ id: deviceTypes.id });

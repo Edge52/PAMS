@@ -6,12 +6,13 @@ import "server-only";
 import { and, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, facilities, invoiceLines, invoices, maintenanceEvents, purchaseOrders, serviceContractAssets, serviceContracts, workOrders } from "@/db/schema";
-import { downtimeMsByDevice } from "@/lib/assets/downtime";
 import { DEFAULT_PPM_GRACE_DAYS } from "@/lib/reports/calc";
 import { contractShare } from "@/lib/reports/service-cost-calc";
 import { loadFx } from "@/lib/server-utils";
 import { periodDays, type Filters } from "./core";
 import { hospitalKpis, type HospitalIn } from "./compare";
+import { uptimeByDevice } from "./maintenance";
+import { loadMaintenanceData } from "./maintenance-server";
 
 const OPEN = ["OPEN", "ASSIGNED", "IN_PROGRESS", "ON_HOLD"] as const;
 
@@ -20,7 +21,6 @@ export async function compareHospitals(ids: number[], f: Filters, today: string,
   const dev = and(inArray(assets.facilityId, ids), f.departmentId ? eq(assets.departmentId, f.departmentId) : undefined, f.deviceTypeId ? eq(assets.deviceTypeId, f.deviceTypeId) : undefined);
   const inUse = sql`${assets.status} not in ('DISPOSED', 'IN_STOCK')`;
   const grace = DEFAULT_PPM_GRACE_DAYS;
-  const from = new Date(`${f.from}T00:00:00Z`), toEnd = new Date(Math.min(Date.parse(`${f.to}T00:00:00Z`) + 86_400_000, Date.now()));
   const [facs, devices, ppm, open, down] = await Promise.all([
     db.select({ id: facilities.id, name: facilities.name, beds: facilities.totalBeds }).from(facilities).where(inArray(facilities.id, ids)).orderBy(facilities.code),
     db.select({ facilityId: assets.facilityId, n: sql<number>`count(*)::int` }).from(assets).where(and(dev, inUse)).groupBy(assets.facilityId),
@@ -34,17 +34,14 @@ export async function compareHospitals(ids: number[], f: Filters, today: string,
       .groupBy(assets.facilityId),
     db.select({ facilityId: assets.facilityId, n: sql<number>`count(*)::int` }).from(workOrders).innerJoin(assets, eq(assets.id, workOrders.assetId))
       .where(and(dev, inArray(workOrders.status, [...OPEN]))).groupBy(assets.facilityId),
-    // TODO(wave 40): use the uptime from src/lib/analytics/maintenance.ts (agent E) once it is merged, so both tabs agree.
-    db.select({ device: workOrders.assetId, facilityId: assets.facilityId, start: workOrders.downtimeStart, end: workOrders.downtimeEnd }).from(workOrders)
-      .innerJoin(assets, eq(assets.id, workOrders.assetId))
-      .where(and(dev, isNotNull(workOrders.downtimeStart), sql`${workOrders.status} <> 'CANCELLED'`, sql`${workOrders.downtimeStart} < ${toEnd.toISOString()}::timestamptz`,
-        sql`coalesce(${workOrders.downtimeEnd}, now()) > ${from.toISOString()}::timestamptz`)).limit(20_000),
+    // Uptime as on the Maintenance tab (time-based, per device from install to disposal), one hospital at a time.
+    Promise.all(ids.map(async (id) => {
+      const m = await loadMaintenanceData(f, [id]);
+      const rows = uptimeByDevice(m.devices, m.downtime, f, Date.now());
+      return { facilityId: id, hours: rows.reduce((a, r) => a + r.hours, 0), downHours: rows.reduce((a, r) => a + r.downHours, 0) };
+    })),
   ]);
-  const downMs = downtimeMsByDevice(down.map((d) => ({ device: d.device, start: d.start!, end: d.end })), from, toEnd);
-  const facOf = new Map(down.map((d) => [d.device, d.facilityId]));
-  const downH = new Map<number, number>();
-  for (const [device, ms] of downMs) { const fid = facOf.get(device)!; downH.set(fid, (downH.get(fid) ?? 0) + ms / 3.6e6); }
-  const hours = Math.max(0, (toEnd.getTime() - from.getTime()) / 3.6e6);
+  const upOf = new Map(down.map((u) => [u.facilityId, u]));
 
   const money = prices ? await moneyFigures(ids, f, dev, today) : null;
   const days = periodDays(f);
@@ -53,7 +50,7 @@ export async function compareHospitals(ids: number[], f: Filters, today: string,
     const p = ppm.find((d) => d.facilityId === x.id);
     const h: HospitalIn = {
       id: x.id, name: x.name, beds: x.beds, devices: n, ppmDue: p?.due ?? 0, ppmOnTime: p?.onTime ?? 0, openJobs: open.find((d) => d.facilityId === x.id)?.n ?? 0,
-      downtimeHours: downH.get(x.id) ?? 0, deviceHours: n * hours,
+      downtimeHours: upOf.get(x.id)?.downHours ?? 0, deviceHours: upOf.get(x.id)?.hours ?? 0,
       ...(money ? { serviceCost: money.service.get(x.id) ?? 0, acquisition: money.acquisition.get(x.id) ?? 0, pricedDevices: money.priced.get(x.id) ?? 0, spend: money.spend.get(x.id) ?? 0 } : {}),
     };
     return { hospital: h, kpis: hospitalKpis(h, days, prices) };

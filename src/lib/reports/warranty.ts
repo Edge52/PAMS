@@ -46,7 +46,7 @@ export async function warrantyExpiryReport({ filters: f, scope, today }: ReportC
     summary: [
       { label: `Ending in ${f.days} days`, value: formatNumber(rows.length) },
       { label: "Within 30 days", value: formatNumber(within30) },
-      { label: "Value covered", value: formatMoney(money.egp, "EGP", { compact: true }) },
+      { label: "Value covered", value: formatMoney(money.egp, "EGP", { compact: true }), money: true },
     ],
     sections: [{
       key: "warranties",

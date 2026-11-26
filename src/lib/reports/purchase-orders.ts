@@ -54,8 +54,8 @@ export async function openPurchaseOrdersReport({ filters: f, scope, today }: Rep
     summary: [
       { label: "Open orders", value: String(rows.length) },
       { label: "Late", value: String(lateCount) },
-      { label: "Open value", value: formatMoney(totals.egp, "EGP", { compact: true }) },
-      ...Object.entries(totals.byCurrency).filter(([c]) => c !== "EGP").map(([c, v]) => ({ label: `In ${c}`, value: formatMoney(v, c, { compact: true }) })),
+      { label: "Open value", value: formatMoney(totals.egp, "EGP", { compact: true }), money: true },
+      ...Object.entries(totals.byCurrency).filter(([c]) => c !== "EGP").map(([c, v]) => ({ label: `In ${c}`, value: formatMoney(v, c, { compact: true }), money: true })),
     ],
     sections: [{
       key: "orders",
