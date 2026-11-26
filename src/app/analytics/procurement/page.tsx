@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { AnalyticsFilters } from "@/components/analytics/filters";
 import { KpiCard, KpiGrid } from "@/components/analytics/kpi";
-import { AnalyticsShell } from "@/components/analytics/shell";
 import { Badge, EmptyState, Panel } from "@/components/ui";
 import { DataTable } from "@/components/ui/data-table";
 import { comparable, MIN_N, OUTLIER_Z, parseFilters } from "@/lib/analytics/core";
@@ -49,7 +48,7 @@ export default async function ProcurementAnalyticsPage({ searchParams }: { searc
   ];
 
   return (
-    <AnalyticsShell active="procurement" title="Procurement">
+    <>
       <AnalyticsFilters filters={f} />
 
       <KpiGrid>
@@ -141,6 +140,6 @@ export default async function ProcurementAnalyticsPage({ searchParams }: { searc
           </p>
         </Panel>
       </div>
-    </AnalyticsShell>
+    </>
   );
 }

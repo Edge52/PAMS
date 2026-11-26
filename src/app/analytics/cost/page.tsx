@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { AnalyticsFilters } from "@/components/analytics/filters";
 import { KpiCard, KpiGrid } from "@/components/analytics/kpi";
-import { AnalyticsShell } from "@/components/analytics/shell";
 import { ShareStrip } from "@/components/analytics/share-strip";
 import { EmptyState, Panel, TabLinks } from "@/components/ui";
 import { BarList } from "@/components/ui/charts";
@@ -52,7 +51,7 @@ export default async function CostPage({ searchParams }: { searchParams: Promise
   const cosrTotal = typeof cosr.total?.cosrYear === "number" ? cosr.total.cosrYear : null;
 
   return (
-    <AnalyticsShell active="cost" title="Cost">
+    <>
       <AnalyticsFilters filters={f} />
       <TabLinks active={basis} tabs={[
         { key: "po", label: "Ordered (purchase orders)", href: link({ basis: "po" }) },
@@ -118,6 +117,6 @@ export default async function CostPage({ searchParams }: { searchParams: Promise
           Each amount is in EGP at the exchange rate in force on its date. Category is the top level of the device type. Department is the one the order line is for.
         </p>
       </div>
-    </AnalyticsShell>
+    </>
   );
 }

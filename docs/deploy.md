@@ -177,6 +177,42 @@ SUPABASE_PROVIDERS=azure,google   # the buttons to show
 Restart PAMS; the sign-in page shows the buttons. Add each person in Administration › Users with the email they use
 at Microsoft or Google (the password can be anything long; they won't need it).
 
+## Read-only access for BI tools (Power BI)
+
+The database has read-only views for reporting tools, all named `bi_…` (`bi_assets`, `bi_work_orders`,
+`bi_downtime`, `bi_ppm`, `bi_purchase_orders`, `bi_invoices`, `bi_offers`, `bi_budget_lines`, `bi_facilities`,
+`bi_departments`). They come with the wave 40 migration; the SQL is in `docs/bi-views.sql`. They leave out
+passwords, two-step secrets, e-mail addresses, phone numbers and notes; people appear by name only.
+
+**Prices are in the views** (purchase costs, order, invoice and offer values; sealed two-envelope offers stay empty).
+Anyone with the BI account sees prices and every hospital, so give it only to people who may see both.
+
+Create a role that can only read the `bi_` views (run as the database owner, e.g. `docker compose exec db psql -U hpams hpams`):
+
+```sql
+CREATE ROLE pams_bi LOGIN PASSWORD 'a-long-random-password';
+REVOKE ALL ON SCHEMA public FROM pams_bi;
+GRANT CONNECT ON DATABASE hpams TO pams_bi;
+GRANT USAGE ON SCHEMA public TO pams_bi;
+DO $$ DECLARE v text; BEGIN
+  FOR v IN SELECT viewname FROM pg_views WHERE schemaname = 'public' AND viewname LIKE 'bi\_%' LOOP
+    EXECUTE format('GRANT SELECT ON public.%I TO pams_bi', v);
+  END LOOP;
+END $$;
+ALTER ROLE pams_bi SET default_transaction_read_only = on;
+ALTER ROLE pams_bi SET statement_timeout = '60s';
+```
+
+Run the `DO` block again after an update that adds views. The role gets no rights on the tables themselves, so
+`SELECT * FROM users` fails for it. Views run with their owner's rights, which is why the role needs nothing more.
+
+Connect Power BI Desktop: **Get data › PostgreSQL database**, server `<host>:5432` (or the Supabase session pooler
+address), database `hpams`, **Import** mode; sign in with *Database* credentials `pams_bi` and its password; tick the
+`bi_` views. With Supabase or any server outside the hospital network, keep SSL on (Power BI needs the server's
+certificate to be trusted on the PC). The Docker setup doesn't publish port 5432: open it only to the BI PCs (a
+firewall rule or a VPN), never to the internet. For scheduled refresh in the Power BI service, install the
+on-premises data gateway on a PC that can reach the database.
+
 ## Security checklist before going live
 
 - HTTPS only (Caddy does this in the Docker setup). Set `APP_URL` to the https address.
