@@ -8,6 +8,8 @@ import { Badge, EmptyState, LinkButton, PageHeader, StatusBadge } from "@/compon
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { DeviceTypeSelect, enumOptions, NativeSelect, Notice, Pager } from "@/components/assets/bits";
 import { SavedFilters } from "@/components/saved-filters";
+import { BulkHidden, BulkInput, BulkSelect } from "@/components/bulk-fields";
+import { bulkCriticalityAction, bulkMoveAssetsAction, bulkSchedulePpmAction } from "./bulk-actions";
 import { activeFilterCount, ASSET_STATUSES, CRITICALITIES, filterToQuery, parseAssetFilter } from "@/lib/assets/filters";
 import { dueState, nextPpmDue, warrantyState } from "@/lib/assets/maintenance";
 import { usageDueMap } from "@/lib/assets/meters-server";
@@ -28,7 +30,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const parsed = parseAssetFilter(sp);
   const f = { ...parsed, facilityId: scopedFacilityId(scope, parsed.facilityId) };
-  const canEdit = can(me.role, "assets.edit");
+  const canEdit = can(me.role, "assets.edit"), canMove = can(me.role, "assets.move"), canMaint = can(me.role, "maintenance.edit");
   const page = f.page ?? 1;
   const today = todayISO();
   const [{ rows, total }, facs, tree, types, cats, po] = await Promise.all([
@@ -137,8 +139,22 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
       ) : (
         <DataTable id="asset-register" label="Asset register" path="/assets" sp={sp} rows={rows} rowKey={(a) => a.id}
           sort={f.sort ? { key: f.sort, dir: f.dir ?? "asc" } : null}
-          select={{ rowLabel: (a) => a.assetTag, what: "assets", actions: [{ label: "Print labels for selected", action: "/assets/labels" }],
-            extra: <Link href={`/assets/labels?ids=${rows.map((r) => r.id).join(",")}`} className="text-sm text-primary hover:underline">Labels for this page ({rows.length})</Link> }}
+          select={{ rowLabel: (a) => a.assetTag, what: "assets", actions: [
+            { label: "Print labels for selected", action: "/assets/labels" },
+            ...(canMove ? [{ label: "Move", action: bulkMoveAssetsAction, confirm: "Move every ticked asset to the chosen room or department? Each move is recorded." }] : []),
+            ...(canEdit ? [{ label: "Set criticality", action: bulkCriticalityAction }] : []),
+            ...(canMaint ? [{ label: "Schedule PPM", action: bulkSchedulePpmAction }] : []),
+          ],
+            extra: <span className="flex flex-wrap items-center gap-2">
+              <Link href={`/assets/labels?ids=${rows.map((r) => r.id).join(",")}`} className="text-sm text-primary hover:underline">Labels for this page ({rows.length})</Link>
+              <BulkHidden form="asset-register-selected" name="returnPath" value={`/assets${qs({})}`} />
+              {canMove && <>
+                <BulkSelect form="asset-register-selected" name="departmentId" label="Move to department" placeholder="Department…" options={tree.departments.map((d) => ({ value: d.id, label: d.name }))} />
+                <BulkSelect form="asset-register-selected" name="roomId" label="Move to room" placeholder="Room…" options={roomsShown.slice(0, 800).map((r) => ({ value: r.id, label: `${r.code} — ${r.name}` }))} />
+              </>}
+              {canEdit && <BulkSelect form="asset-register-selected" name="criticality" label="New criticality" placeholder="Criticality…" options={enumOptions(CRITICALITIES)} />}
+              {canMaint && <BulkInput form="asset-register-selected" type="date" name="ppmDate" label="PPM visit date" width="w-40" />}
+            </span> }}
           footer={<Pager page={page} pages={pages} href={(p) => `/assets${qs({ page: p > 1 ? p : undefined })}`} />}
           columns={registerColumns({ today, ppm, usage, qs })} />
       )}
