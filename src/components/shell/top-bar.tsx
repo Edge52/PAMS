@@ -21,6 +21,8 @@ export function TopBar({ user, assistant = false, theme = "light" }: { user: Cur
           className="min-h-9 w-full rounded-full border border-line bg-surface px-4 py-1.5 text-sm placeholder:text-faint focus:border-primary focus:outline-none" />
       </form>
       <CommandPalette perms={permissionsOf(user.role)} assistant={assistant} />
+      <Link href="/help" title="Help: guides to common tasks" aria-label="Help"
+        className="grid size-9 shrink-0 place-items-center rounded-full border border-line bg-surface text-sm font-semibold text-muted hover:border-primary hover:text-primary-strong">?</Link>
       <NotificationBell userId={user.id} />
       <details className="relative">
         <summary className="flex cursor-pointer list-none items-center gap-2 rounded-[var(--radius-control)] px-2 py-1 hover:bg-sunken [&::-webkit-details-marker]:hidden">
