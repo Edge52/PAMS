@@ -11,6 +11,7 @@ import { CURRENCIES, todayISO } from "@/lib/format";
 import { createAssetAction } from "../actions";
 import { ModelDatalists } from "@/components/assets/model-datalists";
 import { SizeFields } from "@/components/assets/size-fields";
+import { UdiScanField } from "@/components/assets/udi-scan-field";
 import { modelSuggestions } from "@/lib/assets/models-server";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 
@@ -50,6 +51,7 @@ export default async function NewAssetPage({ searchParams }: { searchParams: Pro
             <Field label="Model" hint={<><Link href="/catalogue/models" className="text-primary hover:underline">Makes and models</Link> in the catalogue are offered as you type.</>}><Input name="model" placeholder="IntelliVue MX750" list="dl-models" autoComplete="off" /></Field>
             <ModelDatalists {...await modelSuggestions()} />
             <Field label="Serial number" hint="Must be unique in the register"><Input name="serialNumber" /></Field>
+            <Field label="UDI (GS1)" hint="Optional. Scanning it fills the serial number." className="sm:col-span-2 lg:col-span-3"><UdiScanField /></Field>
           </FormGrid>
         </Panel>
         <Panel title="Where it is">

@@ -26,7 +26,7 @@ import { readingAtVisit } from "@/lib/assets/meters-server";
 import { todayISO } from "@/lib/format";
 import { humanize } from "@/lib/status";
 import { changeSummary, diff } from "@/lib/audit-diff";
-import { parseUdi, udiDiProblem } from "@/lib/assets/udi";
+import { udiFromInput } from "@/lib/assets/gs1";
 
 /** Redirects to /forbidden unless the asset's facility is in the user's scope. */
 async function requireAssetAccess(assetId: number, me: CurrentUser) {
@@ -41,7 +41,7 @@ const AssetSchema = z.object({
   status: oneOf("Status", MANUAL_ASSET_STATUSES), condition: oneOf("Condition", ASSET_CONDITIONS),
   purchaseDate: isoDate("Purchase date"), installDate: isoDate("Install date"),
   warrantyMonths: int("Warranty months", 0, 240), warrantyEnd: isoDate("Warranty end"),
-  purchaseCost: num("Purchase cost", 0, 1e11), currency: text(3), parentTag: text(48), notes: text(2000),
+  purchaseCost: num("Purchase cost", 0, 1e11), currency: text(3), parentTag: text(48), notes: text(2000), udi: text(200),
   lengthM: num("Length", DIM_MIN, DIM_MAX), widthM: num("Width", DIM_MIN, DIM_MAX), heightM: num("Height", DIM_MIN, DIM_MAX),
 });
 
@@ -82,6 +82,8 @@ export async function createAssetAction(_: FormState, fd: FormData): Promise<For
   if (d.installDate && d.purchaseDate && d.installDate < d.purchaseDate) return { error: "Install date is before the purchase date." };
   const size = sizeOf(d);
   if (size.error) return { error: size.error };
+  const udi = udiFromInput(d.udi);
+  if (udi.problem) return { error: udi.problem };
   let parentAssetId: number | null = null;
   if (d.parentTag) {
     const [par] = await db.select({ id: assets.id, facilityId: assets.facilityId }).from(assets).where(eq(assets.assetTag, d.parentTag.toUpperCase()));
@@ -98,6 +100,7 @@ export async function createAssetAction(_: FormState, fd: FormData): Promise<For
     parentAssetId, notes: d.notes ?? null,
     lengthM: size.lengthM, widthM: size.widthM, heightM: size.heightM,
   });
+  if (udi.di) await db.update(assets).set({ udiDi: udi.di, udiPi: udi.pi }).where(eq(assets.id, row.id));
   revalidatePath("/assets");
   redirect(`/assets/${row.id}?notice=${encodeURIComponent(`${row.assetTag} registered.`)}`);
 }
@@ -116,9 +119,9 @@ export async function updateAssetAction(_: FormState, fd: FormData): Promise<For
   const size = sizeOf(d);
   if (size.error) return { error: size.error };
   // Wave 24: the UDI from the label. A full UDI may be pasted: its (01) part is the device identifier, the rest is kept as typed.
-  const udiError = udiDiProblem(d.udi);
-  if (udiError) return { error: udiError };
-  const udi = d.udi ? (/^\d+$/.test(d.udi) ? { di: d.udi, pi: null } : { di: parseUdi(d.udi).di, pi: d.udi.replace(/^\(01\)\d{14}/, "") || null }) : { di: null, pi: null };
+  // Wave 41: a scanned code (group separators, symbology prefix, Digital Link) is read with the GS1 parser.
+  const udi = udiFromInput(d.udi);
+  if (udi.problem) return { error: udi.problem };
   const next = {
     lengthM: size.lengthM, widthM: size.widthM, heightM: size.heightM,
     manufacturer: d.manufacturer ?? null, model: d.model ?? null, serialNumber: d.serialNumber ?? null,

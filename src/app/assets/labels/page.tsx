@@ -8,6 +8,10 @@ import { isLocalOrigin, labelUrl } from "@/lib/assets/rounds";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { idCards } from "@/lib/compliance/id-card-server";
 import { todayISO } from "@/lib/format";
+import { inArray } from "drizzle-orm";
+import { db } from "@/db";
+import { assets } from "@/db/schema";
+import { labelGs1Line } from "@/lib/assets/gs1";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Asset labels" };
@@ -28,6 +32,16 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
   // Wave 40: the vendor's service line on labels of devices whose ID card says so (or every label with ?service=1).
   const allService = sp.service === "1";
   const cards = await idCards(list.map((a) => a.id), todayISO());
+  // Wave 41: the GS1 UDI as a printed line (?gs1=1). The QR stays the scan link; a DataMatrix needs a barcode library.
+  const withGs1 = sp.gs1 === "1";
+  const udis = withGs1 && list.length
+    ? new Map((await db.select({ id: assets.id, di: assets.udiDi, pi: assets.udiPi }).from(assets).where(inArray(assets.id, list.map((a) => a.id)))).map((u) => [u.id, labelGs1Line(u.di, u.pi)]))
+    : new Map<number, string | null>();
+  const qs = (over: Record<string, string | null>) => {
+    const p = new URLSearchParams({ ids: list.map((a) => a.id).join(","), ...(allService ? { service: "1" } : {}), ...(withGs1 ? { gs1: "1" } : {}) });
+    for (const [k, v] of Object.entries(over)) if (v == null) p.delete(k); else p.set(k, v);
+    return `/assets/labels?${p.toString()}`;
+  };
   const labels = await Promise.all(list.map(async (a) => ({
     a,
     // The QR holds the tag only (audit B4): a database id can point at another device after a re-import.
@@ -58,8 +72,9 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
           </p>
         )}
         {list.length > 0 && (
-          <p className="mb-4 text-sm"><a href={`/assets/labels?ids=${list.map((a) => a.id).join(",")}${allService ? "" : "&service=1"}`} className="text-primary hover:underline">
-            {allService ? "Show the service line only where the ID card asks for it" : "Show the vendor's service line on every label"}</a></p>
+          <p className="mb-4 flex flex-wrap gap-x-4 text-sm"><a href={qs({ service: allService ? null : "1" })} className="text-primary hover:underline">
+            {allService ? "Show the service line only where the ID card asks for it" : "Show the vendor's service line on every label"}</a>
+            <a href={qs({ gs1: withGs1 ? null : "1" })} className="text-primary hover:underline">{withGs1 ? "Hide the GS1 UDI line" : "Add the GS1 UDI line (devices with a UDI)"}</a></p>
         )}
       </div>
       {list.length === 0 ? (
@@ -78,6 +93,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
                 <p className="truncate text-[6.5pt]">{[a.manufacturer, a.model].filter(Boolean).join(" ")}</p>
                 {a.serialNumber && <p className="truncate font-mono text-[6.5pt]">S/N {a.serialNumber}</p>}
                 <p className="mt-0.5 truncate text-[6.5pt] text-muted">{a.departmentName ?? ""}{a.roomCode ? ` · ${a.roomCode}` : ""}</p>
+                {udis.get(a.id) && <p className="break-all font-mono text-[5.5pt] leading-none" title="GS1 UDI, human-readable">{udis.get(a.id)}</p>}
                 {(allService || cards.get(a.id)?.showOnLabel) && cards.get(a.id)?.vendor.phone && <p className="truncate text-[6.5pt] font-semibold">Service {cards.get(a.id)!.vendor.phone}</p>}
               </div>
             </div>
