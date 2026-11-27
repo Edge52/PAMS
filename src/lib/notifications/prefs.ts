@@ -21,6 +21,7 @@ export const isChannel = (v: unknown): v is Channel => typeof v === "string" && 
 /** Kinds that always reach the inbox. */
 export const SAFETY_KINDS: ReadonlySet<string> = new Set([
   "recall_issued", "recall_pending", "critical_backup", "incident_reported", "fault_unacknowledged", "fault_escalated", "cryogen_urgent",
+  "utility_test_failed", "water_sample_failed",
 ]);
 export const isSafetyKind = (kind: string) => SAFETY_KINDS.has(kind);
 
@@ -31,6 +32,7 @@ export const KIND_GROUPS: { label: string; kinds: string[] }[] = [
   { label: "Procurement and money", kinds: ["offer_expiring", "rfq_closing", "tender_step_overdue", "po_late", "acceptance_notice_due", "budget_warning", "invoice_received", "bond_expiring", "supplier_doc_expiring"] },
   { label: "Maintenance", kinds: ["work_order_reported", "work_order_assigned", "work_order_completed", "maintenance_due", "maintenance_overdue", "warranty_ending", "contract_ending", "part_low_stock", "loan_overdue", "competency_expiry"] },
   { label: "Tests and imaging", kinds: ["safety_test_due", "safety_test_overdue", "calibration_due", "calibration_overdue", "test_equipment_calibration", "radiation_licence_expiring", "radiation_licence_expired", "radiation_qc_due", "radiation_qc_overdue", "protective_check_due", "protective_check_overdue", "dose_flagged", "cryogen_warning", "tube_replace", "tube_warranty"] },
+  { label: "Utilities and water", kinds: ["utility_test_overdue", "water_sample_overdue"] },
   { label: "Other", kinds: ["executive_pack", "backup_failed"] },
 ];
 
