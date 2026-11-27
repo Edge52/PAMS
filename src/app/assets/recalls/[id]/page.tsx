@@ -15,6 +15,7 @@ import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format";
 import { getActivity } from "@/lib/server-utils";
 import { closeRecallAction, createRecallJobsAction, rematchRecallAction, setRecallDeviceAction } from "../actions";
+import { bulkRecallDevicesAction } from "../bulk-actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Recall" };
@@ -49,6 +50,7 @@ export default async function RecallPage({ params, searchParams }: {
   const prog = recallProgress(devices.map((d) => d.ra));
   const withoutJob = devices.filter((d) => d.ra.status === "PENDING" && !d.ra.workOrderId).length;
   const multi = scope === null || scope.length > 1;
+  const bulk = canEdit && r.status === "OPEN" && devices.length > 1; // wave 41: tick devices, mark them together
   // Pending devices placed in a room, per hospital, for "Show in 3D".
   const in3d = new Map<number, { name: string; n: number }>();
   for (const d of devices) if (d.ra.status === "PENDING" && d.roomId) in3d.set(d.facilityId, { name: d.facility, n: (in3d.get(d.facilityId)?.n ?? 0) + 1 });
@@ -90,11 +92,14 @@ export default async function RecallPage({ params, searchParams }: {
             {devices.length === 0 ? <p className="p-4 text-sm text-muted">No device in your register matches this notice.{canEdit && r.status === "OPEN" ? " If devices were added since, check the register again." : ""}</p> : (
               <ul className="divide-y divide-line">{devices.map((d) => (
                 <li key={d.ra.assetId} className="grid gap-2 px-4 py-2.5 text-sm sm:grid-cols-[1fr_auto]">
+                  <div className="flex min-w-0 gap-3">
+                  {bulk && <input type="checkbox" name="assetIds" value={d.ra.assetId} form="recall-bulk" aria-label={`Select ${d.tag}`} className="mt-1 size-4 shrink-0 accent-[var(--color-primary)]" />}
                   <div className="min-w-0">
                     <Link href={`/assets/${d.ra.assetId}`} className="font-mono text-[13px] font-semibold text-primary hover:underline">{d.tag}</Link>
                     <span className="text-muted"> {d.model ?? ""} · SN {d.serial ?? "—"} · {d.department ?? "No department"}{multi ? ` · ${d.facility}` : ""}</span>
                     {d.woNumber && <div className="text-xs">Job <Link href={`/assets/work-orders/${d.ra.workOrderId}`} className="text-primary hover:underline">{d.woNumber}</Link> <StatusBadge value={d.woStatus} /></div>}
                     {d.ra.note && <div className="text-xs text-muted">{d.ra.note}</div>}
+                  </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge value={d.ra.status} />
@@ -110,6 +115,16 @@ export default async function RecallPage({ params, searchParams }: {
                   </div>
                 </li>
               ))}</ul>
+            )}
+            {bulk && (
+              <form id="recall-bulk" action={bulkRecallDevicesAction} className="flex flex-wrap items-end gap-2 border-t border-line px-4 py-3 text-sm">
+                <input type="hidden" name="recallId" value={r.id} />
+                <span className="text-muted">With the ticked devices:</span>
+                <NativeSelect name="status" value="ACTIONED" aria-label="Mark as" className="w-auto py-1 text-[13px]"
+                  options={[{ value: "ACTIONED", label: "Dealt with" }, { value: "NOT_AFFECTED", label: "Not affected" }]} />
+                <input name="note" placeholder="Note (needed for not affected)" aria-label="Note for the ticked devices" maxLength={500} className="w-56 rounded-[var(--radius-control)] border border-line bg-surface px-2 py-1 text-[13px]" />
+                <Button variant="secondary" className="py-1">Mark ticked devices</Button>
+              </form>
             )}
           </Panel>
         </div>
