@@ -3,16 +3,24 @@ import { db } from "@/db";
 import { assetSecurity } from "@/db/schema";
 import { Badge, Details, Field, FormGrid, Input, Panel, Select } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
-import { concerns, CONNECTION_LABELS, CONNECTIONS, REMOTE, REMOTE_LABELS, TRI, TRI_LABELS, worst } from "@/lib/assets/device-security";
+import { concerns, CONNECTION_LABELS, CONNECTIONS, extraConcerns, REMOTE, REMOTE_LABELS, TRI, TRI_LABELS, worst } from "@/lib/assets/device-security";
+import { securityExtras } from "@/lib/assets/security-extras-server";
+import { NetworkRisks } from "./network-risks";
+import { DocumentsPanel } from "@/components/documents-panel";
+import Link from "next/link";
 import { formatDate, todayISO } from "@/lib/format";
 import { saveDeviceSecurityAction } from "@/app/assets/security/actions";
 
 const tri = TRI.map((v) => ({ value: v, label: TRI_LABELS[v] }));
 
 /** Network and security details of one device (wave 25). Server component. */
-export async function SecurityPanel({ assetId, canEdit }: { assetId: number; canEdit: boolean }) {
+export async function SecurityPanel({ assetId, canEdit, modelId = null }: { assetId: number; canEdit: boolean; modelId?: number | null }) {
   const [r] = await db.select().from(assetSecurity).where(eq(assetSecurity.assetId, assetId));
-  const list = r ? concerns(r, todayISO()) : [];
+  const today = todayISO();
+  // Wave 41: network risks per connection, the supplier's remote-access agreement, the model's SBOM.
+  const ex = await securityExtras(assetId, modelId, today);
+  const list = r ? [...concerns(r, today), ...extraConcerns(r, ex.extras, today)].sort((a, b) => (a.level === b.level ? 0 : a.level === "high" ? -1 : 1)) : [];
+  const supplierRemote = r && r.connection !== "NONE" && (r.remoteAccess === "SUPPLIER" || r.remoteAccess === "BOTH");
   const level = worst(list);
   return (
     <Panel title={<span id="device-security">Network and security</span>}
@@ -38,7 +46,17 @@ export async function SecurityPanel({ assetId, canEdit }: { assetId: number; can
             { label: "MDS2 statement", value: r.mds2OnFile ? `On file${r.mds2Ref ? `: ${r.mds2Ref}` : ""}` : "Not on file" },
             { label: "Reviewed", value: r.reviewedOn ? `${formatDate(r.reviewedOn)}${r.reviewedByName ? ` by ${r.reviewedByName}` : ""}` : "Never" },
             ...(r.notes ? [{ label: "Notes", value: r.notes }] : []),
+            ...(r.connection !== "NONE" ? [{ label: "Software (SBOM)", value: modelId
+              ? <Link href={`/catalogue/models/${modelId}#sbom`} className="text-primary hover:underline">{ex.extras.sbomOnFile ? "SBOM on file" : "No SBOM on file"}{ex.components.length ? ` · ${ex.components.length} key component${ex.components.length === 1 ? "" : "s"}` : ""}</Link>
+              : "Match the make and model to the catalogue to keep its SBOM" }] : []),
           ]} />
+          {r.connection !== "NONE" && <NetworkRisks assetId={assetId} risks={ex.risks} canEdit={canEdit} today={today} />}
+          {supplierRemote && (
+            <div className="mt-4">
+              <DocumentsPanel entityType="asset" entityId={assetId} returnPath={`/assets/${assetId}#device-security`} title="Supplier remote-access agreement"
+                kinds={["remote_access_agreement"]} withExpiry emptyHint="Attach the signed agreement that says how and when the supplier may connect, with its end date." />
+            </div>
+          )}
         </>
       )}
       {canEdit && (

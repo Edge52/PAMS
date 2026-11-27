@@ -6,7 +6,7 @@ import "server-only";
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, departments, deviceTypes, exchangeRates, maintenanceEvents, recallAssets, recalls, serviceContractAssets, serviceContracts, workOrders } from "@/db/schema";
+import { assetSecurity, assets, departments, deviceTypes, exchangeRates, maintenanceEvents, recallAssets, recalls, serviceContractAssets, serviceContracts, workOrders } from "@/db/schema";
 import { num, todayISO } from "@/lib/format";
 import { loadFx } from "@/lib/server-utils";
 import { daysBetween } from "./dates";
@@ -14,6 +14,7 @@ import { downtimeMsByDevice } from "./downtime";
 import { costOfOwnership, deviceKpis, replacementScore, type ReplacementScore } from "./lifecycle-kpis";
 import { lifecycle } from "./maintenance";
 import { annualCostPerAsset } from "./contracts";
+import { legacyFacts } from "./device-security";
 
 /** EGP per unit of each currency (latest stored rate). */
 export async function egpRates(): Promise<Map<string, number>> {
@@ -36,7 +37,7 @@ export const toEgp = (rates: Map<string, number>, amount: string | number | null
 export async function assetLifecycle(assetId: number) {
   const now = new Date();
   const today = todayISO(now);
-  const [[a], jobs, events, contracts, recall, rates] = await Promise.all([
+  const [[a], jobs, events, contracts, recall, rates, [sec]] = await Promise.all([
     db.select({ purchaseCost: assets.purchaseCost, currency: assets.currency, installDate: assets.installDate, purchaseDate: assets.purchaseDate,
       life: assets.lifeExpectancyYears, criticality: assets.criticality, condition: assets.condition })
       .from(assets).where(eq(assets.id, assetId)),
@@ -50,6 +51,7 @@ export async function assetLifecycle(assetId: number) {
     db.select({ n: sql<number>`count(*)::int` }).from(recallAssets).innerJoin(recalls, eq(recalls.id, recallAssets.recallId))
       .where(and(eq(recallAssets.assetId, assetId), eq(recallAssets.status, "PENDING"), eq(recalls.status, "OPEN"))),
     loadFx(),
+    db.select({ connection: assetSecurity.connection, osSupportEnds: assetSecurity.osSupportEnds, lastPatchedOn: assetSecurity.lastPatchedOn }).from(assetSecurity).where(eq(assetSecurity.assetId, assetId)),
   ]);
   if (!a) return null;
   // Audit DL-18: past amounts at the rate of their own date; ongoing contract cost at today's.
@@ -79,6 +81,7 @@ export async function assetLifecycle(assetId: number) {
   const score = replacementScore({
     lifeUsedPct: life.pctUsed, repairCostRatio: purchase ? maintenance3y / purchase : null, failures12m: kpis.failures,
     downtimeHours12m: kpis.downtimeHours, criticality: a.criticality, condition: a.condition, openRecall: (recall[0]?.n ?? 0) > 0,
+    ...legacyFacts(sec, today),
   });
   return { kpis, cost: { purchase, maintenance, contracts: contractCost, missingRates: [...missingRates].sort(), ...costOfOwnership(purchase, maintenance, contractCost) }, score, life };
 }
@@ -108,7 +111,7 @@ export async function replacementPlan(where: SQL | undefined): Promise<Replaceme
   const ids = rows.map((r) => r.id);
   // Per-asset aggregates as grouped queries (one pass each) rather than a subquery per device.
   const yearAgo = sql`now() - interval '365 days'`;
-  const [failRows, downRows, recallRows, costs, rates] = await Promise.all([
+  const [failRows, downRows, recallRows, costs, rates, secRows] = await Promise.all([
     db.select({ assetId: workOrders.assetId, n: sql<number>`count(*)::int` }).from(workOrders)
       .where(and(inArray(workOrders.assetId, ids), eq(workOrders.type, "CORRECTIVE"), sql`${workOrders.status} <> 'CANCELLED'`, sql`${workOrders.reportedAt} >= ${yearAgo}`))
       .groupBy(workOrders.assetId),
@@ -122,7 +125,10 @@ export async function replacementPlan(where: SQL | undefined): Promise<Replaceme
       .where(and(inArray(maintenanceEvents.assetId, ids), eq(maintenanceEvents.status, "COMPLETED"), sql`${maintenanceEvents.completedDate} >= current_date - interval '3 years'`))
       .groupBy(maintenanceEvents.assetId, maintenanceEvents.currency),
     loadFx(),
+    db.select({ assetId: assetSecurity.assetId, connection: assetSecurity.connection, osSupportEnds: assetSecurity.osSupportEnds, lastPatchedOn: assetSecurity.lastPatchedOn })
+      .from(assetSecurity).where(inArray(assetSecurity.assetId, ids)),
   ]);
+  const security = new Map(secRows.map((r) => [r.assetId, r]));
   const failures = new Map(failRows.map((r) => [r.assetId, Number(r.n)]));
   const nowD = new Date();
   const downtime = new Map([...downtimeMsByDevice(downRows.map((r) => ({ device: r.device, start: r.start!, end: r.end })), new Date(nowD.getTime() - 365 * 86_400_000), nowD)]
@@ -144,7 +150,7 @@ export async function replacementPlan(where: SQL | undefined): Promise<Replaceme
       installDate: r.installDate, lifeYears: r.lifeYears, lifeUsedPct: life.pctUsed, failures12m: failures.get(r.id) ?? 0, downtimeHours12m: downtime.get(r.id) ?? 0,
       repairCostRatio, estimateEgp,
       score: replacementScore({ lifeUsedPct: life.pctUsed, repairCostRatio, failures12m: failures.get(r.id) ?? 0, downtimeHours12m: downtime.get(r.id) ?? 0,
-        criticality: r.criticality, condition: r.condition, openRecall: recalled.has(r.id) }),
+        criticality: r.criticality, condition: r.condition, openRecall: recalled.has(r.id), ...legacyFacts(security.get(r.id), today) }),
     };
   }).sort((x, y) => y.score.score - x.score.score || x.tag.localeCompare(y.tag));
 }

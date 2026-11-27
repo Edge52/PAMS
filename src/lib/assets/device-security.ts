@@ -53,3 +53,49 @@ export function addressProblem(ip: string | null | undefined, mac: string | null
   return Object.keys(out).length ? out : null;
 }
 export const tidyMac = (mac: string) => mac.toUpperCase().replace(/-/g, ":");
+
+/* ── Wave 41: IEC 80001-1:2021 extras, SBOM, supplier remote access, legacy devices (ECRI 2026 #8) ── */
+
+/** What the extra records say about one device, gathered by the server. */
+export type SecurityExtras = {
+  /** The make and model has an SBOM file on record. Null = the device isn't linked to a catalogue model. */
+  sbomOnFile: boolean | null;
+  /** Key components whose support has ended (from the model's SBOM list). */
+  unsupportedComponents: string[];
+  /** The supplier's remote-access agreement: its expiry date, "none" when no agreement is on file. Null = no expiry. */
+  remoteAgreement: { onFile: boolean; expiresOn: string | null };
+  /** Network risks: open ones with a high residual risk, and ones whose review date has passed. */
+  highResidual: number; reviewOverdue: number; risks: number;
+};
+
+/** The extra concerns, in the same form as `concerns`. Only for a device on the network. */
+export function extraConcerns(r: Pick<SecurityRecord, "connection" | "remoteAccess">, e: SecurityExtras, today: string): Concern[] {
+  const out: Concern[] = [];
+  if (r.connection === "NONE") return out;
+  const supplier = r.remoteAccess === "SUPPLIER" || r.remoteAccess === "BOTH";
+  if (supplier && !e.remoteAgreement.onFile) out.push({ level: "high", text: "The supplier connects from outside with no remote-access agreement on file." });
+  else if (supplier && e.remoteAgreement.expiresOn && e.remoteAgreement.expiresOn < today) out.push({ level: "high", text: "The supplier's remote-access agreement has expired." });
+  else if (supplier && e.remoteAgreement.expiresOn && e.remoteAgreement.expiresOn < addMonths(today, 2)) out.push({ level: "medium", text: "The supplier's remote-access agreement expires within two months." });
+  if (e.highResidual) out.push({ level: "high", text: `${e.highResidual} network risk${e.highResidual === 1 ? "" : "s"} still high after the controls.` });
+  if (e.reviewOverdue) out.push({ level: "medium", text: `${e.reviewOverdue} network risk${e.reviewOverdue === 1 ? " is" : "s are"} past the review date.` });
+  if (!e.risks) out.push({ level: "medium", text: "No network risk recorded for its connections (IEC 80001-1)." });
+  if (e.sbomOnFile === false) out.push({ level: "medium", text: "No software bill of materials (SBOM) on file for this model." });
+  if (e.unsupportedComponents.length) out.push({ level: "medium", text: `Software no longer supported: ${e.unsupportedComponents.slice(0, 3).join(", ")}${e.unsupportedComponents.length > 3 ? "…" : ""}.` });
+  return out;
+}
+
+/** Whole months from `from` to `today` (0 when `from` is later). */
+export function monthsSince(from: string, today: string): number {
+  const [y1, m1, d1] = from.split("-").map(Number), [y2, m2, d2] = today.split("-").map(Number);
+  const n = (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0);
+  return Math.max(0, n);
+}
+
+/**
+ * The security facts the replacement score uses (ECRI 2026 hazard #8, legacy devices): only for devices on the
+ * network. `monthsWithoutPatch` is null when the record has no update date (counted as no record, not as a gap).
+ */
+export function legacyFacts(r: Pick<SecurityRecord, "connection" | "osSupportEnds" | "lastPatchedOn"> | null | undefined, today: string): { osUnsupported: boolean; monthsWithoutPatch: number | null } {
+  if (!r || r.connection === "NONE") return { osUnsupported: false, monthsWithoutPatch: null };
+  return { osUnsupported: !!r.osSupportEnds && r.osSupportEnds < today, monthsWithoutPatch: r.lastPatchedOn ? monthsSince(r.lastPatchedOn, today) : null };
+}

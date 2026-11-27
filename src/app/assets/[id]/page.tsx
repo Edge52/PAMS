@@ -332,7 +332,7 @@ export default async function AssetPage({ params, searchParams }: { params: Prom
           {isTubeType(a.typeCode) && <TubePanel assetId={x.id} typeCode={a.typeCode} canRecord={canMaint} canEdit={canEdit} disposed={x.status === "DISPOSED"} />}
           <SafetyPanel assetId={x.id} canTest={canMaint} canReport={canReport} disposed={x.status === "DISPOSED"} />
           <LoansPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />
-          <SecurityPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} />
+          <SecurityPanel assetId={x.id} canEdit={canEdit && x.status !== "DISPOSED"} modelId={catModel?.id ?? null} />
           <Panel title="Movement history" padded={false}>
             {moves.length === 0 ? <p className="p-4 text-sm text-muted">Never moved since it was registered.</p> : (
               <ol className="divide-y divide-line">

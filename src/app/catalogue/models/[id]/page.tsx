@@ -17,6 +17,8 @@ import { saveModelAction, saveSiteRequirementsAction, setModelActiveAction } fro
 import { SiteReqForm } from "@/components/assets/site-req-form";
 import { siteSummary } from "@/lib/assets/site-fit";
 
+import { SbomPanel } from "@/components/assets/sbom-panel";
+
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Make and model" };
 
@@ -100,6 +102,7 @@ export default async function ModelPage({ params, searchParams }: { params: Prom
         ) : <p className="mb-4 text-sm text-muted">No site data yet. With it, the 3D model can check whether this model fits a room: footprint, service space, ceiling, door, floor load, services and, for MRI, the 5 gauss line.</p>}
         {canEdit && <SiteReqForm modelId={m.id} action={saveSiteRequirementsAction} v={site ? Object.fromEntries(Object.entries(site).map(([k, x]) => [k, typeof x === "boolean" ? x : x == null ? "" : String(x)])) : null} />}
       </Panel>
+      <SbomPanel modelId={m.id} canEdit={canEdit} />
     </div>
   );
 }
