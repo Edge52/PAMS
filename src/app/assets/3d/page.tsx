@@ -25,7 +25,7 @@ export const metadata = { title: "3D view" };
 /** Floor-to-floor height when a floor has no stored elevation (La Plaza: 5 m). */
 const FLOOR_TO_FLOOR_M = 5;
 
-export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string; flow?: string; recall?: string; commissioning?: string; assets?: string }> }) {
+export default async function ThreeDPage({ searchParams }: { searchParams: Promise<{ facilityId?: string; flow?: string; recall?: string; commissioning?: string; assets?: string; label?: string }> }) {
   const me = await requirePermission("assets.view");
   const scope = await facilityScope(me);
   const sp = await searchParams;
@@ -142,7 +142,7 @@ export default async function ThreeDPage({ searchParams }: { searchParams: Promi
     views={views.map((v) => ({ id: v.id, name: v.name, state: v.state, shared: v.shared, mine: v.createdById === me.id, by: v.createdByName, render: v.render ?? null }))}
     canManageViews={can(me.role, "users.manage")}
     plans={can(me.role, "boq.view") ? await plansForFacility(facility.id) : []}
-    spotlight={typeof sp.assets === "string" && /^\d+(,\d+)*$/.test(sp.assets) ? { label: "Clash check", ids: sp.assets.split(",").map(Number).slice(0, 200) } : await recallSpotlight(Number(sp.recall), facility.id)}
+    spotlight={typeof sp.assets === "string" && /^\d+(,\d+)*$/.test(sp.assets) ? { label: sp.label === "utilities" ? "Utility systems" : "Clash check", ids: sp.assets.split(",").map(Number).slice(0, 200) } : await recallSpotlight(Number(sp.recall), facility.id)}
     commissioning={{ plans: (await listPlans([facility.id])).map((p) => ({ id: p.id, name: p.name })), initial: Number(sp.commissioning) || null }} />;
 }
 

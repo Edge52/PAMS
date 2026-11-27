@@ -140,7 +140,9 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
     const imaging = await loadImagingAlertData(today).then((d) => collectImagingAlerts(d, today)).catch((e) => { console.error("[alerts] imaging alerts skipped:", e); return []; });
     // Wave 40: a critical device type with no working backup left in a department, on its own too.
     const backups = await import("@/lib/compliance/critical-backup-server").then((m) => m.criticalBackupAlerts()).catch((e) => { console.error("[alerts] backup alerts skipped:", e); return []; });
-    const alerts = digestAlerts([...collectAlerts(await loadData(today, windows), today, windows), ...safety, ...imaging, ...backups], today, windows, (id) => (id == null ? null : names.get(id) ?? null));
+    // Wave 41: overdue tests on critical utility systems and overdue water samples, on their own too.
+    const utilities = await import("@/lib/utilities/utilities-server").then((m) => m.utilityAlerts(today)).catch((e) => { console.error("[alerts] utility alerts skipped:", e); return []; });
+    const alerts = digestAlerts([...collectAlerts(await loadData(today, windows), today, windows), ...safety, ...imaging, ...backups, ...utilities], today, windows, (id) => (id == null ? null : names.get(id) ?? null));
     candidates = alerts.length;
 
     // One recipient lookup per role and facility per run.

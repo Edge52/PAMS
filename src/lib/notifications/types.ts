@@ -58,6 +58,10 @@ export const KIND_LABELS: Record<string, string> = {
   fault_unacknowledged: "Fault not picked up",
   fault_escalated: "Fault escalated",
   daily_digest: "Daily digest",
+  utility_test_failed: "Utility test failed",
+  utility_test_overdue: "Utility test overdue",
+  water_sample_failed: "Water sample",
+  water_sample_overdue: "Water sample due",
   test: "Test",
 };
 

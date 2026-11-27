@@ -31489,5 +31489,153 @@
     "unit": "text"
    }
   ]
+ },
+ {
+  "code": "UTL",
+  "parentCode": null,
+  "level": 1,
+  "name": "Utility systems"
+ },
+ {
+  "code": "UTL-PWR",
+  "parentCode": "UTL",
+  "level": 2,
+  "name": "Electrical power and backup"
+ },
+ {
+  "code": "UTL-HVA",
+  "parentCode": "UTL",
+  "level": 2,
+  "name": "Air handling and cooling"
+ },
+ {
+  "code": "UTL-WTR",
+  "parentCode": "UTL",
+  "level": 2,
+  "name": "Water storage and supply"
+ },
+ {
+  "code": "UTL-LFT",
+  "parentCode": "UTL",
+  "level": 2,
+  "name": "Lifts"
+ },
+ {
+  "code": "UTL-FIR",
+  "parentCode": "UTL",
+  "level": 2,
+  "name": "Fire protection"
+ },
+ {
+  "code": "UTL-PWR-GEN",
+  "parentCode": "UTL-PWR",
+  "level": 3,
+  "name": "Standby generator",
+  "description": "Diesel standby generator for essential and life-safety circuits.",
+  "criticality": "LIFE_SUPPORT",
+  "lifeExpectancyYears": 25,
+  "ppmIntervalMonths": 6,
+  "requiresCalibration": false,
+  "isCapital": true,
+  "priceMinUsd": 40000,
+  "priceMaxUsd": 400000
+ },
+ {
+  "code": "UTL-PWR-UPS",
+  "parentCode": "UTL-PWR",
+  "level": 3,
+  "name": "UPS, central",
+  "description": "Uninterruptible power supply for theatres, ICU, IT or imaging.",
+  "criticality": "HIGH",
+  "lifeExpectancyYears": 12,
+  "ppmIntervalMonths": 6,
+  "requiresCalibration": false,
+  "isCapital": true,
+  "priceMinUsd": 5000,
+  "priceMaxUsd": 150000
+ },
+ {
+  "code": "UTL-PWR-ATS",
+  "parentCode": "UTL-PWR",
+  "level": 3,
+  "name": "Automatic transfer switch",
+  "description": "Switches essential circuits from mains to the generator.",
+  "criticality": "HIGH",
+  "lifeExpectancyYears": 25,
+  "ppmIntervalMonths": 12,
+  "requiresCalibration": false,
+  "isCapital": true,
+  "priceMinUsd": 3000,
+  "priceMaxUsd": 40000
+ },
+ {
+  "code": "UTL-HVA-AHU",
+  "parentCode": "UTL-HVA",
+  "level": 3,
+  "name": "Air handling unit, theatre or isolation",
+  "description": "Air handling unit serving operating theatres, isolation or clean rooms (air changes and pressure).",
+  "criticality": "HIGH",
+  "lifeExpectancyYears": 20,
+  "ppmIntervalMonths": 3,
+  "requiresCalibration": false,
+  "isCapital": true,
+  "priceMinUsd": 20000,
+  "priceMaxUsd": 250000
+ },
+ {
+  "code": "UTL-HVA-CHL",
+  "parentCode": "UTL-HVA",
+  "level": 3,
+  "name": "Chiller",
+  "description": "Chilled water plant for air conditioning and equipment cooling.",
+  "criticality": "MEDIUM",
+  "lifeExpectancyYears": 20,
+  "ppmIntervalMonths": 3,
+  "requiresCalibration": false,
+  "isCapital": true,
+  "priceMinUsd": 40000,
+  "priceMaxUsd": 500000
+ },
+ {
+  "code": "UTL-WTR-TNK",
+  "parentCode": "UTL-WTR",
+  "level": 3,
+  "name": "Water storage tank",
+  "description": "Drinking or domestic water storage tank (roof or ground).",
+  "criticality": "MEDIUM",
+  "lifeExpectancyYears": 30,
+  "ppmIntervalMonths": 6,
+  "requiresCalibration": false,
+  "isCapital": true,
+  "priceMinUsd": 2000,
+  "priceMaxUsd": 60000
+ },
+ {
+  "code": "UTL-LFT-BED",
+  "parentCode": "UTL-LFT",
+  "level": 3,
+  "name": "Bed lift",
+  "description": "Lift sized for beds and stretchers.",
+  "criticality": "HIGH",
+  "lifeExpectancyYears": 25,
+  "ppmIntervalMonths": 1,
+  "requiresCalibration": false,
+  "isCapital": true,
+  "priceMinUsd": 40000,
+  "priceMaxUsd": 200000
+ },
+ {
+  "code": "UTL-FIR-PMP",
+  "parentCode": "UTL-FIR",
+  "level": 3,
+  "name": "Fire pump set",
+  "description": "Fire pump set (duty, standby and jockey) for sprinklers and hydrants.",
+  "criticality": "HIGH",
+  "lifeExpectancyYears": 25,
+  "ppmIntervalMonths": 1,
+  "requiresCalibration": false,
+  "isCapital": true,
+  "priceMinUsd": 15000,
+  "priceMaxUsd": 150000
  }
 ]

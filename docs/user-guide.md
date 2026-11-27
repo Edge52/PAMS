@@ -968,3 +968,40 @@ press **Import**.
 **Administration › API tokens** makes a token for another system to read PAMS: choose what it may read, the
 hospitals and how long it lasts. Copy the token when it is shown; it isn't shown again. Prices are included only with
 **prices:read**. Revoke a token to stop it at once. The last calls are listed on the page. Details: `docs/api.md`.
+
+## Utilities and water (wave 41)
+
+### Utilities (Buildings › Utilities)
+
+For GAHAR EFS.11. Generators, UPS, transfer switches, medical gas plant, alarm panels and zone valves, theatre and
+isolation air handling, chillers, water tanks, lifts, fire pumps and cold-chain fridges (blood, vaccines, pharmacy).
+
+- **Add a system**: register it as a device first (catalogue groups Utility systems, Medical gases or Cold chain), then
+  on the **Systems** tab pick the device and its kind. Its maintenance, work orders, documents, QR label and 3D pin work
+  as for any device. Blank figures take the defaults; enter the design figures where you have them (generator kW,
+  fuel minimum, UPS minutes, fridge range, air changes and pressure).
+- **Due** lists every scheduled test with its state. Press **Record**, fill in the readings, save. PAMS works out pass
+  or fail: generator with load at least 30 minutes, at least 30 % of its rating, transfer in 10 s or less (NFPA 110);
+  weekly run without load; fuel; UPS autonomy; medical gas alarms; daily fridge temperatures; tank cleaning; air changes
+  and pressure (theatre 20 an hour, positive; isolation 12, negative, 2.5 Pa; ASHRAE 170). Intervals are defaults:
+  check your local code and the maker's manual.
+- **A failed test opens a work order** on the system (urgent for a critical system) and tells the biomedical team. The
+  work order list is the failure log; root cause and failure code go on the job as usual.
+- **Results** shows every test. **Backups** shows the backup settings for utility types (set them on Critical backups,
+  e.g. one generator in use and one standby).
+- Overdue tests on critical systems are alerted every hour. Medical gas purity tests and pipeline certification stay
+  with the contractor: keep the certificates as documents on the system.
+
+### Water quality (Buildings › Water quality)
+
+For GAHAR EFS.12 and ECRI's sterilisation water hazard.
+
+- **Points**: add each sampling point: dialysis RO outlet, loop, each dialysis machine; sterilizer (CSSD) feed water;
+  each drinking water tank. Link it to the plant, machine or tank so a failed result can open a work order. Dialysis
+  points get the ISO 23500 levels (total viable count limit 100 CFU/mL, action 50; endotoxin limit 0.25 EU/mL, action
+  0.125; total chlorine 0.1 mg/L): check your edition. Drinking water: no coliforms, free chlorine at least 0.2 mg/L.
+  Sterilizer feed water has no default: enter the sterilizer maker's or AAMI ST108 limits.
+- **Record** a result from the Due tab: fill in what the lab reported. Over a limit: a work order opens on the linked
+  device and biomedical is told. At the action level: biomedical is told. Attach the lab report to the device.
+- **Trend** draws each measure per point with its action level and limit.
+- The GAHAR evidence pack now reads EFS.11 and EFS.12 from these records.

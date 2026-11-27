@@ -641,3 +641,11 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - Fault reports: `lib/assets/fault-escalation.ts` (pure), checked every 5 minutes from the scheduler.
 - Wave 41 table reads tolerate a database without the migration (`isMissingTable`), so older tests and installs keep
   working on the defaults.
+
+## Wave 41: utilities and water
+- A utility system is an asset plus one `utility_systems` row (kind from `lib/utilities/utilities.ts`). Test rules,
+  intervals and defaults live there; water limits and judging in `lib/utilities/water.ts`. Change a figure there with
+  its test.
+- A failed test or sample opens its work order through `raiseFailureJob` (`lib/utilities/utilities-server.ts`): use it
+  for any new failure source rather than inserting work orders by hand.
+- GAHAR EFS.11/EFS.12 figures come from `utilityEvidence` in the same file.

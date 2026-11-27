@@ -18,7 +18,8 @@ export type EvidenceKey =
   | "inventory" | "user_training" | "id_cards" | "vendor_contacts" | "installation_tests"
   | "ppm" | "calibration" | "electrical_safety" | "malfunction_history"
   | "incidents" | "recalls"
-  | "utilities" | "water"
+  | "utility_inventory" | "utility_tests" | "generator_tests" | "cold_chain" | "utility_failures" | "utility_backup"
+  | "water_points" | "water_sampling" | "dialysis_water" | "water_failures"
   | "imaging_qc_physicist" | "imaging_qc_routine"
   | "dosimetry" | "ppe" | "radiation_equipment" | "radiation_licences" | "patient_dose";
 
@@ -62,10 +63,18 @@ export const GAHAR_MAP: GaharStandard[] = [
     { key: "recalls", text: "Recall actions done on affected devices", kind: "pct", have: 100, link: "/reports/recalls?facilityId={f}" },
   ] },
   { code: "EFS.11", title: "Utility systems", items: [
-    { key: "utilities", text: "Utility systems inventory, maintenance and failure plans", kind: "none" },
+    { key: "utility_inventory", text: "Utility systems on record (power, medical gas, air handling, water, lifts, fire pumps, cold chain)", kind: "count", link: "/buildings/utilities?tab=systems&facilityId={f}" },
+    { key: "utility_tests", text: "Scheduled utility tests in date", kind: "pct", link: "/buildings/utilities?facilityId={f}" },
+    { key: "generator_tests", text: "Generators run with and without load in the period", kind: "pct", have: 100, link: "/buildings/utilities?facilityId={f}" },
+    { key: "cold_chain", text: "Fridge temperature logs in the period within range", kind: "pct", have: 95, link: "/buildings/utilities?tab=tests&facilityId={f}" },
+    { key: "utility_failures", text: "Failed utility tests in the period with a work order", kind: "pct", have: 100, link: "/buildings/utilities?tab=tests&facilityId={f}" },
+    { key: "utility_backup", text: "Critical utility types with enough working backups", kind: "pct", have: 100, link: "/buildings/utilities?tab=backups&facilityId={f}" },
   ] },
   { code: "EFS.12", title: "Water management", items: [
-    { key: "water", text: "Water quality tests and plan", kind: "none" },
+    { key: "water_points", text: "Water sampling points on record (dialysis, sterilizer feed, drinking water tanks)", kind: "count", link: "/buildings/water?tab=points&facilityId={f}" },
+    { key: "water_sampling", text: "Sampling points sampled on time", kind: "pct", link: "/buildings/water?facilityId={f}" },
+    { key: "dialysis_water", text: "Dialysis water points sampled in the period (microbial and endotoxin)", kind: "pct", have: 100, link: "/buildings/water?facilityId={f}" },
+    { key: "water_failures", text: "Results over the limit in the period with a work order", kind: "pct", have: 100, link: "/buildings/water?tab=samples&facilityId={f}" },
   ] },
   { code: "DAS.05", title: "Imaging quality control, reviewed at least monthly", items: [
     { key: "imaging_qc_physicist", text: "Physicist QC tests in date (X-ray, CT and other radiation devices)", kind: "pct", link: "/assets/radiation?facilityId={f}" },

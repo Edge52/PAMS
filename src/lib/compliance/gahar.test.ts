@@ -16,9 +16,17 @@ describe("GAHAR evidence map", () => {
     expect(GAHAR_EDITION).toBe("GAHAR 2025 standards");
     expect(GAHAR_NOTE).toMatch(/Check the current GAHAR handbook/);
   });
-  it("utilities and water are not held in PAMS", () => {
-    const rows = packRows({}, 1);
-    expect(rows.filter((r) => r.key === "utilities" || r.key === "water").every((r) => r.status === "not_recorded" && r.href === null)).toBe(true);
+  it("reads utilities (EFS.11) and water (EFS.12) from PAMS records (wave 41)", () => {
+    const efs = GAHAR_MAP.filter((s) => s.code === "EFS.11" || s.code === "EFS.12").flatMap((s) => s.items);
+    expect(efs.length).toBeGreaterThanOrEqual(8);
+    expect(efs.every((i) => i.kind !== "none" && i.link?.startsWith("/buildings/"))).toBe(true);
+    const rows = packRows({ utility_tests: { pct: 92 }, generator_tests: { pct: 50 }, water_points: { count: 0 }, dialysis_water: null }, 3);
+    const by = (k: string) => rows.find((r) => r.key === k)!;
+    expect(by("utility_tests")).toMatchObject({ status: "have", href: "/buildings/utilities?facilityId=3" });
+    expect(by("generator_tests").status).toBe("partly");
+    expect(by("water_points").status).toBe("missing");
+    expect(by("dialysis_water")).toMatchObject({ status: "not_recorded", href: "/buildings/water?facilityId=3" });
+    expect(by("water_failures").detail).toBeNull();
   });
 });
 
@@ -34,7 +42,7 @@ describe("evidenceStatus", () => {
     expect(evidenceStatus(pct, null)).toBe("not_recorded");
     expect(evidenceStatus(pct, undefined)).toBe("not_recorded");
     expect(evidenceStatus(pct, { pct: null })).toBe("not_recorded");
-    expect(evidenceStatus({ key: "water", text: "", kind: "none" }, { pct: 100 })).toBe("not_recorded");
+    expect(evidenceStatus({ key: "patient_dose", text: "", kind: "none" }, { pct: 100 })).toBe("not_recorded");
   });
   it("counts and yes/no", () => {
     const c: EvidenceItem = { key: "dosimetry", text: "", kind: "count" };

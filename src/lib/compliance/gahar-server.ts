@@ -25,6 +25,9 @@ import { facilityCond } from "@/lib/reports/shared";
 import { DEFAULT_PPM_GRACE_DAYS } from "@/lib/reports/calc";
 import type { ReportContext, ReportFilters, ReportResult } from "@/lib/reports/types";
 import { addDaysISO } from "@/lib/format";
+import { utilityEvidence } from "@/lib/utilities/utilities-server";
+import { UTILITY_TYPE_CODES } from "@/lib/utilities/utilities";
+import { backupRows } from "./critical-backup-server";
 import { pctOf, type EvidenceKey, type Figure } from "./gahar";
 import type { KpiKey } from "./equipment-plan";
 
@@ -98,6 +101,10 @@ export async function gaharFigures(ctx: ReportContext): Promise<Partial<Record<E
     db.select({ n: sql<number>`count(*)::int` }).from(dosimetryPeriods).where(and(facilityCond(dosimetryPeriods.facilityId, f, scope), gte(dosimetryPeriods.periodEnd, yearAgo))),
   ]);
 
+  const [util, backups] = await Promise.all([
+    utilityEvidence(scope, f.facilityId, from, to, today),
+    backupRows(scope, f.facilityId ?? undefined).then((rows) => rows.filter((r) => UTILITY_TYPE_CODES.includes(r.typeCode) || r.typeCode.startsWith("UTL-"))),
+  ]);
   const facCount = ids === null ? null : ids.length;
   const planFacs = new Set(plans.map((p) => p.facilityId)), reviewFacs = new Set(reviews.map((p) => p.facilityId));
   const allHave = (s: Set<number>) => (facCount === null ? s.size > 0 : facCount > 0 && ids!.every((id) => s.has(id)));
@@ -134,6 +141,17 @@ export async function gaharFigures(ctx: ReportContext): Promise<Partial<Record<E
     malfunction_history: { count: jobs[0]?.n ?? 0 },
     incidents: incs[0]?.n ? { pct: pctOf(incs[0].acted, incs[0].n), detail: `${incs[0].acted} of ${incs[0].n} incidents` } : { count: 0, pct: 100, detail: "No incidents in the period" },
     recalls: (() => { const p = totalOf(recall, "recalls", "donePct"); return p == null ? { pct: 100, detail: "No devices named in recalls" } : { pct: p }; })(),
+    // Wave 41: EFS.11 utilities and EFS.12 water from /buildings/utilities and /buildings/water.
+    utility_inventory: { count: util.systems, detail: `${util.critical} critical` },
+    utility_tests: util.testsDue ? { pct: pctOf(util.testsInDate, util.testsDue), detail: `${util.testsInDate} of ${util.testsDue} scheduled tests` } : null,
+    generator_tests: util.generators ? { pct: pctOf(util.generatorsBoth, util.generators), detail: `${util.generatorsBoth} of ${util.generators} generators` } : null,
+    cold_chain: util.coldLogs ? { pct: pctOf(util.coldLogs - util.coldExcursions, util.coldLogs), detail: `${util.coldExcursions} of ${util.coldLogs} logs out of range` } : util.coldChain ? { pct: 0, detail: "No temperature logs in the period" } : null,
+    utility_failures: util.failedTests ? { pct: pctOf(util.failedWithJob, util.failedTests), detail: `${util.failedWithJob} of ${util.failedTests} failed tests` } : util.systems ? { pct: 100, detail: "No failed tests in the period" } : null,
+    utility_backup: backups.length ? { pct: pctOf(backups.filter((b) => b.state === "ok").length, backups.length), detail: `${backups.filter((b) => b.state === "ok").length} of ${backups.length} settings` } : null,
+    water_points: { count: util.points },
+    water_sampling: util.points ? { pct: pctOf(util.pointsInDate, util.points), detail: `${util.pointsInDate} of ${util.points} points` } : null,
+    dialysis_water: util.dialysisPoints ? { pct: pctOf(util.dialysisSampled, util.dialysisPoints), detail: `${util.dialysisSampled} of ${util.dialysisPoints} dialysis points` } : null,
+    water_failures: util.sampleFails ? { pct: pctOf(util.sampleFailsWithJob, util.sampleFails), detail: `${util.sampleFailsWithJob} of ${util.sampleFails} results over the limit` } : util.samples ? { pct: 100, detail: `No result over the limit in ${util.samples} samples` } : null,
     imaging_qc_physicist: noRad ? null : { pct: pctOf(qcOk, radDevices.length), detail: `${qcOk} of ${radDevices.length} radiation devices` },
     dosimetry: noRad ? null : { count: doses[0]?.n ?? 0 },
     ppe: items.length ? { pct: pctOf(ppeOk, items.length), detail: `${ppeOk} of ${items.length} items` } : noRad ? null : { pct: 0, detail: "No protective items on record" },
