@@ -23,6 +23,7 @@ import { instrumentOptions } from "@/lib/assets/test-equipment-server";
 import { TestEquipmentField } from "@/components/assets/test-equipment-field";
 import { MeterAtVisit } from "@/components/assets/meter-at-visit";
 import { usageIntervalLabel } from "@/lib/assets/meters";
+import { SavedFilters } from "@/components/saved-filters";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Maintenance" };
@@ -98,6 +99,7 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
         <Button variant="secondary">Filter</Button>
         {(deptId || q) && <Link href={`/assets/maintenance?tab=${tab}`} className="px-2 py-1.5 text-sm text-primary hover:underline">Clear</Link>}
       </form>
+      <SavedFilters page="ppm" />
       <TabLinks active={tab} tabs={[
         { key: "due", label: `Due and overdue (${overdue.length + never.length + dueSoon.length})`, href: base("due") },
         { key: "schedule", label: "Schedule", href: base("schedule") },

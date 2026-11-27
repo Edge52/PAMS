@@ -8,6 +8,7 @@ import { scopeWhere } from "@/lib/assets/access";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatMoney, todayISO } from "@/lib/format";
 import { pageFor, pagingNote } from "@/lib/list";
+import { SavedFilters } from "@/components/saved-filters";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Supplier invoices" };
@@ -40,6 +41,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
       <PageHeader title="Supplier invoices" description="Each invoice is matched against what its purchase order ordered and what was received. Record one from the PO's page."
         actions={<Link href="/procurement/invoices/export" prefetch={false} className="text-sm font-semibold text-primary hover:underline">Export for finance (CSV)</Link>} />
       <Notice sp={sp} />
+      <SavedFilters page="invoices" />
       <TabLinks active={tab.key} tabs={TABS.map((t) => ({ key: t.key, label: t.label, href: `/procurement/invoices?tab=${t.key}` }))} />
       {rows.length === 0 ? <EmptyState title="Nothing here">No invoices {tab.label.toLowerCase()}.</EmptyState> : (
         <Panel padded={false} className="mt-4">

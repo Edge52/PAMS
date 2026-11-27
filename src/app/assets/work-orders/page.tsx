@@ -126,7 +126,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
         <Button variant="secondary">Filter</Button>
         {(q || status || priority) && <Link href={qs({ q: undefined, status: undefined, priority: undefined, page: 1 })} className="px-2 py-1.5 text-sm text-primary hover:underline">Clear</Link>}
       </form>
-      <SavedFilters />
+      <SavedFilters page="work-orders" />
 
       {rows.length === 0 ? (
         <EmptyState title={tab === "mine" ? "Nothing assigned to you" : "No work orders here"}

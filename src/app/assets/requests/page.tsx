@@ -14,6 +14,7 @@ import { fiscalYearOptions } from "@/lib/fiscal-year";
 import { formatDate } from "@/lib/format";
 import { budgetYear } from "@/lib/procurement/budget-year-server";
 import { approveForDepartmentAction, decideRequestAction, requestsToBoqAction } from "./actions";
+import { SavedFilters } from "@/components/saved-filters";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Equipment requests" };
@@ -53,6 +54,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
       <Notice sp={sp} />
       <form className="mb-4 flex flex-wrap items-end gap-2"><input type="hidden" name="tab" value={tab.key} />
         <Field label="Hospital"><NativeSelect name="facilityId" value={facilityId} options={facs.map((f) => ({ value: f.id, label: f.name }))} /></Field><Button variant="secondary">Show</Button></form>
+      <SavedFilters page="requests" />
       <TabLinks active={tab.key} tabs={TABS.map((t) => ({ key: t.key, label: t.label, href: `/assets/requests?facilityId=${facilityId}&tab=${t.key}` }))} />
       {rows.length === 0 ? <EmptyState title="Nothing here">No requests {tab.label.toLowerCase()}.</EmptyState> : tab.key === "APPROVED" ? (
         <ActionForm action={requestsToBoqAction} className="mt-4">

@@ -10,6 +10,7 @@ import { sourceLabel } from "@/lib/assets/vigilance";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatNumber } from "@/lib/format";
+import { SavedFilters } from "@/components/saved-filters";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Recalls" };
@@ -35,6 +36,7 @@ export default async function RecallsPage({ searchParams }: { searchParams: Prom
         actions={canEdit && <span className="flex flex-wrap gap-2"><LinkButton href="/assets/recalls/import">Import an openFDA file</LinkButton><LinkButton href="/assets/recalls/new" variant="primary">Record a notice</LinkButton></span>} />
       {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
+      <SavedFilters page="recalls" />
       <TabLinks active={tab} tabs={[{ key: "open", label: "Open", href: "/assets/recalls" }, { key: "closed", label: "Closed", href: "/assets/recalls?tab=closed" }, { key: "all", label: "All", href: "/assets/recalls?tab=all" }]} />
       {rows.length === 0 ? (
         <EmptyState title={tab === "open" ? "No open recalls" : "No recalls here"} action={canEdit ? <LinkButton href="/assets/recalls/new" variant="primary">Record a notice</LinkButton> : undefined}>

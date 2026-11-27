@@ -118,7 +118,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
           <span className="ml-auto text-sm text-muted" aria-live="polite"><b className="text-ink">{formatNumber(total)}</b> asset{total === 1 ? "" : "s"}{filtered ? " match" : ""}</span>
         </div>
       </form>
-      <SavedFilters />
+      <SavedFilters page="assets" />
 
       {rows.length === 0 ? (
         filtered ? (
