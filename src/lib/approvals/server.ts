@@ -12,7 +12,7 @@ import { approvalPolicies, approvalRequests, approvalSteps, notifications, users
 import { ROLE_LABELS, type Role } from "@/lib/auth/permissions";
 import { facilityScope, getCurrentUser, type CurrentUser } from "@/lib/auth/session";
 import { notifyUsers, usersWithRole } from "@/lib/notifications";
-import { formatMoney, num } from "@/lib/format";
+import { formatMoney, num, todayISO } from "@/lib/format";
 import { logActivity } from "@/lib/server-utils";
 import { getSetting } from "@/lib/settings";
 import {
@@ -20,6 +20,8 @@ import {
   type ApprovalEntity, type CommitteeMemberInput, type Policy, type StepState, type Verdict,
 } from "./core";
 import { awardChairs, onRequestClosed } from "./effects";
+import { activeDelegations, recordDecidedFor, trackPending } from "./delegation-server";
+import { canDecideFor, principalsOf, withDeputies } from "./escalation";
 
 export type Actor = Pick<CurrentUser, "id" | "name" | "role" | "allFacilities">;
 export type Result = { ok: true; message: string } | { ok: false; error: string };
@@ -140,6 +142,7 @@ async function recompute(requestId: number, actor: Actor) {
   await clearSettledNotifications(requestId);
 
   if (res.status === "PENDING") {
+    await trackPending(res.newlyPending);
     await notifyPending(req, steps.filter((s) => res.newlyPending.includes(s.id)));
     return;
   }
@@ -171,22 +174,41 @@ async function clearSettledNotifications(requestId: number) {
     .where(and(isNull(notifications.readAt), inArray(notifications.dedupeKey, settled.map((s) => `approval:${s.id}`))));
 }
 
-async function notifyPending(req: RequestRow, steps: StepRow[]) {
-  if (!steps.length) return;
-  const chairs = req.entity === "AWARD"
+/**
+ * Who is asked to decide a step: the named person, or everyone holding the role who can see the facility (not the
+ * requester, not award committee members), with anyone out of office replaced by their deputy (wave 41).
+ */
+export async function stepRecipients(req: RequestRow, s: StepRow, chairs: number[], today = todayISO()): Promise<{ ids: number[]; title: string }> {
+  let ids: number[] = [];
+  let title = `Approval needed: ${req.title}`;
+  if (s.approverUserId) ids = [s.approverUserId];
+  else if (s.approverRole) {
+    ids = (await usersWithRole(s.approverRole as Role, req.facilityId)).filter((u) => u !== req.requestedById && !chairs.includes(u));
+  } else if (s.memberName && req.requestedById) {
+    ids = [req.requestedById]; // external member: whoever submitted records the paper signature
+    title = `Record ${s.memberName}'s signature: ${req.title}`;
+  }
+  // Committee signatures are personal: never passed to a deputy.
+  if (!isMemberStep(toState(s)) && ids.length) {
+    const dels = await activeDelegations(today);
+    if (dels.length) ids = withDeputies(ids, dels, today).filter((u) => u !== req.requestedById);
+  }
+  return { ids, title };
+}
+
+/** Committee members and chairs of an award (they may not approve it). */
+export async function awardExcluded(req: RequestRow): Promise<number[]> {
+  return req.entity === "AWARD"
     ? [...await awardChairs(req.entityId), ...(await db.select({ u: approvalSteps.approverUserId }).from(approvalSteps)
         .where(and(eq(approvalSteps.requestId, req.id), sql`${approvalSteps.approverUserId} is not null`))).map((r) => r.u as number)]
     : [];
+}
+
+async function notifyPending(req: RequestRow, steps: StepRow[]) {
+  if (!steps.length) return;
+  const chairs = await awardExcluded(req);
   for (const s of steps) {
-    let ids: number[] = [];
-    let title = `Approval needed: ${req.title}`;
-    if (s.approverUserId) ids = [s.approverUserId];
-    else if (s.approverRole) {
-      ids = (await usersWithRole(s.approverRole as Role, req.facilityId)).filter((u) => u !== req.requestedById && !chairs.includes(u));
-    } else if (s.memberName && req.requestedById) {
-      ids = [req.requestedById]; // external member: whoever submitted records the paper signature
-      title = `Record ${s.memberName}'s signature: ${req.title}`;
-    }
+    const { ids, title } = await stepRecipients(req, s, chairs);
     await notifyUsers(ids, { kind: "approval_needed", title, body: s.label, href: req.href, dedupeKey: `approval:${s.id}` });
   }
 }
@@ -208,11 +230,31 @@ async function seesFacility(actor: Actor, facilityId: number | null): Promise<bo
 
 /** Whether `actor` may decide this step (for showing buttons). */
 export async function verdictFor(step: StepRow, req: RequestRow, steps: StepRow[], actor: Actor, chairs?: number[]): Promise<Verdict> {
-  if (!(await seesFacility(actor, req.facilityId))) return { ok: false, reason: "You can't see this facility." };
-  return canDecide(toState(step), actor, {
+  return (await decisionFor(step, req, steps, actor, chairs)).verdict;
+}
+
+/**
+ * Whether `actor` may decide this step, and for whom: themselves (forUser null), or — wave 41 — a person who is out of
+ * office and named them as deputy.
+ */
+export async function decisionFor(step: StepRow, req: RequestRow, steps: StepRow[], actor: Actor, chairs?: number[]): Promise<{ verdict: Verdict; forUser: { id: number; name: string } | null }> {
+  if (!(await seesFacility(actor, req.facilityId))) return { verdict: { ok: false, reason: "You can't see this facility." }, forUser: null };
+  const ctx = {
     entity: req.entity, requestStatus: req.status, requestedById: req.requestedById,
     chairUserIds: chairs ?? (req.entity === "AWARD" ? await awardChairs(req.entityId) : []), steps: steps.map(toState),
-  });
+  };
+  const own = canDecide(toState(step), actor, ctx);
+  if (own.ok || isMemberStep(toState(step)) || step.status !== "PENDING") return { verdict: own, forUser: null };
+  const today = todayISO();
+  const principals = principalsOf(actor.id, await activeDelegations(today), today);
+  if (!principals.length) return { verdict: own, forUser: null };
+  const people = await db.select({ id: users.id, name: users.name, role: users.role, active: users.active }).from(users).where(inArray(users.id, principals));
+  for (const p of people) {
+    if (!p.active) continue;
+    if (step.approverRole && !(await usersWithRole(step.approverRole as Role, req.facilityId)).includes(p.id)) continue;
+    if (canDecideFor(toState(step), actor, p, ctx).ok) return { verdict: { ok: true }, forUser: { id: p.id, name: p.name } };
+  }
+  return { verdict: own, forUser: null };
 }
 
 /** Approve or reject a step. A comment is required to reject. */
@@ -223,13 +265,14 @@ export async function decideStep(stepId: number, decision: "APPROVED" | "REJECTE
   const loaded = await loadForDecision(stepId);
   if (!loaded) return { ok: false, error: "This approval step no longer exists." };
   const { step, req, steps } = loaded;
-  const v = await verdictFor(step, req, steps, me);
+  const { verdict: v, forUser } = await decisionFor(step, req, steps, me);
   if (!v.ok) return { ok: false, error: v.reason };
   const done = await db.update(approvalSteps).set({ status: decision, decidedById: me.id, decidedAt: new Date(), comment: text?.slice(0, 2000) ?? null })
     .where(and(eq(approvalSteps.id, stepId), eq(approvalSteps.status, "PENDING"))).returning({ id: approvalSteps.id });
   if (!done.length) return { ok: false, error: "Someone decided this step a moment ago. Reload the page." };
+  if (forUser) await recordDecidedFor(stepId, forUser);
   await logActivity(LOG_ENTITY[req.entity], req.entityId, decision === "APPROVED" ? "approval_step_approved" : "approval_step_rejected",
-    `${step.label}: ${decision === "APPROVED" ? (isMemberStep(toState(step)) ? "signed" : "approved") : "rejected"} by ${me.name}${text ? ` — “${text}”` : ""}`, me.name);
+    `${step.label}: ${decision === "APPROVED" ? (isMemberStep(toState(step)) ? "signed" : "approved") : "rejected"} by ${me.name}${forUser ? ` for ${forUser.name}` : ""}${text ? ` — “${text}”` : ""}`, me.name);
   await recompute(req.id, me);
   return { ok: true, message: decision === "APPROVED" ? (isMemberStep(toState(step)) ? "Signed." : "Approved.") : "Rejected. The requester has been told." };
 }
@@ -296,7 +339,7 @@ async function viewOf(req: RequestRow): Promise<ApprovalView> {
   };
 }
 
-export type PendingItem = { request: RequestRow; step: StepRow; mode: "decide" | "paper" };
+export type PendingItem = { request: RequestRow; step: StepRow; mode: "decide" | "paper"; forName?: string | null };
 
 /** Steps this user can act on now (decide, or record a paper signature), limited to the facilities they can see. */
 export async function pendingForUser(user: Actor): Promise<PendingItem[]> {
@@ -306,14 +349,14 @@ export async function pendingForUser(user: Actor): Promise<PendingItem[]> {
     .innerJoin(approvalRequests, eq(approvalRequests.id, approvalSteps.requestId))
     .where(and(eq(approvalSteps.status, "PENDING"), eq(approvalRequests.status, "PENDING"),
       scope ? sql`(${approvalRequests.facilityId} is null or ${inArray(approvalRequests.facilityId, scope)})` : undefined))
-    .orderBy(asc(approvalRequests.requestedAt));
+    .orderBy(asc(approvalRequests.requestedAt)).limit(500);
   const out: PendingItem[] = [];
   const allSteps = new Map<number, StepRow[]>();
   for (const r of rows) {
     if (!allSteps.has(r.request.id)) allSteps.set(r.request.id, await db.select().from(approvalSteps).where(eq(approvalSteps.requestId, r.request.id)));
     if (canRecordPaper(toState(r.step), user, r.request.status).ok) { out.push({ ...r, mode: "paper" }); continue; }
-    const v = await verdictFor(r.step, r.request, allSteps.get(r.request.id)!, user);
-    if (v.ok) out.push({ ...r, mode: "decide" });
+    const v = await decisionFor(r.step, r.request, allSteps.get(r.request.id)!, user);
+    if (v.verdict.ok) out.push({ ...r, mode: "decide", forName: v.forUser?.name ?? null });
   }
   return out;
 }

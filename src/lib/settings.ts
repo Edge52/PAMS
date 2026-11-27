@@ -65,6 +65,12 @@ export type Settings = {
   /** Wave 40: cost of an hour of the hospital's own technicians (EGP). Null = not set: in-house labour is left out of
    *  service cost and COSR. */
   labourRateEgp: number | null;
+  /** Wave 41: default notification channel per role and kind (APP | EMAIL | BOTH | OFF; lib/notifications/prefs). */
+  notificationRoleDefaults: Record<string, Record<string, string>>;
+  /** Wave 41: working days an approval step may wait before the approver is reminded, per entity (PO, BOQ…). */
+  approvalEscalationDays: Record<string, number>;
+  /** Wave 41: minutes to acknowledge a fault report (LIFE_SUPPORT, HIGH, NORMAL, LOW; lib/assets/fault-escalation). */
+  faultAckMinutes: Record<string, number>;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -98,6 +104,9 @@ export const DEFAULT_SETTINGS: Settings = {
   landedLocalDeliveryPct: 1,
   budgetYearStartMonth: 7,
   labourRateEgp: null,
+  notificationRoleDefaults: {},
+  approvalEscalationDays: {},
+  faultAckMinutes: {},
 };
 
 export async function getSettings(): Promise<Settings> {

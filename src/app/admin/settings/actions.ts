@@ -140,7 +140,10 @@ export async function saveSettings(_prev: ActionState, fd: FormData): Promise<Ac
   const p = settingsSchema.safeParse(formObject(fd));
   if (!p.success) return zodFail(p.error);
   const before = await getSettings();
-  const next: Settings = { ...p.data, tenderMinDays: before.tenderMinDays, emailEnabled: fd.get("emailEnabled") === "on", assistantEnabled: fd.get("assistantEnabled") === "on", demoAccounts: fd.get("demoAccounts") === "on", breachedPasswordCheck: fd.get("breachedPasswordCheck") === "on" };
+  const next: Settings = { ...p.data, tenderMinDays: before.tenderMinDays,
+    // Wave 41: saved on Administration › Notifications and escalation.
+    notificationRoleDefaults: before.notificationRoleDefaults, approvalEscalationDays: before.approvalEscalationDays, faultAckMinutes: before.faultAckMinutes,
+    emailEnabled: fd.get("emailEnabled") === "on", assistantEnabled: fd.get("assistantEnabled") === "on", demoAccounts: fd.get("demoAccounts") === "on", breachedPasswordCheck: fd.get("breachedPasswordCheck") === "on" };
   if (next.stateCouncilFromEgp < next.mofRepFromEgp) return fail("The State Council threshold is normally at or above the Ministry of Finance threshold. Check the amounts.");
   const penaltyProblem = penaltySettingsProblem(next);
   if (penaltyProblem) return fail(penaltyProblem);

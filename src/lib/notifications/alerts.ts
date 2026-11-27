@@ -178,6 +178,16 @@ async function doRun(trigger: string): Promise<AlertRunResult> {
       const n = await notifyUsers(await who("PROCUREMENT", a.facilityId), a.n);
       if (n) { created += n; byKind[a.n.kind] = (byKind[a.n.kind] ?? 0) + n; }
     }
+    // Wave 41: approval steps waiting too long (reminder, then the director), fault reports nobody picked up, and
+    // the daily digest emails.
+    const { runApprovalEscalations } = await import("@/lib/approvals/escalation-server");
+    const esc = await runApprovalEscalations();
+    if (esc) { created += esc; byKind.approval_escalation = (byKind.approval_escalation ?? 0) + esc; }
+    const { runFaultEscalations } = await import("@/lib/assets/fault-escalation-server");
+    const faults = await runFaultEscalations();
+    if (faults) { created += faults; byKind.fault_escalation = (byKind.fault_escalation ?? 0) + faults; }
+    const { runDigests } = await import("./digest-server");
+    await runDigests();
     // Approvals that ended while their effect was not applied (audit DL-24/DL-25): apply it now.
     const { reconcileApprovalEffects } = await import("@/lib/approvals/effects");
     const repaired = await reconcileApprovalEffects();

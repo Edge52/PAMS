@@ -5,6 +5,8 @@
  * and a process-wide flag stops a second scheduler (dev hot reloads call register() again).
  */
 export const ALERT_INTERVAL_MS = 60 * 60 * 1000;
+/** Wave 41: fault reports not picked up (life-support target 30 minutes) are checked more often than hourly. */
+export const FAULT_CHECK_MS = 5 * 60 * 1000;
 const STARTUP_DELAY_MS = 15 * 1000;
 
 const g = globalThis as unknown as { hpamsAlertScheduler?: boolean };
@@ -22,4 +24,8 @@ export function startAlertScheduler(): void {
   };
   setTimeout(() => tick("startup"), STARTUP_DELAY_MS).unref?.();
   setInterval(() => tick("hourly"), ALERT_INTERVAL_MS).unref?.();
+  setInterval(() => {
+    import("../assets/fault-escalation-server").then(({ runFaultEscalations }) => runFaultEscalations())
+      .catch((e) => console.error("[faults] check failed:", e));
+  }, FAULT_CHECK_MS).unref?.();
 }
