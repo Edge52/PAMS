@@ -15,6 +15,7 @@ import { landedCost, type LandedDefaults, type LandedResult, type PriceBasis } f
 import type { Incoterm } from "./labels";
 import { getSettings, type Settings } from "../settings";
 import { sealOfferRows, type SealedRow } from "./sealed";
+import { groupBy } from "../grouping";
 import { convert, logActivity } from "@/lib/server-utils";
 import { advanceTo, EXCLUDED_OFFER_STATUSES, humanizeEnum } from "./labels";
 import {
@@ -420,6 +421,17 @@ export async function evaluationLock(offer: { id: number; status: string }): Pro
   if (pos.length) return `${pos.join(", ")} was raised from this offer, so its prices and evaluation are locked. Cancel the purchase order first if the offer really must change.`;
   if (offer.status === "AWARDED") return "This offer is awarded, so its prices and evaluation are locked. Revoke the award first to change it.";
   return null;
+}
+
+/** Wave 41: `mandatoryFailures` for several offers in one query, keyed by offer id (offers with none are absent). */
+export async function mandatoryFailuresFor(offerIds: number[]): Promise<Map<number, string[]>> {
+  if (!offerIds.length) return new Map();
+  const rows = await db.select({ offerId: offerLines.offerId, parameter: specItems.parameter, device: offerLines.description }).from(offerCompliance)
+    .innerJoin(offerLines, eq(offerLines.id, offerCompliance.offerLineId))
+    .innerJoin(specItems, eq(specItems.id, offerCompliance.specItemId))
+    .where(and(inArray(offerLines.offerId, offerIds), eq(specItems.mandatory, true), eq(offerCompliance.status, "NOT_COMPLIANT")))
+    .orderBy(offerLines.offerId, offerCompliance.id);
+  return groupBy(rows, (r) => r.offerId, (r) => `${r.parameter} (${r.device})`);
 }
 
 /** Mandatory spec items this offer answered NOT_COMPLIANT. */

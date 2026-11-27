@@ -9,7 +9,7 @@ import { scopeWhere } from "@/lib/assets/access";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { addMonthsISO, CURRENCIES, formatDate, formatMoney, todayISO } from "@/lib/format";
-import { calledOff } from "@/lib/procurement/money-server";
+import { calledOffValues } from "@/lib/procurement/money-server";
 import { createFrameworkAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export default async function FrameworksPage({ searchParams }: { searchParams: P
   const rows = await db.select({ f: frameworks, supplier: suppliers.name, facility: facilities.name }).from(frameworks).innerJoin(suppliers, eq(suppliers.id, frameworks.supplierId))
     .leftJoin(facilities, eq(facilities.id, frameworks.facilityId))
     .where(scope === null ? undefined : or(isNull(frameworks.facilityId), scope.length ? inArray(frameworks.facilityId, scope) : undefined)).orderBy(desc(frameworks.endDate));
-  const used = new Map(await Promise.all(rows.map(async (r) => [r.f.id, (await calledOff(r.f.id)).value] as const)));
+  const used = await calledOffValues(rows.map((r) => r.f.id)); // wave 41: one query, not one per agreement
   const canEdit = can(me.role, "procurement.edit");
   const [sups, facs] = canEdit ? await Promise.all([
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).orderBy(asc(suppliers.name)),
