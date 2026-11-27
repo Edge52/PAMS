@@ -1,24 +1,25 @@
 import Link from "next/link";
 import { AutoSubmit } from "@/components/auto-submit";
-import { and, asc, desc, eq, ilike, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { offers, purchaseOrders, suppliers } from "@/db/schema";
+import { offers, poLines, purchaseOrders, suppliers } from "@/db/schema";
 import { EmptyState, Input, LinkButton, PageHeader, Select, StatusBadge } from "@/components/ui";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { tableSort } from "@/components/ui/data-table-utils";
-import { formatMoney } from "@/lib/format";
+import { CURRENCIES, formatMoney } from "@/lib/format";
 import { options, SUPPLIER_TYPES, type SupplierType } from "@/lib/procurement/labels";
-import { poTotals, sumInCurrency } from "@/lib/procurement/server";
 import { Stars } from "@/components/procurement/stars";
 import { SavedFilters } from "@/components/saved-filters";
-import { sortRows } from "@/lib/list";
+import { ListPager } from "@/components/list-pager";
+import { PAGE_SIZE, pageFor, sqlOrder } from "@/lib/paging";
+import { rateToEgp } from "@/lib/server-utils";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Suppliers" };
 
-export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{ q?: string; type?: string; show?: string; sort?: string; dir?: string }> }) {
+export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{ q?: string; type?: string; show?: string; sort?: string; dir?: string; page?: string }> }) {
   const me = await requirePermission("procurement.view");
   const sp = await searchParams;
   const where: SQL[] = [];
@@ -31,22 +32,21 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
   const sort = tableSort(sp, SORT_KEYS);
   const offerCount = sql<number>`(select count(*)::int from ${offers} where ${offers.supplierId} = ${suppliers.id})`;
   const awardedCount = sql<number>`(select count(*)::int from ${offers} where ${offers.supplierId} = ${suppliers.id} and ${offers.status} = 'AWARDED')`;
-  const way = sort?.dir === "desc" ? desc : asc;
-  const sqlOrder = { name: [way(suppliers.name)], type: [way(suppliers.type), asc(suppliers.name)],
-    rating: [sort?.dir === "desc" ? sql`${suppliers.rating} desc nulls last` : sql`${suppliers.rating} asc nulls last`, asc(suppliers.name)],
-    offers: [way(offerCount), asc(suppliers.name)], awarded: [way(awardedCount), asc(suppliers.name)], ordered: [asc(suppliers.name)] }[sort?.key ?? "name"];
-  const found = await db.select({ s: suppliers, offerCount, awardedCount })
-    .from(suppliers).where(where.length ? and(...where) : undefined).orderBy(...sqlOrder);
-
-  const pos = found.length ? await db.select({ id: purchaseOrders.id, supplierId: purchaseOrders.supplierId, currency: purchaseOrders.currency })
-    .from(purchaseOrders).where(ne(purchaseOrders.status, "CANCELLED")) : [];
-  const totals = await poTotals(pos.map((p) => p.id));
-  const ordered = new Map<number, { total: number | null; partial: number }>();
-  for (const r of found) {
-    const mine = pos.filter((p) => p.supplierId === r.s.id);
-    if (mine.length) ordered.set(r.s.id, await sumInCurrency(mine.map((p) => ({ amount: totals.get(p.id)?.value ?? 0, currency: p.currency })), "EGP"));
-  }
-  const rows = sort?.key === "ordered" ? sortRows(found, { key: "ordered", dir: sort.dir }, { ordered: (r) => ordered.get(r.s.id)?.total ?? 0 }) : found;
+  // Wave 41: counted, sorted and paged in the database. "Ordered" is every order not cancelled, in EGP at the latest
+  // saved rates, worked out in one query (it used to read every PO and convert per supplier).
+  const egpRate = new Map(await Promise.all(CURRENCIES.map(async (c) => [c as string, await rateToEgp(c)] as const)));
+  const rated = [...egpRate].filter(([, r]) => r != null);
+  const rateCase = sql.join([sql`case ${purchaseOrders.currency}`, ...rated.map(([c, r]) => sql`when ${c} then ${r}::numeric`), sql`else null end`], sql` `);
+  const ordered = sql<string | null>`(select sum((select coalesce(sum(${poLines.quantity} * ${poLines.unitPrice}), 0) from ${poLines} where ${poLines.poId} = ${purchaseOrders.id}) * coalesce(${rateCase}, 0))
+    from ${purchaseOrders} where ${purchaseOrders.supplierId} = ${suppliers.id} and ${purchaseOrders.status} <> 'CANCELLED')`;
+  const unrated = sql<boolean>`exists (select 1 from ${purchaseOrders} where ${purchaseOrders.supplierId} = ${suppliers.id} and ${purchaseOrders.status} <> 'CANCELLED' and (${rateCase}) is null)`;
+  const whereSql = where.length ? and(...where) : undefined;
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(suppliers).where(whereSql);
+  const paging = pageFor(sp, n, PAGE_SIZE);
+  const rows = await db.select({ s: suppliers, offerCount, awardedCount, ordered, unrated })
+    .from(suppliers).where(whereSql)
+    .orderBy(...sqlOrder(sort, { name: suppliers.name, type: suppliers.type, rating: suppliers.rating, offers: offerCount, awarded: awardedCount, ordered }, [asc(suppliers.name)], [asc(suppliers.id)]))
+    .limit(paging.size).offset(paging.offset);
   const filtered = Boolean(q || sp.type || sp.show === "all");
 
   return (
@@ -66,22 +66,23 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
         {filtered && <Link href="/procurement/suppliers" className="px-2 py-1.5 text-sm text-primary hover:underline">Clear</Link>}
       </form>
       <SavedFilters />
-      {rows.length === 0 ? (
+      {n === 0 ? (
         filtered ? <EmptyState title="No suppliers match" action={<LinkButton href="/procurement/suppliers">Show all suppliers</LinkButton>}>Try another name or brand.</EmptyState>
           : <EmptyState title="No suppliers yet" action={can(me.role, "suppliers.edit") ? <LinkButton href="/procurement/suppliers/new" variant="primary">Add the first supplier</LinkButton> : undefined}>
             Add the local agents and distributors you invite to tenders, with the brands they represent.</EmptyState>
       ) : (
         <DataTable id="suppliers" label="Suppliers" path="/procurement/suppliers" sp={sp} sort={sort} rows={rows} rowKey={(r) => r.s.id}
-          rowClassName={(r) => (r.s.active ? undefined : "text-muted")} columns={supplierColumns(ordered)} />
+          rowClassName={(r) => (r.s.active ? undefined : "text-muted")} columns={supplierColumns()}
+          footer={<ListPager paging={paging} path="/procurement/suppliers" sp={sp} what="suppliers" />} />
       )}
     </>
   );
 }
 
 const SORT_KEYS = ["name", "type", "rating", "offers", "awarded", "ordered"] as const;
-type SupplierRow = { s: typeof suppliers.$inferSelect; offerCount: number; awardedCount: number };
+type SupplierRow = { s: typeof suppliers.$inferSelect; offerCount: number; awardedCount: number; ordered: string | null; unrated: boolean };
 
-function supplierColumns(ordered: Map<number, { total: number | null; partial: number }>): Column<SupplierRow>[] {
+function supplierColumns(): Column<SupplierRow>[] {
   return [
     { key: "name", label: "Supplier", sort: true, className: "min-w-48",
       cell: ({ s }) => <><Link href={`/procurement/suppliers/${s.id}`} className="font-semibold text-primary hover:underline">{s.name}</Link>
@@ -93,6 +94,6 @@ function supplierColumns(ordered: Map<number, { total: number | null; partial: n
     { key: "offers", label: "Offers", sort: true, align: "right", optional: true, cell: (r) => r.offerCount },
     { key: "awarded", label: "Awarded", sort: true, align: "right", optional: true, cell: (r) => r.awardedCount },
     { key: "ordered", label: "Ordered (EGP)", sort: true, align: "right", optional: true, className: "whitespace-nowrap",
-      cell: ({ s }) => { const o = ordered.get(s.id); return o ? (o.total == null ? `${formatMoney(o.partial, "EGP", { compact: true })}*` : formatMoney(o.total, "EGP", { compact: true })) : "—"; } },
+      cell: (r) => (r.ordered == null ? "—" : <span title={r.unrated ? "Some orders are in a currency with no saved rate" : undefined}>{formatMoney(Number(r.ordered), "EGP", { compact: true })}{r.unrated ? "*" : ""}</span>) },
   ];
 }
