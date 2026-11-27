@@ -14,12 +14,12 @@ export function ApiTokenForm({ action, scopes, facilities }: { action: Act; scop
         <input name="name" required maxLength={120} placeholder="Power BI at the ministry" className={`${box} w-full max-w-md`} aria-describedby="tok-name" />
         {s?.fields?.name && <span id="tok-name" className="text-sm text-danger">{s.fields.name}</span>}</label>
       <fieldset><legend className="mb-1 text-sm font-semibold">May read</legend>
-        {scopes.map((o) => <label key={o.value} className="flex items-center gap-2 text-sm"><input type="checkbox" name="scopes" value={o.value} defaultChecked={o.value === "assets:read"} className="size-4" /> <code className="text-xs">{o.value}</code> {o.label}</label>)}
+        {scopes.map((o) => <label key={o.value} className="flex items-center gap-2 py-0.5 text-sm"><input type="checkbox" name="scopes" value={o.value} defaultChecked={o.value === "assets:read"} className="size-6" /> <code className="text-xs">{o.value}</code> {o.label}</label>)}
         {s?.fields?.scopes && <p className="text-sm text-danger">{s.fields.scopes}</p>}
       </fieldset>
       <fieldset><legend className="mb-1 text-sm font-semibold">Hospitals</legend>
         <p className="text-xs text-muted">Tick none for every hospital.</p>
-        {facilities.map((f) => <label key={f.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="facilityIds" value={f.id} className="size-4" /> {f.code} · {f.name}</label>)}
+        {facilities.map((f) => <label key={f.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="facilityIds" value={f.id} className="size-6" /> {f.code} · {f.name}</label>)}
       </fieldset>
       <label className="block"><span className="mb-1 block text-sm font-semibold">Valid for (days)</span>
         <input type="number" name="days" min={1} max={366} defaultValue={90} className={`${box} w-28`} />
