@@ -132,3 +132,12 @@ export function holidaysIn<T extends { day: string }>(list: T[], fromISO: string
   return list.filter((h) => h.day >= fromISO && h.day <= toISO).sort((a, b) => a.day.localeCompare(b.day));
 }
 
+
+/**
+ * Wave 41: hours between two instants that fall inside the covered intervals (response and repair times "in
+ * covered hours"). `covered` must span the whole job; outside it nothing counts.
+ */
+export function coveredHoursBetween(covered: Interval[], a: Date, b: Date): number {
+  if (!(b.getTime() > a.getTime())) return 0;
+  return totalMs(intersectIntervals([[a.getTime(), b.getTime()]], covered)) / 3_600_000;
+}

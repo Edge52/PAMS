@@ -49,7 +49,11 @@ export default async function StatementPage({ params, searchParams }: { params: 
   const cov = await coverageFor(c.id);
   const hols = cov && !cov.allHours && cov.excludeHolidays ? await holidaysBetween(c.facilityId, addDays(localDate(from), -1), localDate(to)) : [];
   const coveredH = cov && !cov.allHours ? coveredIntervals(cov, hols.map((h) => h.day), from, to) : null;
-  const s = contractStatement(terms, jobs, covered.length, from, to, coveredH);
+  // Wave 41: response and repair in covered hours too, from the earliest report (a job may start the month before).
+  const earliest = jobs.reduce((m, j) => (j.reportedAt < m ? j.reportedAt : m), from);
+  const histHols = cov && !cov.allHours && cov.excludeHolidays && earliest < from ? await holidaysBetween(c.facilityId, addDays(localDate(earliest), -1), localDate(to)) : hols;
+  const clock = cov && !cov.allHours ? coveredIntervals(cov, histHols.map((h) => h.day), earliest, to) : null;
+  const s = contractStatement(terms, jobs, covered.length, from, to, coveredH, clock);
   const holsShown = hols.filter((h) => h.day >= localDate(from) && h.day <= localDate(new Date(to.getTime() - 1)));
   const cur = c.currency ?? "EGP";
   const title = (n: number) => jobs.find((j) => j.id === n)?.title ?? "";
@@ -85,12 +89,13 @@ export default async function StatementPage({ params, searchParams }: { params: 
         </div>
         {holsShown.length > 0 && <p className="mb-3 text-xs text-muted">Public holidays not covered: {holsShown.map((h) => `${formatDate(h.day)} ${h.name}${h.approximate ? " (date approximate)" : ""}`).join("; ")}.</p>}
         <table className="w-full border-collapse text-xs">
-          <thead><tr className="border-b border-line text-left"><th className="py-1">Job</th><th>Device</th><th>Reported</th><th className="text-right">Response{c.responseHours ? ` (≤ ${c.responseHours} h)` : ""}</th><th className="text-right">Repair{c.repairHours ? ` (≤ ${c.repairHours} h)` : ""}</th><th className="text-right">Late</th></tr></thead>
+          <thead><tr className="border-b border-line text-left"><th className="py-1">Job</th><th>Device</th><th>Reported</th><th className="text-right">Response{c.responseHours ? ` (≤ ${c.responseHours} h)` : ""}{clock ? <span className="block font-normal text-muted">covered hours</span> : null}</th><th className="text-right">Repair{c.repairHours ? ` (≤ ${c.repairHours} h)` : ""}{clock ? <span className="block font-normal text-muted">covered hours</span> : null}</th><th className="text-right">Late</th></tr></thead>
           <tbody>{s.jobs.length === 0 ? <tr><td colSpan={6} className="py-2 text-muted">No breakdowns on covered devices this month.</td></tr> : s.jobs.map((j) => (
             <tr key={j.id} className="border-b border-line/60 align-top">
               <td className="py-1"><Link href={`/assets/work-orders/${j.id}`} className="font-mono text-primary hover:underline">{j.number}</Link><br /><span className="text-muted">{title(j.id)}</span></td>
               <td className="font-mono">{j.tag}</td><td>{formatDateTime(j.reportedAt)}{j.reportedAt < from ? <span className="block text-muted">previous month</span> : null}</td>
-              <td className="text-right">{fmtH(j.responseH)}</td><td className="text-right">{j.open ? `open (${fmtH((to.getTime() - j.reportedAt.getTime()) / 3.6e6)})` : fmtH(j.repairH)}</td>
+              <td className="text-right">{fmtH(j.responseH)}{j.inCoveredHours && j.responseClockH != null && <span className="block text-muted">{fmtH(j.responseClockH)} on the clock</span>}</td>
+              <td className="text-right">{j.open ? `open (${fmtH((to.getTime() - j.reportedAt.getTime()) / 3.6e6)})` : fmtH(j.repairH)}{!j.open && j.inCoveredHours && j.repairClockH != null && <span className="block text-muted">{fmtH(j.repairClockH)} on the clock</span>}</td>
               <td className={`text-right ${j.lateH > 0 ? "font-semibold text-danger" : ""}`}>{j.lateH > 0 ? fmtH(j.lateH) : "—"}</td>
             </tr>
           ))}</tbody>
@@ -106,7 +111,7 @@ export default async function StatementPage({ params, searchParams }: { params: 
         <div className="mt-8 grid grid-cols-2 gap-6 text-xs">
           {["Biomedical engineering", "Supplier"].map((w) => <div key={w} className="border-t border-ink pt-1">{w}: name, signature, date</div>)}
         </div>
-        <p className="mt-3 text-[10px] text-muted">Response is from the report to the start of work; repair from the report to the device back in use. Late hours are charged in the month a job was reported; downtime counts in every month it falls in{coveredH ? ", and only inside the covered hours, with overlapping jobs counted once" : ""}. From the work orders as recorded on {formatDate(new Date())}.</p>
+        <p className="mt-3 text-[10px] text-muted">Response is from the report to the start of work; repair from the report to the device back in use{clock ? ", both counted in the covered hours" : ""}. Late hours are charged in the month a job was reported; downtime counts in every month it falls in{coveredH ? ", and only inside the covered hours, with overlapping jobs counted once" : ""}. From the work orders as recorded on {formatDate(new Date())}.</p>
       </section>
     </>
   );

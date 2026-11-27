@@ -127,7 +127,7 @@ export default async function ProcurementAnalyticsPage({ searchParams }: { searc
                 { key: "penalty", label: "Penalties", align: "right", cell: (s) => (s.penaltyCount ? <>{formatMoney(s.penaltyEgp, "EGP", { compact: true })}<span className="block text-xs text-muted">{s.penaltyCount} invoice{s.penaltyCount === 1 ? "" : "s"}</span></> : "—") },
                 { key: "faults", label: `Faults within ${EARLY_FAULT_DAYS} days`, align: "right", cell: (s) => (s.earlyFaultShare == null ? "—" : <>{pct(s.earlyFaultShare)}<span className="block text-xs text-muted">of {s.devicesInstalled} devices</span></>) },
                 { key: "uptime", label: "Uptime target met", align: "right", cell: (s) => (s.uptimeOf ? `${s.uptimeMet} of ${s.uptimeOf}` : "—") },
-                { key: "response", label: "Response (median)", align: "right", cell: (s) => (s.medianResponseH == null ? "—" : <>{formatNumber(s.medianResponseH, 1)} h<span className="block text-xs text-muted">n = {s.responseN}</span></>) },
+                { key: "response", label: "Response (median, covered hours)", align: "right", cell: (s) => (s.medianResponseH == null ? "—" : <>{formatNumber(s.medianResponseH, 1)} h<span className="block text-xs text-muted">n = {s.responseN}</span></>) },
                 { key: "awards", label: "Awards", align: "right", cell: (s) => formatNumber(s.awards) },
               ]} />
           )}

@@ -13,6 +13,7 @@ import {
 import { addDaysISO, num } from "@/lib/format";
 import { loadFx } from "@/lib/server-utils";
 import { contractStatement } from "@/lib/assets/planning";
+import { coveredResponseHours } from "@/lib/assets/coverage-server";
 import type { Filters } from "./core";
 import { COMMITTED_PO, typeUnder } from "./cost-server";
 import { inScope } from "./scope-server";
@@ -147,7 +148,8 @@ export async function loadSupplierFacts(f: Filters, scope: number[], today: stri
     db.select({ supplierId: offers.supplierId, n: sql<number>`count(*)::int` }).from(offers).innerJoin(projects, eq(projects.id, offers.projectId))
       .where(and(eq(offers.status, "AWARDED"), inScope(projects.facilityId, scope), sql`coalesce(${offers.awardApprovedOn}, ${offers.acceptedOn}, ${offers.offerDate}) between ${f.from} and ${f.to}`))
       .groupBy(offers.supplierId),
-    db.select({ supplierId: serviceContracts.supplierId, h: sql<number>`extract(epoch from (${workOrders.startedAt} - ${workOrders.reportedAt})) / 3600` })
+    // Wave 41: the times themselves; the hours are counted in the contract's covered hours below.
+    db.select({ supplierId: serviceContracts.supplierId, contractId: serviceContracts.id, facilityId: workOrders.facilityId, reportedAt: workOrders.reportedAt, startedAt: workOrders.startedAt })
       .from(workOrders).innerJoin(serviceContracts, eq(serviceContracts.id, workOrders.contractId))
       .where(and(inScope(workOrders.facilityId, scope), isNotNull(workOrders.startedAt), gte(workOrders.reportedAt, new Date(fromTs)), lte(workOrders.reportedAt, new Date(toTs))))
       .limit(LIMIT),
@@ -182,6 +184,7 @@ export async function loadSupplierFacts(f: Filters, scope: number[], today: stri
     return { supplierId: c.supplierId, target: c.target!, actual: s.uptimePct };
   });
 
+  const responseH = await coveredResponseHours(response.map((r) => ({ contractId: r.contractId, facilityId: r.facilityId, reportedAt: r.reportedAt, startedAt: r.startedAt! })));
   const ids = new Set<number>([...orders, ...penalties, ...faults, ...awards, ...response, ...uptime].map((r) => r.supplierId));
   const names = ids.size ? await db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(inArray(suppliers.id, [...ids])) : [];
   return names.map((s): SupplierFacts => {
@@ -193,7 +196,7 @@ export async function loadSupplierFacts(f: Filters, scope: number[], today: stri
       penaltyCount: pen.length, penaltyEgp: pen.reduce((t, p) => t + (fx.toEgp(num(p.amount), p.currency, p.date) ?? 0), 0),
       devicesInstalled: fl ? Number(fl.devices) : 0, devicesEarlyFault: fl ? Number(fl.early) : 0,
       contracts: uptime.filter((u) => u.supplierId === s.id).map((u) => ({ target: u.target, actual: u.actual })),
-      responseHours: response.filter((r) => r.supplierId === s.id).map((r) => Number(r.h)).filter((h) => Number.isFinite(h) && h >= 0),
+      responseHours: response.flatMap((r, i) => (r.supplierId === s.id ? [responseH[i]] : [])).filter((h) => Number.isFinite(h) && h >= 0),
       awards: Number(awards.find((a) => a.supplierId === s.id)?.n ?? 0),
     };
   });
