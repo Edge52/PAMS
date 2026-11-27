@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AutoSubmit } from "@/components/auto-submit";
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { projects, purchaseOrders, suppliers } from "@/db/schema";
+import { poLines, projects, purchaseOrders, suppliers } from "@/db/schema";
 import { EmptyState, Input, LinkButton, PageHeader, Select, StatusBadge } from "@/components/ui";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { tableSort } from "@/components/ui/data-table-utils";
@@ -13,7 +13,9 @@ import { options } from "@/lib/procurement/labels";
 import { PO_STATUSES, type PoStatus } from "@/lib/procurement/po-status";
 import { poTotals } from "@/lib/procurement/server";
 import { SavedFilters } from "@/components/saved-filters";
-import { sortRows } from "@/lib/list";
+import { ListPager } from "@/components/list-pager";
+import { PAGE_SIZE, pageFor, sqlOrder } from "@/lib/paging";
+import { CURRENCIES } from "@/lib/format";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
@@ -24,7 +26,7 @@ export const metadata = { title: "Purchase orders" };
 
 const OPEN: PoStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "ISSUED", "ACKNOWLEDGED", "PARTIALLY_DELIVERED"];
 
-export default async function PurchaseOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; supplierId?: string; q?: string; sort?: string; dir?: string }> }) {
+export default async function PurchaseOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; supplierId?: string; q?: string; sort?: string; dir?: string; page?: string }> }) {
   const me = await requirePermission("procurement.view");
   const prices = seesPrices(me.role); // audit R9
   const sp = await searchParams;
@@ -40,32 +42,36 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
   const q = sp.q?.trim();
   if (q) where.push(or(ilike(purchaseOrders.number, `%${q}%`), ilike(suppliers.name, `%${q}%`), ilike(projects.code, `%${q}%`))!);
 
-  // Wave 38: the sort key is checked against SORT_KEYS. Columns in the database sort in the query; value (in EGP) and
-  // received are worked out from the lines, so they sort below.
+  // Wave 41: counted, sorted and paged in the database. Value sorts in EGP (latest saved rates) so mixed currencies
+  // compare; received sorts by the share of units received.
   const sort = tableSort(sp, SORT_KEYS);
-  const way = sort?.dir === "desc" ? desc : asc;
-  const nullsLast = (c: SQL | typeof purchaseOrders.expectedDelivery) => (sort?.dir === "desc" ? sql`${c} desc nulls last` : sql`${c} asc nulls last`);
-  const sqlOrder = ({
-    number: [way(purchaseOrders.number)], supplier: [way(suppliers.name), desc(purchaseOrders.id)], project: [nullsLast(sql`${projects.code}`), desc(purchaseOrders.id)],
-    status: [way(purchaseOrders.status), desc(purchaseOrders.id)], delivery: [nullsLast(purchaseOrders.expectedDelivery), desc(purchaseOrders.id)],
-  } as Partial<Record<(typeof SORT_KEYS)[number], SQL[]>>)[sort?.key ?? "delivery"] ?? [sql`${purchaseOrders.expectedDelivery} asc nulls last`, desc(purchaseOrders.id)];
-  const [found, supplierList, anyPo] = await Promise.all([
-    db.select({
-      id: purchaseOrders.id, number: purchaseOrders.number, status: purchaseOrders.status, currency: purchaseOrders.currency,
-      issueDate: purchaseOrders.issueDate, expectedDelivery: purchaseOrders.expectedDelivery,
-      supplierId: purchaseOrders.supplierId, supplier: suppliers.name, projectId: purchaseOrders.projectId, project: projects.code,
-    }).from(purchaseOrders).innerJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId)).leftJoin(projects, eq(projects.id, purchaseOrders.projectId))
-      .where(where.length ? and(...where) : undefined).orderBy(...sqlOrder),
+  const whereSql = where.length ? and(...where) : undefined;
+  const egpRate = new Map(await Promise.all(CURRENCIES.map(async (c) => [c as string, await rateToEgp(c)] as const)));
+  const rateCase = sql.join([sql`case ${purchaseOrders.currency}`, ...[...egpRate].map(([c, r]) => sql`when ${c} then ${r ?? 0}::numeric`), sql`else 0 end`], sql` `);
+  const lineValue = sql`(select coalesce(sum(${poLines.quantity} * ${poLines.unitPrice}), 0) from ${poLines} where ${poLines.poId} = ${purchaseOrders.id})`;
+  const valueEgp = sql`(${lineValue} * ${rateCase})`;
+  const receivedShare = sql`(select coalesce(sum(least(${poLines.receivedQty}, ${poLines.quantity}))::numeric / nullif(sum(${poLines.quantity}), 0), 0) from ${poLines} where ${poLines.poId} = ${purchaseOrders.id})`;
+  const fromPo = () => db.select({ n: sql<number>`count(*)::int` }).from(purchaseOrders).innerJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId)).leftJoin(projects, eq(projects.id, purchaseOrders.projectId));
+  const [[{ n }], supplierList, anyPo, byCurrency] = await Promise.all([
+    fromPo().where(whereSql),
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).orderBy(asc(suppliers.name)),
     db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(inScope).limit(1),
+    // The totals line adds up every matching order, not just this page.
+    db.select({ currency: purchaseOrders.currency, v: sql<string>`coalesce(sum(${lineValue}), 0)` }).from(purchaseOrders)
+      .innerJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId)).leftJoin(projects, eq(projects.id, purchaseOrders.projectId))
+      .where(whereSql).groupBy(purchaseOrders.currency),
   ]);
-  const totals = await poTotals(found.map((r) => r.id));
-  const egpRate = new Map(await Promise.all([...new Set(found.map((r) => r.currency))].map(async (c) => [c, await rateToEgp(c)] as const)));
-  // Wave 21: a heading can re-sort the list. Value sorts in EGP so mixed currencies compare.
-  const rows = sort?.key === "value" || sort?.key === "received" ? sortRows(found, { key: sort.key, dir: sort.dir }, {
-    value: (r) => (totals.get(r.id)?.value ?? 0) * (egpRate.get(r.currency) ?? 1),
-    received: (r) => { const t = totals.get(r.id); return t && t.ordered ? t.received / t.ordered : 0; },
-  }) : found;
+  const paging = pageFor(sp, n, PAGE_SIZE);
+  const rows = await db.select({
+    id: purchaseOrders.id, number: purchaseOrders.number, status: purchaseOrders.status, currency: purchaseOrders.currency,
+    issueDate: purchaseOrders.issueDate, expectedDelivery: purchaseOrders.expectedDelivery,
+    supplierId: purchaseOrders.supplierId, supplier: suppliers.name, projectId: purchaseOrders.projectId, project: projects.code,
+  }).from(purchaseOrders).innerJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId)).leftJoin(projects, eq(projects.id, purchaseOrders.projectId))
+    .where(whereSql)
+    .orderBy(...sqlOrder(sort, { number: purchaseOrders.number, supplier: suppliers.name, project: projects.code, status: purchaseOrders.status, value: valueEgp, delivery: purchaseOrders.expectedDelivery, received: receivedShare },
+      [sql`${purchaseOrders.expectedDelivery} asc nulls last`], [desc(purchaseOrders.id)]))
+    .limit(paging.size).offset(paging.offset);
+  const totals = await poTotals(rows.map((r) => r.id));
   const filtered = status !== "open" || Boolean(sp.supplierId) || Boolean(q);
 
   return (
@@ -97,17 +103,16 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
       ) : (
         <>
         <DataTable id="purchase-orders" label="Purchase orders" path="/procurement/purchase-orders" sp={sp} sort={sort} rows={rows} rowKey={(r) => r.id}
-          columns={poColumns(totals, prices)} />
+          columns={poColumns(totals, prices)} footer={<ListPager paging={paging} path="/procurement/purchase-orders" sp={sp} what="orders" />} />
         {/* Wave 19: the orders listed, added up in one currency. */}
         {(() => {
-          const by = new Map<string, number>();
-          for (const r of rows) by.set(r.currency, (by.get(r.currency) ?? 0) + (totals.get(r.id)?.value ?? 0));
+          const by = new Map(byCurrency.map((r) => [r.currency, Number(r.v)]));
           const parts = [...by].map(([c, v]) => shownMoney(prices, v, c));
           const missing = [...by.keys()].filter((c) => egpRate.get(c) == null);
           const egp = [...by].reduce((t, [c, v]) => t + v * (egpRate.get(c) ?? 0), 0);
           return (
             <p className="mt-2 text-right text-sm text-muted">
-              {rows.length} order{rows.length === 1 ? "" : "s"}: {parts.join(" + ")}
+              {n} order{n === 1 ? "" : "s"}: {parts.join(" + ")}
               {by.size > 1 || !by.has("EGP") ? <> · <b className="text-ink">{shownMoney(prices, egp, "EGP")}</b> at the latest saved exchange rates{missing.length ? ` (no rate for ${missing.join(", ")})` : ""}</> : null}
             </p>
           );

@@ -2,16 +2,19 @@ import Link from "next/link";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { invoiceLines, invoices, purchaseOrders, suppliers } from "@/db/schema";
-import { EmptyState, PageHeader, Panel, StatusBadge, TabLinks } from "@/components/ui";
+import { EmptyState, PageHeader, StatusBadge, TabLinks } from "@/components/ui";
 import { Notice } from "@/components/assets/bits";
 import { scopeWhere } from "@/lib/assets/access";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatMoney, todayISO } from "@/lib/format";
-import { pageFor, pagingNote } from "@/lib/list";
+import { PAGE_SIZE, pageFor, sqlOrder } from "@/lib/paging";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { tableSort } from "@/components/ui/data-table-utils";
+import { ListPager } from "@/components/list-pager";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Supplier invoices" };
-const PAGE_SIZE = 100;
+const SORT_KEYS = ["number", "supplier", "po", "date", "due", "amount", "status"] as const;
 
 const TABS = [
   { key: "decide", label: "To decide", statuses: ["MATCHED", "EXCEPTION"] },
@@ -29,40 +32,34 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   // B6: paged instead of stopping at 300 rows without a word.
   const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(invoices).innerJoin(purchaseOrders, eq(purchaseOrders.id, invoices.poId)).where(where);
   const paging = pageFor(sp, n, PAGE_SIZE);
-  const rows = await db.select({ i: invoices, po: purchaseOrders.number, supplier: suppliers.name, total: sql<string>`(select sum(${invoiceLines.quantity} * ${invoiceLines.unitPrice}) from ${invoiceLines} where ${invoiceLines.invoiceId} = ${invoices.id})` })
+  const sort = tableSort(sp, SORT_KEYS);
+  const total = sql<string>`(select sum(${invoiceLines.quantity} * ${invoiceLines.unitPrice}) from ${invoiceLines} where ${invoiceLines.invoiceId} = ${invoices.id})`;
+  const rows = await db.select({ i: invoices, po: purchaseOrders.number, supplier: suppliers.name, total })
     .from(invoices).innerJoin(purchaseOrders, eq(purchaseOrders.id, invoices.poId)).innerJoin(suppliers, eq(suppliers.id, invoices.supplierId))
-    .where(where).orderBy(desc(invoices.invoiceDate), desc(invoices.id)).limit(PAGE_SIZE).offset(paging.offset);
-  const pageHref = (page: number) => `/procurement/invoices?tab=${tab.key}${page > 1 ? `&page=${page}` : ""}`;
-  const note = pagingNote(paging, "invoices");
+    .where(where).orderBy(...sqlOrder(sort, { number: invoices.number, supplier: suppliers.name, po: purchaseOrders.number, date: invoices.invoiceDate, due: invoices.dueDate, amount: total, status: invoices.status },
+      [desc(invoices.invoiceDate)], [desc(invoices.id)])).limit(PAGE_SIZE).offset(paging.offset);
   const today = todayISO();
+  const columns: Column<(typeof rows)[number]>[] = [
+    { key: "number", label: "Invoice", sort: true, cell: (r) => <><Link href={`/procurement/invoices/${r.i.id}`} className="font-mono font-semibold text-primary hover:underline">{r.i.number}</Link><div className="text-xs text-muted">{r.i.supplierInvoiceNo}</div></> },
+    { key: "supplier", label: "Supplier", sort: true, cell: (r) => r.supplier },
+    { key: "po", label: "PO", sort: true, optional: true, cellClassName: "font-mono text-xs", cell: (r) => r.po },
+    { key: "date", label: "Date", sort: true, className: "whitespace-nowrap", cell: (r) => formatDate(r.i.invoiceDate) },
+    { key: "due", label: "Due", sort: true, optional: true, className: "whitespace-nowrap",
+      cell: (r) => <span className={r.i.dueDate && r.i.dueDate < today && r.i.status !== "PAID" ? "text-danger" : ""}>{formatDate(r.i.dueDate)}</span> },
+    { key: "amount", label: "Amount", sort: true, align: "right", className: "whitespace-nowrap", cell: (r) => formatMoney(r.total, r.i.currency) },
+    { key: "status", label: "Status", sort: true, cell: (r) => <StatusBadge value={r.i.status} /> },
+  ];
   return (
     <>
       <PageHeader title="Supplier invoices" description="Each invoice is matched against what its purchase order ordered and what was received. Record one from the PO's page."
         actions={<Link href="/procurement/invoices/export" prefetch={false} className="text-sm font-semibold text-primary hover:underline">Export for finance (CSV)</Link>} />
       <Notice sp={sp} />
       <TabLinks active={tab.key} tabs={TABS.map((t) => ({ key: t.key, label: t.label, href: `/procurement/invoices?tab=${t.key}` }))} />
-      {rows.length === 0 ? <EmptyState title="Nothing here">No invoices {tab.label.toLowerCase()}.</EmptyState> : (
-        <Panel padded={false} className="mt-4">
-          <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead className="bg-sunken text-left text-muted"><tr><th className="px-3 py-2">Invoice</th><th className="px-3 py-2">Supplier</th><th className="px-3 py-2">PO</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Due</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2">Status</th></tr></thead>
-            <tbody>{rows.map((r) => (
-              <tr key={r.i.id} className="border-t border-line">
-                <td className="px-3 py-2"><Link href={`/procurement/invoices/${r.i.id}`} className="font-mono font-semibold text-primary hover:underline">{r.i.number}</Link><div className="text-xs text-muted">{r.i.supplierInvoiceNo}</div></td>
-                <td className="px-3 py-2">{r.supplier}</td><td className="px-3 py-2 font-mono text-xs">{r.po}</td><td className="px-3 py-2">{formatDate(r.i.invoiceDate)}</td>
-                <td className={`px-3 py-2 ${r.i.dueDate && r.i.dueDate < today && r.i.status !== "PAID" ? "text-danger" : ""}`}>{formatDate(r.i.dueDate)}</td>
-                <td className="px-3 py-2 text-right">{formatMoney(r.total, r.i.currency)}</td><td className="px-3 py-2"><StatusBadge value={r.i.status} /></td>
-              </tr>
-            ))}</tbody>
-          </table></div>
-          {note && (
-            <nav aria-label="Pages" className="flex flex-wrap items-center gap-3 border-t border-line px-3 py-2 text-sm">
-              <span className="text-muted">{note}</span>
-              {paging.page > 1 && <Link href={pageHref(paging.page - 1)} className="font-semibold text-primary hover:underline">Previous page</Link>}
-              {paging.page < paging.pages && <Link href={pageHref(paging.page + 1)} className="font-semibold text-primary hover:underline">Next page</Link>}
-            </nav>
-          )}
-        </Panel>
-      )}
+      <div className="mt-4">
+        <DataTable id="invoices" label="Supplier invoices" path="/procurement/invoices" sp={sp} sort={sort} rows={rows} rowKey={(r) => r.i.id} columns={columns}
+          empty={<EmptyState title="Nothing here">No invoices {tab.label.toLowerCase()}.</EmptyState>}
+          footer={<ListPager paging={paging} path="/procurement/invoices" sp={sp} what="invoices" />} />
+      </div>
     </>
   );
 }
