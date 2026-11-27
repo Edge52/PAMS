@@ -75,6 +75,7 @@ const OPEN = new Set(["/login", "/login/code", "/login/two-step", "/setup", "/fo
 const FROM_RECORD: Record<string, string> = {
   "/assets/calibration/new": "components/assets/calibration-panel.tsx",
   "/assets/disposals/new": "app/assets/[id]/page.tsx",
+  "/assets/imaging-qc/record": "app/assets/imaging-qc/page.tsx",
   "/assets/safety-tests/new": "components/assets/safety-panel.tsx",
   "/procurement/invoices/new": "components/procurement/po-money.tsx",
 };

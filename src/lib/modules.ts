@@ -88,8 +88,8 @@ const HUBS: Hub<ModuleId>[] = [
       { href: "/catalogue/library", label: "Equipment 3D library", need: "assets.view", about: "3D shapes used for devices in the 3D view." },
     ] },
     { title: "Add and change many", pages: [
-      { href: "/assets/import", label: "Import assets", need: "assets.view", about: "Add many devices from an Excel sheet." },
-      { href: "/assets/bulk", label: "Bulk placement", need: "assets.view", about: "Spread many units across rooms at once." },
+      { href: "/assets/import", label: "Import assets", need: "assets.edit", about: "Add many devices from an Excel sheet." },
+      { href: "/assets/bulk", label: "Bulk placement", need: "assets.edit", about: "Spread many units across rooms at once." },
       { href: "/assets/labels", label: "Asset labels", need: "assets.view", about: "Print QR labels on A4 sheets." },
     ] },
     { title: "Life of a device", pages: [
@@ -134,7 +134,6 @@ const HUBS: Hub<ModuleId>[] = [
       { href: "/assets/safety-tests", label: "Safety tests", need: "assets.view", about: "Electrical safety tests per device.", menu: true },
       { href: "/assets/radiation", label: "Radiation safety", need: "assets.view", about: "Licences, shielding and staff dose.", menu: true },
       { href: "/assets/imaging-qc", label: "Imaging QC", need: "assets.view", about: "Quality checks on imaging devices.", menu: true },
-      { href: "/assets/imaging-qc/record", label: "Record a QC check", need: "workorders.report", about: "Enter today's imaging QC results." },
       { href: "/assets/cryogen", label: "MRI cryogen log", need: "assets.view", about: "Helium level and cold head checks.", menu: true },
       { href: "/assets/security", label: "Device security", need: "assets.view", about: "Networked devices, software and patches." },
     ] },
