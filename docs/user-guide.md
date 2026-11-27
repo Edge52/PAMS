@@ -896,3 +896,24 @@ on the job page. On **My jobs** the code is optional.
 
 **Administration › Settings › In-house labour cost per hour (EGP)**. Empty by default. When set, the hours your
 own team books on jobs count in the service cost and COSR, and the report says so.
+
+## Wave 41: long lists and changing several rows at once
+
+- Long lists show 50 rows a page. Under the list you see how many rows there are and links to the other pages. Filters
+  and the sort order stay when you change page. Click a column heading to sort by it (again for the reverse order).
+- Exports (asset register, audit log, invoices) hold every matching row, up to 20,000. Narrow the filters if the file
+  says it stopped there.
+- Tick rows in the first column (or tick the heading to take the whole page), choose a value beside the buttons, then
+  press the button. What changes, and what was left alone and why, shows at the top of the page. Every change is in
+  the audit log.
+  - **Users** (administrators): switch off or on selected, set role. Your own account and the last administrator are
+    never changed.
+  - **Asset register**: move to a department or room (same hospital), set criticality, schedule a PPM visit on a date
+    (devices that already have a visit planned are skipped).
+  - **Work orders** (biomedical lead): assign, set priority, cancel as duplicates — type the number of the job to keep;
+    the ticked open jobs on the same device are cancelled.
+  - **Maintenance › Schedule**: tick scheduled visits, then move them to a date or give them to a person (a job is
+    raised for visits that have none).
+  - **A recall's devices**: mark the ticked devices dealt with, or not affected (with a reason).
+  - **Administration › Documents**: remove selected (files are kept) or, under Removed, restore selected.
+
