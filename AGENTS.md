@@ -630,3 +630,14 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   change is checked against; notes and parts don't change it). Phone storage `lib/offline/store.ts`; service worker
   `public/sw.js` (only `/assets/my-jobs` and `/_next/static/`; excluded from the sign-in check in `src/proxy.ts`).
   Table `offline_sync_log` makes a re-sent change apply once.
+
+## Wave 41 (agent J): notifications, deputies, escalation
+- `notifyUsers` now applies each person's choice per kind (`lib/notifications/prefs.ts`: APP / EMAIL / BOTH / OFF, role
+  defaults in the `notificationRoleDefaults` setting, daily digest). A new kind: add a label in `types.ts` KIND_LABELS
+  and put it in a `KIND_GROUPS` group (a test fails otherwise); safety-critical kinds go in `SAFETY_KINDS`.
+- Approval steps: `trackPending` notes when a step became pending; `stepRecipients` (lib/approvals/server.ts) is who is
+  asked, with deputies swapped in; `decisionFor` says whether someone decides and for whom. Committee signatures are
+  never delegated. Pure rules (working days, Friday–Saturday weekend, deputies) in `lib/approvals/escalation.ts`.
+- Fault reports: `lib/assets/fault-escalation.ts` (pure), checked every 5 minutes from the scheduler.
+- Wave 41 table reads tolerate a database without the migration (`isMissingTable`), so older tests and installs keep
+  working on the defaults.

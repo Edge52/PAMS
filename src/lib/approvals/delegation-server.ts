@@ -6,7 +6,7 @@ import "server-only";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { approvalDelegations, approvalStepTracking, users } from "@/db/schema";
-import { isMissingTable } from "@/lib/notifications/prefs-server";
+import { isMissingTable } from "../notifications/prefs-server";
 import type { Delegation } from "./escalation";
 
 async function tolerant<T>(fallback: T, run: () => Promise<T>): Promise<T> {
