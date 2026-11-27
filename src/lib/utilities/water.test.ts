@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultLimits, judgeSample, resampleBy, sampleDue, trendOf } from "./water";
+import { defaultLimits, judgeSample, resampleBy, sampleDue, trendLines, trendOf } from "./water";
 
 describe("water quality (wave 41, EFS.12)", () => {
   const dia = defaultLimits("DIALYSIS_RO");
@@ -37,5 +37,8 @@ describe("water quality (wave 41, EFS.12)", () => {
     const t = trendOf([{ sampledOn: "2026-11-01", tvc: 60, endotoxin: null }, { sampledOn: "2026-10-01", tvc: 10, endotoxin: 0.01 }], "tvc", dia);
     expect(t).toEqual([{ on: "2026-10-01", value: 10, ok: true }, { on: "2026-11-01", value: 60, ok: false }]);
     expect(trendOf([{ sampledOn: "2026-11-01", tvc: 60, endotoxin: null }], "endotoxin", dia)).toEqual([]);
+    expect(trendOf([{ sampledOn: "2026-11-01", freeChlorine: 0.1 }], "freeChlorine", defaultLimits("DRINKING_TANK"))[0].ok).toBe(false);
+    expect(trendLines("tvc", dia)).toEqual({ min: 50, max: 100 });
+    expect(trendLines("freeChlorine", defaultLimits("DRINKING_TANK"))).toEqual({ min: 0.2, max: null });
   });
 });

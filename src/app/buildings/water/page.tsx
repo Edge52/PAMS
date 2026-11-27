@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, facilities, floors, buildings, rooms, waterPoints, waterSamples, workOrders } from "@/db/schema";
 import { Badge, Button, EmptyState, Field, FormGrid, Input, LinkButton, PageHeader, Stat, TabLinks, Table, Td, Textarea, Th, THead } from "@/components/ui";
@@ -11,9 +11,9 @@ import { scopeWhere, scopedFacilityId } from "@/lib/assets/access";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatNumber, todayISO } from "@/lib/format";
-import { DUE_LABELS, DUE_TONE } from "@/lib/utilities/utilities";
+import { addDays, DUE_LABELS, DUE_TONE } from "@/lib/utilities/utilities";
 import { limitsOf, pointRows, type PointRow } from "@/lib/utilities/utilities-server";
-import { isPointKind, ISO_23500_NOTE, isDialysis, LEVEL_LABELS, LEVEL_TONE, POINT_KINDS, POINT_LABELS, sampleDue, trendOf, type Level } from "@/lib/utilities/water";
+import { isPointKind, ISO_23500_NOTE, isDialysis, LEVEL_LABELS, LEVEL_TONE, MEASURE_INFO, MEASURES, POINT_KINDS, POINT_LABELS, sampleDue, trendLines, trendOf, type Level } from "@/lib/utilities/water";
 import { saveWaterPointAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +52,8 @@ export default async function WaterPage({ searchParams }: { searchParams: Promis
     .innerJoin(waterPoints, eq(waterPoints.id, waterSamples.pointId)).leftJoin(workOrders, eq(workOrders.id, waterSamples.workOrderId))
     .where(eq(waterSamples.facilityId, facilityId)).orderBy(desc(waterSamples.sampledOn), desc(waterSamples.id)).limit(100) : [];
   const notOk = active.filter((p) => p.lastLevel && p.lastLevel !== "OK").length;
+  const [year] = await db.select({ n: sql<number>`count(*)::int`, fail: sql<number>`count(*) filter (where ${waterSamples.level} = 'FAIL')::int` }).from(waterSamples)
+    .where(and(eq(waterSamples.facilityId, facilityId), gte(waterSamples.sampledOn, addDays(today, -365))));
 
   return (
     <>
@@ -69,7 +71,7 @@ export default async function WaterPage({ searchParams }: { searchParams: Promis
         <Stat label="Sampling points" value={formatNumber(active.length)} hint={`${active.filter((p) => isDialysis(p.kind)).length} dialysis`} href={href("points")} />
         <Stat label="Samples overdue or never taken" value={formatNumber(late)} href={href("due")} />
         <Stat label="Last result not within limits" value={formatNumber(notOk)} href={href("due")} />
-        <Stat label="Samples in the last 100" value={formatNumber(recent.length)} href={href("samples")} />
+        <Stat label="Samples in the last year" value={formatNumber(year?.n ?? 0)} hint={`${year?.fail ?? 0} over the limit`} href={href("samples")} />
       </div>
       <TabLinks active={tab} tabs={[
         { key: "due", label: "Due", href: href("due") }, { key: "samples", label: "Results", href: href("samples") },
@@ -110,7 +112,7 @@ export default async function WaterPage({ searchParams }: { searchParams: Promis
         </Table>
       ))}
 
-      {tab === "trend" && <Trend points={active} pointId={Number(one("pointId")) || active[0]?.id} facilityId={facilityId} />}
+      {tab === "trend" && <Trend points={active} pointId={Number(one("pointId")) || (active.find((p) => isDialysis(p.kind)) ?? active[0])?.id} facilityId={facilityId} />}
       {tab === "points" && <Points facilityId={facilityId} points={points} canEdit={canEdit} />}
     </>
   );
@@ -119,9 +121,11 @@ export default async function WaterPage({ searchParams }: { searchParams: Promis
 async function Trend({ points, pointId, facilityId }: { points: PointRow[]; pointId: number | undefined; facilityId: number }) {
   const p = points.find((x) => x.id === pointId);
   if (!p) return <EmptyState title="No sampling points yet">Add a point on the Points tab.</EmptyState>;
-  const samples = await db.select({ sampledOn: waterSamples.sampledOn, tvc: waterSamples.tvc, endotoxin: waterSamples.endotoxin }).from(waterSamples)
+  const samples = await db.select({ sampledOn: waterSamples.sampledOn, tvc: waterSamples.tvc, endotoxin: waterSamples.endotoxin, chlorine: waterSamples.chlorine,
+    freeChlorine: waterSamples.freeChlorine, conductivity: waterSamples.conductivity, coliforms: waterSamples.coliforms }).from(waterSamples)
     .where(eq(waterSamples.pointId, p.id)).orderBy(desc(waterSamples.sampledOn)).limit(60);
   const l = limitsOf(p);
+  const shown = MEASURES.map((m) => ({ m, pts: trendOf(samples, m, l) })).filter((x) => x.pts.length > 0);
   return (
     <div className="space-y-5">
       <form className="flex flex-wrap items-end gap-2">
@@ -130,9 +134,11 @@ async function Trend({ points, pointId, facilityId }: { points: PointRow[]; poin
         <label><span className="sr-only">Point</span><NativeSelect name="pointId" aria-label="Point" value={p.id} options={points.map((x) => ({ value: x.id, label: x.name }))} /></label>
         <Button variant="secondary">Show</Button>
       </form>
-      <QcTrend label={`${p.name}: total viable count`} unit="CFU/mL" min={l.tvcAction} max={l.tvcLimit} points={trendOf(samples, "tvc", l)} />
-      <QcTrend label={`${p.name}: endotoxin`} unit="EU/mL" min={l.endotoxinAction} max={l.endotoxinLimit} points={trendOf(samples, "endotoxin", l)} />
-      <p className="text-xs text-muted">The lower dashed line is the action level, the upper one the limit. Last 60 samples.</p>
+      {shown.length === 0 ? <p className="text-sm text-muted">No results at this point yet.</p> : shown.map(({ m, pts }) => {
+        const lines = trendLines(m, l);
+        return <QcTrend key={m} label={`${p.name}: ${MEASURE_INFO[m].label.toLowerCase()}`} unit={MEASURE_INFO[m].unit} min={lines.min} max={lines.max} points={pts} names={m === "tvc" || m === "endotoxin" ? ["action", "limit"] : ["min", "max"]} />;
+      })}
+      <p className="text-xs text-muted">Dashed lines: action level and limit, or the allowed minimum or maximum. Red points needed action or failed. Last 60 samples.</p>
     </div>
   );
 }

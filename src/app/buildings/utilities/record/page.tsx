@@ -19,7 +19,7 @@ const FIELD: Record<string, { label: string; unit: string; min?: number; max?: n
   loadKw: { label: "Load", unit: "kW", min: 0 }, durationMin: { label: "Run time", unit: "minutes", min: 0 }, transferSec: { label: "Transfer time", unit: "seconds", min: 0 },
   fuelPct: { label: "Fuel level", unit: "%", min: 0, max: 100 }, autonomyMin: { label: "Autonomy", unit: "minutes", min: 0 },
   tempMin: { label: "Lowest temperature", unit: "°C" }, tempMax: { label: "Highest temperature", unit: "°C" }, excursionMin: { label: "Minutes out of range", unit: "minutes", min: 0 },
-  airChanges: { label: "Air changes", unit: "per hour", min: 0 }, pressurePa: { label: "Pressure difference", unit: "Pa (minus for negative)" },
+  airChanges: { label: "Air changes", unit: "per hour", min: 0 }, pressurePa: { label: "Pressure difference", unit: "Pa, minus for negative" },
 };
 
 /** Record one test of a utility system; the result is worked out from the readings. */

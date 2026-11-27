@@ -83,11 +83,27 @@ export function resampleBy(sampledOn: string, level: Level): string | null {
 
 export type TrendPoint = { on: string; value: number; ok: boolean };
 
-/** The trend of one measure at a point, oldest first, red when at or over the action level. */
-export function trendOf(samples: { sampledOn: string; tvc: number | null; endotoxin: number | null }[], measure: "tvc" | "endotoxin", l: Limits): TrendPoint[] {
-  const action = measure === "tvc" ? l.tvcAction ?? l.tvcLimit : l.endotoxinAction ?? l.endotoxinLimit;
+export const MEASURES = ["tvc", "endotoxin", "chlorine", "freeChlorine", "conductivity", "coliforms"] as const;
+export type Measure = (typeof MEASURES)[number];
+export const MEASURE_INFO: Record<Measure, { label: string; unit: string }> = {
+  tvc: { label: "Total viable count", unit: "CFU/mL" }, endotoxin: { label: "Endotoxin", unit: "EU/mL" }, chlorine: { label: "Total chlorine", unit: "mg/L" },
+  freeChlorine: { label: "Free chlorine", unit: "mg/L" }, conductivity: { label: "Conductivity", unit: "µS/cm" }, coliforms: { label: "Coliforms", unit: "per 100 mL" },
+};
+
+/** The lines drawn on a trend: lower and upper (action level and limit, or a minimum). */
+export function trendLines(m: Measure, l: Limits): { min: number | null; max: number | null } {
+  if (m === "tvc") return { min: l.tvcAction, max: l.tvcLimit };
+  if (m === "endotoxin") return { min: l.endotoxinAction, max: l.endotoxinLimit };
+  if (m === "chlorine") return { min: null, max: l.chlorineMax };
+  if (m === "freeChlorine") return { min: l.freeChlorineMin, max: null };
+  if (m === "conductivity") return { min: null, max: l.conductivityMax };
+  return { min: null, max: l.coliformMax };
+}
+
+/** The trend of one measure at a point, oldest first; a point is red when it needed action or failed. */
+export function trendOf(samples: ({ sampledOn: string } & Partial<Record<Measure, number | null>>)[], measure: Measure, l: Limits): TrendPoint[] {
   return samples.filter((s) => has(s[measure])).sort((a, b) => a.sampledOn.localeCompare(b.sampledOn))
-    .map((s) => ({ on: s.sampledOn, value: s[measure] as number, ok: action == null || (s[measure] as number) < action }));
+    .map((s) => ({ on: s.sampledOn, value: s[measure] as number, ok: judgeSample(l, { [measure]: s[measure] }).level === "OK" }));
 }
 
 /** Work order title for a failed sample. */
