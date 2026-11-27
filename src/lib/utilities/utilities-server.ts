@@ -4,7 +4,7 @@ import "server-only";
  * water sample opens an ordinary corrective work order on the system's asset (same numbering, cover, asset status
  * effect and triage notice as any fault report), so the failure log is the work order list.
  */
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, rooms, utilitySystems, utilityTests, waterPoints, waterSamples, workOrders } from "@/db/schema";
 import { scopeWhere, type Scope } from "@/lib/assets/access";
@@ -154,10 +154,4 @@ export async function utilityEvidence(scope: Scope, facilityId: number | null, f
     points: pts.length, pointsInDate: ptsInDate, samples: samples.length, dialysisPoints: dialysisPts.length, dialysisSampled,
     sampleFails: fails.length, sampleFailsWithJob: fails.filter((s) => s.wo != null).length,
   };
-}
-
-/** The open (not yet linked) failures of a hospital, for the page. */
-export async function unlinkedFailures(facilityId: number) {
-  return db.select({ id: utilityTests.id }).from(utilityTests)
-    .where(and(eq(utilityTests.facilityId, facilityId), eq(utilityTests.passed, false), isNull(utilityTests.workOrderId))).limit(500);
 }
