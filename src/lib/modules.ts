@@ -78,6 +78,8 @@ export const MODULES: AppModule[] = [
     { href: "/assets/3d", label: "3D view", need: "assets.view" },
     { href: "/assets/map", label: "Floor map", need: "assets.view" },
     { href: "/facilities/room-standards", label: "Room standards", need: "assets.view" },
+    { href: "/buildings/utilities", label: "Utilities", need: "assets.view" },
+    { href: "/buildings/water", label: "Water quality", need: "assets.view" },
   ] },
   { id: "pathways", name: "Patient pathways", description: "Routes through the building, walking distances and queue simulation.", links: [
     { href: "/flows", label: "Pathways", need: "assets.view" },
