@@ -15,6 +15,7 @@ import { offerListRows } from "@/lib/procurement/server";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { scopeWhere } from "@/lib/procurement/access";
+import { SavedFilters } from "@/components/saved-filters";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Offers" };
@@ -80,6 +81,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
         <button className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">Apply filters</button>
         {filtered && <Link href="/procurement/offers" className="px-2 py-1.5 text-sm text-primary hover:underline">Clear</Link>}
       </form>
+      <SavedFilters page="offers" />
       {n === 0 ? (
         filtered ? (
           <EmptyState title="No offers match these filters" action={<LinkButton href="/procurement/offers">Show all offers</LinkButton>}>

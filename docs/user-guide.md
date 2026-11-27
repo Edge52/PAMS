@@ -338,8 +338,8 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
   part to go back up.
 - Press **Ctrl+K** (⌘K on a Mac) and type part of a page's name to jump to it.
 - Click a **column heading** to sort a list; click again for the other way, and a third time to clear it.
-- Set your filters, then **Save this filter** and give it a name. It appears as a chip above the list on this
-  computer; the cross removes it.
+- Set your filters, then **Save this filter** and give it a name. It appears as a chip above the list (kept with
+  your account since wave 41, see *Help and saved filters* below); the cross removes it.
 - When a form has a mistake, the message shows under the field and the cursor moves there.
 
 ## Finding your way (wave 19)
@@ -1026,3 +1026,22 @@ For GAHAR EFS.12 and ECRI's sterilisation water hazard.
   - **A recall's devices**: mark the ticked devices dealt with, or not affected (with a reason).
   - **Administration › Documents**: remove selected (files are kept) or, under Removed, restore selected.
 
+
+## Help and saved filters (wave 41)
+
+### Help
+- Press **?** at the top of any page (or open `/help`) for short guides to common tasks: plan equipment for a new
+  department, run a tender under Law 182, award and issue a PO, receive and accept a device, report a fault, close a
+  job on the phone, plan PPM, prepare for a GAHAR survey, read the Analytics, check data quality, record radiation
+  safety, back up and restore.
+- Each guide is a few numbered steps; the links open the page where you do each step. You see only the guides your
+  role can follow. Type in **Search the guides** to narrow the list.
+
+### Saved filters
+- On the main lists (assets, work orders, planned maintenance, equipment requests, recalls, incidents, offers, RFQs,
+  purchase orders, invoices, suppliers and the Analytics tabs), set your filters, press **Save this filter** and give
+  it a name. The chip opens the list with those filters again, on any computer you sign in on.
+- Tick **Share with my role** to let everyone with your role see it (their chip shows your name). Only you can remove
+  your own filters (the cross on the chip). Up to 20 per list.
+- Filters saved in the browser before wave 41 are not carried over: save them again.
+- The RFQ list now has a search box and a status filter.

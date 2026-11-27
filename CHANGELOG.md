@@ -93,6 +93,19 @@
   selected. Rules and form checks in `src/lib/bulk.ts` (tested).
 - Administration › **Documents** (was Deleted documents) lists every document in use as well as removed ones.
 
+### Help, saved filters and tidier code
+- **Help** (`/help`, the **?** in the top bar): twelve short task guides (plan a department, Law 182 tender, award and
+  PO, receive and accept, report a fault, close a job on the phone, PPM, GAHAR survey, Analytics, data quality,
+  radiation safety, backup and restore), each with numbered steps linking into the app. Only the guides the role can
+  follow; searchable. Data in `src/lib/help.ts`; a test checks every link is a real page.
+- **Saved filters on the server**: name the current filter of a list and open it again on any computer; optionally
+  share it with your role. On assets, work orders, PPM, requests, recalls, incidents, offers, RFQs, POs, invoices,
+  suppliers and the Analytics tabs (`<SavedFilters page=… />`). Replaces wave 21's browser-only chips.
+- RFQ list: search (number, title, project) and status filter; at most 500 rows.
+- Code split without changes in behaviour: `use-twin-view.tsx` (1,360 → ~880 lines, six sub-hooks), `scene.ts`
+  (1,251 → ~870, four more `*Impl` files), `floor-map.tsx` (945 → ~600, types and panels). See AGENTS.md.
+- Schema (migration to come from the lead): table `saved_filters`.
+
 ## Wave 40 (not merged yet)
 
 ### GAHAR evidence and the equipment plan

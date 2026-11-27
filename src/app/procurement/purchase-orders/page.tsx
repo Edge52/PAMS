@@ -90,7 +90,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
         <button className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">Apply filters</button>
         {filtered && <Link href="/procurement/purchase-orders" className="px-2 py-1.5 text-sm text-primary hover:underline">Clear</Link>}
       </form>
-      <SavedFilters />
+      <SavedFilters page="purchase-orders" />
 
       {rows.length === 0 ? (
         anyPo.length ? (

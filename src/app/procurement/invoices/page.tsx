@@ -7,6 +7,7 @@ import { Notice } from "@/components/assets/bits";
 import { scopeWhere } from "@/lib/assets/access";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatMoney, todayISO } from "@/lib/format";
+import { SavedFilters } from "@/components/saved-filters";
 import { PAGE_SIZE, pageFor, sqlOrder } from "@/lib/paging";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { tableSort } from "@/components/ui/data-table-utils";
@@ -54,6 +55,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
       <PageHeader title="Supplier invoices" description="Each invoice is matched against what its purchase order ordered and what was received. Record one from the PO's page."
         actions={<Link href="/procurement/invoices/export" prefetch={false} className="text-sm font-semibold text-primary hover:underline">Export for finance (CSV)</Link>} />
       <Notice sp={sp} />
+      <SavedFilters page="invoices" />
       <TabLinks active={tab.key} tabs={TABS.map((t) => ({ key: t.key, label: t.label, href: `/procurement/invoices?tab=${t.key}` }))} />
       <div className="mt-4">
         <DataTable id="invoices" label="Supplier invoices" path="/procurement/invoices" sp={sp} sort={sort} rows={rows} rowKey={(r) => r.i.id} columns={columns}

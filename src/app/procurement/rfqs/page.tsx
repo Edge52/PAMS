@@ -2,6 +2,7 @@ import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { offers, projects, rfqs, rfqSuppliers } from "@/db/schema";
+import { SavedFilters } from "@/components/saved-filters";
 import { EmptyState, LinkButton, PageHeader, StatusBadge } from "@/components/ui";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { tableSort } from "@/components/ui/data-table-utils";
@@ -40,6 +41,7 @@ export default async function RfqsPage({ searchParams }: { searchParams: Promise
     <>
       <PageHeader title="Requests for quotation" back={{ href: "/procurement", label: "Projects & tenders" }}
         actions={mayEdit ? <LinkButton href="/procurement/rfqs/new" variant="primary">New RFQ</LinkButton> : undefined} />
+      <SavedFilters page="rfqs" />
       <DataTable id="rfqs" label="Requests for quotation" path="/procurement/rfqs" sp={sp} sort={sort} rows={rows} rowKey={(r) => r.id} columns={COLUMNS}
         footer={<ListPager paging={paging} path="/procurement/rfqs" sp={sp} what="RFQs" />}
         empty={<EmptyState title="No RFQs yet" action={mayEdit ? <LinkButton href="/procurement/rfqs/new" variant="primary">Create an RFQ</LinkButton> : undefined}>

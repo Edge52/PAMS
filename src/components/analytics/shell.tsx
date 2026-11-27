@@ -1,4 +1,5 @@
 import { Suspense, type ReactNode } from "react";
+import { SavedFilters } from "@/components/saved-filters";
 import { PageHeader } from "@/components/ui";
 import { ANALYTICS_TABS } from "@/lib/analytics/core";
 import { can } from "@/lib/auth/permissions";
@@ -17,6 +18,7 @@ export function AnalyticsShell({ me, children }: { me: CurrentUser; children: Re
     <>
       <PageHeader title="Analytics" description="Figures worked out from the records, each with its formula, period and count. Pick the hospital, department, device type and period below." />
       <Suspense fallback={<div className="mb-5 h-10 border-b border-line" />}><AnalyticsTabBar tabs={tabs} /></Suspense>
+      <SavedFilters page="analytics" />
       {children}
     </>
   );

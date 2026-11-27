@@ -12,6 +12,7 @@ import { HARM_LABELS, HARM_TONE, INCIDENT_STATUS_LABELS, incidentTodos, reportab
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, todayISO } from "@/lib/format";
+import { SavedFilters } from "@/components/saved-filters";
 import { PAGE_SIZE, pageFor, sqlOrder } from "@/lib/paging";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +58,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
         <Stat label="EDA not told yet" value={k.untold} hint={k.untold ? "Serious incidents with no report date" : "None waiting"} />
         <Stat label="Last 12 months" value={k.year} />
       </div>
+      <SavedFilters page="incidents" />
       <TabLinks active={tab} tabs={[{ key: "open", label: "Open", href: href("open") }, { key: "closed", label: "Closed", href: href("closed") }, { key: "all", label: "All", href: href("all") }]} />
       {rows.length === 0 ? (
         <EmptyState title={tab === "open" ? "No open incidents" : "No incidents here"} action={can(me.role, "workorders.report") ? <LinkButton href="/assets/incidents/new">Report an incident</LinkButton> : undefined}>
