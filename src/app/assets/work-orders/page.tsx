@@ -4,10 +4,12 @@ import { and, desc, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, rooms, users, workOrders } from "@/db/schema";
-import { Badge, Button, EmptyState, LinkButton, PageHeader, Stat, StatusBadge, TabLinks, Table, Td, THead } from "@/components/ui";
+import { Badge, Button, EmptyState, LinkButton, PageHeader, Stat, StatusBadge, TabLinks } from "@/components/ui";
 import { enumOptions, NativeSelect, Notice, Pager } from "@/components/assets/bits";
-import { SortTh } from "@/components/ui/sort-th";
-import { SavedFilters } from "@/components/saved-filters";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { BulkHidden, BulkInput, BulkSelect } from "@/components/bulk-fields";
+import { bulkAssignAction, bulkCloseDuplicatesAction, bulkPriorityAction } from "./bulk-actions";
+import { assignableUsers, assignableUsersAll } from "@/lib/assets/work-order-server";import { SavedFilters } from "@/components/saved-filters";
 import { parseSort } from "@/lib/list";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { scopeWhere } from "@/lib/assets/access";
@@ -79,6 +81,8 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
     }).from(workOrders).where(and(scopeWhere(workOrders.facilityId, scope), or(gte(workOrders.reportedAt, since), inArray(workOrders.status, [...ACTIVE_STATUSES])))),
   ]);
   const k = workOrderKpis(kpiRows, now);
+  // Wave 41: people the ticked jobs can go to (maintenance rights in the user's hospitals).
+  const people = canAssign ? [...new Map((await Promise.all((scope ?? [null]).map((f) => (f === null ? assignableUsersAll() : assignableUsers(f))))).flat().map((u) => [u.id, u])).values()] : [];
 
   const qs = (over: Record<string, string | number | undefined>) => {
     const p = new URLSearchParams();
@@ -134,36 +138,40 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
           {tab === "mine" ? "Jobs the biomedical lead gives you appear here." : "When a device fails, report it here or from the device's page — scanning its label opens it."}
         </EmptyState>
       ) : (
-        <>
-          <Table>
-            <THead><tr><SortTh k="number">Work order</SortTh><SortTh k="device">Device</SortTh><SortTh k="location">Location</SortTh><SortTh k="priority">Priority</SortTh><SortTh k="status">Status</SortTh><SortTh k="assigned">Assigned to</SortTh><SortTh k="reported">Reported</SortTh></tr></THead>
-            <tbody>
-              {rows.map(({ wo, tag, typeName, roomCode, departmentName, assigneeName }) => {
-                const late = isLate(wo, now);
-                return (
-                  <tr key={wo.id} className="hover:bg-sunken/50">
-                    <Td>
-                      <Link href={`/assets/work-orders/${wo.id}`} className="font-semibold text-primary hover:underline">{wo.number}</Link>
-                      <div className="max-w-72 text-[13px]">{wo.title}</div>
-                      <div className="text-xs text-muted">{maintenanceTypeLabel(wo.type)}{wo.deviceDown && " · device out of use"}</div>
-                    </Td>
-                    <Td><Link href={`/assets/${wo.assetId}`} className="text-primary hover:underline">{tag}</Link><div className="text-xs text-muted">{typeName}</div></Td>
-                    <Td>{departmentName ?? "—"}<div className="text-xs text-muted">{roomCode ?? ""}</div></Td>
-                    <Td><StatusBadge value={wo.priority} />{late && <div className="mt-1"><Badge tone="danger">Late</Badge></div>}</Td>
-                    <Td><StatusBadge value={wo.status} />{wo.status === "ON_HOLD" && wo.holdReason && <div className="mt-1 max-w-48 text-xs text-muted">{wo.holdReason}</div>}</Td>
-                    <Td>{assigneeName ?? <span className="text-muted">Not assigned</span>}</Td>
-                    <Td className="whitespace-nowrap">{formatDateTime(wo.reportedAt)}<div className="text-xs text-muted">{wo.reportedByName}</div></Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
-            <span>{formatNumber(total)} work order{total === 1 ? "" : "s"}</span>
-            <Pager page={page} pages={Math.ceil(total / PAGE)} href={(p) => qs({ page: p })} />
-          </div>
-        </>
+        <DataTable id="work-orders" label="Work orders" path="/assets/work-orders" sp={sp} sort={sort} rows={rows} rowKey={(r) => r.wo.id}
+          rowClassName={() => "hover:bg-sunken/50"} columns={woColumns(now)}
+          select={canAssign ? { rowLabel: (r) => r.wo.number, what: "work orders", actions: [
+            { label: "Assign", action: bulkAssignAction },
+            { label: "Set priority", action: bulkPriorityAction },
+            { label: "Cancel as duplicates", action: bulkCloseDuplicatesAction, confirm: "Cancel the ticked jobs as duplicates of the job to keep? Each is cancelled and logged; the kept job stays open." },
+          ], extra: (
+            <span className="flex flex-wrap items-center gap-2 text-sm">
+              <BulkHidden form="work-orders-selected" name="returnPath" value={qs({})} />
+              <BulkSelect form="work-orders-selected" name="assigneeId" label="Assign to" placeholder="Assign to…" options={people.map((u) => ({ value: u.id, label: u.name }))} />
+              <BulkSelect form="work-orders-selected" name="priority" label="New priority" placeholder="Priority…" options={enumOptions(WORK_ORDER_PRIORITIES)} />
+              <BulkInput form="work-orders-selected" name="keep" label="Number of the job to keep" placeholder="Keep job (WO-…)" maxLength={24} />
+            </span>
+          ) } : undefined}
+          footer={<span className="flex flex-wrap items-center gap-3 text-sm text-muted"><span>{formatNumber(total)} work order{total === 1 ? "" : "s"}</span>
+            <Pager page={page} pages={Math.ceil(total / PAGE)} href={(p) => qs({ page: p })} /></span>} />
       )}
     </>
   );
+}
+
+type WoRow = { wo: typeof workOrders.$inferSelect; tag: string; typeName: string; roomCode: string | null; departmentName: string | null; assigneeName: string | null };
+
+function woColumns(now: Date): Column<WoRow>[] {
+  return [
+    { key: "number", label: "Work order", sort: true, cell: ({ wo }) => <>
+      <Link href={`/assets/work-orders/${wo.id}`} className="font-semibold text-primary hover:underline">{wo.number}</Link>
+      <div className="max-w-72 text-[13px]">{wo.title}</div>
+      <div className="text-xs text-muted">{maintenanceTypeLabel(wo.type)}{wo.deviceDown && " · device out of use"}</div></> },
+    { key: "device", label: "Device", sort: true, cell: ({ wo, tag, typeName }) => <><Link href={`/assets/${wo.assetId}`} className="text-primary hover:underline">{tag}</Link><div className="text-xs text-muted">{typeName}</div></> },
+    { key: "location", label: "Location", sort: true, optional: true, cell: ({ departmentName, roomCode }) => <>{departmentName ?? "—"}<div className="text-xs text-muted">{roomCode ?? ""}</div></> },
+    { key: "priority", label: "Priority", sort: true, cell: ({ wo }) => <><StatusBadge value={wo.priority} />{isLate(wo, now) && <div className="mt-1"><Badge tone="danger">Late</Badge></div>}</> },
+    { key: "status", label: "Status", sort: true, cell: ({ wo }) => <><StatusBadge value={wo.status} />{wo.status === "ON_HOLD" && wo.holdReason && <div className="mt-1 max-w-48 text-xs text-muted">{wo.holdReason}</div>}</> },
+    { key: "assigned", label: "Assigned to", sort: true, optional: true, cell: ({ assigneeName }) => assigneeName ?? <span className="text-muted">Not assigned</span> },
+    { key: "reported", label: "Reported", sort: true, optional: true, className: "whitespace-nowrap", cell: ({ wo }) => <>{formatDateTime(wo.reportedAt)}<div className="text-xs text-muted">{wo.reportedByName}</div></> },
+  ];
 }
