@@ -145,7 +145,6 @@
 - Schema (migration to come from the lead): tables `equipment_plans`, `equipment_plan_reviews`, `critical_backups`,
   `equipment_id_cards`, enum `equipment_plan_status`; value `EQUIPMENT_PLAN` added to enum `approval_entity`.
 
-
 ### Competency, imaging QC, vigilance and recalls
 - **Technician competency** (`/assets/competency`, GAHAR EFS.10): training per person and device type or category
   (maker / in-house / on the job, date, expiry, certificate, authorised to service). Assigning a job or PPM jobs to
@@ -239,7 +238,7 @@
   hospital's own schedule needs an evidence and risk basis (CMS S&C 14-07, Joint Commission FAQ).
 - New tables (migration to come from the lead): `po_penalty_terms`, `project_law_terms`, `strategy_evidence`.
 
-**Data quality and BOQ to tender**
+### Data quality and BOQ to tender
 - **Data quality page** (`/reports/data-quality`, Reports menu): 16 rules computed live (missing serial, maker/model,
   install date, cost, room, criticality, GMDN; PPM due with nothing planned; duplicate serials; out of service with no
   open job; finished jobs without labour or downtime; jobs open 90+ days; orders received 60+ days ago with no invoice;
@@ -251,7 +250,6 @@
   optional draft specs from the template. New BOQ tab **Tender & orders**: plan vs ordered per device type. The BOQ
   page's two disagreeing hints are replaced by one (`tenderHint`). Mapping pure in `src/lib/boq/tender-handoff.ts`
   (tested), action `src/app/boq/tender-actions.ts`. No schema change.
-
 
 ### Documents, permissions and running it
 
@@ -297,7 +295,6 @@
   by both); queue and conflict rules are pure in `src/lib/assets/offline-jobs.ts`. New table `offline_sync_log`
   (`src/db/schema-wave39-d.ts`, migration to generate) so a change sent twice is applied once.
 - Completing a job with the labour box empty keeps labour booked earlier (it used to clear it).
-
 
 ## Wave 38 — the last missing features from the audit
 

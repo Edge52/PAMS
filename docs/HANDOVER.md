@@ -1,9 +1,11 @@
 # Hospital PAMS — handover
 
 The starting point for anyone (or any new Claude session) picking up the project. It says what the app is, how it's
-built and run, how work is done here, what's finished and what's left. Last updated 21 Nov 2026: `main` has waves 1–38
+built and run, how work is done here, what's finished and what's left. Last updated 28 Nov 2026: `main` has waves 1–38
 (wave 16 = 3D roadmap phases 0–4, wave 17 = phases 5–9; 10 MEP and 11 Campus/BIM on hold; waves 32–36 = fixes from the
-wave 30 audit, waves 37–38 = its missing features, see CHANGELOG).
+wave 30 audit, waves 37–38 = its missing features). **Waves 39–42 are on branch `wave-42`, waiting for Hisham's OK to
+merge** (39 Law 182 rules, data quality, offline My jobs; 40 GAHAR readiness and Analytics; 41 notifications,
+utilities and water, cyber, API, imports, lists and bulk actions, help; 42 the nine-hub menu). See CHANGELOG.
 
 Read next: `AGENTS.md` (coding conventions; they're strict), `docs/system-documentation.md` (modules in depth),
 `docs/user-guide.md` (by role), `docs/deploy.md` (servers, Supabase), `CHANGELOG.md` (what each wave added),
@@ -24,11 +26,17 @@ Hospital PAMS is a web app for a hospital group in Egypt, covering the life of m
 | **Assets** | Register, QR labels, acceptance checklists, work orders, PPM, contracts and penalties, spare parts, recalls, disposals, imaging use, fleet standardisation, rounds and stock-take, department view and equipment requests | `/assets` |
 | **Buildings** | Facilities, floors from CAD (DWG pipeline), layout editor with polygon rooms, room standards per room type, 2D floor map, 3D digital twin (routes, problem layers, plan vs installed, site-fit checks, pathways, commissioning) | `/facilities`, `/facilities/room-standards`, `/assets/3d`, `/assets/map` |
 | **Patient pathways** | Pathway steps on the 3D model, walking distances, clean/dirty conflicts, analysis, queue simulation with what-ifs | `/flows`, `/flows/simulate` |
-| **Cross-cutting** | Approvals engine, notifications (in app and email), reports and executive summary, global search, audit log, backups, assistant | `/approvals`, `/reports`, `/admin`, `/assistant` |
+| **Safety & compliance** | Incidents and EDA vigilance, recalls, safety tests, radiation, imaging QC, competency, device security; GAHAR evidence pack and equipment plan | `/assets/incidents`, `/assets/imaging-qc`, `/reports/gahar`, `/assets/equipment-plan` |
+| **Utilities** | Utility systems with tests, water quality sampling | `/buildings/utilities`, `/buildings/water` |
+| **Cross-cutting** | Approvals (deputies, escalation), notifications (choices, digest), reports, Analytics (9 tabs), data quality, help, global search, audit log, system errors, imports, read-only API, backups, assistant | `/approvals`, `/reports`, `/analytics`, `/help`, `/admin`, `/api/v1`, `/assistant` |
+
+The menu has nine hubs (Plan, Buy, Pay, Equipment, Maintain, Safety & compliance, Buildings & 3D, Reports, Setup),
+each with a hub page `/modules/<id>`; all defined in `src/lib/modules.ts`.
 
 Roles: Administrator, Director, Procurement, Finance, Planner, Biomedical, Technician, Department head, Viewer. The
 permission matrix is one file, `src/lib/auth/permissions.ts`. Users can be limited to some hospitals; department
-heads can be given departments they look after.
+heads can be given departments they look after; they may request equipment and approve requests for them
+(`requests.create`, `requests.approve`).
 
 Demo data: two hospitals. Facility 1 is the demo general hospital (`DGH`); facility 2 is **La Plaza** (`LPH`, built
 from real CAD drawings). Demo accounts are `<role>@demo.hpams` with password `demo1234` (e.g. `admin@demo.hpams`).
@@ -40,7 +48,8 @@ Demo figures (site planning values, imaging volumes, budgets) are labelled as de
 
 - **Stack**: Next.js 16 App Router (server components and server actions), React 19, TypeScript strict, Tailwind 4,
   Drizzle ORM, PostgreSQL 16 or embedded PGlite, three.js, ExcelJS, zod 4, Vitest, Playwright.
-- **Size**: about 80 tables in `src/db/schema.ts`, migrations `drizzle/0000`–`0045`, about 137 pages, 760 unit tests.
+- **Size**: `src/db/schema.ts` plus `schema-wave3x/4x-*.ts`, migrations `drizzle/0000`–`0053`, about 188 pages,
+  about 1,400 tests.
 - **Database**: `npm run demo` and `npm run local` use embedded PGlite (`.pglite` for the demo, `.pglite-data` for
   your own data). A server uses PostgreSQL via `DATABASE_URL`; Supabase works too (`DATABASE_SSL`, see deploy guide).
 - **Layout** (more in `docs/system-documentation.md` › Codebase map):
@@ -77,19 +86,20 @@ After pulling new code, restart the launcher so it rebuilds. Your data is kept.
 Optional settings in `.env` (all in `.env.example`): `SMTP_URL`/`MAIL_FROM` for email; `DATABASE_SSL`,
 `DATABASE_SSL_CA`, `DATABASE_POOL_MAX` for Supabase/hosted Postgres; `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
 `SUPABASE_PROVIDERS` for Microsoft/Google sign-in; `ANTHROPIC_API_KEY` for the assistant (then switch it on in
-Administration › Settings).
+Administration › Settings); `NOTIFY_WEBHOOK_URL`/`NOTIFY_WEBHOOK_TOKEN` for an SMS/WhatsApp gateway;
+`BACKUP_REMOTE_*` for an off-site backup copy. Health check: `GET /api/health`.
 
 ---
 
 ## 4. Where the code lives
 
-- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 38 (waves 32–38: the wave 30 audit's fixes and missing features, merged
-  21–26 Nov 2026). Open items: section 7. Set `APP_SECRET` on servers (encrypts two-step secrets). Supplier prices are for Admin, Director,
+- GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 38 (waves 32–38: the wave 30 audit's fixes and
+  missing features, merged 21–26 Nov 2026). Branch `wave-42` has waves 39–42, not merged yet. Open items: section 7. Set `APP_SECRET` on servers (encrypts two-step secrets). Supplier prices are for Admin, Director,
   Procurement and Finance only (`prices.view`, R9).
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
-- Old branches: `wave-13` to `wave-31` (and `wave-22b`) are merged and can be deleted from GitHub's branch page (the session's
+- Old branches: see section 7 › Housekeeping. Merged branches can be deleted from GitHub's branch page (the session's
   connection can't delete branches). The Mac still has two old local branches (`claude/vigilant-noether-2l33kc`,
   `fix/demo-restart`); `git branch -D` them when convenient.
 
@@ -106,7 +116,7 @@ Administration › Settings).
 
 ## 6. What's done
 
-Waves 1–19 are merged. Highlights per wave (details in `CHANGELOG.md`):
+Waves 1–38 are merged; 39–42 wait on `wave-42`. Highlights of the early waves (details in `CHANGELOG.md`):
 
 | Wave | Contents |
 | --- | --- |
@@ -133,42 +143,40 @@ no finance export or e-procurement portal yet.
 
 ## 7. What's left
 
+Done in waves 39–42 and no longer open: camera scanning on every phone, contract response and repair in covered
+hours, "deactivate selected" on the users list (bulk actions), the shared sortable table on the remaining lists,
+paged lists, saved filters on the server, help, the read-only API, Power BI views, more imports, the health route,
+the error log and off-site backup.
+
 ### Needs something from Hisham first
 
 | Item | What's needed |
 | --- | --- |
-| Switch on Microsoft/Google sign-in | A Supabase project: URL and anon key in `.env`, Azure and/or Google providers set up in Supabase, the callback URL added. Not yet tried with real accounts. |
-| Move the database to Supabase | The project's session pooler connection string; then `npm run db:migrate` and `/setup` (steps in `docs/deploy.md`). |
-| Switch on the assistant | `ANTHROPIC_API_KEY` on the server, then Administration › Settings. Only tested against a stand-in API so far: try real questions and tune the prompt in `src/lib/assistant/run.ts`. |
+| Merge waves 39–42 | Hisham's OK; then merge `wave-42` into `main` and update the Mac. |
 | Go-live | The real server and domain, the hospital mail server, the user list with roles; a full Docker build and a load test there. |
 | Real data | La Plaza's equipment register; site planning figures from the makers' guides (Catalogue › model › site data); agreed reference figures (`docs/reference-figures-review.xlsx`); real imaging volumes. |
-| Finance (ERP) export | The finance system's format, when there is one (the invoice CSV covers it for now). |
-| E-procurement portal export | The portal's file format, when there is one. |
+| Move the database to Supabase | The project's session pooler connection string; then `npm run db:migrate` and `/setup` (steps in `docs/deploy.md`). |
+| Switch on Microsoft/Google sign-in | A Supabase project: URL and anon key in `.env`, Azure and/or Google providers set up, the callback URL added. Not yet tried with real accounts. |
+| Switch on the assistant | `ANTHROPIC_API_KEY` on the server, then Administration › Settings. Try real questions and tune the prompt in `src/lib/assistant/run.ts`. |
+| Finance (ERP) and e-procurement portal | Their file formats, when there are any (the invoice CSV and read-only API cover it for now). |
+| UPA MediQ | Their file formats. |
+| National guideline | The National Medical Equipment Guideline file from GAHAR, to import at `/boq/standards/guideline`. |
+| Public holidays | Egypt's public holidays list (Maintain › Public holidays), so working-day counts (escalation, contracts) skip them. |
+| Imaging QC limits | A physicist to review the example limits in the imaging QC templates. |
+| Water limits | Which ISO 23500 edition the dialysis limits should follow; the sterilizer feed water limits. |
+| Law 182 figures | Delay penalty steps and caps, legal minimum days and the bid bond: check against the official Gazette (all in Settings). |
 
-### Ready to build (no input needed)
+### To check with Hisham (earlier waves)
 
-Nothing at the moment. Camera scanning on every phone was done in wave 39 (jsQR where the browser has no
-`BarcodeDetector`, e.g. iPhone Safari), with offline My jobs.
-
-### To check with Hisham (wave 16)
-
-- La Plaza's building file predates phase 2, so it has no symbols. Re-run `npm run cad:import` on the original DWG
-  files (they were in `~/Desktop/HS/hospital-pams/CAD`), then Update drawings: symbols, unrecognised block names and the
-  dimension check appear. The block names it lists are what to add to `tools/cad/floors.json` "symbols".
-
-### To check with Hisham (wave 15)
-
-- The room standards panel in BOQ › Checks shows most La Plaza rooms below their standard on area: the draft areas
-  (HBN / FGI) are larger than many drawn rooms. The figures need the engineers' review before anyone acts on them.
-
-### To check with Hisham (wave 14)
-
-- The room standards are **draft figures** (HBN, HTM 02-01 / 03-01, FGI, vendor guides), listed in
-  `docs/reference-figures-review.xlsx` with the other reference figures: the biomedical and engineering teams should
-  confirm them, especially gas outlet counts and air changes.
+- La Plaza's building file predates phase 2 (wave 16), so it has no symbols. Re-run `npm run cad:import` on the
+  original DWG files (they were in `~/Desktop/HS/hospital-pams/CAD`), then Update drawings; add the block names it
+  lists to `tools/cad/floors.json` "symbols".
+- The room standards are **draft figures** (HBN, HTM 02-01 / 03-01, FGI, vendor guides; waves 14–15), listed in
+  `docs/reference-figures-review.xlsx`; most La Plaza rooms show below standard on area. The biomedical and
+  engineering teams should confirm them, especially gas outlet counts and air changes.
 - The simulation assumes 4 porters on duty and 3 minutes' walk between steps; both are set on the page.
-- The Docker image now installs the PostgreSQL 17 client from the PostgreSQL project's repository; this has not been
-  built here (no Docker in the session). Try `docker compose build` on the server before going live.
+- The Docker image installs the PostgreSQL client from the PostgreSQL project's repository; this has not been built
+  here (no Docker in the session). Try `docker compose build` on the server before going live.
 
 ### Pilots, when partners are ready
 
@@ -182,9 +190,10 @@ Nothing at the moment. Camera scanning on every phone was done in wave 39 (jsQR 
 
 ### Housekeeping
 
-- Delete the old branches on GitHub (section 4).
-- `docs/system-documentation.md` describes the app at release 3.0 in depth; its "Known limitations" and "Backlog"
-  tables are out of date. This file is the current list.
+- Delete old branches on GitHub (the session's connection can't): merged ones such as `wave-31`, `wave-38`,
+  `audit-fixes-32-35`, `wave-32-data-safety`, `wave-33-money` and `wave-34-35-agent-d`; after `wave-42` is merged,
+  also `wave-39`, `wave-40`, `wave-41` and any `wave-3x`/`wave-4x` agent branches.
+- `docs/system-documentation.md` describes the app at release 3.0; README and this file are current.
 
 ---
 

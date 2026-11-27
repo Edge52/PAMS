@@ -1,5 +1,8 @@
 # Hospital PAMS — System Documentation (release 3.0, brought up to date 17 Nov 2026)
 
+> **Note:** this document describes release 3.0 in depth. For the app as it is now (waves up to 42), read
+> `README.md` and `docs/HANDOVER.md`; `CHANGELOG.md` has every wave.
+
 1 Nov 2026 · supersedes the release 2.1 document of 30 Oct 2026. The *Since release 3.0* section, *Known limitations*
 and *Backlog* were rewritten on 17 Nov 2026 (wave 29); the module descriptions below still describe release 3.0, and
 `CHANGELOG.md` has the full detail of every wave since.
