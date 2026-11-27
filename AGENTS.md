@@ -630,3 +630,11 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   change is checked against; notes and parts don't change it). Phone storage `lib/offline/store.ts`; service worker
   `public/sw.js` (only `/assets/my-jobs` and `/_next/static/`; excluded from the sign-in check in `src/proxy.ts`).
   Table `offline_sync_log` makes a re-sent change apply once.
+
+## Wave 41: utilities and water
+- A utility system is an asset plus one `utility_systems` row (kind from `lib/utilities/utilities.ts`). Test rules,
+  intervals and defaults live there; water limits and judging in `lib/utilities/water.ts`. Change a figure there with
+  its test.
+- A failed test or sample opens its work order through `raiseFailureJob` (`lib/utilities/utilities-server.ts`): use it
+  for any new failure source rather than inserting work orders by hand.
+- GAHAR EFS.11/EFS.12 figures come from `utilityEvidence` in the same file.

@@ -1,5 +1,24 @@
 # Changelog
 
+## Wave 41 (not merged yet)
+
+### Utilities and water
+- **Utilities** (`/buildings/utilities`, GAHAR EFS.11, ECRI 2026 hazard 2): utility systems are devices in the register
+  with a `utility_systems` row (kind, what it serves, critical, design figures), so PPM, work orders, documents, QR
+  labels and the 3D view work for them. Scheduled tests with results: generator with load (kW, minutes, transfer time)
+  and without load, fuel, transfer switch, UPS autonomy, medical gas alarms, daily cold-chain temperatures with
+  excursions, tank cleaning, theatre and isolation air changes and pressure. A failed test opens a work order (the
+  failure log). Backups reuse Critical backups. Hourly alert for overdue tests on critical systems. New catalogue
+  group Utility systems (generator, UPS, transfer switch, air handling unit, chiller, water tank, bed lift, fire pump).
+  Rules `src/lib/utilities/utilities.ts` (tested; NFPA 110 and ASHRAE 170 defaults).
+- **Water quality** (`/buildings/water`, GAHAR EFS.12, ECRI 2026 hazard 10): sampling points for dialysis (RO outlet,
+  loop, machine), sterilizer feed water and drinking water tanks, with editable limits (dialysis: ISO 23500, check
+  your edition); results judged within limits, action level or over the limit; over the limit opens a work order on
+  the plant and alerts biomedical; trend per point; hourly alert for overdue samples. Rules `src/lib/utilities/water.ts`.
+- **GAHAR evidence pack**: EFS.11 and EFS.12 now read from these records (10 items instead of "Not recorded in PAMS").
+- Demo seed `scripts/seed/utilities.ts` (demo general hospital). New tables (migration to come from the lead):
+  `utility_systems`, `utility_tests`, `water_points`, `water_samples` (`src/db/schema-wave41-m.ts`).
+
 ## Wave 40 (not merged yet)
 
 ### GAHAR evidence and the equipment plan
