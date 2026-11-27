@@ -13,7 +13,7 @@ import {
   CHANGE_KINDS, changeProblem, checksVersion, completeSteps, effectiveBase, jobVersion, type SyncResult,
 } from "@/lib/assets/offline-jobs";
 import { serverView } from "@/lib/assets/my-jobs-server";
-import { actor, addJobLabour, addJobNote, bookJobPart, completeJob, progressJob, type Tx } from "@/lib/assets/work-order-steps-server";
+import { actor, addJobLabour, AlreadyApplied, addJobNote, bookJobPart, completeJob, type Tx } from "@/lib/assets/work-order-steps-server";
 
 const AnswerSchema = z.object({
   result: z.enum(["PASS", "FAIL", "NA"]).nullable().optional(),
@@ -75,7 +75,22 @@ async function syncOne(me: CurrentUser, c: Change, scope: number[] | null, moved
   if (checksVersion(c.kind) && effectiveBase(c.baseVersion, moved.get(wo.id) ?? new Map()) !== before) {
     return conflict("Someone else changed this job after you opened it. Check it, then send yours again or drop it.");
   }
-  const record = async (tx: Tx) => { await tx.insert(offlineSyncLog).values({ userId: me.id, key: c.key, workOrderId: wo.id, kind: c.kind }).onConflictDoNothing(); };
+  // Wave 42: the key is claimed first, inside the step's own transaction. A second sync of the same change (another
+  // tab, a resend while the first is still running) finds it taken and its whole step is rolled back.
+  const claim = async (tx: Tx) => {
+    const got = await tx.insert(offlineSyncLog).values({ userId: me.id, key: c.key, workOrderId: wo.id, kind: c.kind }).onConflictDoNothing().returning({ key: offlineSyncLog.key });
+    if (!got.length) throw new AlreadyApplied();
+  };
+  try {
+    return await applyChange(me, c, wo, before, claim, conflict, moved);
+  } catch (e) {
+    if (e instanceof AlreadyApplied) return { key: c.key, outcome: "synced", message: "Already saved." };
+    throw e;
+  }
+}
+
+async function applyChange(me: CurrentUser, c: Change, wo: typeof workOrders.$inferSelect, before: string, record: (tx: Tx) => Promise<void>,
+  conflict: (message: string) => Promise<SyncResult>, moved: Map<number, Map<string, string>>): Promise<SyncResult> {
 
   let r: { ok: true } | { error: string };
   switch (c.kind) {
@@ -96,12 +111,10 @@ async function syncOne(me: CurrentUser, c: Change, scope: number[] | null, moved
     case "complete": {
       const d = c.complete;
       if (!d) return conflict("The completion details are missing.");
-      // A job not yet started (or on hold) is started or resumed first, as the work order page would need.
-      for (const step of completeSteps(wo.status) ?? []) {
-        if (step === "complete") break;
-        const s = await progressJob(me, wo.id, step === "start" ? "start" : "resume");
-        if ("error" in s) return conflict(s.error);
-      }
+      // A job not yet started (or on hold) is started or resumed first, in the same transaction as completing it
+      // (wave 42): if the completion fails, the job stays as it was and a resend doesn't conflict with itself.
+      const pre = (completeSteps(wo.status) ?? []).find((x) => x !== "complete");
+      const startFirst = pre === "start" ? "start" : pre === "resume" ? "resume" : undefined;
       const fd = new FormData();
       fd.set("workOrderId", String(wo.id));
       if (d.resolution) fd.set("resolution", d.resolution);
@@ -115,7 +128,7 @@ async function syncOne(me: CurrentUser, c: Change, scope: number[] | null, moved
         if (a.note) fd.set(`ck_note_${i}`, a.note);
       });
       // Wave 40: the failure code is optional from a phone (older phones don't send it); it can be added on the job page.
-      r = await completeJob(me, fd, record, { failureCodeOptional: true });
+      r = await completeJob(me, fd, record, { failureCodeOptional: true, startFirst });
       break;
     }
   }

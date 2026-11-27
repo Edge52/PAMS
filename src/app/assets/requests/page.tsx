@@ -11,7 +11,8 @@ import { scopeWhere, scopedFacilityId } from "@/lib/assets/access";
 import { can } from "@/lib/auth/permissions";
 import { myDepartments } from "@/lib/auth/departments";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
-import { departmentStep, mayApproveForDepartment } from "@/lib/assets/request-rules";
+import { departmentStep, mayApproveForDepartment, waitsForDepartment } from "@/lib/assets/request-rules";
+import { departmentsWithHead } from "@/lib/assets/request-rules-server";
 import { fiscalYearOptions } from "@/lib/fiscal-year";
 import { formatDate } from "@/lib/format";
 import { budgetYear } from "@/lib/procurement/budget-year-server";
@@ -40,6 +41,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
   const pager = <div className="mt-3"><ListPager paging={paging} path="/assets/requests" sp={sp} what="requests" /></div>;
   const canDecide = can(me.role, "boq.approve"), canBoq = can(me.role, "boq.edit");
   const mine = me.role === "DEPARTMENT_HEAD" ? await myDepartments(me.id) : new Set<number>();
+  const withHead = canDecide ? await departmentsWithHead(rows.map((x) => x.r.departmentId)) : new Set<number>();
   // Wave 39: plan years are budget (fiscal) years, as in the capital plan.
   const by = await budgetYear();
   const year = by.current;
@@ -81,6 +83,11 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
                   <input type="hidden" name="requestId" value={x.r.id} />
                   <Field label="Plan for"><NativeSelect name="planYear" value={year} options={[...yearOptions, ...[3, 4].map((k) => ({ value: year + k, label: by.label(year + k) }))]} /></Field>
                   <Textarea name="note" rows={2} placeholder="Note (needed to reject)" aria-label="Note" />
+                  {waitsForDepartment(x.r, x.r.departmentId != null && withHead.has(x.r.departmentId)) && (
+                    <Field label="Reason for not waiting for the department head" hint="The department head hasn't approved yet. The reason is kept with the decision.">
+                      <Textarea name="overrideReason" rows={2} maxLength={1000} />
+                    </Field>
+                  )}
                   <div className="flex gap-2"><Button name="decision" value="approve">Approve</Button><Button variant="secondary" name="decision" value="reject">Not approved</Button></div>
                 </ActionForm>
               )}

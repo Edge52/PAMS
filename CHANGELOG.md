@@ -1,5 +1,21 @@
 # Changelog
 
+## Wave 42 (not merged yet)
+
+### Fixes from the review
+
+- **My jobs sync applies a change once**: the change's key is now claimed first, inside the step's own transaction.
+  Two syncs of the same change at once (two tabs, a resend) no longer add a note twice or take a part from stock
+  twice; the second answers "Already saved." Steps' `inTx` hook now runs first and may throw `AlreadyApplied`.
+- **Completing from a phone starts the job in the same transaction**: if the completion fails (checklist, safety
+  test), the job stays as it was, so the resend no longer conflicts with the technician's own start
+  (`completeJob(..., { startFirst })`).
+- **Bulk restore of documents** checks each document's record (edit permission and hospital), as bulk remove does,
+  and says which were left alone.
+- **Equipment requests: the department head first.** When the department has a department head who hasn't
+  approved, the director can decide only with a reason for not waiting. The reason is kept at the start of the
+  decision note (shown on the request) and in the activity log.
+
 ## Wave 41 (not merged yet)
 
 ### Notifications, delegation and escalation

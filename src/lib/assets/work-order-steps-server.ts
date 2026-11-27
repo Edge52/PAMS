@@ -28,8 +28,18 @@ import { logActivity } from "@/lib/server-utils";
 import { todayISO } from "@/lib/format";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-/** Runs inside the step's transaction after its writes (the offline sync records the change's key there). */
+/**
+ * Runs first inside the step's transaction, before its writes: the offline sync claims the change's key there. Throw
+ * `AlreadyApplied` to roll the step back (another sync of the same change got there first).
+ */
 export type InTx = (tx: Tx) => Promise<void>;
+export class AlreadyApplied extends Error { constructor() { super("already applied"); } }
+
+/** Thrown inside a step's transaction to undo it (the claim included) and return `value` from `txn`. */
+class Rollback<T> extends Error { constructor(public value: T) { super("rollback"); } }
+async function txn<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  try { return await db.transaction(fn); } catch (e) { if (e instanceof Rollback) return e.value as T; throw e; }
+}
 export type StepResult = { ok: true } | { error: string; fields?: Record<string, string> };
 
 export const actor = (me: CurrentUser) => ({ id: me.id, canAssign: can(me.role, "workorders.assign"), canWork: can(me.role, "maintenance.edit") });
@@ -74,16 +84,16 @@ export async function progressJob(me: CurrentUser, woId: number, step: "start" |
     const kept = quarantineBlock(await quarantineFor(wo.assetId), "work", wo.type); // wave 40: kept as found
     if (kept) return { error: kept };
   }
-  const ok = await db.transaction(async (tx) => {
+  const ok = await txn(async (tx) => {
+    if (inTx) await inTx(tx);
     const set: Partial<typeof workOrders.$inferInsert> = { status: next };
     if (step === "start") { set.startedAt = new Date(); if (!wo.assignedToId) { set.assignedToId = me.id; set.assignedAt = new Date(); } }
     if (step === "hold") set.holdReason = holdReason!;
     if (step === "resume") set.holdReason = null;
-    if (!(await guardedUpdate(tx, wo, set))) return false;
+    if (!(await guardedUpdate(tx, wo, set))) throw new Rollback(false);
     await logActivity("work_order", wo.id, step === "start" ? "started" : step === "hold" ? "on_hold" : "resumed",
       step === "start" ? `Work started by ${me.name}` : step === "hold" ? `On hold — ${holdReason}` : "Work resumed", me.name, tx);
     if (step === "start") await applyAssetEffect("start", wo, { actor: me.name }, tx);
-    if (inTx) await inTx(tx);
     return true;
   });
   if (!ok) return { error: RACE };
@@ -106,13 +116,22 @@ const CompleteSchema = z.object({
  * Writes the maintenance history entry, completes a PPM visit, actions a recall, and tells the reporter.
  * Wave 40: a corrective job needs a failure code (`failureCode`), unless `opts.failureCodeOptional` (the My jobs sync).
  */
-export async function completeJob(me: CurrentUser, fd: FormData, inTx?: InTx, opts: { failureCodeOptional?: boolean } = {}): Promise<StepResult> {
+export async function completeJob(me: CurrentUser, fd: FormData, inTx?: InTx, opts: { failureCodeOptional?: boolean; startFirst?: "start" | "resume" } = {}): Promise<StepResult> {
   const p = CompleteSchema.safeParse(formObject(fd));
   if (!p.success) return { error: firstError(p.error) };
   const d = p.data;
-  const r = await loadForAction(d.workOrderId, "complete", me);
+  // Wave 42: `startFirst` starts (or resumes) the job in the same transaction as completing it (the My jobs sync), so a
+  // completion that fails a check leaves the job exactly as it was.
+  const first = opts.startFirst;
+  const r = await loadForAction(d.workOrderId, first ?? "complete", me);
   if (r.error !== undefined) return { error: r.error };
-  const { wo, next } = r;
+  const loaded = r.wo;
+  const startedNow = first === "start" ? new Date() : null;
+  const wo: WorkOrderRow = first
+    ? { ...loaded, status: "IN_PROGRESS", holdReason: null, startedAt: loaded.startedAt ?? startedNow, assignedToId: loaded.assignedToId ?? me.id }
+    : loaded;
+  if (first) { const p2 = actionProblem(wo, "complete", actor(me)); if (p2) return { error: p2 }; }
+  const next = first ? nextStatus(wo.status, "complete")! : r.next;
   const codeProblem = failureCodeProblem(wo.type, d.failureCode, opts.failureCodeOptional);
   if (codeProblem) return { error: codeProblem, fields: { failureCode: codeProblem } };
   let checklist = wo.checklist;
@@ -143,14 +162,23 @@ export async function completeJob(me: CurrentUser, fd: FormData, inTx?: InTx, op
   const [assignee] = wo.assignedToId ? await db.select({ name: users.name }).from(users).where(eq(users.id, wo.assignedToId)) : [];
   const currency = d.cost != null ? (d.currency ?? "EGP").toUpperCase() : null;
   const held = await calibrationHeld(wo.assetId); // wave 37: a failed calibration keeps it out of service
-  const ok = await db.transaction(async (tx) => {
+  const ok = await txn(async (tx) => {
+    if (inTx) await inTx(tx);
+    if (first) {
+      const set: Partial<typeof workOrders.$inferInsert> = first === "start"
+        ? { status: "IN_PROGRESS", startedAt: startedNow, ...(loaded.assignedToId ? {} : { assignedToId: me.id, assignedAt: startedNow }) }
+        : { status: "IN_PROGRESS", holdReason: null };
+      if (!(await guardedUpdate(tx, loaded, set))) throw new Rollback(false);
+      await logActivity("work_order", wo.id, first === "start" ? "started" : "resumed", first === "start" ? `Work started by ${me.name}` : "Work resumed", me.name, tx);
+      if (first === "start") await applyAssetEffect("start", loaded, { actor: me.name }, tx);
+    }
     const downtimeEnd = wo.deviceDown && d.returnToService ? now : wo.downtimeEnd;
     if (!(await guardedUpdate(tx, wo, {
       status: next, completedAt: now, startedAt: wo.startedAt ?? now, resolution, rootCause: d.rootCause ?? null,
       failureCode: d.failureCode ?? wo.failureCode ?? null,
       // Wave 39: labour booked earlier (from My jobs) stays when the form leaves the hours empty.
       laborHours: completedLabour(d.laborHours, wo.laborHours), cost: d.cost != null ? String(d.cost) : null, currency, downtimeEnd, checklist,
-    }))) return false;
+    }))) throw new Rollback(false);
     // The maintenance history (and PPM due dates) read from maintenance_events, so every finished job writes one —
     // or completes the scheduled visit it was raised for.
     const event = {
@@ -172,7 +200,6 @@ export async function completeJob(me: CurrentUser, fd: FormData, inTx?: InTx, op
     await logActivity("work_order", wo.id, "completed", `Completed by ${me.name}: ${resolution.slice(0, 200)}${failed ? ` — ${failed} checklist item${failed === 1 ? "" : "s"} failed` : ""}${wo.deviceDown ? (d.returnToService ? " — back in service" : " — still out of use") : ""}${gate && d.safetyTestReason ? ` — no safety test after repair: ${d.safetyTestReason}` : ""}`.slice(0, 600), me.name, tx);
     await logActivity("asset", wo.assetId, "maintenance", `${wo.number} completed — ${resolution.slice(0, 120)}`, me.name, tx);
     await applyAssetEffect("complete", wo, { returnToService: d.returnToService, actor: me.name, calibrationHeld: held }, tx);
-    if (inTx) await inTx(tx);
     return true;
   });
   if (!ok) return { error: RACE };
@@ -199,10 +226,10 @@ export async function setFailureCode(me: CurrentUser, woId: number, code: string
   await requireFacilityAccess(wo.facilityId, me);
   if (wo.status === "CANCELLED") return { error: "A cancelled job has no failure code." };
   if (wo.failureCode === code) return { ok: true };
-  await db.transaction(async (tx) => {
+  await txn(async (tx) => {
+    if (inTx) await inTx(tx);
     await tx.update(workOrders).set({ failureCode: code }).where(eq(workOrders.id, wo.id));
     await logActivity("work_order", wo.id, "failure_code", `Failure code ${wo.failureCode ? `changed from ${failureCodeLabel(wo.failureCode)} ` : ""}set to ${failureCodeLabel(code)} by ${me.name}`, me.name, tx);
-    if (inTx) await inTx(tx);
   });
   refreshJob(wo.id, wo.assetId);
   return { ok: true };
@@ -223,15 +250,16 @@ export async function bookJobPart(me: CurrentUser, input: z.infer<typeof JobPart
   if (!isActive(wo.status) && wo.status !== "COMPLETED") return { error: "Parts can only be booked on an open or just-completed job." };
   const [part] = await db.select({ facilityId: spareParts.facilityId, active: spareParts.active }).from(spareParts).where(eq(spareParts.id, partId));
   if (!part || part.facilityId !== wo.facilityId) return { error: "That part isn't stocked in this hospital." };
-  const r = await db.transaction(async (tx) => {
+  const r = await txn<Awaited<ReturnType<typeof applyMovement>>>(async (tx) => {
+    if (inTx) await inTx(tx);
     // Lock the part first (audit wave 36): two returns at once can't both pass "not more than issued to this job".
     await tx.select({ id: spareParts.id }).from(spareParts).where(eq(spareParts.id, partId)).for("update");
     const used = step === "return" ? await issuedToJob(partId, wo.id, tx) : 0;
     const res = await applyMovement({ partId, kind: step === "issue" ? "ISSUE" : "RETURN", quantity, workOrderId: wo.id, actor: me.name }, tx, used);
-    if (res.ok) {
+    if (!res.ok) throw new Rollback(res);
+    {
       await logActivity("work_order", wo.id, step === "issue" ? "part_used" : "part_returned", `${step === "issue" ? "Used" : "Returned"} ${quantity} × ${res.partName}`, me.name, tx);
       await logActivity("part", partId, step === "issue" ? "issued" : "returned", `${quantity} ${step === "issue" ? "issued to" : "returned from"} ${wo.number} (stock ${res.after})`, me.name, tx);
-      if (inTx) await inTx(tx);
     }
     return res;
   });
@@ -247,9 +275,9 @@ export async function bookJobPart(me: CurrentUser, input: z.infer<typeof JobPart
 
 /** A note on the job, kept in its activity trail. */
 export async function addJobNote(me: CurrentUser, wo: { id: number; assetId: number }, note: string, inTx?: InTx): Promise<StepResult> {
-  await db.transaction(async (tx) => {
-    await logActivity("work_order", wo.id, "note", `Note from ${me.name}: ${note.slice(0, 2000)}`, me.name, tx);
+  await txn(async (tx) => {
     if (inTx) await inTx(tx);
+    await logActivity("work_order", wo.id, "note", `Note from ${me.name}: ${note.slice(0, 2000)}`, me.name, tx);
   });
   revalidatePath(woPath(wo.id));
   return { ok: true };
@@ -257,10 +285,10 @@ export async function addJobNote(me: CurrentUser, wo: { id: number; assetId: num
 
 /** Labour time added to the job's total. */
 export async function addJobLabour(me: CurrentUser, wo: { id: number; assetId: number; status: typeof workOrders.$inferSelect.status }, hours: number, inTx?: InTx): Promise<StepResult> {
-  const ok = await db.transaction(async (tx) => {
-    if (!(await guardedUpdate(tx, wo, { laborHours: sql`coalesce(${workOrders.laborHours}, 0) + ${hours}` as unknown as number }))) return false;
-    await logActivity("work_order", wo.id, "labour", `${hours} h labour booked by ${me.name}`, me.name, tx);
+  const ok = await txn(async (tx) => {
     if (inTx) await inTx(tx);
+    if (!(await guardedUpdate(tx, wo, { laborHours: sql`coalesce(${workOrders.laborHours}, 0) + ${hours}` as unknown as number }))) throw new Rollback(false);
+    await logActivity("work_order", wo.id, "labour", `${hours} h labour booked by ${me.name}`, me.name, tx);
     return true;
   });
   if (!ok) return { error: RACE };

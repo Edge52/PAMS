@@ -31,3 +31,24 @@ describe("equipment request rules (wave 39)", () => {
     expect(departmentStep({ departmentId: 3, deptApprovedByName: "Dr Sara", status: "APPROVED" })).toBe("Department approval: Dr Sara");
   });
 });
+
+describe("the department first (wave 42)", async () => {
+  const { decisionNoteFor, decisionProblem, waitsForDepartment } = await import("./request-rules");
+  const waiting = { departmentId: 3, deptApprovedAt: null };
+  it("waits for the department head only when the department has one", () => {
+    expect(waitsForDepartment(waiting, true)).toBe(true);
+    expect(waitsForDepartment(waiting, false)).toBe(false);
+    expect(waitsForDepartment({ departmentId: null, deptApprovedAt: null }, true)).toBe(false);
+    expect(waitsForDepartment({ departmentId: 3, deptApprovedAt: new Date() }, true)).toBe(false);
+  });
+  it("lets the director decide early only with a reason", () => {
+    expect(decisionProblem(waiting, true, "")).toMatch(/hasn't approved/);
+    expect(decisionProblem(waiting, true, "short")).toMatch(/hasn't approved/);
+    expect(decisionProblem(waiting, true, "Head on leave until March; ICU needs it now.")).toBeNull();
+    expect(decisionProblem(waiting, false, "")).toBeNull();
+  });
+  it("keeps the reason in the decision note", () => {
+    expect(decisionNoteFor("For next year", "Head on leave")).toBe("Decided before the department head approved — reason: Head on leave. For next year");
+    expect(decisionNoteFor("", null)).toBeNull();
+  });
+});
