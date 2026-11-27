@@ -33,7 +33,7 @@ async function mayRead(me: CurrentUser, segments: string[], url: string): Promis
   const entityId = Number(idText);
   if (!Number.isInteger(entityId) || entityId <= 0) return false;
   // Wave 39: the current file or an earlier version of a document. Removed documents only for administrators
-  // (Administration › Deleted documents).
+  // (Administration › Documents › Removed).
   const same = and(eq(documents.entityType, entityType), eq(documents.entityId, entityId));
   const rows = [
     ...await db.select({ deletedAt: documents.deletedAt }).from(documents).where(and(same, eq(documents.url, url))).limit(5),

@@ -23,8 +23,8 @@ export function auditWhere(f: AuditFilter): SQL | undefined {
   );
 }
 
-export async function auditRows(f: AuditFilter, limit = 200, offset = 0) {
-  return db.select().from(activityLog).where(auditWhere(f)).orderBy(desc(activityLog.at), desc(activityLog.id)).limit(limit).offset(offset);
+export async function auditRows(f: AuditFilter, limit = 200, offset = 0, order?: SQL[]) {
+  return db.select().from(activityLog).where(auditWhere(f)).orderBy(...(order ?? [desc(activityLog.at)]), desc(activityLog.id)).limit(limit).offset(offset);
 }
 export async function auditCount(f: AuditFilter) {
   const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(activityLog).where(auditWhere(f));
