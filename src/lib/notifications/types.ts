@@ -52,6 +52,10 @@ export const KIND_LABELS: Record<string, string> = {
   tube_replace: "Tube replacement",
   tube_warranty: "Tube warranty",
   critical_backup: "No backup left",
+  utility_test_failed: "Utility test failed",
+  utility_test_overdue: "Utility test overdue",
+  water_sample_failed: "Water sample",
+  water_sample_overdue: "Water sample due",
   test: "Test",
 };
 
