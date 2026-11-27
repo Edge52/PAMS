@@ -57,6 +57,10 @@ export type ReplacementInput = {
   criticality: string | null;
   condition: string;
   openRecall: boolean;
+  /** Wave 41 (ECRI 2026 #8, legacy devices): a networked device whose operating system no longer gets fixes, and
+   *  months since its last security update (null = no record or not networked). */
+  osUnsupported?: boolean;
+  monthsWithoutPatch?: number | null;
 };
 
 export type ReplacementBand = "REPLACE" | "PLAN" | "KEEP";
@@ -64,7 +68,8 @@ export type ReplacementScore = { score: number; band: ReplacementBand; reasons: 
 
 /**
  * 0–100, higher = replace sooner. Weights: age 35, repair cost 20, failures 15, downtime 10, criticality 10,
- * condition 10 (+5 for an open recall), capped at 100. REPLACE ≥ 60, PLAN ≥ 35.
+ * condition 10 (+5 for an open recall; wave 41: +10 for an operating system out of support on a networked device,
+ * +3 for no security update in 12 months, +5 in 24), capped at 100. REPLACE ≥ 60, PLAN ≥ 35.
  */
 export function replacementScore(i: ReplacementInput): ReplacementScore {
   const reasons: string[] = [];
@@ -91,6 +96,11 @@ export function replacementScore(i: ReplacementInput): ReplacementScore {
   if (i.condition === "CONDEMNED") { s += 10; reasons.push("Condemned"); }
   else if (i.condition === "POOR") { s += 5; reasons.push("Poor condition"); }
   if (i.openRecall) { s += 5; reasons.push("Open recall"); }
+  if (i.osUnsupported) { s += 10; reasons.push("Its operating system no longer gets security fixes"); }
+  if (i.monthsWithoutPatch != null && i.monthsWithoutPatch >= 12) {
+    s += i.monthsWithoutPatch >= 24 ? 5 : 3;
+    reasons.push(`No security update for ${i.monthsWithoutPatch} months`);
+  }
   const score = Math.min(100, Math.round(s));
   return { score, band: score >= 60 ? "REPLACE" : score >= 35 ? "PLAN" : "KEEP", reasons };
 }

@@ -14,17 +14,20 @@ const KINDS = [
   { value: "invoice", label: "Invoice" }, { value: "manual", label: "Manual" }, { value: "photo", label: "Photo" },
   { value: "service_report", label: "Service report" }, { value: "sign_in_sheet", label: "Sign-in sheet" },
   { value: "calibration_certificate", label: "Calibration certificate" }, { value: "licence", label: "Licence" },
+  { value: "sbom", label: "Software bill of materials (SBOM)" }, { value: "remote_access_agreement", label: "Remote-access agreement" },
   { value: "other", label: "Other" },
 ];
 const byValue = (vs: string[]) => vs.map((v) => KINDS.find((k) => k.value === v)!).filter(Boolean);
 
 /** Server component: lists attachments and offers an upload form. */
-export async function DocumentsPanel({ entityType, entityId, returnPath, title = "Documents", kinds, emptyHint }: {
+export async function DocumentsPanel({ entityType, entityId, returnPath, title = "Documents", kinds, emptyHint, withExpiry = false }: {
   entityType: string; entityId: number; returnPath: string; title?: string;
   /** Document kinds offered on upload, first one preselected (default: every kind, quotation first). */
   kinds?: string[];
   /** What to attach, shown when nothing is attached yet. */
   emptyHint?: string;
+  /** Ask for a "valid until" date on upload and show it (wave 41). */
+  withExpiry?: boolean;
 }) {
   const offered = kinds ? byValue(kinds) : KINDS;
   const [docs, canEdit] = await Promise.all([listDocuments(entityType, entityId), canEditDocuments(entityType)]);
@@ -42,6 +45,7 @@ export async function DocumentsPanel({ entityType, entityId, returnPath, title =
               <span className="flex shrink-0 items-center gap-3 text-xs text-muted">
                 <span>{KINDS.find((k) => k.value === d.kind)?.label ?? d.kind}</span>
                 {d.version > 1 && <span>v{d.version}</span>}
+                {withExpiry && d.expiresOn && <span>valid until {formatDate(d.expiresOn)}</span>}
                 <span>{fileSize(d.sizeBytes)}</span>
                 <span>{formatDate(d.uploadedAt)}{d.uploadedByName ? ` · ${d.uploadedByName}` : ""}</span>
                 {canEdit && <form action={deleteDocument}>
@@ -57,7 +61,7 @@ export async function DocumentsPanel({ entityType, entityId, returnPath, title =
           ))}
         </ul>
       )}
-      {canEdit && <DocumentUploadForm entityType={entityType} entityId={entityId} returnPath={returnPath} kinds={offered} />}
+      {canEdit && <DocumentUploadForm entityType={entityType} entityId={entityId} returnPath={returnPath} kinds={offered} withExpiry={withExpiry} />}
     </Panel>
   );
 }

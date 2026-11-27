@@ -23,6 +23,39 @@
   approval_step_tracking, work_order_escalations, biomed_on_call); migration to be generated at merge. Until then the
   app works on the defaults (no choices, no deputies).
 
+### Cyber, labels, guideline, API and imports
+- **Device cybersecurity** (IEC 80001-1:2021, MDS2, ECRI 2026 hazard #8): per make and model, the SBOM file
+  (documents of entity type `device_model`, kind `sbom`) and key software components with their support end date
+  (`model_software_components`); per device, a network risk per connection (`network_risks`: system it connects to,
+  data, hazard, likelihood and severity before and after controls on a 5 × 5 matrix, owner, review date, status);
+  the supplier's remote-access agreement on file with its expiry (asset document kind `remote_access_agreement`).
+  New concerns on the security panel: no agreement, expired or expiring agreement, high residual risk, review overdue,
+  no SBOM, components out of support. The replacement score adds 10 for a networked device whose operating system is
+  out of support and 3/5 for no security update in 12/24 months. Rules: `lib/assets/network-risk.ts`,
+  `extraConcerns` and `legacyFacts` in `lib/assets/device-security.ts`.
+- **GS1 / UDI**: `lib/assets/gs1.ts` reads bracketed, scanned (group separators, ]d2/]C1/]Q3) and GS1 Digital Link
+  codes (AI 01, 10, 11, 17, 21), checks the GTIN check digit and builds the human-readable and element strings.
+  Scanning the label into the UDI field fills the serial number on the asset form (new and edit); the asset page
+  shows the GTIN, lot, serial and dates; labels can add the GS1 line (`?gs1=1`). No DataMatrix is drawn (that needs a
+  barcode library); the QR stays as it is.
+- **National Medical Equipment Guideline** (GAHAR, 2025 app): template and importer at `/boq/standards/guideline`
+  (department type, room type, device, quantity per room / bed / department, notes, source, version). It loads as the
+  standard set `NATGUIDE-<version>` marked "National guideline (imported)"; importing the same version replaces its
+  rules. BOQ › Checks shows "This BOQ vs the national guideline": missing, lower, higher. Rules: `lib/boq/guideline.ts`.
+- **Contract response and repair in covered hours**: `contractStatement(…, covered, clock)` counts response and repair
+  in the contract's covered hours (clock hours shown beside them) on the statement; the supplier scorecard's median
+  response uses the same hours (`coveredResponseHours` in `lib/assets/coverage-server.ts`).
+- **Read-only API** `/api/v1/assets`, `/work-orders`, `/ppm`, `/analytics/kpis`: tokens made by an administrator at
+  `/admin/api` (scopes, hospitals, expiry; SHA-256 at rest, shown once), paging, no money without `prices:read`,
+  60 calls a minute per token, every call logged (`api_calls`). `/api/v1` is let through `src/proxy.ts` without a
+  session; each route checks its token. See `docs/api.md`.
+- **More imports** at `/admin/imports`: suppliers, service contracts (with covered devices), users (no passwords),
+  PPM schedules and spare parts (opening stock booked as a receipt), from .xlsx or CSV, with a downloadable template
+  and a check report before anything is written; the commit checks the rows again. Shared helpers in
+  `lib/imports/` (`table.ts` incl. a CSV reader, `read-server.ts`, `kinds.ts`) and `components/imports/import-wizard.tsx`.
+- New tables (lead to generate the migration): `model_software_components`, `network_risks`, `api_tokens`,
+  `api_calls` in `src/db/schema-wave41-n.ts`.
+
 ## Wave 40 (not merged yet)
 
 ### GAHAR evidence and the equipment plan

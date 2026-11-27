@@ -43,7 +43,7 @@ export default async function PartsPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader title="Spare parts" description="Parts held in the biomedical store. Technicians book parts to work orders; stock and job costs follow."
-        actions={canEdit && <LinkButton href="/assets/parts/new" variant="primary">Add a part</LinkButton>} />
+        actions={canEdit && <><LinkButton href="/admin/imports/parts">Import from Excel</LinkButton><LinkButton href="/assets/parts/new" variant="primary">Add a part</LinkButton></>} />
       {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-3">

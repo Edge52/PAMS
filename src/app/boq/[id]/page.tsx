@@ -12,6 +12,7 @@ import { ScopeTab } from "@/components/boq/tabs/scope";
 import { GapTab } from "@/components/boq/tabs/gap";
 import { AssumptionsTab } from "@/components/boq/tabs/assumptions";
 import { ChecksTab } from "@/components/boq/tabs/checks";
+import { GuidelineCompare } from "@/components/boq/guideline-compare";
 import { boqChecks } from "@/lib/boq/checks-server";
 import { PhasingTab } from "@/components/boq/tabs/phasing";
 import { boqPlanning, roomsCheck, roomStandardsCheck } from "@/lib/boq/planning-server";
@@ -50,7 +51,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function BoqPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; why?: string; expand?: string; regen?: string; notice?: string; error?: string }>;
+  searchParams: Promise<{ tab?: string; why?: string; expand?: string; regen?: string; guide?: string; notice?: string; error?: string }>;
 }) {
   const me = await requirePermission("boq.view");
   const { id } = await params;
@@ -184,6 +185,7 @@ export default async function BoqPage({ params, searchParams }: {
       {tab === "scope" && <ScopeData ws={ws} locked={locked} me={me} />}
       {tab === "gap" && <GapTab ws={ws} installed={await installedCounts(ws.depts.map((d) => d.departmentId).filter((x): x is number => !!x))} />}
       {tab === "checks" && <ChecksTab ws={ws} checks={checks} locked={locked} rooms={await roomsCheck(ws)} standards={await roomStandardsCheck(ws)} />}
+      {tab === "checks" && <GuidelineCompare ws={ws} setId={/^\d+$/.test(String(sp.guide ?? "")) ? Number(sp.guide) : null} canImport={can(me.role, "standards.edit")} />}
       {tab === "phasing" && <PhasingTab ws={ws} planning={await boqPlanning(ws)} locked={locked} />}
       {tab === "orders" && <OrdersTab boqId={boq.id} canTender={mayTender} {...await boqPlanVsOrdered(boq.id)} />}
       {tab === "assumptions" && <AssumptionsTab ws={ws} rules={await rulesForSet(boq.standardSetId)} />}

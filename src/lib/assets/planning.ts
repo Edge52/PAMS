@@ -3,7 +3,7 @@
  * device goes in the capital plan (D4) and total cost of ownership of an offer (D5). Pure; hours and plain numbers.
  */
 import { downtimeMsByDevice } from "./downtime";
-import { coveredDowntimeByDevice, totalMs, type Interval } from "./coverage";
+import { coveredDowntimeByDevice, coveredHoursBetween, totalMs, type Interval } from "./coverage";
 
 /* ── D6: contract performance ── */
 
@@ -17,7 +17,11 @@ export type ContractJob = {
   id: number; number: string; tag: string; reportedAt: Date; startedAt: Date | null; completedAt: Date | null;
   deviceDown: boolean; downtimeStart: Date | null; downtimeEnd: Date | null;
 };
-export type JobPerformance = ContractJob & { responseH: number | null; repairH: number | null; lateH: number; open: boolean };
+export type JobPerformance = ContractJob & {
+  responseH: number | null; repairH: number | null; lateH: number; open: boolean;
+  /** Wave 41: the same times on the clock, when responseH/repairH are counted in covered hours. */
+  responseClockH: number | null; repairClockH: number | null; inCoveredHours: boolean;
+};
 export type Statement = {
   jobs: JobPerformance[]; devices: number; periodHours: number; downtimeH: number; uptimePct: number | null;
   late: number; latePenalty: number; uptimeShort: number; uptimePenalty: number; cap: number | null; penalty: number; capped: boolean;
@@ -31,18 +35,23 @@ const hours = (a: Date, b: Date) => (b.getTime() - a.getTime()) / H;
  * device back up (or the job completed). A job is late by the larger of its response and repair overrun; penalties are
  * late hours × the hourly rate plus uptime points short × the point rate, capped at the cap % of the contract value
  * for the period. Jobs still open at the end of the period count up to then; lateness is charged in the month a job
- * was reported. `covered` (wave 38) limits uptime and downtime to the contract's covered hours; response and repair
- * times stay in clock hours. The penalty cap's share of the contract stays in calendar time.
+ * was reported. `covered` (wave 38) limits uptime and downtime to the contract's covered hours; `clock` (wave 41) counts
+ * response and repair times in covered hours too (without it they are clock hours). The penalty cap's share of the contract stays in calendar time.
  */
-export function contractStatement(t: ContractTerms, jobs: ContractJob[], devices: number, from: Date, to: Date, covered?: Interval[] | null): Statement {
+export function contractStatement(t: ContractTerms, jobs: ContractJob[], devices: number, from: Date, to: Date, covered?: Interval[] | null, clock?: Interval[] | null): Statement {
+  // Wave 41: with `clock` (covered intervals from the earliest report to `to`), response and repair count only
+  // covered hours, so a fault reported on Thursday evening isn't late on Saturday under a Sunday–Thursday contract.
+  const span = (a: Date, b: Date) => (clock ? coveredHoursBetween(clock, a, b) : hours(a, b));
   const rows: JobPerformance[] = jobs.map((j) => {
-    const responseH = j.startedAt ? hours(j.reportedAt, j.startedAt) : j.completedAt ? hours(j.reportedAt, j.completedAt) : null;
+    const started = j.startedAt ?? j.completedAt;
     const back = j.downtimeEnd ?? j.completedAt;
-    const repairH = back ? hours(j.reportedAt, back) : null;
-    const openR = responseH ?? hours(j.reportedAt, to), openP = repairH ?? hours(j.reportedAt, to);
+    const responseH = started ? span(j.reportedAt, started) : null;
+    const repairH = back ? span(j.reportedAt, back) : null;
+    const responseClockH = started ? hours(j.reportedAt, started) : null, repairClockH = back ? hours(j.reportedAt, back) : null;
+    const openR = responseH ?? span(j.reportedAt, to), openP = repairH ?? span(j.reportedAt, to);
     const lateR = t.responseHours ? Math.max(0, openR - t.responseHours) : 0;
     const lateP = t.repairHours ? Math.max(0, openP - t.repairHours) : 0;
-    return { ...j, responseH, repairH, lateH: Math.max(lateR, lateP), open: !back };
+    return { ...j, responseH, repairH, lateH: Math.max(lateR, lateP), open: !back, responseClockH, repairClockH, inCoveredHours: !!clock };
   });
   // Wave 38: with covered hours (coverage.ts), uptime counts only inside them; without, every hour of the period.
   const periodHours = covered ? totalMs(covered) / H : Math.max(0, hours(from, to));
