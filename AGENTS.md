@@ -401,8 +401,13 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
 - **Look**: use the tokens (`bg-nav`, `text-gold-ink`, `shadow-[var(--shadow-card)]`, `font-display` …), never raw
   hex. `font-display` (Fraunces) is for page titles and big figures only. Gold (`gold`, `nav-gold`) is an accent for
   marks and for text on the dark menu; on a light ground use `text-gold-ink`. See every part at `/admin/design`.
-- **Modules and menu**: a new page goes in its module in `src/lib/modules.ts` (`MODULES`); the side menu, the modules
-  page, the path bar and the Ctrl+K box all read that file. Don't add links in `side-nav.tsx`.
+- **Modules and menu** (hubs since wave 42): a new page goes in one section of one hub in `src/lib/modules.ts`
+  (`HUBS`, or `HOME` for personal pages) as `{ href, label, need, about }`. Add `menu: true` only for a main page:
+  keep each hub's menu to 4–9 links (a test checks). Every other page is listed on the hub page `/modules/<id>`.
+  A form opened from its list (`/x/new`) needs no entry if the list page links to it; one opened from a record
+  goes in `FROM_RECORD` in `modules.test.ts`. That test fails when a page in `src/app` can't be reached. The side
+  menu, hub pages, modules page, path bar, start-page choice and Ctrl+K box all read that file. Don't add links in
+  `side-nav.tsx`.
 - **Sortable lists**: headings are `<SortTh k="…">` (`@/components/ui/sort-th`); the page reads the choice with
   `parseSort(sp, KEYS)` and sorts with `sortRows(...)` (rows already loaded) or its own `orderBy` (paged in the
   database). Both in `@/lib/list`. Add `<SavedFilters />` under the filter form of a list whose filters are in the

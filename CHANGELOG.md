@@ -1,5 +1,20 @@
 # Changelog
 
+## Wave 42 (not merged yet)
+
+### Simpler menu
+- The menu is regrouped into nine modules: **Plan, Buy, Pay, Equipment, Maintain, Safety & compliance, Buildings & 3D,
+  Reports, Setup**. Each shows 4–8 main pages (was up to 19 in Maintenance); 54 menu links in all, down from 69.
+- **Module pages** (`/modules/plan`, `/modules/maintain` …): every page of the module, grouped, with one line about
+  each. Open one from **All … pages** at the foot of the menu, the module's name in the path bar, or its card.
+- Pages that were missing from the menu are now listed: import assets, bulk placement, asset labels, maintenance
+  budget, BOQ quick start, makes and models, 3D library, on call, incident contacts, import recalls, record a QC
+  check, pathway book, each analytics tab, notifications and escalation, email and alert settings.
+- Patient pathways moved into Buildings & 3D; safety tests, recalls, incidents, radiation, imaging QC, cryogen,
+  training and device security into Safety & compliance; the maintenance budget into Pay.
+- Ctrl+K finds every page, menu or not. Pins and chosen start pages keep working for pages that left the menu.
+- No page address changed. A test checks that every page can be reached.
+
 ## Wave 41 (not merged yet)
 
 ### Notifications, delegation and escalation

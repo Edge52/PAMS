@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Permission } from "@/lib/auth/permissions";
-import { activeHref, moduleOf, modulesFor, orderModules, OVERVIEW, type NavLink } from "@/lib/modules";
+import { activeHref, allPagesFor, hubHref, moduleOf, modulesFor, orderModules, OVERVIEW, type NavLink } from "@/lib/modules";
 import { Icon, type IconName } from "@/components/ui/icons";
 
 /**
@@ -12,6 +12,7 @@ import { Icon, type IconName } from "@/components/ui/icons";
  *
  * Wave 21: the menu shows one module at a time. On a module's page it lists that module's links; elsewhere
  * (dashboard, modules page) it lists the modules. Pinned links stay at the top everywhere.
+ * Wave 42: a module (hub) shows only its main pages; "All … pages" and the module names open its hub page.
  */
 const PIN_KEY = "pams.nav.pinned";
 const readList = (k: string): string[] | null => { try { const v = window.localStorage.getItem(k); return v ? (JSON.parse(v) as string[]) : null; } catch { return null; } };
@@ -41,7 +42,8 @@ export function SideNav({ perms, assistant = false, role = null }: { perms: Perm
     const next = pinned.includes(href) ? pinned.filter((h) => h !== href) : [...pinned, href].slice(-8);
     setPinned(next); writeList(PIN_KEY, next);
   };
-  const allLinks = modules.flatMap((m) => m.links);
+  // Any page may stay pinned, also one that left the menu in wave 42.
+  const allLinks: NavLink[] = allPagesFor(perms, assistant);
   const pins = pinned.map((h) => allLinks.find((l) => l.href === h)).filter((l): l is NavLink => !!l);
 
   const link = (l: NavLink, opts: { pin?: boolean; icon?: IconName; canPin?: boolean } = {}) => {
@@ -92,13 +94,16 @@ export function SideNav({ perms, assistant = false, role = null }: { perms: Perm
         {current ? (
           <div>
             <p className={heading}>Module</p>
-            <p className="mb-2 flex items-center gap-2 px-3 font-display text-[24px] leading-tight text-nav-gold"><Icon name={current.id} size={20} />{current.name}</p>
-            <ul className="space-y-0.5">{current.links.map((l) => link(l, { canPin: true }))}</ul>
+            <p className="mb-2 flex items-center gap-2 px-3 font-display text-[24px] leading-tight text-nav-gold"><Icon name={current.icon} size={20} />{current.name}</p>
+            <ul className="space-y-0.5">
+              {current.links.map((l) => link(l, { canPin: true }))}
+              {link({ href: hubHref(current.id), label: `All ${current.name} pages` }, { icon: "grid" })}
+            </ul>
           </div>
         ) : (
           <div>
             <p className={heading}>Modules</p>
-            <ul className="space-y-0.5">{modules.map((m) => link({ href: m.links[0].href, label: m.name }, { icon: m.id }))}</ul>
+            <ul className="space-y-0.5">{modules.map((m) => link({ href: hubHref(m.id), label: m.name }, { icon: m.icon }))}</ul>
           </div>
         )}
       </nav>

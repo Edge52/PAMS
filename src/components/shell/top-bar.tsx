@@ -41,7 +41,7 @@ export function TopBar({ user, assistant = false, theme = "light" }: { user: Cur
         </div>
       </details>
     </div>
-    <PathBar perms={permissionsOf(user.role)} />
+    <PathBar />
     </>
   );
 }

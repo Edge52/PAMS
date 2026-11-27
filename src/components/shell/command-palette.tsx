@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Permission } from "@/lib/auth/permissions";
-import { modulesFor, OVERVIEW } from "@/lib/modules";
+import { allPagesFor } from "@/lib/modules";
 import { Icon } from "@/components/ui/icons";
 
 type Item = { href: string; label: string; group: string };
@@ -18,9 +18,8 @@ export function CommandPalette({ perms, assistant }: { perms: Permission[]; assi
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
   const items = useMemo<Item[]>(() => [
-    ...OVERVIEW.filter((l) => l.flag !== "assistant" || assistant).map((l) => ({ href: l.href, label: l.label, group: "Overview" })),
-    ...modulesFor(perms).flatMap((m) => m.links.map((l) => ({ href: l.href, label: l.label, group: m.name }))),
-    { href: "/account", label: "Your account", group: "Overview" }, { href: "/notifications", label: "Notifications", group: "Overview" },
+    // Wave 42: every page, also those listed only on their hub page.
+    ...allPagesFor(perms, assistant),
   ], [perms, assistant]);
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const found = words.length ? items.filter((i) => words.every((w) => `${i.label} ${i.group}`.toLowerCase().includes(w))) : items;

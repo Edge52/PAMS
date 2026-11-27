@@ -26,6 +26,7 @@ const PATHS = {
   bookmark: <path d="M7 4h10v16l-5-4-5 4z" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   alert: <><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17v.5" /></>,
+  shield: <><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z" /><path d="M9 12l2 2 4-4" /></>,
   inbox: <><path d="M4 13l2.5-8h11L20 13v6H4z" /><path d="M4 13h5a3 3 0 0 0 6 0h5" /></>,
 } satisfies Record<string, ReactNode>;
 

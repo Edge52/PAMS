@@ -3,12 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { pathOf } from "@/lib/modules";
-import type { Permission } from "@/lib/auth/permissions";
 
-/** `Modules › Maintenance › Work orders` above every page that belongs to a module (wave 21). */
-export function PathBar({ perms }: { perms?: Permission[] }) {
+/** `Modules › Maintain › Work orders` above every page that belongs to a module (wave 21). */
+export function PathBar() {
   const pathname = usePathname();
-  const path = pathOf(pathname, perms);
+  const path = pathOf(pathname);
   // The 3D view fills the window and names the hospital itself.
   if (path.length === 0 || pathname.startsWith("/assets/3d")) return null;
   return (

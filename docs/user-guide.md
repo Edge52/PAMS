@@ -1,7 +1,7 @@
 # Hospital PAMS — User guide (release 3.0, updated for wave 36)
 
 How to do the everyday jobs, by role. Every screen is reached from the menu on the left (the **Menu** button on a
-phone). The search box at the top of every page finds equipment, rooms, departments, suppliers, documents and more.
+phone), or from its module's page (**All … pages** at the foot of the menu). The search box at the top of every page finds equipment, rooms, departments, suppliers, documents and more.
 
 Demo accounts (password `demo1234`): `admin@`, `director@`, `procurement@`, `finance@`, `planner@`, `biomedical@`,
 `technician@`, `icu@` (department head), `legal@`, `viewer@` — all `@demo.hpams`.
@@ -331,12 +331,16 @@ The reference figures behind the checks are listed in `docs/reference-figures-re
 
 ## Modules, sorting and saved filters (wave 21)
 
-- **All modules** (in the menu, or the first page after the dashboard) shows one card per module: Planning,
-  Procurement, Finance, Assets, Maintenance, Buildings & 3D, Patient pathways, Reports, Administration. You see the
-  ones your role can open. Inside a module the menu shows that module's pages.
-- The line above each page title shows where you are, for example *Modules › Maintenance › Work orders*. Click a
-  part to go back up.
-- Press **Ctrl+K** (⌘K on a Mac) and type part of a page's name to jump to it.
+- **All modules** (in the menu, or the first page after the dashboard) shows one card per module. Since wave 42
+  there are nine: Plan, Buy, Pay, Equipment, Maintain, Safety & compliance, Buildings & 3D (with patient pathways),
+  Reports (with analytics) and Setup. You see the ones your role can open.
+- Inside a module the menu shows only its main pages (4 to 8). **All … pages**, at the foot of the menu, opens the
+  module's page: every page of the module, grouped, with one line about each. Less-used pages (public holidays,
+  on call, import assets, labels, bulk placement, exchange rates, system errors …) are found there.
+- The line above each page title shows where you are, for example *Modules › Maintain › Work orders*. Click a
+  part to go back up; the module's name opens its page.
+- Press **Ctrl+K** (⌘K on a Mac) and type part of a page's name to jump to it. It finds every page, also those not
+  in the menu.
 - Click a **column heading** to sort a list; click again for the other way, and a third time to clear it.
 - Set your filters, then **Save this filter** and give it a name. It appears as a chip above the list (kept with
   your account since wave 41, see *Help and saved filters* below); the cross removes it.
