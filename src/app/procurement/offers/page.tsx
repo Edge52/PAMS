@@ -4,7 +4,11 @@ import { and, asc, desc, eq, gte, ilike, isNotNull, lte, notInArray, or, sql, ty
 import { db } from "@/db";
 import { offerLines, offers, projects, suppliers } from "@/db/schema";
 import { EmptyState, Input, LinkButton, PageHeader, Select } from "@/components/ui";
-import { OffersTable } from "@/components/procurement/offers-table";
+import { offerColumns } from "@/components/procurement/offers-table";
+import { DataTable } from "@/components/ui/data-table";
+import { tableSort } from "@/components/ui/data-table-utils";
+import { ListPager } from "@/components/list-pager";
+import { PAGE_SIZE, pageFor, sqlOrder } from "@/lib/paging";
 import { addDaysISO, todayISO } from "@/lib/format";
 import { OFFER_STATUSES, options, type OfferStatus } from "@/lib/procurement/labels";
 import { offerListRows } from "@/lib/procurement/server";
@@ -15,7 +19,7 @@ import { scopeWhere } from "@/lib/procurement/access";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Offers" };
 
-export default async function OffersPage({ searchParams }: { searchParams: Promise<{ status?: string; supplierId?: string; expiring?: string; projectId?: string; q?: string }> }) {
+export default async function OffersPage({ searchParams }: { searchParams: Promise<{ status?: string; supplierId?: string; expiring?: string; projectId?: string; q?: string; page?: string; sort?: string; dir?: string }> }) {
   const me = await requirePermission("prices.view"); // audit R9: offers, prices and invoices
   const sp = await searchParams;
   const where: SQL[] = [];
@@ -34,17 +38,25 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   const q = sp.q?.trim();
   if (q) where.push(or(ilike(offers.reference, `%${q}%`), ilike(suppliers.name, `%${q}%`), ilike(projects.code, `%${q}%`))!);
 
-  const [rows, supplierList, projectList] = await Promise.all([
-    db.select({
-      id: offers.id, reference: offers.reference, status: offers.status, currency: offers.currency, offerDate: offers.offerDate,
-      validUntil: offers.validUntil, supplierId: offers.supplierId, supplier: suppliers.name, projectId: offers.projectId, projectCode: projects.code,
-      technicalScore: offers.technicalScore, financialScore: offers.financialScore,
-      lines: sql<number>`(select count(*)::int from ${offerLines} where ${offerLines.offerId} = ${offers.id})`,
-    }).from(offers).innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).innerJoin(projects, eq(projects.id, offers.projectId))
-      .where(where.length ? and(...where) : undefined).orderBy(desc(offers.offerDate), desc(offers.id)),
+  // Wave 41: counted, sorted and paged in the database; value and sealed state only for the page shown.
+  const whereSql = where.length ? and(...where) : undefined;
+  const sort = tableSort(sp, SORT_KEYS);
+  const lineCount = sql<number>`(select count(*)::int from ${offerLines} where ${offerLines.offerId} = ${offers.id})`;
+  const [[{ n }], supplierList, projectList] = await Promise.all([
+    db.select({ n: sql<number>`count(*)::int` }).from(offers).innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).innerJoin(projects, eq(projects.id, offers.projectId)).where(whereSql),
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).orderBy(asc(suppliers.name)),
     db.select({ id: projects.id, code: projects.code }).from(projects).where(scope).orderBy(desc(projects.id)),
   ]);
+  const paging = pageFor(sp, n, PAGE_SIZE);
+  const rows = await db.select({
+    id: offers.id, reference: offers.reference, status: offers.status, currency: offers.currency, offerDate: offers.offerDate,
+    validUntil: offers.validUntil, supplierId: offers.supplierId, supplier: suppliers.name, projectId: offers.projectId, projectCode: projects.code,
+    technicalScore: offers.technicalScore, financialScore: offers.financialScore, lines: lineCount,
+  }).from(offers).innerJoin(suppliers, eq(suppliers.id, offers.supplierId)).innerJoin(projects, eq(projects.id, offers.projectId))
+    .where(whereSql)
+    .orderBy(...sqlOrder(sort, { supplier: suppliers.name, reference: offers.reference, project: projects.code, date: offers.offerDate, validity: offers.validUntil, lines: lineCount, status: offers.status },
+      [desc(offers.offerDate)], [desc(offers.id)]))
+    .limit(paging.size).offset(paging.offset);
   const listRows = await offerListRows(rows);
   const filtered = Boolean(sp.status || sp.supplierId || expiring || sp.projectId || q);
 
@@ -54,6 +66,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
         actions={can(me.role, "offers.edit") ? <LinkButton href="/procurement/offers/new" variant="primary">Register offer</LinkButton> : undefined} />
       <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
         <AutoSubmit />
+        {sort && <input type="hidden" name="sort" value={sort.key} />}{sort?.dir === "desc" && <input type="hidden" name="dir" value="desc" />}
         <label className="min-w-0 flex-1 basis-52"><span className="sr-only">Search</span>
           <Input type="search" name="q" defaultValue={q ?? ""} placeholder="Search reference, supplier or project" /></label>
         <label><span className="sr-only">Status</span>
@@ -67,7 +80,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
         <button className="rounded-[var(--radius-control)] border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:bg-sunken">Apply filters</button>
         {filtered && <Link href="/procurement/offers" className="px-2 py-1.5 text-sm text-primary hover:underline">Clear</Link>}
       </form>
-      {rows.length === 0 ? (
+      {n === 0 ? (
         filtered ? (
           <EmptyState title="No offers match these filters" action={<LinkButton href="/procurement/offers">Show all offers</LinkButton>}>
             {expiring ? "Good news: nothing open expires in the next 14 days." : "Try a different status, supplier or search."}
@@ -78,8 +91,11 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
           </EmptyState>
         )
       ) : (
-        <OffersTable rows={listRows} />
+        <DataTable id="offers" label="Offers" path="/procurement/offers" sp={sp} sort={sort} rows={listRows} rowKey={(o) => o.id} columns={offerColumns()}
+          footer={<ListPager paging={paging} path="/procurement/offers" sp={sp} what="offers" />} />
       )}
     </>
   );
 }
+
+const SORT_KEYS = ["supplier", "reference", "project", "date", "validity", "lines", "status"] as const;

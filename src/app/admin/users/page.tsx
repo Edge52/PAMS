@@ -5,7 +5,12 @@ import { users } from "@/db/schema";
 import { Badge, LinkButton, PageHeader } from "@/components/ui";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { tableSort } from "@/components/ui/data-table-utils";
-import { ROLE_LABELS, type Role } from "@/lib/auth/permissions";
+import { ROLE_LABELS, ROLES, type Role } from "@/lib/auth/permissions";
+import { Notice } from "@/components/assets/bits";
+import { BulkSelect } from "@/components/bulk-fields";
+import { ListPager } from "@/components/list-pager";
+import { PAGE_SIZE, pageFor } from "@/lib/paging";
+import { bulkActivateUsersAction, bulkDeactivateUsersAction, bulkSetRoleAction } from "./bulk-actions";
 import { requirePermission } from "@/lib/auth/session";
 import { formatDate } from "@/lib/format";
 
@@ -16,7 +21,7 @@ const SORT_KEYS = ["name", "email", "role", "lastLogin", "status"] as const;
 type UserRow = typeof users.$inferSelect;
 
 export default async function UsersPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requirePermission("users.manage");
+  const me = await requirePermission("users.manage");
   const sp = await searchParams;
   // Wave 38: sorted in the query; the key must be on SORT_KEYS.
   const sort = tableSort(sp, SORT_KEYS);
@@ -26,12 +31,24 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
     lastLogin: [sort?.dir === "desc" ? sql`${users.lastLoginAt} desc nulls last` : sql`${users.lastLoginAt} asc nulls first`, asc(users.name)],
     status: [way(users.active), asc(users.name)],
   }[sort?.key ?? "name"];
-  const rows = await db.select().from(users).orderBy(...order);
+  // Wave 41: paged (50 a page).
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(users);
+  const paging = pageFor(sp, n, PAGE_SIZE);
+  const rows = await db.select().from(users).orderBy(...order, asc(users.id)).limit(paging.size).offset(paging.offset);
+  const admin = me.role === "ADMIN";
   return (
     <>
       <PageHeader title="Users" description="Who can sign in, and what their role lets them change."
         actions={<LinkButton href="/admin/users/new" variant="primary">Add user</LinkButton>} />
-      <DataTable id="users" label="Users" path="/admin/users" sp={sp} sort={sort} rows={rows} rowKey={(u) => u.id} columns={COLUMNS} />
+      <Notice sp={sp} />
+      <DataTable id="users" label="Users" path="/admin/users" sp={sp} sort={sort} rows={rows} rowKey={(u) => u.id} columns={COLUMNS}
+        rowClassName={(u) => (u.id === me.id ? "bg-primary-soft/40" : undefined)}
+        select={admin ? { rowLabel: (u) => u.name, what: "users", actions: [
+          { label: "Switch off selected", action: bulkDeactivateUsersAction, confirm: "Switch off the ticked users? They are signed out and can't sign in until switched on again. Your own account and the last administrator are left alone." },
+          { label: "Switch on selected", action: bulkActivateUsersAction },
+          { label: "Set role", action: bulkSetRoleAction, confirm: "Give every ticked user the chosen role? What they can see and change follows the new role." },
+        ], extra: <BulkSelect form="users-selected" name="role" label="New role" placeholder="Role…" options={ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))} /> } : undefined}
+        footer={<ListPager paging={paging} path="/admin/users" sp={sp} what="users" />} />
     </>
   );
 }

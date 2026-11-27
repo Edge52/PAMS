@@ -23,6 +23,9 @@ import { instrumentOptions } from "@/lib/assets/test-equipment-server";
 import { TestEquipmentField } from "@/components/assets/test-equipment-field";
 import { MeterAtVisit } from "@/components/assets/meter-at-visit";
 import { usageIntervalLabel } from "@/lib/assets/meters";
+import { ListPager } from "@/components/list-pager";
+import { PAGE_SIZE, pageFor } from "@/lib/paging";
+import { bulkAssignPpmAction, bulkReschedulePpmAction } from "./bulk-actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Maintenance" };
@@ -188,6 +191,11 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
   const from = iso(one(sp, "from")) ?? startOfMonth(addMonths(today, -1));
   const to = iso(one(sp, "to")) ?? endOfMonth(addMonths(today, 3));
   const completeId = canMaint ? Number(one(sp, "complete")) || null : null;
+  // Wave 41: counted and paged in the database (it used to read up to 3,000 visits at once).
+  const evWhere = and(gte(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`, from), lte(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`, to),
+    deptId ? eq(assets.departmentId, deptId) : undefined, q ? sql`${assets.assetTag} ilike ${"%" + q + "%"}` : undefined, scopeWhere(assets.facilityId, scope));
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId)).where(evWhere);
+  const paging = pageFor(sp, n, PAGE_SIZE);
   const [events, vendors, completing] = await Promise.all([
     db.select({
       id: maintenanceEvents.id, type: maintenanceEvents.type, status: maintenanceEvents.status, scheduledDate: maintenanceEvents.scheduledDate,
@@ -197,9 +205,8 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
     }).from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId)).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
       .leftJoin(departments, eq(departments.id, assets.departmentId)).leftJoin(rooms, eq(rooms.id, assets.roomId))
       .leftJoin(workOrders, eq(workOrders.plannedEventId, maintenanceEvents.id))
-      .where(and(gte(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`, from), lte(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`, to),
-        deptId ? eq(assets.departmentId, deptId) : undefined, q ? sql`${assets.assetTag} ilike ${"%" + q + "%"}` : undefined, scopeWhere(assets.facilityId, scope)))
-      .orderBy(asc(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`), asc(assets.assetTag)).limit(3000),
+      .where(evWhere)
+      .orderBy(asc(sql`coalesce(${maintenanceEvents.completedDate}, ${maintenanceEvents.scheduledDate})`), asc(assets.assetTag), asc(maintenanceEvents.id)).limit(paging.size).offset(paging.offset),
     db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(eq(suppliers.active, true)).orderBy(asc(suppliers.name)),
     completeId ? db.select({ id: maintenanceEvents.id, type: maintenanceEvents.type, status: maintenanceEvents.status, scheduledDate: maintenanceEvents.scheduledDate, assetId: assets.id, tag: assets.assetTag, assetStatus: assets.status, typeName: deviceTypes.name, facilityId: assets.facilityId })
       .from(maintenanceEvents).innerJoin(assets, eq(assets.id, maintenanceEvents.assetId)).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
@@ -261,6 +268,16 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
         <Field label="to"><Input type="date" name="to" defaultValue={to} /></Field>
         <Button variant="secondary">Show</Button>
       </form>
+      {canMaint && n > 0 && (
+        <form id="ppm-bulk" className="flex flex-wrap items-end gap-2 rounded-[var(--radius-panel)] border border-line bg-surface p-3 text-sm" aria-label="With the ticked visits">
+          <input type="hidden" name="returnPath" value={`${returnPath}&from=${from}&to=${to}${paging.page > 1 ? `&page=${paging.page}` : ""}`} />
+          <span className="text-muted">Tick scheduled visits below, then:</span>
+          <label className="flex items-center gap-1"><span className="sr-only">New date</span><Input type="date" name="date" aria-label="New date" className="w-40 py-1" /></label>
+          <Button variant="secondary" formAction={bulkReschedulePpmAction} className="py-1">Move to this date</Button>
+          <NativeSelect name="assigneeId" aria-label="Give to" placeholder="Give to…" className="w-auto py-1" options={people.map((u) => ({ value: u.id, label: u.name }))} />
+          <Button variant="secondary" formAction={bulkAssignPpmAction} className="py-1">Assign</Button>
+        </form>
+      )}
       {months.length === 0 ? <EmptyState title="No maintenance in this window">{canMaint ? "Generate a schedule above, or widen the date range." : "Widen the date range to see more."}</EmptyState> : months.map((m) => {
         const counts = m.items.reduce<Record<string, number>>((acc, e) => { const s = displayEventStatus(e, today); acc[s] = (acc[s] ?? 0) + 1; return acc; }, {});
         return (
@@ -271,7 +288,9 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
                 const st = displayEventStatus(e, today);
                 return (
                   <li key={e.id} className="grid grid-cols-[6.5rem_1fr_auto] items-center gap-3 px-4 py-2 text-sm sm:grid-cols-[6.5rem_9rem_1fr_8rem_auto]">
-                    <span className="whitespace-nowrap">{formatDate(e.completedDate ?? e.scheduledDate)}</span>
+                    <span className="flex items-center gap-2 whitespace-nowrap">
+                      {canMaint && (st === "SCHEDULED" || st === "OVERDUE") && <input type="checkbox" name="eventIds" value={e.id} form="ppm-bulk" aria-label={`Select the visit for ${e.tag}`} className="size-4 accent-[var(--color-primary)]" />}
+                      {formatDate(e.completedDate ?? e.scheduledDate)}</span>
                     <Link href={`/assets/${e.assetId}`} className="font-mono text-[13px] font-semibold text-primary hover:underline">{e.tag}</Link>
                     <span className="hidden min-w-0 truncate sm:block">{maintenanceTypeLabel(e.type)} · {e.typeName}<span className="text-muted"> · {e.departmentName ?? "—"} {e.roomCode ?? ""}</span></span>
                     <span className="hidden sm:block"><StatusBadge value={st} /></span>
@@ -293,6 +312,7 @@ async function ScheduleTab({ sp, deptId, q, today, departments: depts, returnPat
           </Panel>
         );
       })}
+      <ListPager paging={paging} path="/assets/maintenance" sp={sp} what="visits" />
     </div>
   );
 }

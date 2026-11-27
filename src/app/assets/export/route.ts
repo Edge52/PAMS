@@ -6,9 +6,9 @@ import { nextPpmDue } from "@/lib/assets/maintenance";
 import { ppmInfo, searchAssets } from "@/lib/assets/queries";
 import { usageDueMap } from "@/lib/assets/meters-server";
 import { todayISO } from "@/lib/format";
+import { EXPORT_LIMIT as MAX_ROWS, exportNote } from "@/lib/paging";
 
 export const dynamic = "force-dynamic";
-const MAX_ROWS = 20000;
 
 /** CSV of the register for the same filters as /assets (page ignored). */
 export async function GET(request: Request) {
@@ -33,6 +33,9 @@ export async function GET(request: Request) {
       a.facilityCode, a.buildingName, a.floorName, a.departmentName, a.roomCode, a.roomName, a.purchaseDate, a.installDate, a.warrantyEnd,
       a.purchaseCost, a.currency, info?.lastPpm ?? "", info?.nextScheduled && (!next || info.nextScheduled < next) ? info.nextScheduled : next ?? ""];
   });
+  // Wave 41: say so in the file when it stops at the limit.
+  const note = exportNote(total > rows.length, MAX_ROWS);
+  if (note) body.push([note, ...header.slice(1).map(() => "")]);
   const csv = "﻿" + toCsv(header, body); // BOM so Excel reads UTF-8 (Arabic, umlauts)
   return new Response(csv, {
     headers: {

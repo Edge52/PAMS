@@ -73,6 +73,26 @@
 - Demo seed `scripts/seed/utilities.ts` (demo general hospital). New tables (migration to come from the lead):
   `utility_systems`, `utility_tests`, `water_points`, `water_samples` (`src/db/schema-wave41-m.ts`).
 
+### Faster lists and bulk actions
+- **Paged lists**: assets, work orders, PPM schedule, calibration, safety tests, loans, offers, RFQs, purchase orders,
+  invoices, equipment requests, recalls, incidents, suppliers, documents, audit log, BOQs and users show 50 rows a page
+  (`?page=`), with "Showing 51–100 of 734" and page links that keep the filters and sort. Counting, sorting (click a
+  heading, `?sort=&dir=`) and paging happen in the database. Shared helper `src/lib/paging.ts` (`pageFor`, `pageRows`,
+  `pageHref`, `pageLinks`, `sqlOrder`, `capExport`, `exportNote`) and pager `src/components/list-pager.tsx`.
+- **Exports** (asset register, audit log, invoices) write every matching row up to 20,000, with a note in the file
+  when they stop there.
+- **One query instead of one per row**: framework call-offs, mandatory failures in tender minutes, supplier order
+  totals (now in SQL, in EGP), BOQ line totals (only the BOQs shown), calibration history. Grouping helpers in
+  `src/lib/grouping.ts`.
+- **DataTable** (sortable headings, sticky header, column picker) now on offers, RFQs, invoices, recalls, incidents,
+  loans, calibration, safety tests, work orders, BOQs, documents and the audit log.
+- **Bulk actions** on ticked rows (each row checked for permission and hospital, logged one by one; destructive ones
+  ask first): users — switch on/off, set role (administrators); assets — move to a department or room, set
+  criticality, schedule a PPM visit; work orders — assign, set priority, cancel as duplicates of a kept job; PPM
+  schedule — move to a date, assign; recall devices — mark dealt with or not affected; documents — remove or restore
+  selected. Rules and form checks in `src/lib/bulk.ts` (tested).
+- Administration › **Documents** (was Deleted documents) lists every document in use as well as removed ones.
+
 ## Wave 40 (not merged yet)
 
 ### GAHAR evidence and the equipment plan

@@ -11,7 +11,7 @@ import { supplierLegalNamesFor } from "@/lib/procurement/legal-names-server";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { normalizeWeights } from "@/lib/procurement/scoring";
-import { loadComparison, mandatoryFailures } from "@/lib/procurement/server";
+import { loadComparison, mandatoryFailuresFor } from "@/lib/procurement/server";
 import { tenderDocBase } from "@/lib/procurement/tender-docs";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export default async function MinutesPage({ params, searchParams }: { params: Pr
   const supAr = await supplierLegalNamesFor(all.map((x) => x.o.supplierId)); // wave 38
   const bs = all.length ? await db.select().from(bonds).where(and(eq(bonds.projectId, id), inArray(bonds.offerId, all.map((x) => x.o.id)))) : [];
   const cmp = kind === "opening" ? null : await loadComparison(id, normalizeWeights(undefined));
-  const fails = new Map(await Promise.all(all.map(async (x) => [x.o.id, kind === "technical" ? await mandatoryFailures(x.o.id) : []] as const)));
+  const fails = kind === "technical" ? await mandatoryFailuresFor(all.map((x) => x.o.id)) : new Map<number, string[]>(); // wave 41: one query
   const ranked = cmp ? [...cmp.offers].map((o) => ({ o, s: cmp.evaluation.offers.get(o.id)! })).sort((a, b) => (b.s.combinedScore ?? -1) - (a.s.combinedScore ?? -1)) : [];
   const awarded = all.find((x) => x.o.status === "AWARDED");
   const date = kind === "opening" ? p.technicalOpenedAt : kind === "financial" ? p.financialOpenedAt : null;

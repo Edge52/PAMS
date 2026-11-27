@@ -3,7 +3,6 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { departments, facilities } from "@/db/schema";
 import { Badge, Button, EmptyState, PageHeader, Panel, Stat, TabLinks, Table, Td, Th, THead } from "@/components/ui";
-import { SortTh } from "@/components/ui/sort-th";
 import { AutoSubmit } from "@/components/auto-submit";
 import { NativeSelect, Notice } from "@/components/assets/bits";
 import { scopeWhere, scopedFacilityId } from "@/lib/assets/access";
@@ -13,7 +12,12 @@ import {
 import { calibrationDevices, calibrationsLastYear } from "@/lib/assets/calibration-server";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatNumber, todayISO } from "@/lib/format";
-import { capRows, parseSort, sortRows } from "@/lib/list";
+import { sortRows } from "@/lib/list";
+import { pageRows } from "@/lib/paging";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { tableSort } from "@/components/ui/data-table-utils";
+import { ListPager } from "@/components/list-pager";
+import type { CalibrationDevice } from "@/lib/assets/calibration-server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Calibration" };
@@ -40,9 +44,9 @@ export default async function CalibrationPage({ searchParams }: { searchParams: 
   const count = (s: string) => devices.filter((d) => d.state === s).length;
   const due = devices.filter((d) => d.state === "overdue" || d.state === "soon");
   const list = tab === "due" ? due : tab === "failed" ? devices.filter((d) => d.state === "failed") : tab === "never" ? devices.filter((d) => d.state === "never") : devices;
-  const sort = parseSort(sp, ["device", "department", "last", "next"] as const, { key: "next", dir: "asc" });
+  const sort = tableSort(sp, ["device", "department", "last", "next"] as const, { key: "next", dir: "asc" });
   const sorted = sortRows(list, sort, { device: (r) => r.tag, department: (r) => r.departmentName ?? "", last: (r) => r.last?.calibratedOn ?? "", next: (r) => r.last?.nextDue ?? "" });
-  const { rows, note } = capRows(sorted, 500, "devices");
+  const { rows, paging } = pageRows(sorted, sp); // wave 41: 50 a page instead of the first 500
   const depRows = byDepartment(devices);
   const q = (t: string) => `/assets/calibration?tab=${t}${facilityId ? `&facilityId=${facilityId}` : ""}${departmentId ? `&departmentId=${departmentId}` : ""}`;
 
@@ -85,21 +89,8 @@ export default async function CalibrationPage({ searchParams }: { searchParams: 
       ) : rows.length === 0 ? (
         <EmptyState title={tab === "due" ? "Nothing due in the next 30 days" : tab === "failed" ? "No failed calibrations" : tab === "never" ? "Every device has a calibration on record" : "No devices"}>Every device listed under All is in date.</EmptyState>
       ) : (
-        <>
-          {note && <p role="note" className="mb-2 text-sm text-warn">{note}</p>}
-          <Table>
-            <THead><tr><SortTh k="device">Device</SortTh><SortTh k="department">Department</SortTh><SortTh k="last">Last calibration</SortTh><SortTh k="next">Next due</SortTh><Th className="hidden md:table-cell">Interval</Th></tr></THead>
-            <tbody>{rows.map((d) => (
-              <tr key={d.id}>
-                <Td><Link href={`/assets/${d.id}#calibration`} className="font-mono text-sm font-semibold text-primary hover:underline">{d.tag}</Link><span className="block text-xs text-muted">{d.typeName}</span></Td>
-                <Td>{d.departmentName ?? "—"}{d.roomName && <span className="block text-xs text-muted">{d.roomName}</span>}</Td>
-                <Td className="whitespace-nowrap">{d.last ? <><Link href={`/assets/calibration/${d.last.id}`} className="text-primary hover:underline">{formatDate(d.last.calibratedOn)}</Link><span className="block text-xs text-muted">{CALIBRATION_RESULT_LABELS[d.last.result as CalibrationResult]} · {d.last.performedBy}</span></> : <span className="text-muted">None</span>}</Td>
-                <Td className="whitespace-nowrap">{d.last?.nextDue ? `${formatDate(d.last.nextDue)} ` : ""}<Badge tone={CALIBRATION_STATE_TONE[d.state]}>{CALIBRATION_STATE_LABELS[d.state]}</Badge></Td>
-                <Td className="hidden md:table-cell">Every {d.months} months{d.intervalSource === "device" ? " (this device)" : d.intervalSource === "default" ? " (default)" : ""}</Td>
-              </tr>
-            ))}</tbody>
-          </Table>
-        </>
+        <DataTable id="calibration" label="Devices that need calibration" path="/assets/calibration" sp={sp} sort={sort} rows={rows} rowKey={(d) => d.id} columns={CAL_COLUMNS}
+          footer={<ListPager paging={paging} path="/assets/calibration" sp={sp} what="devices" />} />
       )}
       <Panel title="How compliance is worked out" className="mt-6">
         <p className="text-sm text-muted">Devices that need calibration and are installed, in service, under maintenance, out of service or on loan count. A device is in date when its last calibration passed (as found, or after adjustment) and its next due date has not passed. Failed, overdue and never calibrated devices count against the figure. Test equipment (safety analysers) is listed under Safety tests.</p>
@@ -107,3 +98,12 @@ export default async function CalibrationPage({ searchParams }: { searchParams: 
     </>
   );
 }
+
+const CAL_COLUMNS: Column<CalibrationDevice>[] = [
+  { key: "device", label: "Device", sort: true, cell: (d) => <><Link href={`/assets/${d.id}#calibration`} className="font-mono text-sm font-semibold text-primary hover:underline">{d.tag}</Link><span className="block text-xs text-muted">{d.typeName}</span></> },
+  { key: "department", label: "Department", sort: true, cell: (d) => <>{d.departmentName ?? "—"}{d.roomName && <span className="block text-xs text-muted">{d.roomName}</span>}</> },
+  { key: "last", label: "Last calibration", sort: true, className: "whitespace-nowrap",
+    cell: (d) => (d.last ? <><Link href={`/assets/calibration/${d.last.id}`} className="text-primary hover:underline">{formatDate(d.last.calibratedOn)}</Link><span className="block text-xs text-muted">{CALIBRATION_RESULT_LABELS[d.last.result as CalibrationResult]} · {d.last.performedBy}</span></> : <span className="text-muted">None</span>) },
+  { key: "next", label: "Next due", sort: true, className: "whitespace-nowrap", cell: (d) => <>{d.last?.nextDue ? `${formatDate(d.last.nextDue)} ` : ""}<Badge tone={CALIBRATION_STATE_TONE[d.state]}>{CALIBRATION_STATE_LABELS[d.state]}</Badge></> },
+  { key: "interval", label: "Interval", optional: true, className: "hidden md:table-cell", cell: (d) => <>Every {d.months} months{d.intervalSource === "device" ? " (this device)" : d.intervalSource === "default" ? " (default)" : ""}</> },
+];

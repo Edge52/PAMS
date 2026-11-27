@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Badge, StatusBadge, Table, Td, Th, THead } from "@/components/ui";
+import type { Column } from "@/components/ui/data-table";
 import { formatDate, formatMoney } from "@/lib/format";
 import { SEALED } from "@/lib/procurement/sealed";
 import { validityState } from "./bits";
@@ -45,4 +46,24 @@ export function OffersTable({ rows, showProject = true }: { rows: OfferListRow[]
       </tbody>
     </Table>
   );
+}
+
+/** Wave 41: the same columns for <DataTable> (the offers list, paged and sorted on the server). */
+export function offerColumns(showProject = true): Column<OfferListRow>[] {
+  const cols: (Column<OfferListRow> | null)[] = [
+    { key: "supplier", label: "Supplier", sort: true, cell: (o) => <Link href={`/procurement/suppliers/${o.supplierId}`} className="hover:text-primary">{o.supplier}</Link> },
+    { key: "reference", label: "Reference", sort: true, className: "whitespace-nowrap", cell: (o) => <Link href={`/procurement/offers/${o.id}`} className="font-semibold text-primary hover:underline">{o.reference}</Link> },
+    showProject ? { key: "project", label: "Project", sort: true, optional: true, className: "whitespace-nowrap", cell: (o) => <Link href={`/procurement/${o.projectId}`} className="hover:text-primary">{o.projectCode}</Link> } : null,
+    { key: "date", label: "Date", sort: true, className: "whitespace-nowrap", cell: (o) => formatDate(o.offerDate) },
+    { key: "validity", label: "Validity", sort: true, optional: true, className: "whitespace-nowrap", cell: (o) => {
+      const v = validityState(o.validUntil), closed = ["AWARDED", "REJECTED", "WITHDRAWN"].includes(o.status);
+      return <>{formatDate(o.validUntil)}{!closed && (v.tone === "danger" || v.tone === "warn") && <span className="block"><Badge tone={v.tone}>{v.text}</Badge></span>}</>;
+    } },
+    { key: "lines", label: "Lines", sort: true, align: "right", optional: true, cell: (o) => o.lines },
+    { key: "value", label: "Value", align: "right", className: "whitespace-nowrap", cell: (o) => (o.sealed || o.total == null ? <span className="text-muted">{SEALED}</span> : formatMoney(o.total, o.currency)) },
+    { key: "scores", label: "Tech. / fin.", align: "right", optional: true, cellClassName: "whitespace-nowrap tabular-nums",
+      cell: (o) => <>{o.technicalScore != null ? o.technicalScore.toFixed(0) : "—"} / {o.sealed ? <span className="text-muted">{SEALED.toLowerCase()}</span> : o.financialScore != null ? o.financialScore.toFixed(0) : "—"}</> },
+    { key: "status", label: "Status", sort: true, cell: (o) => <StatusBadge value={o.status} /> },
+  ];
+  return cols.filter((c): c is Column<OfferListRow> => c !== null);
 }

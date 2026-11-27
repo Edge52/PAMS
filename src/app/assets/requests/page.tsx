@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { ListPager } from "@/components/list-pager";
+import { PAGE_SIZE, pageFor } from "@/lib/paging";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, equipmentRequests, facilities } from "@/db/schema";
 import { Badge, Button, EmptyState, Field, Input, PageHeader, Panel, StatusBadge, TabLinks, Textarea } from "@/components/ui";
@@ -27,9 +29,14 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
   const facilityId = scopedFacilityId(scope, Number(sp.facilityId) || undefined) ?? facs[0]?.id;
   if (!facilityId) return <><PageHeader title="Equipment requests" /><EmptyState title="No hospital linked to your account">Ask an administrator for access to a hospital.</EmptyState></>;
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
+  // Wave 41: counted and paged in the database (50 a page).
+  const where = and(eq(equipmentRequests.facilityId, facilityId), eq(equipmentRequests.status, tab.key));
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(equipmentRequests).where(where);
+  const paging = pageFor(sp, n, PAGE_SIZE);
   const rows = await db.select({ r: equipmentRequests, typeName: deviceTypes.name, dept: departments.name, replaces: assets.assetTag }).from(equipmentRequests)
     .innerJoin(deviceTypes, eq(deviceTypes.id, equipmentRequests.deviceTypeId)).leftJoin(departments, eq(departments.id, equipmentRequests.departmentId)).leftJoin(assets, eq(assets.id, equipmentRequests.replacesAssetId))
-    .where(and(eq(equipmentRequests.facilityId, facilityId), eq(equipmentRequests.status, tab.key))).orderBy(desc(equipmentRequests.id));
+    .where(where).orderBy(desc(equipmentRequests.id)).limit(paging.size).offset(paging.offset);
+  const pager = <div className="mt-3"><ListPager paging={paging} path="/assets/requests" sp={sp} what="requests" /></div>;
   const canDecide = can(me.role, "boq.approve"), canBoq = can(me.role, "boq.edit");
   const mine = me.role === "DEPARTMENT_HEAD" ? await myDepartments(me.id) : new Set<number>();
   // Wave 39: plan years are budget (fiscal) years, as in the capital plan.
@@ -61,7 +68,8 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
           </Panel>
           {canBoq && <div className="mt-3 flex flex-wrap items-end gap-2"><Field label="BOQ name" className="min-w-64 flex-1"><Input name="name" defaultValue={`${facs.find((f) => f.id === facilityId)?.name ?? ""} — department requests ${by.label(year)}`} maxLength={200} /></Field><Button>Turn the ticked requests into a BOQ</Button></div>}
         </ActionForm>
-      ) : (
+      ) : null}
+      {rows.length > 0 && tab.key !== "APPROVED" && (
         <Panel padded={false} className="mt-4">
           <ul className="divide-y divide-line text-sm">{rows.map((x) => (
             <li key={x.r.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_20rem]">
@@ -85,6 +93,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
           ))}</ul>
         </Panel>
       )}
+      {rows.length > 0 && pager}
     </>
   );
 }

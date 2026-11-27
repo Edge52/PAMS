@@ -1,13 +1,15 @@
 import Link from "next/link";
-import { Badge, EmptyState, LinkButton, PageHeader, Stat, TabLinks, Table, Td, Th, THead } from "@/components/ui";
-import { SortTh } from "@/components/ui/sort-th";
+import { Badge, EmptyState, LinkButton, PageHeader, Stat, TabLinks } from "@/components/ui";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { tableSort } from "@/components/ui/data-table-utils";
+import { ListPager } from "@/components/list-pager";
 import { Notice } from "@/components/assets/bits";
-import { listLoans } from "@/lib/assets/loans-server";
+import { LOAN_SORT_KEYS, loanCounts, loanPage } from "@/lib/assets/loans-server";
 import { CHECK_LABELS, checkState, DIRECTION_LABELS, LOAN_STATE_LABELS, LOAN_STATE_TONE, loanState } from "@/lib/assets/loans";
 import { can } from "@/lib/auth/permissions";
 import { facilityScope, requirePermission } from "@/lib/auth/session";
 import { formatDate, formatNumber, todayISO } from "@/lib/format";
-import { parseSort, sortRows } from "@/lib/list";
+import { PAGE_SIZE, pageFor } from "@/lib/paging";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Loans and rentals" };
@@ -21,12 +23,14 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const tab = TABS.find((t) => t === sp.tab) ?? "open";
   const today = todayISO();
-  const all = (await listLoans(scope)).map((r) => ({ ...r, state: loanState(r.l, today), check: checkState(r.l) }));
-  const counts = { open: all.filter((r) => r.state !== "RETURNED").length, overdue: all.filter((r) => r.state === "OVERDUE").length, returned: all.filter((r) => r.state === "RETURNED").length };
-  const unchecked = all.filter((r) => r.state !== "RETURNED" && (r.check === "NOT_CHECKED" || r.check === "NOT_FIT")).length;
-  const shown = all.filter((r) => tab === "all" || (tab === "open" ? r.state !== "RETURNED" : tab === "overdue" ? r.state === "OVERDUE" : r.state === "RETURNED"));
-  const sort = parseSort(sp, ["number", "device", "party", "out", "due"] as const);
-  const rows = sortRows(shown, sort, { number: (r) => r.l.number, device: (r) => r.device, party: (r) => r.l.otherParty, out: (r) => r.l.outOn, due: (r) => r.l.dueBackOn ?? "9999" });
+  // Wave 41: figures, tab, sort and page in the database (it used to read up to 1,000 loans and filter them here).
+  const sort = tableSort(sp, LOAN_SORT_KEYS);
+  const counts = await loanCounts(scope, today);
+  const n = tab === "all" ? counts.open + counts.returned : counts[tab];
+  const paging = pageFor(sp, n, PAGE_SIZE);
+  const found = await loanPage(scope, tab, today, sort, paging.size, paging.offset);
+  const rows = found.rows.map((r) => ({ ...r, state: loanState(r.l, today), check: checkState(r.l) }));
+  const unchecked = counts.unchecked;
   const canEdit = can(me.role, "assets.edit");
   const href = (t: string) => `/assets/loans?tab=${t}`;
   return (
@@ -49,23 +53,21 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
           When a supplier lends a device during a repair, a device is rented, or another hospital borrows one of ours, record it here.
         </EmptyState>
       ) : (
-        <Table>
-          <THead><tr><SortTh k="number">Loan</SortTh><SortTh k="device">Device</SortTh><SortTh k="party">With</SortTh><SortTh k="out">Out</SortTh><SortTh k="due">Due back</SortTh><Th>State</Th><Th className="hidden md:table-cell">Check before use</Th></tr></THead>
-          <tbody>
-            {rows.map(({ l, device, facility, state, check, department }) => (
-              <tr key={l.id}>
-                <Td><Link href={`/assets/loans/${l.id}`} className="font-semibold text-primary hover:underline">{l.number}</Link>{l.isRental && <span className="block text-xs text-muted">Rental</span>}</Td>
-                <Td>{l.assetId ? <Link href={`/assets/${l.assetId}`} className="text-primary hover:underline">{device}</Link> : device}<span className="block text-xs text-muted">{[facility, department].filter(Boolean).join(" · ")}</span></Td>
-                <Td>{DIRECTION_LABELS[l.direction]} <b>{l.otherParty}</b></Td>
-                <Td className="whitespace-nowrap">{formatDate(l.outOn)}</Td>
-                <Td className="whitespace-nowrap">{l.returnedOn ? <span className="text-muted">back {formatDate(l.returnedOn)}</span> : formatDate(l.dueBackOn)}</Td>
-                <Td><Badge tone={LOAN_STATE_TONE[state]}>{LOAN_STATE_LABELS[state]}</Badge></Td>
-                <Td className="hidden md:table-cell">{check === "NOT_NEEDED" ? <span className="text-sm text-muted">—</span> : <Badge tone={check === "FIT" ? "ok" : check === "NOT_FIT" ? "danger" : "warn"}>{CHECK_LABELS[check]}</Badge>}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
+        <DataTable id="loans" label="Loans and rentals" path="/assets/loans" sp={sp} sort={sort} rows={rows} rowKey={(r) => r.l.id} columns={COLUMNS}
+          footer={<ListPager paging={paging} path="/assets/loans" sp={sp} what="loans" />} />
       )}
     </>
   );
 }
+
+type Row = Awaited<ReturnType<typeof loanPage>>["rows"][number] & { state: ReturnType<typeof loanState>; check: ReturnType<typeof checkState> };
+
+const COLUMNS: Column<Row>[] = [
+  { key: "number", label: "Loan", sort: true, cell: ({ l }) => <><Link href={`/assets/loans/${l.id}`} className="font-semibold text-primary hover:underline">{l.number}</Link>{l.isRental && <span className="block text-xs text-muted">Rental</span>}</> },
+  { key: "device", label: "Device", sort: true, cell: ({ l, device, facility, department }) => <>{l.assetId ? <Link href={`/assets/${l.assetId}`} className="text-primary hover:underline">{device}</Link> : device}<span className="block text-xs text-muted">{[facility, department].filter(Boolean).join(" · ")}</span></> },
+  { key: "party", label: "With", sort: true, cell: ({ l }) => <>{DIRECTION_LABELS[l.direction]} <b>{l.otherParty}</b></> },
+  { key: "out", label: "Out", sort: true, className: "whitespace-nowrap", cell: ({ l }) => formatDate(l.outOn) },
+  { key: "due", label: "Due back", sort: true, className: "whitespace-nowrap", cell: ({ l }) => (l.returnedOn ? <span className="text-muted">back {formatDate(l.returnedOn)}</span> : formatDate(l.dueBackOn)) },
+  { key: "state", label: "State", cell: ({ state }) => <Badge tone={LOAN_STATE_TONE[state]}>{LOAN_STATE_LABELS[state]}</Badge> },
+  { key: "check", label: "Check before use", optional: true, className: "hidden md:table-cell", cell: ({ check }) => (check === "NOT_NEEDED" ? <span className="text-sm text-muted">—</span> : <Badge tone={check === "FIT" ? "ok" : check === "NOT_FIT" ? "danger" : "warn"}>{CHECK_LABELS[check]}</Badge>) },
+];

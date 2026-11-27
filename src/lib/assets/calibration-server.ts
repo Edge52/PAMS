@@ -57,11 +57,15 @@ export async function calibrationDevices(scope: Scope, today: string, opts: { fa
     .orderBy(assets.assetTag);
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
-  const last = await db.selectDistinctOn([calibrations.assetId], {
-    assetId: calibrations.assetId, id: calibrations.id, calibratedOn: calibrations.calibratedOn, result: calibrations.result, nextDue: calibrations.nextDue,
-    performedBy: calibrations.performedBy, certificateRef: calibrations.certificateRef,
-  }).from(calibrations).where(ids.length > 2000 ? undefined : inArray(calibrations.assetId, ids))
-    .orderBy(calibrations.assetId, desc(calibrations.calibratedOn), desc(calibrations.id));
+  // Wave 41: only these devices' calibrations, in chunks (it used to read every calibration past 2,000 devices).
+  const last: { assetId: number; id: number; calibratedOn: string; result: string; nextDue: string | null; performedBy: string; certificateRef: string | null }[] = [];
+  for (let i = 0; i < ids.length; i += 5000) {
+    last.push(...await db.selectDistinctOn([calibrations.assetId], {
+      assetId: calibrations.assetId, id: calibrations.id, calibratedOn: calibrations.calibratedOn, result: calibrations.result, nextDue: calibrations.nextDue,
+      performedBy: calibrations.performedBy, certificateRef: calibrations.certificateRef,
+    }).from(calibrations).where(inArray(calibrations.assetId, ids.slice(i, i + 5000)))
+      .orderBy(calibrations.assetId, desc(calibrations.calibratedOn), desc(calibrations.id)));
+  }
   const byAsset = new Map(last.map((l) => [l.assetId, l]));
   return rows.map((r) => {
     const l = byAsset.get(r.id) ?? null;

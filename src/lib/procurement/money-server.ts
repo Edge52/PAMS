@@ -85,6 +85,15 @@ export async function matchLinesFor(poId: number, entered: Map<number, { quantit
   }));
 }
 
+/** Wave 41: what has been called off so far (PO value, not cancelled) for each of these frameworks, in one query. */
+export async function calledOffValues(frameworkIds: number[]): Promise<Map<number, number>> {
+  if (!frameworkIds.length) return new Map();
+  const rows = await db.select({ f: purchaseOrders.frameworkId, v: sql<string>`coalesce(sum(${poLines.quantity} * ${poLines.unitPrice}), 0)` })
+    .from(purchaseOrders).innerJoin(poLines, eq(poLines.poId, purchaseOrders.id))
+    .where(and(inArray(purchaseOrders.frameworkId, frameworkIds), ne(purchaseOrders.status, "CANCELLED"))).groupBy(purchaseOrders.frameworkId);
+  return new Map(rows.map((r) => [r.f as number, Number(r.v)]));
+}
+
 /** What has been called off so far: PO value (not cancelled) and quantities per item, leaving out `excludePoId`. */
 export async function calledOff(frameworkId: number, excludePoId?: number) {
   const pos = await db.select({ id: purchaseOrders.id }).from(purchaseOrders)
