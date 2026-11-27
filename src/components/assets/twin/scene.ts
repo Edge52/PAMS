@@ -5,26 +5,29 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { disposeObject, disposeSceneTextures, Listeners, releaseRenderer } from "./dispose";
+import { Listeners } from "./dispose";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { glbGeometry, loadGlb } from "./render/glb";
-import { deviceModel } from "./render/device-models";
 import { BUILTIN_KITS, type KitRule } from "./render/kits";
-import { coreKind, deviceKind, floorLoadOrder, interiorPoint, isSlow, spreadInRoom, type CoreKind, type DeviceKind, type Pt } from "./geometry";
+import { floorLoadOrder, interiorPoint, type CoreKind, type DeviceKind, type Pt } from "./geometry";
 import { wallHeights } from "./solid-walls";
 import { type FloorGeometry, type TwinAsset, type TwinData, type TwinFloor, type TwinRoom } from "./types";
 import type { Core } from "./nearest";
 import type { Network } from "./nav/network";
 import { type Key } from "./pathways";
 
-import { type TwinStyle, DEVICE_HEIGHT, IDLE_FRAME_MS, LIFT_COLORS, LOAD_CONCURRENCY, NEAR_DISTANCE, ORBIT_MS, shapeGeometry } from "./scene-parts";
+import { type TwinStyle, DEVICE_HEIGHT, LIFT_COLORS, LOAD_CONCURRENCY } from "./scene-parts";
 import { buildFloorImpl, buildFacadeImpl, buildCoresImpl, buildLiftsImpl, layoutFloorsImpl, buildDevicesImpl, buildShapesImpl, positionDevicesImpl, buildFurnitureImpl, buildShellImpl, addGroundImpl } from "./scene-build";
 import { drawClashesImpl, drawZonesImpl, drawContextImpl, drawRouteImpl, drawPathwaysImpl, drawHeatImpl, drawNotesImpl, setOutlinesImpl, drawEventsImpl, buildHeatImpl, buildSmoothHeatImpl, setNavOverlayImpl, setGhostsImpl, tintFloorImpl, setLiftTintImpl } from "./scene-overlays";
 import { viewPresetImpl, styleFloorImpl, applyWallHeightsImpl, applyFloorVisibilityImpl, setStyleImpl, frameAllImpl, snapshotImpl, updatePlayImpl, updateWalkImpl, startWalkImpl, coreSpotsImpl, positionGhostsImpl } from "./scene-view";
 import { bindPointerImpl, pickImpl, drawSelectionImpl, updateSelectionRingImpl, selectImpl, beginDropImpl, updateDropImpl, finishPlacingImpl, finishPickPointImpl } from "./scene-interact";
 import { buildLabelsImpl, updateLabelsImpl } from "./scene-labels";
+import { loopImpl, startRecordingImpl, drawRecordingFrameImpl, showContextLostImpl, watchFrameRateImpl, disposeImpl } from "./scene-loop";
+import { moveDeviceImpl, startPlacingImpl, cancelPlacingImpl, clearDevicesImpl, applyNearImpl, rebuildDevicesImpl, upsertAssetsImpl, removeAssetImpl, rotateDropImpl, cancelDropImpl, endDropImpl, moveDropImpl, finishDropImpl } from "./scene-devices";
+import { nominalOfImpl, shapeKeyImpl, realScaleImpl, placeRoomImpl, deviceScaleImpl, setDeviceMatrixImpl, pulseDevicesImpl, setFurnitureImpl, isolateFloorImpl, dropShellsImpl, roomExtentImpl, setSectionImpl } from "./scene-layout";
+import { frameRouteImpl, pickPointImpl, flashAssetImpl, updateFlashesImpl, stopWalkImpl, walkableImpl, frameSpotsImpl, setPlayImpl, coreCountsImpl, setStatusesImpl, flyToImpl, setCameraImpl } from "./scene-motion";
 /** Declared lift cores by kind: kept exported from here for the files that already import it. */
 export { LIFT_COLORS };
 export type { TwinStyle };
@@ -314,32 +317,12 @@ export class TwinScene {
   buildLifts(f: TwinFloor, s: number): THREE.Object3D[] { return buildLiftsImpl(this, f, s); }
 
   /** Size of a kind's (or detailed model's) shape as built (metres), measured once. */
-  nominalOf(key: string): THREE.Vector3 {
-    let n = this.kindNominal.get(key);
-    if (!n) {
-      const geo = shapeGeometry(key);
-      geo.computeBoundingBox();
-      n = geo.boundingBox!.getSize(new THREE.Vector3());
-      geo.dispose();
-      this.kindNominal.set(key, n);
-    }
-    return n;
-  }
+  nominalOf(key: string): THREE.Vector3  { return nominalOfImpl(this, key); }
   /** The near shape of a device: its detailed model (wave 16) or its kind's simple shape. */
-  shapeKey(a: TwinAsset): string {
-    // The catalogue model's own 3D file (wave 17), once loaded; in place of the drawn shape, detailed or not (wave 28).
-    const glb = a.lib ? this.data.library?.[a.lib]?.glb : null;
-    if (glb && glbGeometry(glb)) return `g:${glb}`;
-    return this.detailed ? `m:${deviceModel(a.typeCode, a.groupCode, a.categoryCode)}` : deviceKind(a.groupCode, a.categoryCode);
-  }
+  shapeKey(a: TwinAsset): string  { return shapeKeyImpl(this, a); }
 
   /** Scale that turns a kind's model into a device of real size: length along the model's long axis. */
-  realScale(kind: string, dims: { l: number; w: number; h: number } | undefined, out: THREE.Vector3): THREE.Vector3 {
-    if (!dims) return out.set(1, 1, 1);
-    const n = this.nominalOf(kind);
-    const [sx, sz] = n.x >= n.z ? [dims.l / n.x, dims.w / n.z] : [dims.w / n.x, dims.l / n.z];
-    return out.set(sx, dims.h / Math.max(0.01, n.y), sz);
-  }
+  realScale(kind: string, dims: { l: number; w: number; h: number } | undefined, out: THREE.Vector3): THREE.Vector3  { return realScaleImpl(this, kind, dims, out); }
 
   floorY(f: TwinFloor) {
     const minElev = Math.min(...this.data.floors.map((x) => x.elevation));
@@ -349,18 +332,7 @@ export class TwinScene {
   layoutFloors() { return layoutFloorsImpl(this); }
 
   /** Spread a room's unpinned devices inside its outline; pinned ones keep their spot (plan units → metres). */
-  placeRoom(roomId: number, list: TwinAsset[]) {
-    const room = this.roomById.get(roomId); if (!room) return;
-    const f = this.floorById.get(room.floorId); if (!f) return;
-    const s = this.u(f);
-    const unpinned = list.filter((a) => a.posX == null || a.posY == null);
-    const spots = spreadInRoom(room.poly as Pt[], unpinned.length);
-    let k = 0;
-    for (const a of list) {
-      const [px, py] = a.posX != null && a.posY != null ? [a.posX, a.posY] : spots[k++];
-      this.devicePos.set(a.id, { floorId: f.id, x: px * s, z: py * s });
-    }
-  }
+  placeRoom(roomId: number, list: TwinAsset[]) { return placeRoomImpl(this, roomId, list); }
 
   /** Devices: glowing dots on thin beams from afar, shapes by kind close up. */
   buildDevices() { return buildDevicesImpl(this); }
@@ -369,42 +341,12 @@ export class TwinScene {
   buildShapes() { return buildShapesImpl(this); }
 
   /** Scale of a device marker now (0 = hidden); faults pulse, search hits swell, the rest dim while searching. */
-  deviceScale(i: number, t: number): number {
-    const id = this.deviceIds[i]; const d = this.devicePos.get(id)!; const a = this.assetsById.get(id)!;
-    if (!this.visibleAssets.has(id) || !this.floorShown(d.floorId)) return 0;
-    const hi = this.highlight.size ? this.highlight.has(id) : false;
-    const dim = this.highlight.size > 0 && !hi;
-    const pulse = !this.reducedMotion && (a.status === "OUT_OF_SERVICE" || a.status === "UNDER_MAINTENANCE") ? 1 + 0.25 * Math.sin(t * 4 + i) : 1;
-    return (hi ? 1.8 : dim ? 0.55 : 1) * pulse;
-  }
+  deviceScale(i: number, t: number): number  { return deviceScaleImpl(this, i, t); }
 
   static readonly UP = new THREE.Vector3(0, 1, 0);
   static readonly NO_TURN = new THREE.Quaternion();
 
-  setDeviceMatrix(i: number, k: number, m: THREE.Matrix4, p: THREE.Vector3, q: THREE.Quaternion, sc: THREE.Vector3) {
-    const id = this.deviceIds[i]; const d = this.devicePos.get(id)!;
-    const floor = this.floorY(this.floorById.get(d.floorId)!);
-    p.set(d.x, floor + DEVICE_HEIGHT, d.z); sc.set(k, k, k);
-    m.compose(p, TwinScene.NO_TURN, sc); this.deviceMesh!.setMatrixAt(i, m);
-    const ki = this.kindIndex.get(id);
-    if (ki) {
-      const km = this.kindMeshes.get(ki.kind)!;
-      // Models keep their size (only search hits grow a little); a quarter turn per device so a ward doesn't look stamped.
-      const mk = k === 0 ? 0 : Math.min(1.25, Math.max(1, k));
-      const a = this.assetsById.get(id)!;
-      // Real size and turn (wave 7); devices without a turn get a quarter turn each so a ward doesn't look stamped.
-      q.setFromAxisAngle(TwinScene.UP, a.rot != null ? -a.rot * Math.PI / 180 : (id % 4) * Math.PI / 2);
-      p.set(d.x, floor + km.y, d.z);
-      this.realScale(ki.kind, a.dims, sc).multiplyScalar(mk);
-      m.compose(p, q, sc); km.mesh.setMatrixAt(ki.i, m);
-    }
-    if (this.statusRings) {
-      const dm = this.assetsById.get(id)?.dims;
-      const r = k === 0 ? 0 : (dm ? Math.max(0.45, Math.max(dm.l, dm.w) * 0.62) : this.ringSize[i] ?? 0.55) * k;
-      p.set(d.x, floor + 0.04, d.z); sc.set(r, 1, r);
-      m.compose(p, TwinScene.NO_TURN, sc); this.statusRings.setMatrixAt(i, m);
-    }
-  }
+  setDeviceMatrix(i: number, k: number, m: THREE.Matrix4, p: THREE.Vector3, q: THREE.Quaternion, sc: THREE.Vector3) { return setDeviceMatrixImpl(this, i, k, m, p, q, sc); }
 
   /** Full update of every marker and beam; run when something changes (not every frame). */
   positionDevices(t = this.clock.getElapsedTime()) { return positionDevicesImpl(this, t); }
@@ -439,14 +381,7 @@ export class TwinScene {
   drawZones() { return drawZonesImpl(this); }
 
   /** Per frame: only the pulsing (faulty) devices change size. */
-  pulseDevices(t: number) {
-    if (!this.deviceMesh || !this.pulsing.length) return;
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
-    for (const i of this.pulsing) this.setDeviceMatrix(i, this.deviceScale(i, t), m, p, q, sc);
-    this.deviceMesh.instanceMatrix.needsUpdate = true;
-    if (this.statusRings) this.statusRings.instanceMatrix.needsUpdate = true;
-    for (const km of this.kindMeshes.values()) km.mesh.instanceMatrix.needsUpdate = true;
-  }
+  pulseDevices(t: number) { return pulseDevicesImpl(this, t); }
 
   addGround() { return addGroundImpl(this); }
 
@@ -460,32 +395,12 @@ export class TwinScene {
     this.buildShapes(); this.positionDevices();
   }
   /** Illustrative furniture (room kits) on the floor shown on its own (wave 16); `rules` = the hospital's room kits. */
-  setFurniture(on: boolean, rules?: KitRule[]) {
-    if (rules && rules !== this.furnitureRules) {
-      this.furnitureRules = rules;
-      for (const g of this.furniture.values()) { g.parent?.remove(g); g.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); (m.material as THREE.Material | undefined)?.dispose?.(); }); }
-      this.furniture.clear();
-    }
-    this.furnitureOn = on;
-    this.applyFurniture();
-  }
+  setFurniture(on: boolean, rules?: KitRule[]) { return setFurnitureImpl(this, on, rules); }
 
   setExplode(v: number) { this.explode = v; this.layoutFloors(); }
 
   /** Show one floor (others fade out), or all floors with `null`. */
-  isolateFloor(floorId: number | null, fly = true) {
-    this.isolated = floorId;
-    this.userMoved = true;
-    this.buildLabels();
-    this.layoutFloors();
-    if (!fly) return;
-    if (floorId == null) this.frameAll(true);
-    else {
-      const v = this.floors.get(floorId); if (!v) return;
-      const c = v.center.clone(); c.y = this.floorY(v.floor);
-      this.flyTo(c, v.size * 1.05, 0.95);
-    }
-  }
+  isolateFloor(floorId: number | null, fly = true) { return isolateFloorImpl(this, floorId, fly); }
 
   /** Basement levels fold away in the whole-building view (unless switched on), when the building has floors above ground. */
   hiddenFloor(f: TwinFloor) {
@@ -556,13 +471,7 @@ export class TwinScene {
   /** Solid walls with door and window openings on the floor shown on its own (wave 16, phase 3). */
   setSolidWalls(on: boolean) { this.solidOn = on; this.applyWallHeights(); }
 
-  dropShells() {
-    for (const g of this.shells.values()) {
-      g.parent?.remove(g);
-      g.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); (m.material as THREE.Material | undefined)?.dispose?.(); });
-    }
-    this.shells.clear();
-  }
+  dropShells() { return dropShellsImpl(this); }
 
   /**
    * The solid shell of one floor: wall boxes standing floor to slab, lintels over doors, windows (sill, glass, head),
@@ -577,30 +486,13 @@ export class TwinScene {
   setHeatMode(mode: "smooth" | "blocks") { this.heatMode = mode; for (const v of this.floors.values()) this.buildHeat(v, this.tints?.map ?? null); }
 
   /** Extent of the building in metres (from the rooms, not the site linework). */
-  roomExtent() {
-    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-    for (const r of this.data.rooms) {
-      const f = this.floorById.get(r.floorId); if (!f) continue;
-      const s = this.u(f);
-      for (const [x, y] of r.poly) { x0 = Math.min(x0, x * s); x1 = Math.max(x1, x * s); z0 = Math.min(z0, y * s); z1 = Math.max(z1, y * s); }
-    }
-    return Number.isFinite(x0) ? { x0, x1, z0, z1 } : { x0: 0, x1: 100, z0: 0, z1: 100 };
-  }
+  roomExtent() { return roomExtentImpl(this); }
 
   /**
    * Section cut: hide everything beyond a vertical plane, to look inside the building. `at` is 0–1 across the building
    * (east–west for "x", north–south for "z"); null removes the cut.
    */
-  setSection(axis: "x" | "z" | null, at = 0.5) {
-    this.section = axis ? { axis, at: Math.min(1, Math.max(0, at)) } : null;
-    if (!this.section) { this.renderer.clippingPlanes = []; return; }
-    const e = this.roomExtent();
-    const [a, b] = this.section.axis === "x" ? [e.x0, e.x1] : [e.z0, e.z1];
-    const pos = a + (b - a) * this.section.at;
-    this.sectionPlane.normal.set(this.section.axis === "x" ? -1 : 0, 0, this.section.axis === "z" ? -1 : 0);
-    this.sectionPlane.constant = pos;
-    this.renderer.clippingPlanes = [this.sectionPlane];
-  }
+  setSection(axis: "x" | "z" | null, at = 0.5) { return setSectionImpl(this, axis, at); }
 
   /**
    * Camera presets: isometric, plan (straight down) or eye level (standing in the selected room, or in the middle of the
@@ -664,14 +556,7 @@ export class TwinScene {
   drawRoute() { return drawRouteImpl(this); }
 
   /** Fly so the whole route is in view. */
-  frameRoute() {
-    if (!this.routeSpots) return;
-    const ps = this.routeSpots.map((sp) => new THREE.Vector3(sp.x, this.floorY(this.floorById.get(sp.floorId)!), sp.z));
-    const box = new THREE.Box3().setFromPoints(ps);
-    const c = box.getCenter(new THREE.Vector3()); const size = box.getSize(new THREE.Vector3());
-    this.userMoved = true;
-    this.flyTo(c, Math.max(45, Math.hypot(size.x, size.y, size.z) * 1.4), 1);
-  }
+  frameRoute() { return frameRouteImpl(this); }
 
   /* ── Wave 7c: pathways ── */
 
@@ -706,30 +591,13 @@ export class TwinScene {
   setOutlines(shapes: { floorId: number; pts: [number, number][]; color: string; fill?: number; dashed?: boolean }[] | null) { return setOutlinesImpl(this, shapes); }
 
   /** The next click on the floor shown on its own returns that spot (plan units) instead of selecting; Esc cancels. */
-  pickPoint(done: (p: { floorId: number; x: number; y: number; roomId: number | null } | null) => void) {
-    this.pointPick?.(null);
-    this.pointPick = done;
-    this.renderer.domElement.style.cursor = "crosshair";
-  }
+  pickPoint(done: (p: { floorId: number; x: number; y: number; roomId: number | null } | null) => void) { return pickPointImpl(this, done); }
   cancelPickPoint() { const cb = this.pointPick; this.pointPick = null; this.renderer.domElement.style.cursor = "grab"; cb?.(null); }
   finishPickPoint(e: PointerEvent) { return finishPickPointImpl(this, e); }
 
   /** A short expanding ring at a device (a new fault came in). */
-  flashAsset(assetId: number) {
-    if (this.reducedMotion) return;
-    const d = this.devicePos.get(assetId); const f = d ? this.floorById.get(d.floorId) : null; if (!d || !f) return;
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.2, 40), new THREE.MeshBasicMaterial({ color: "#ff4f62", transparent: true, toneMapped: false, depthTest: false, side: THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI / 2; ring.position.set(d.x, this.floorY(f) + 0.2, d.z); ring.renderOrder = 14;
-    this.scene.add(ring); this.flashes.push({ mesh: ring, t0: performance.now() });
-  }
-  updateFlashes(now: number) {
-    this.flashes = this.flashes.filter((fl) => {
-      const k = (now - fl.t0) / 2400;
-      if (k >= 3) { this.scene.remove(fl.mesh); fl.mesh.geometry.dispose(); (fl.mesh.material as THREE.Material).dispose(); return false; }
-      const p = k % 1; fl.mesh.scale.setScalar(1 + p * 6); (fl.mesh.material as THREE.MeshBasicMaterial).opacity = 1 - p;
-      return true;
-    });
-  }
+  flashAsset(assetId: number) { return flashAssetImpl(this, assetId); }
+  updateFlashes(now: number) { return updateFlashesImpl(this, now); }
 
   /* ── Wave 7f: walk mode ── */
 
@@ -739,15 +607,7 @@ export class TwinScene {
    */
   startWalk(floorId: number, net: Network | null, onExit?: () => void) { return startWalkImpl(this, floorId, net, onExit); }
   isWalking() { return this.walk != null; }
-  stopWalk() {
-    const w = this.walk; if (!w) return;
-    this.walk = null;
-    this.unbindWalk();
-    this.camera.near = 0.5; this.camera.updateProjectionMatrix();
-    this.camera.position.copy(w.saved.cam); this.controls.target.copy(w.saved.tgt);
-    this.controls.enabled = true; this.controls.update(); this.idleSince = performance.now();
-    w.onExit?.();
-  }
+  stopWalk() { return stopWalkImpl(this); }
   /** Remove walk mode's key and look listeners (also on dispose, when the view closes mid-walk). */
   unbindWalk() {
     window.removeEventListener("keydown", this.walkKey); window.removeEventListener("keyup", this.walkKey);
@@ -772,11 +632,7 @@ export class TwinScene {
     w.look = { x: e.clientX, y: e.clientY };
   };
   walkLookEnd = () => { if (this.walk) this.walk.look = null; };
-  walkable(x: number, z: number): boolean {
-    const n = this.walk?.net; if (!n) return true;
-    const cx = Math.floor((x - n.x0) / n.cell), cz = Math.floor((z - n.z0) / n.cell);
-    return cx >= 0 && cx < n.w && cz >= 0 && cz < n.h && n.free[cz * n.w + cx] === 1;
-  }
+  walkable(x: number, z: number): boolean  { return walkableImpl(this, x, z); }
   updateWalk(now: number) { return updateWalkImpl(this, now); }
 
   /* ── Wave 7f: time slider markers ── */
@@ -789,28 +645,13 @@ export class TwinScene {
   drawEvents() { return drawEventsImpl(this); }
 
   /** Fly so these points are in view (a route, a pathway or one of its legs). */
-  frameSpots(spots: { floorId: number; x: number; z: number }[]) {
-    const ps = spots.filter((sp) => this.floorById.has(sp.floorId)).map((sp) => new THREE.Vector3(sp.x, this.floorY(this.floorById.get(sp.floorId)!), sp.z));
-    if (!ps.length) return;
-    const box = new THREE.Box3().setFromPoints(ps);
-    const c = box.getCenter(new THREE.Vector3()); const size = box.getSize(new THREE.Vector3());
-    this.userMoved = true;
-    this.flyTo(c, Math.max(40, Math.hypot(size.x, size.y, size.z) * 1.4), 1);
-  }
+  frameSpots(spots: { floorId: number; x: number; z: number }[]) { return frameSpotsImpl(this, spots); }
 
   /**
    * Animated patients: each source hands out sampled journeys; markers move at `speed` × real time, up to `max` on
    * screen at once (fewer on a slow device). null stops it.
    */
-  setPlay(sources: PlaySource[] | null, speed = 60, max = 40) {
-    if (!sources || !sources.length) {
-      if (this.play) for (const m of this.play.movers) { this.playGroup.remove(m.mesh); (m.mesh.material as THREE.Material).dispose(); }
-      this.play = null; this.scene.remove(this.playGroup); return;
-    }
-    if (this.play) { this.play.sources = sources; this.play.speed = speed; this.play.max = max; return; }
-    this.play = { sources, speed, max, simT: 0, last: performance.now(), movers: [], nextSpawn: 0 };
-    this.scene.add(this.playGroup);
-  }
+  setPlay(sources: PlaySource[] | null, speed = 60, max = 40) { return setPlayImpl(this, sources, speed, max); }
   setPlaySpeed(speed: number) { if (this.play) this.play.speed = speed; }
 
   static moverGeo = new THREE.SphereGeometry(1.4, 16, 12);
@@ -820,12 +661,7 @@ export class TwinScene {
   setCores(on: boolean) { this.coresOn = on; for (const v of this.floors.values()) if (v.cores) v.cores.visible = on; }
 
   /** How many stairs, lifts and shafts the drawings have (for the legend). */
-  coreCounts(): Record<CoreKind, number> {
-    const n: Record<CoreKind, number> = { stair: 0, lift: 0, shaft: 0 };
-    for (const r of this.data.rooms) { const k = coreKind(r.name); if (k) n[k]++; }
-    if (this.data.lifts?.length) n.lift = this.data.lifts.length; // declared lift cores, not lobbies named "lift"
-    return n;
-  }
+  coreCounts(): Record<CoreKind, number>  { return coreCountsImpl(this); }
 
   /** Glowing blocks over affected rooms; taller = worse (level 0–3). */
   buildHeat(v: FloorView, tints: Map<number, { color: string; level: number }> | null) { return buildHeatImpl(this, v, tints); }
@@ -837,18 +673,7 @@ export class TwinScene {
   buildSmoothHeat(v: FloorView, tints: Map<number, { color: string; level: number }>) { return buildSmoothHeatImpl(this, v, tints); }
 
   /** Live refresh: new statuses for devices (colours and fault pulsing follow). */
-  setStatuses(statuses: Map<number, string>) {
-    if (!this.deviceMesh) return;
-    let changed = false;
-    for (let i = 0; i < this.deviceIds.length; i++) {
-      const a = this.assetsById.get(this.deviceIds[i])!;
-      const st = statuses.get(a.id);
-      if (!st || st === a.status) continue;
-      a.status = st;
-      changed = true;
-    }
-    if (changed) this.positionDevices(); // colours of dots, rings and models follow
-  }
+  setStatuses(statuses: Map<number, string>) { return setStatusesImpl(this, statuses); }
 
   /** Which assets to show (filters). */
   setVisibleAssets(ids: Set<number>) { this.visibleAssets = ids; this.positionDevices(); }
@@ -861,15 +686,7 @@ export class TwinScene {
   frameAll(animate = true) { return frameAllImpl(this, animate); }
 
   /** Smooth camera flight to look at `target` from `distance`, at an elevation angle (0 = level, 1 = top-down). */
-  flyTo(target: THREE.Vector3, distance: number, steep = 0.8) {
-    const dir = this.camera.position.clone().sub(this.controls.target).setY(0).normalize();
-    if (!Number.isFinite(dir.x) || dir.lengthSq() < 0.1) dir.set(0.6, 0, 0.8);
-    const el = 0.35 + 0.5 * steep;
-    const to = target.clone().add(dir.multiplyScalar(distance * Math.cos(el))).add(new THREE.Vector3(0, distance * Math.sin(el), 0));
-    if (this.reducedMotion) { this.camera.position.copy(to); this.controls.target.copy(target); this.controls.update(); return; }
-    this.flight = { from: this.camera.position.clone(), to, tFrom: this.controls.target.clone(), tTo: target.clone(), t0: performance.now(), dur: 1100 };
-    this.idleSince = Infinity;
-  }
+  flyTo(target: THREE.Vector3, distance: number, steep = 0.8) { return flyToImpl(this, target, distance, steep); }
 
   setBloom(on: boolean) { this.bloomWanted = on; this.bloom.enabled = on && this.style === "dark"; }
 
@@ -880,13 +697,7 @@ export class TwinScene {
     return { cam: [c.x, c.y, c.z], tgt: [t.x, t.y, t.z] };
   }
 
-  setCamera(cam: [number, number, number], tgt: [number, number, number], animate = true) {
-    this.userMoved = true;
-    const to = new THREE.Vector3(...cam), target = new THREE.Vector3(...tgt);
-    if (!animate || this.reducedMotion) { this.flight = null; this.camera.position.copy(to); this.controls.target.copy(target); this.controls.update(); return; }
-    this.flight = { from: this.camera.position.clone(), to, tFrom: this.controls.target.clone(), tTo: target, t0: performance.now(), dur: 1100 };
-    this.idleSince = Infinity;
-  }
+  setCamera(cam: [number, number, number], tgt: [number, number, number], animate = true) { return setCameraImpl(this, cam, tgt, animate); }
 
   /**
    * High-resolution PNG of the current view (up to 4096 px on the long side), with a caption band for reports and
@@ -943,141 +754,32 @@ export class TwinScene {
   /** Share of frames skipped since the view opened, for the page check and for tuning. */
   drawStats = { drawn: 0, skipped: 0 };
 
-  loop = () => {
-    if (this.disposed) return;
-    this.frame = requestAnimationFrame(this.loop);
-    const now = performance.now();
-    const busy = !this.perfChecked || this.interacting || !!this.flight || !!this.walk || !!this.play || !!this.rec || this.flashes.length > 0 || now < this.wakeUntil;
-    const idleFor = now - this.idleSince;
-    const orbiting = !busy && !this.reducedMotion && idleFor > 12000 && idleFor < 12000 + ORBIT_MS;
-    const gap = busy ? 0 : orbiting ? 1000 / 30 : IDLE_FRAME_MS;
-    if (gap && now - this.lastDraw < gap - 2) { this.drawStats.skipped++; return; }
-    const sinceDraw = Math.min(0.1, (now - this.lastDraw) / 1000);
-    this.lastDraw = now; this.drawStats.drawn++;
-    if (this.flight) {
-      const k = Math.min(1, (now - this.flight.t0) / this.flight.dur);
-      const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
-      this.camera.position.lerpVectors(this.flight.from, this.flight.to, e);
-      this.controls.target.lerpVectors(this.flight.tFrom, this.flight.tTo, e);
-      if (k >= 1) { this.flight = null; this.idleSince = now; }
-    }
-    if (this.walk) this.updateWalk(now);
-    else {
-      // Slow orbit when nobody has touched the view for a while.
-      this.controls.autoRotate = !this.reducedMotion && !this.flight && idleFor > 12000 && idleFor < 12000 + ORBIT_MS;
-      this.controls.autoRotateSpeed = 0.35;
-      this.controls.update(sinceDraw);
-    }
-    const t = this.clock.getElapsedTime();
-    const near = this.camera.position.distanceTo(this.controls.target) < NEAR_DISTANCE;
-    if (near !== this.near && this.deviceMesh) {
-      this.near = near;
-      this.deviceMesh.visible = !near;
-      if (this.beamLines) this.beamLines.visible = !near && this.style === "dark";
-      for (const km of this.kindMeshes.values()) km.mesh.visible = near;
-      if (this.statusRings) this.statusRings.visible = near;
-      this.applyWallHeights();
-    }
-    this.updateLabels(now);
-    if (!this.reducedMotion && this.deviceMesh) this.pulseDevices(t);
-    this.watchFrameRate(now);
-    this.updatePlay(now);
-    if (this.flashes.length) this.updateFlashes(now);
-    if (this.selectionRing.visible && !this.reducedMotion) {
-      const k = 1 + 0.15 * Math.sin(t * 3);
-      this.selectionRing.scale.set(k, 1, k);
-    }
-    this.composer.render();
-    if (this.rec) this.drawRecordingFrame();
-  };
+  loop = () => loopImpl(this);
 
   /* ── Flythrough video (wave 17, phase 9): each frame copied to a canvas with a caption band, recorded by the page ── */
   rec: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; caption: string[]; title: string } | null = null;
 
   /** Start copying frames (at most 1920 px wide) to a canvas and return its video stream. */
-  startRecording(title: string, fps = 30): MediaStream {
-    const src = this.renderer.domElement;
-    const k = Math.min(1, 1920 / src.width);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round((src.width * k) / 2) * 2; canvas.height = Math.round((src.height * k) / 2) * 2;
-    this.rec = { canvas, ctx: canvas.getContext("2d")!, caption: [], title };
-    this.drawRecordingFrame();
-    return canvas.captureStream(fps);
-  }
+  startRecording(title: string, fps = 30): MediaStream  { return startRecordingImpl(this, title, fps); }
   setRecordingCaption(lines: string[]) { if (this.rec) this.rec.caption = lines; }
   stopRecording() { this.rec = null; }
   isRecording() { return this.rec != null; }
 
-  drawRecordingFrame() {
-    const r = this.rec!; const { canvas: c, ctx } = r;
-    ctx.drawImage(this.renderer.domElement, 0, 0, c.width, c.height);
-    const u = c.height / 720, band = Math.round(56 * u);
-    const g = ctx.createLinearGradient(0, c.height - band * 1.6, 0, c.height);
-    g.addColorStop(0, "rgba(3,10,20,0)"); g.addColorStop(1, "rgba(3,10,20,0.85)");
-    ctx.fillStyle = g; ctx.fillRect(0, c.height - band * 1.6, c.width, band * 1.6);
-    ctx.textBaseline = "middle"; ctx.fillStyle = "#ffffff";
-    ctx.font = `600 ${Math.round(20 * u)}px system-ui, sans-serif`;
-    if (r.caption[0]) ctx.fillText(r.caption[0], Math.round(24 * u), c.height - band * 0.62);
-    ctx.font = `${Math.round(13 * u)}px system-ui, sans-serif`; ctx.fillStyle = "#9fd8ff";
-    ctx.fillText(r.title, Math.round(24 * u), c.height - band * 1.15);
-  }
+  drawRecordingFrame() { return drawRecordingFrameImpl(this); }
 
   /**
    * Once, a few seconds after the devices are in: if frames are slow (a tablet or an older laptop), drop the glow and
    * render at 1× pixels. The person can switch the glow back on.
    */
-  showContextLost() {
-    if (this.container.querySelector("[data-context-lost]")) return;
-    const box = document.createElement("div");
-    box.dataset.contextLost = ""; box.setAttribute("role", "alert");
-    box.style.cssText = "position:absolute;inset:0;z-index:50;display:grid;place-items:center;background:rgb(3 10 20 / 0.88);color:#d6f3ff;text-align:center;padding:24px;font-size:15px";
-    const inner = document.createElement("div");
-    const p = document.createElement("p"); p.textContent = "The 3D picture stopped: the browser dropped its graphics. Nothing is lost.";
-    const b = document.createElement("button"); b.type = "button"; b.textContent = "Reload the 3D view"; b.className = "twin-ctl"; b.style.marginTop = "12px";
-    b.addEventListener("click", () => window.location.reload());
-    inner.append(p, b); box.append(inner); this.container.append(box);
-  }
+  showContextLost() { return showContextLostImpl(this); }
 
-  watchFrameRate(now: number) {
-    const dt = now - this.lastFrame; this.lastFrame = now;
-    if (this.perfChecked || !this.deviceMesh || document.visibilityState !== "visible" || this.flight) return;
-    if (dt > 0 && dt < 1000) this.frameTimes.push(dt);
-    if (this.frameTimes.length < 90) return;
-    this.perfChecked = true;
-    if (isSlow(this.frameTimes)) {
-      this.bloom.enabled = false;
-      this.renderer.setPixelRatio(1); this.composer.setPixelRatio(1); this.resize();
-      this.events.onSlow?.();
-    }
-    this.frameTimes = [];
-  }
+  watchFrameRate(now: number) { return watchFrameRateImpl(this, now); }
 
   /**
    * Leaving the view (wave 35, audit A13): stop the frame loop, remove every listener (walk mode's too), free every
    * geometry, material, texture and render target, and give the WebGL context back to the browser.
    */
-  dispose() {
-    if (this.disposed) return;
-    this.disposed = true;
-    cancelAnimationFrame(this.frame);
-    if (this.drag) window.clearTimeout(this.drag.timer);
-    this.drag = null; this.walk = null; this.rec = null; this.play = null;
-    this.unbindWalk();
-    this.listeners.clear(); // first, so the context loss below doesn't show the "graphics dropped" message
-    this.resizeObs.disconnect();
-    this.controls.dispose();
-    // Parts kept outside the scene graph while hidden are freed too; freeing one twice is harmless.
-    for (const g of [...this.furniture.values(), ...this.shells.values()]) disposeObject(g);
-    for (const km of this.kindMeshes.values()) disposeObject(km.mesh);
-    disposeObject(this.scene);
-    disposeSceneTextures(this.scene);
-    this.floors.clear(); this.kindMeshes.clear(); this.furniture.clear(); this.shells.clear();
-    for (const pass of this.composer.passes) pass.dispose();
-    this.composer.dispose();
-    releaseRenderer(this.renderer);
-    this.labelLayer.remove();
-    this.container.querySelector("[data-context-lost]")?.remove();
-  }
+  dispose() { return disposeImpl(this); }
 
   /* ───────────── Labels: floor tags, departments, rooms ───────────── */
 
@@ -1096,36 +798,12 @@ export class TwinScene {
   /* ───────────── Moving and placing devices ───────────── */
 
   /** A device moved (or got an exact spot): re-place it and its old and new rooms' unpinned devices. */
-  moveDevice(assetId: number, roomId: number, posX: number | null, posY: number | null) {
-    const a = this.assetsById.get(assetId); if (!a) return;
-    const old = a.roomId;
-    Object.assign(a, { roomId, posX, posY });
-    for (const r of new Set([old, roomId])) {
-      if (r == null) continue;
-      this.placeRoom(r, [...this.assetsById.values()].filter((x) => x.roomId === r));
-    }
-    if (this.selected?.kind === "room") this.focus = new Set([...this.assetsById.values()].filter((x) => x.roomId === (this.selected as { id: number }).id).map((x) => x.id));
-    this.positionDevices();
-    this.drawSelection();
-    this.updateSelectionRing();
-  }
+  moveDevice(assetId: number, roomId: number, posX: number | null, posY: number | null) { return moveDeviceImpl(this, assetId, roomId, posX, posY); }
 
   /** Next click on the device's floor returns that spot in plan units (or null if it misses the floor). */
-  startPlacing(assetId: number, done: (p: { x: number; y: number } | null) => void) {
-    const d = this.devicePos.get(assetId); if (!d) { done(null); return; }
-    this.placing = { assetId, floorId: d.floorId, done };
-    if (this.isolated !== d.floorId) this.isolateFloor(d.floorId, false);
-    // Bring the device's room into view (it may have just moved somewhere else).
-    const f = this.floorById.get(d.floorId)!;
-    this.flyTo(new THREE.Vector3(d.x, this.floorY(f), d.z), 14, 1);
-    this.renderer.domElement.style.cursor = "crosshair";
-  }
+  startPlacing(assetId: number, done: (p: { x: number; y: number } | null) => void) { return startPlacingImpl(this, assetId, done); }
 
-  cancelPlacing() {
-    const p = this.placing; this.placing = null;
-    this.renderer.domElement.style.cursor = "grab";
-    p?.done(null);
-  }
+  cancelPlacing() { return cancelPlacingImpl(this); }
 
   finishPlacing(e: PointerEvent) { return finishPlacingImpl(this, e); }
 
@@ -1139,49 +817,18 @@ export class TwinScene {
 
   /* ───────────── Adding devices and dropping them on the plan (wave 7) ───────────── */
 
-  clearDevices() {
-    const drop = (o: THREE.Object3D | null) => {
-      if (!o) return;
-      this.scene.remove(o);
-      const m = o as THREE.Mesh; m.geometry?.dispose(); (m.material as THREE.Material | undefined)?.dispose();
-    };
-    drop(this.deviceMesh); drop(this.statusRings); drop(this.beamLines);
-    for (const km of this.kindMeshes.values()) drop(km.mesh);
-    this.deviceMesh = null; this.statusRings = null; this.beamLines = null;
-    this.kindMeshes.clear(); this.kindIndex.clear(); this.devicePos.clear(); this.deviceIds = []; this.pulsing = [];
-  }
+  clearDevices() { return clearDevicesImpl(this); }
 
-  applyNear() {
-    if (!this.deviceMesh) return;
-    this.deviceMesh.visible = !this.near;
-    if (this.beamLines) this.beamLines.visible = !this.near && this.style === "dark";
-    for (const km of this.kindMeshes.values()) km.mesh.visible = this.near;
-    if (this.statusRings) this.statusRings.visible = this.near;
-  }
+  applyNear() { return applyNearImpl(this); }
 
   /** Rebuild the device layer after devices were added, removed or changed rooms (the building stays). */
-  rebuildDevices(keepVisible: Set<number>) {
-    this.clearDevices();
-    this.buildDevices();
-    this.visibleAssets = new Set([...this.deviceIds].filter((id) => keepVisible.has(id)));
-    this.applyNear();
-    this.positionDevices();
-    this.drawSelection();
-  }
+  rebuildDevices(keepVisible: Set<number>) { return rebuildDevicesImpl(this, keepVisible); }
 
   /** Put devices into the model (just placed from the "To place" list), or update ones already in it. */
-  upsertAssets(list: TwinAsset[]) {
-    const keep = new Set(this.visibleAssets);
-    for (const a of list) { this.assetsById.set(a.id, { ...a }); keep.add(a.id); }
-    this.rebuildDevices(keep);
-  }
+  upsertAssets(list: TwinAsset[]) { return upsertAssetsImpl(this, list); }
 
   /** Take a device out of the model (sent back to the "To place" list). */
-  removeAsset(assetId: number) {
-    this.assetsById.delete(assetId);
-    const keep = new Set(this.visibleAssets); keep.delete(assetId);
-    this.rebuildDevices(keep);
-  }
+  removeAsset(assetId: number) { return removeAssetImpl(this, assetId); }
 
   /**
    * Drop a device on the plan: a real-size ghost (model and footprint) follows the pointer on the floor, green when it
@@ -1191,53 +838,20 @@ export class TwinScene {
   beginDrop(spec: DropSpec, floorId: number, done: (r: DropResult | null) => void, onMove?: (r: DropResult | null) => void) { return beginDropImpl(this, spec, floorId, done, onMove); }
 
   /** Turn the device being dropped (degrees clockwise). */
-  rotateDrop(deg: number) {
-    const d = this.drop; if (!d) return;
-    d.rot = (((d.rot + deg) % 360) + 360) % 360;
-    d.ghost.rotation.y = -d.rot * Math.PI / 180;
-    if (d.at) this.updateDrop(d.at.x, d.at.y);
-  }
+  rotateDrop(deg: number) { return rotateDropImpl(this, deg); }
 
   isDropping() { return this.drop != null; }
 
-  cancelDrop() {
-    const d = this.drop; if (!d) return;
-    this.endDrop();
-    d.done(null);
-  }
+  cancelDrop() { return cancelDropImpl(this); }
 
-  endDrop() {
-    const d = this.drop; if (!d) return;
-    this.scene.remove(d.ghost);
-    d.body.geometry.dispose(); (d.body.material as THREE.Material).dispose();
-    d.foot.geometry.dispose(); (d.foot.material as THREE.Material).dispose();
-    if (d.hid) { this.visibleAssets.add(d.spec.assetId); this.positionDevices(); }
-    this.drop = null;
-    this.renderer.domElement.style.cursor = "grab";
-  }
+  endDrop() { return endDropImpl(this); }
 
-  moveDrop(e: PointerEvent) {
-    const d = this.drop; if (!d) return;
-    const f = this.floorById.get(d.floorId)!;
-    const r = this.renderer.domElement.getBoundingClientRect();
-    this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hit = new THREE.Vector3();
-    if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.floorY(f)), hit)) return;
-    const s = this.u(f);
-    this.updateDrop(hit.x / s, hit.z / s);
-  }
+  moveDrop(e: PointerEvent) { return moveDropImpl(this, e); }
 
   /** Move the ghost to a plan point and work out the room under it and whether its footprint fits inside. */
   updateDrop(px: number, py: number) { return updateDropImpl(this, px, py); }
 
-  finishDrop(e: PointerEvent) {
-    this.moveDrop(e);
-    const d = this.drop; if (!d || !d.at) return;
-    const at = d.at;
-    this.endDrop();
-    d.done(at);
-  }
+  finishDrop(e: PointerEvent) { return finishDropImpl(this, e); }
 
   /** Rooms of a floor (for the UI). */
   roomsOn(floorId: number): TwinRoom[] { return this.data.rooms.filter((r) => r.floorId === floorId); }
