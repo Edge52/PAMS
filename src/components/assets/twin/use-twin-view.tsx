@@ -5,13 +5,13 @@
  */
 import { useRouter } from "next/navigation";
 import { startTransition, useActionState, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { addNotePhotoAction, addRouteFixAction, deleteRouteFixAction, setRoomZoneAction, addNoteAction, deleteNoteAction, setNoteStatusAction, deleteTourAction, saveTourAction, type Tour, deleteViewAction, saveViewAction, twinDropAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
+import { type Tour, deleteViewAction, saveViewAction, twinMoveAction, twinPlaceAction, type SavedView, type TwinActionState, type ViewActionState } from "@/app/assets/3d/actions";
 import { decodeView, describeView, encodeView, type ViewState } from "./view-state";
 import { useHudMode, usePanelPrefs } from "./hud";
 import { visibleSheetTab, type SheetTab } from "./hud-state";
 import type { DropResult, PickResult, TwinScene, TwinStyle } from "./scene";
 import { STATUS_COLORS, STATUS_LABELS, type FloorGeometry, type LivePayload, type TwinAsset, type TwinData, type TwinFix, type TwinRoom } from "./types";
-import { coreKind, deviceKind, floorLoadOrder, interiorPoint, polygonArea, type Pt } from "./geometry";
+import { coreKind, floorLoadOrder, polygonArea, type Pt } from "./geometry";
 import { AVAILABLE, rankNearest, type Ranked } from "./nearest";
 import { PLAN_BANDS, planBand, spreadGhosts } from "@/lib/assets/plan-installed";
 import type { PlanChoice, PlanPayload } from "@/lib/assets/plan-installed-server";
@@ -19,14 +19,11 @@ import { bucketOf, colorFor, LAYER_INFO, legendFor, NEUTRAL, roomValues, type La
 import { type RenderSettings } from "./render/render-panel";
 import { RouteService, routeSpots } from "./nav/service";
 import { workerBuilder } from "./nav/worker-builder";
-import { formatDuration, type Route } from "./nav/route";
-import { CLEAR, legClearance } from "./nav/clearance";
+import { type Route } from "./nav/route";
 import { loadColor, simPlace } from "./sim-on-model";
 import { simulate, type SimModel, type SimSummary } from "@/lib/flows/simulate";
 import type { SimReply, SimRequest } from "@/lib/flows/simulate.worker";
-import { capPauses, FLOW_COLORS, heatLegsOf, journeyOf, liftTripsOf, pathwayCard, samplePath, stepRoom, trackOf, tubeRadius, visits, type TwinFlow } from "./pathways";
-import { cleanDirtyConflicts, corridorHeat, liftLoad } from "@/lib/flows/analysis";
-import type { PathDraw } from "./scene";
+import { pathwayCard, type TwinFlow } from "./pathways";
 import { readiness } from "@/lib/flows/readiness";
 import type { TwinNote } from "@/lib/assets/twin-notes";
 import { BUILTIN_KITS, type KitRule } from "./render/kits";
@@ -34,9 +31,15 @@ import { presetById, presetRooms, presetSummary, type PresetId } from "./presets
 import { replayStatuses, type StatusRow } from "@/lib/assets/status-history";
 import { todayISO } from "@/lib/format";
 import { type Outline } from "./fit-panel";
-import { EVENT_COLORS, eventsAt, perDay, shortcutFor, type TimeEvent } from "./timeline";
+import { perDay, shortcutFor, type TimeEvent } from "./timeline";
 import { useCommissioning } from "./commissioning-panel";
 import { useConfirm } from "./use-confirm";
+import { useTwinDrop } from "./use-twin-drop";
+import { useTwinNetwork } from "./use-twin-network";
+import { useTwinNotes } from "./use-twin-notes";
+import { useTwinPathways } from "./use-twin-pathways";
+import { useTwinTime } from "./use-twin-time";
+import { useTwinTours } from "./use-twin-tours";
 import { CONFIDENCE_COLORS, decodeLive, LIVE_EVERY_MS, PRESENTATION_ROLES, readStyle, styleUnset, subscribeStyle, TEMPLATE_COLORS, templateKind, writeStyle } from "./twin-view-parts";
 
 export function useTwinView({ data, live: initialLive, views: initialViews, canManageViews, plans = [], notes: initialNotes = [], people = [], me = { id: 0, canEditAssets: false }, tours: initialTours = [], spotlight, commissioning }: {
@@ -607,516 +610,31 @@ export function useTwinView({ data, live: initialLive, views: initialViews, canM
       setToast(res ? { ok: res.ok, error: res.error } : null);
     });
   }
-  /* ── Wave 7: dropping devices on the plan at real size ── */
-
-  /** Turn of a device as drawn now (degrees clockwise): its saved turn, else the quarter turn the scene gives it. */
-  const turnOf = (a: TwinAsset) => a.rot ?? ((360 - (a.id % 4) * 90) % 360);
-  function startDrop(asset: TwinAsset, floor: number | null) {
-    const s = sceneRef.current; if (!s || !data.can.move) return;
-    const target = floor ?? (asset.roomId ? roomById.get(asset.roomId)?.floorId : null) ?? placeFloor ?? floorId ?? data.floors.find((f) => f.hasCad)?.id ?? data.floors[0]?.id;
-    if (target == null) return;
-    if (floorId !== target) setFloorId(target);
-    setToast(null); setUndo(null);
-    setDropping({ asset, at: null });
-    s.beginDrop({ assetId: asset.id, kind: deviceKind(asset.groupCode, asset.categoryCode), dims: asset.dims, rot: turnOf(asset) }, target,
-      (r) => { setDropping(null); if (r) void saveDrop(asset, r); },
-      (r) => setDropping((d) => (d ? { ...d, at: r } : d)));
-  }
-  async function sendDrop(assetId: number, roomId: number | null, x: number | null, y: number | null, rot: number | null) {
-    const fd = new FormData();
-    fd.set("assetId", String(assetId)); fd.set("roomId", roomId == null ? "" : String(roomId));
-    if (x != null && y != null) { fd.set("posX", String(x)); fd.set("posY", String(y)); }
-    if (rot != null) fd.set("rot", String(rot));
-    return twinDropAction(null, fd);
-  }
-  /** Apply a saved drop (or undo) to the lists and the model. */
-  function applyDrop(asset: TwinAsset, roomId: number | null, posX: number | null, posY: number | null, rot: number | null) {
-    const s = sceneRef.current;
-    const next = { ...asset, roomId, posX, posY, rot };
-    if (roomId == null) {
-      setAssetList((l) => l.filter((a) => a.id !== asset.id));
-      setUnplaced((l) => [next, ...l.filter((a) => a.id !== asset.id)]);
-      s?.removeAsset(asset.id);
-    } else {
-      setUnplaced((l) => l.filter((a) => a.id !== asset.id));
-      setAssetList((l) => (l.some((a) => a.id === asset.id) ? l.map((a) => (a.id === asset.id ? next : a)) : [...l, next]));
-      s?.upsertAssets([next]);
-    }
-  }
-  async function saveDrop(asset: TwinAsset, r: DropResult) {
-    if (r.roomId == null) { setToast({ error: "Drop the device inside a room." }); return; }
-    const before = { roomId: asset.roomId, posX: asset.posX, posY: asset.posY, rot: asset.rot };
-    const res = await sendDrop(asset.id, r.roomId, r.x, r.y, r.rot);
-    if (!res?.ok) { setToast({ error: res?.error ?? "The device couldn't be placed." }); return; }
-    applyDrop(asset, res.roomId ?? null, res.posX ?? null, res.posY ?? null, res.rot ?? null);
-    setToast({ ok: `${asset.tag}: ${res.ok}${r.inside ? "" : " It sticks out of the room; check the spot."}` });
-    const placedAsset = { ...asset, roomId: res.roomId ?? null, posX: res.posX ?? null, posY: res.posY ?? null, rot: res.rot ?? null };
-    setUndo({
-      label: before.roomId == null ? "Undo (back to the list)" : "Undo",
-      run: async () => {
-        setUndo(null);
-        const u = await sendDrop(asset.id, before.roomId, before.posX, before.posY, before.rot);
-        if (!u?.ok) { setToast({ error: u?.error ?? "Couldn't undo." }); return; }
-        applyDrop(placedAsset, u.roomId ?? null, u.posX ?? null, u.posY ?? null, u.rot ?? null);
-        setToast({ ok: `${asset.tag}: undone.` });
-      },
-    });
-    setTimeout(() => setUndo((u) => (u ? null : u)), 30_000);
-  }
-  // Keys while dropping: R turns 15° (Shift+R the other way), T turns 90°, Esc cancels.
-  useEffect(() => {
-    if (!dropping) return;
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
-      const s = sceneRef.current; if (!s) return;
-      if (e.key === "Escape") s.cancelDrop();
-      else if (e.key === "r" || e.key === "R") { s.rotateDrop(e.shiftKey ? -15 : 15); e.preventDefault(); }
-      else if (e.key === "t" || e.key === "T") { s.rotateDrop(90); e.preventDefault(); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [dropping]);
-  // A link from an asset page (…&place=<id>) starts placing that device once the model is ready.
-  const placeParamDone = useRef(false);
-  useEffect(() => {
-    if (!ready || placeParamDone.current) return;
-    const id = Number(new URLSearchParams(window.location.search).get("place"));
-    if (!id) return;
-    const a = unplaced.find((x) => x.id === id) ?? assetList.find((x) => x.id === id);
-    if (!a) return;
-    const t = setTimeout(() => { placeParamDone.current = true; startDrop(a, null); }, 0); // after this render
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
-  }, [ready]);
-  /* ── Wave 7a: walking network layer and the early-look trauma route ── */
-  useEffect(() => {
-    const s = sceneRef.current; if (!s || !ready) return;
-    if (!navOn || floorId == null) { s.setNavOverlay(null); return; }
-    let live = true;
-    void routes.network(floorId).then(async (net) => {
-      if (!live || !net) return;
-      s.setNavOverlay(net);
-      const c = await routes.coverage(floorId);
-      if (live && c) setNavInfo(`${Math.round(c.share * 100)} % of rooms on the walking network (${c.reached} of ${c.counted}) · ${c.assumed} assumed door${c.assumed === 1 ? "" : "s"} · ${c.unreachable} unreachable`);
-      if (live) setUnreachable(net.unreachable);
-    });
-    return () => { live = false; };
-  }, [navOn, floorId, ready, routes, navVersion]);
-  /** Pick the two ends of a fix on the floor shown, then save it and rebuild the floor's network. */
-  function startFix(kind: "OPEN" | "CLOSE") {
-    const s = sceneRef.current; if (!s || floorId == null) return;
-    setFixMode({ kind });
-    const pickEnd = (a?: { x: number; y: number }) => s.pickPoint((p) => {
-      if (!p) { setFixMode(null); return; }
-      if (!a) { setFixMode({ kind, a: { x: p.x, y: p.y } }); pickEnd({ x: p.x, y: p.y }); return; }
-      setFixMode(null);
-      void saveFix(kind, p.floorId, a, { x: p.x, y: p.y });
-    });
-    pickEnd();
-  }
-  async function saveFix(kind: "OPEN" | "CLOSE", fl: number, a: { x: number; y: number }, b: { x: number; y: number }) {
-    const fd = new FormData();
-    fd.set("floorId", String(fl)); fd.set("kind", kind); fd.set("x1", String(a.x)); fd.set("y1", String(a.y)); fd.set("x2", String(b.x)); fd.set("y2", String(b.y)); fd.set("note", "");
-    const res = await addRouteFixAction(null, fd);
-    if (res?.fix) { const next = [...fixes, res.fix]; setFixes(next); routes.setFixes(fl, next.filter((f) => f.floorId === fl)); setFlowRoutes(new Map()); setNavVersion((v) => v + 1); }
-    setToast(res ? { ok: res.ok, error: res.error } : null);
-  }
-  async function removeFix(f: TwinFix) {
-    const fd = new FormData(); fd.set("fixId", String(f.id));
-    const res = await deleteRouteFixAction(null, fd);
-    if (res?.deletedId) { const next = fixes.filter((x) => x.id !== f.id); setFixes(next); routes.setFixes(f.floorId, next.filter((x) => x.floorId === f.floorId)); setFlowRoutes(new Map()); setNavVersion((v) => v + 1); }
-    setToast(res ? { ok: res.ok, error: res.error } : null);
-  }
-  async function setZone(roomId: number, zone: string) {
-    const fd = new FormData(); fd.set("roomId", String(roomId)); fd.set("zone", zone);
-    const res = await setRoomZoneAction(null, fd);
-    if (res?.roomId) { setZones((m) => new Map(m).set(res.roomId!, res.zone ?? null)); routes.setZone(res.roomId, res.zone ?? null); setFlowRoutes(new Map()); setNavVersion((v) => v + 1); }
-    setToast(res ? { ok: res.ok, error: res.error } : null);
-  }
-  async function showTrauma() {
-    const s = sceneRef.current; if (!s) return;
-    setTrauma({ busy: true });
-    const level = (id: number) => floorById.get(id)?.level ?? 0;
-    const find = (re: RegExp, pref?: (r: (typeof data.rooms)[number]) => boolean) =>
-      [...data.rooms].filter((r) => re.test(r.name)).sort((a, b) => Number(pref ? !pref(a) : 0) - Number(pref ? !pref(b) : 0) || level(a.floorId) - level(b.floorId))[0];
-    const amb = find(/AMBULANCE/i) ?? find(/EMERGENCY|\bER\b/i);
-    const resus = find(/RESUS|TRAUMA/i, (r) => r.floorId === amb?.floorId);
-    const ct = find(/^CT\b/i, (r) => r.floorId === amb?.floorId);
-    const icu = find(/^(ALL )?ICU\b/i, (r) => level(r.floorId) > 0);
-    const stops = [amb, resus, ct, icu];
-    if (stops.some((r) => !r)) { setTrauma({ error: "This hospital's drawings don't have an ambulance entrance, resus room, CT room and ICU to route between." }); return; }
-    const res = await routes.through(stops.map((r) => r!.id), "bed");
-    if (!res) { setTrauma({ error: "No bed route found: check that a bed lift serves the ICU floor (Facilities › Lifts)." }); return; }
-    setTrauma({ steps: res.legs.map((rt, i) => ({ from: stops[i]!.name, to: stops[i + 1]!.name, route: rt })), total: res.route });
-    if (floorId != null) { setFloorId(null); s.isolateFloor(null, false); }
-    s.showRoute(routeSpots(res.route)); s.frameRoute();
-  }
-  function clearTrauma() { setTrauma(null); sceneRef.current?.showRoute(null); }
-  /* ── Wave 7c: pathways in 3D ── */
-  const flowColor = (id: number) => FLOW_COLORS[Math.max(0, flows.findIndex((f) => f.id === id)) % FLOW_COLORS.length];
-  // A link from a pathway page (…&flow=<id>) shows that pathway once the model is ready.
-  const flowParamDone = useRef(false);
-  useEffect(() => {
-    if (!ready || flowParamDone.current) return;
-    flowParamDone.current = true;
-    const ids = (new URLSearchParams(window.location.search).get("flow") ?? "").split(",").map(Number).filter((id) => flows.some((f) => f.id === id));
-    if (!ids.length) return;
-    const t = setTimeout(() => { setFlowSel(ids); setCardFlow(ids[0]); if (!panels.isOpen("pathways")) panels.toggle("pathways"); }, 0);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
-  }, [ready]);
-  // Route every arrow of the chosen pathways (once per pathway), then draw them.
-  useEffect(() => {
-    if (!ready) return;
-    const missing = flowSel.filter((id) => !flowRoutes.has(id));
-    if (!missing.length) return;
-    let live = true;
-    const t = setTimeout(() => setFlowBusy(true), 0);
-    void (async () => {
-      const add = new Map<number, (Route | null)[]>();
-      for (const id of missing) {
-        const f = flows.find((x) => x.id === id); if (!f) continue;
-        const roomOf = new Map(f.steps.map((st) => [st.key, stepRoom(st, data.rooms)]));
-        add.set(id, await Promise.all(f.links.map(async (l) => {
-          const a = roomOf.get(l.fromKey), b = roomOf.get(l.toKey);
-          if (!a || !b) return null;
-          const [pa, pb] = await Promise.all([routes.roomPlace(a.id), routes.roomPlace(b.id)]);
-          // Lift waits at the pathway's busiest hour.
-          const prof = f.arrivalProfile?.length === 24 ? f.arrivalProfile : null;
-          return pa && pb ? routes.route(pa, pb, journeyOf(l.transport), prof ? prof.indexOf(Math.max(...prof)) : null) : null;
-        })));
-      }
-      if (!live) return;
-      setFlowRoutes((m) => new Map([...m, ...add]));
-      setFlowBusy(false);
-    })();
-    return () => { live = false; clearTimeout(t); };
-  }, [flowSel, flowRoutes, flows, ready, routes, data.rooms]);
-  const flowDraws = useMemo((): PathDraw[] => flowSel.flatMap((id) => {
-    const f = flows.find((x) => x.id === id), rs = flowRoutes.get(id);
-    if (!f || !rs) return [];
-    const vis = visits(f.steps, f.links);
-    const s = sceneRef.current;
-    const markers = f.steps.map((st, i) => ({ st, i, room: stepRoom(st, data.rooms) })).filter((m) => m.room)
-      .map(({ st, i, room }) => { const sp = s?.spotOfRoom(room!.id); return sp ? { floorId: sp.floorId, x: sp.x, z: sp.z, number: i + 1, text: st.label } : null; })
-      .filter((m): m is NonNullable<typeof m> => m != null);
-    return [{
-      color: flowColor(id), markers,
-      tubes: f.links.map((_, i) => rs[i] ? { spots: routeSpots(rs[i]!), radius: tubeRadius(vis.links[i] ?? 0), dashed: rs[i]!.estimated } : null).filter((t): t is NonNullable<typeof t> => t != null),
-    }];
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- flowColor depends on flows only
-  }), [flowSel, flowRoutes, flows, data.rooms]);
-  useEffect(() => {
-    const s = sceneRef.current; if (!s || !ready) return;
-    s.showPathways(flowDraws.length ? flowDraws : null);
-  }, [flowDraws, ready]);
-  // Play: patients sampled by the shares, moving at the chosen speed; long stays squeezed to a few seconds.
-  const playSpeedRef = useRef(playSpeed);
-  useEffect(() => { playSpeedRef.current = playSpeed; sceneRef.current?.setPlaySpeed(playSpeed); }, [playSpeed]);
-  useEffect(() => {
-    const s = sceneRef.current; if (!s || !ready) return;
-    const sources = playing ? flowSel.flatMap((id) => {
-      const f = flows.find((x) => x.id === id), rs = flowRoutes.get(id);
-      return f && rs ? [{ color: flowColor(id), next: () => capPauses(trackOf(samplePath(f.steps, f.links), f.links, f.steps, rs), 6 * playSpeedRef.current) }] : [];
-    }) : [];
-    s.setPlay(sources.length ? sources : null, playSpeedRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- flowColor depends on flows only
-  }, [playing, flowSel, flowRoutes, flows, ready]);
-  // Wave 7d: load of the shown pathways — lift trips and corridor traffic (patients a day per 2 m of corridor).
-  const shownWithRoutes = useMemo(() => flowSel.map((id) => ({ f: flows.find((x) => x.id === id), rs: flowRoutes.get(id) })).filter((x): x is { f: TwinFlow; rs: (Route | null)[] } => !!x.f && !!x.rs), [flowSel, flows, flowRoutes]);
-  const liftRows = useMemo(() => liftLoad(
-    shownWithRoutes.flatMap(({ f, rs }) => liftTripsOf(f, rs, (id) => floorById.get(id)?.level ?? 0)),
-    (name) => data.lifts.find((l) => l.name === name)?.cars ?? 1,
-  ), [shownWithRoutes, floorById, data.lifts]);
-  useEffect(() => {
-    if (!bedOn || !ready) return;
-    let live = true;
-    void (async () => {
-      const out: NonNullable<typeof bedIssues> = [];
-      for (const { f, rs } of shownWithRoutes) {
-        for (const [i, l] of f.links.entries()) {
-          if (l.transport !== "BED" && l.transport !== "TROLLEY") continue;
-          const rt = rs[i]; if (!rt) continue;
-          const leg = `${f.name}: ${f.steps.find((x) => x.key === l.fromKey)?.label ?? ""} → ${f.steps.find((x) => x.key === l.toKey)?.label ?? ""}`;
-          for (const lg of rt.legs) {
-            if (lg.kind !== "walk" || lg.estimated) continue;
-            const net = await routes.network(lg.floorId); if (!net) continue;
-            const c = legClearance(net, lg.points as [number, number][]);
-            for (const p of c.pinches) out.push({ floorId: lg.floorId, x: p.x, z: p.z, severity: p.need === "bed" ? "high" : "medium", leg,
-              text: p.need === "bed" ? `${p.width.toFixed(1)} m clear: too narrow for a bed (${CLEAR.bed} m)` : `${p.width.toFixed(1)} m for ${Math.round(p.length)} m: a bed can't pass someone (${CLEAR.passing} m)` });
-            for (const t of c.turns) if (!t.fits) out.push({ floorId: lg.floorId, x: t.x, z: t.z, severity: "high", leg, text: `a bed can't turn this corner (${t.a.toFixed(1)} m into ${t.b.toFixed(1)} m)` });
-          }
-        }
-      }
-      if (live) setBedIssues(out);
-    })();
-    return () => { live = false; };
-  }, [bedOn, ready, shownWithRoutes, routes]);
-  useEffect(() => { if (ready) sceneRef.current?.setMarkers("bed", bedOn ? bedIssues : null); }, [bedOn, bedIssues, ready]);
-  const heat = useMemo(() => (heatOn ? [...corridorHeat(shownWithRoutes.flatMap(({ f, rs }) => heatLegsOf(f, rs))).values()] : null), [heatOn, shownWithRoutes]);
-  useEffect(() => { if (ready) sceneRef.current?.setHeat(heat); }, [heat, ready]);
-  const cdFlows = useMemo(() => flows.filter((f) => f.kind === "SUPPLIES" || f.kind === "WASTE"), [flows]);
-  const cd = useMemo(() => {
-    if (!cdOn) return null;
-    return cleanDirtyConflicts(shownWithRoutes.filter(({ f }) => f.kind === "SUPPLIES" || f.kind === "WASTE").map(({ f, rs }) => ({
-      name: f.name, kind: f.kind ?? "PATIENT", profile: f.arrivalProfile ?? null,
-      legs: rs.flatMap((r) => (r?.legs ?? []).filter((l) => l.kind === "walk").map((l) => ({ floorId: l.floorId, points: l.points as [number, number][] }))),
-      lifts: [...new Set(rs.flatMap((r) => (r?.legs ?? []).filter((l) => l.kind !== "walk" && l.via).map((l) => l.via!)))],
-    })));
-  }, [cdOn, shownWithRoutes]);
-  useEffect(() => {
-    const s = sceneRef.current; if (!s || !ready || history) return;
-    s.setEvents(cd ? cd.shared.map((c) => ({ floorId: c.floorId, x: c.x, z: c.z, color: "#ff3b4e", strength: 1 })) : []);
-  }, [cd, ready, history]);
-  function toggleFlow(id: number) {
-    const on = !flowSel.includes(id);
-    setFlowSel((sel) => (on ? [...sel, id] : sel.filter((x) => x !== id)));
-    if (on) {
-      setCardFlow(id);
-      // Pathways cross floors: show the whole building.
-      if (floorId != null) { setFloorId(null); sceneRef.current?.isolateFloor(null, false); }
-    } else if (cardFlow === id) setCardFlow(flowSel.find((x) => x !== id) ?? null);
-    if (!on && flowSel.length === 1) setPlaying(false);
-  }
-  function frameFlow(id: number) {
-    const rs = flowRoutes.get(id); const s = sceneRef.current;
-    if (rs && s) s.frameSpots(rs.flatMap((r) => (r ? routeSpots(r) : [])));
-  }
-  /* ── Wave 7e: notes, live alerts, drag to move ── */
-  useEffect(() => {
-    if (!ready) return;
-    sceneRef.current?.setNotes(notes.filter((n) => showDone || n.status === "OPEN").map((n) => ({ id: n.id, floorId: n.floorId, x: n.x, y: n.y, done: n.status === "DONE" })));
-  }, [notes, showDone, ready]);
-  const noteWhere = (n: TwinNote) => {
-    const a = n.assetId ? assetById.get(n.assetId) : undefined; const r = n.roomId ? roomById.get(n.roomId) : undefined;
-    return [a ? `${a.deviceType} ${a.tag}` : null, r?.name ?? null, floorById.get(n.floorId)?.name ?? null].filter(Boolean).join(" · ");
-  };
-  /** Open the composer for the selected device or room (a device's spot, or a point inside the room). */
-  function noteOnSelection() {
-    const s = sceneRef.current; if (!s) return;
-    if (selAsset) {
-      const sp = s.spotOfAsset(selAsset.id); const f = sp ? floorById.get(sp.floorId) : undefined; if (!sp || !f) return;
-      const k = f.unitsPerMetre || 10;
-      setComposer({ floorId: f.id, x: sp.x * k, y: sp.z * k, roomId: selAsset.roomId, assetId: selAsset.id, where: `${selAsset.deviceType} ${selAsset.tag}` });
-    } else if (selRoom) {
-      const [x, y] = interiorPoint(selRoom.poly as Pt[]);
-      setComposer({ floorId: selRoom.floorId, x, y, roomId: selRoom.id, assetId: null, where: selRoom.name });
-    }
-  }
-  function noteOnSpot() {
-    const s = sceneRef.current; if (!s) return;
-    if (floorId == null) { setToast({ error: "Choose a floor first, then click the spot for the note." }); return; }
-    setPickingSpot(true);
-    s.pickPoint((p) => {
-      setPickingSpot(false);
-      if (!p) return;
-      const r = p.roomId ? roomById.get(p.roomId) : undefined;
-      setComposer({ floorId: p.floorId, x: p.x, y: p.y, roomId: p.roomId, assetId: null, where: r ? `a spot in ${r.name}` : `a spot on ${floorById.get(p.floorId)?.name ?? "this floor"}` });
-    });
-  }
-  async function saveNote(text: string, assigneeId: number | null) {
-    if (!composer) return;
-    setNoteBusy(true);
-    const fd = new FormData();
-    fd.set("floorId", String(composer.floorId)); fd.set("x", String(composer.x)); fd.set("y", String(composer.y)); fd.set("text", text);
-    fd.set("roomId", composer.roomId ? String(composer.roomId) : ""); fd.set("assetId", composer.assetId ? String(composer.assetId) : "");
-    fd.set("assigneeId", assigneeId ? String(assigneeId) : "");
-    const res = await addNoteAction(null, fd);
-    setNoteBusy(false);
-    if (res?.note) { setNotes((l) => [res.note!, ...l]); setComposer(null); }
-    setToast(res ? { ok: res.ok, error: res.error } : null);
-  }
-  async function noteStatus(n: TwinNote, done: boolean) {
-    const fd = new FormData(); fd.set("noteId", String(n.id)); fd.set("status", done ? "DONE" : "OPEN");
-    const res = await setNoteStatusAction(null, fd);
-    if (res?.note) setNotes((l) => l.map((x) => (x.id === n.id ? res.note! : x)));
-    setToast(res ? { ok: res.ok, error: res.error } : null);
-  }
-  async function noteDelete(n: TwinNote) {
-    if (!(await confirmBox.ask("Delete this note?", "Delete the note"))) return;
-    const fd = new FormData(); fd.set("noteId", String(n.id));
-    const res = await deleteNoteAction(null, fd);
-    if (res?.deletedId) setNotes((l) => l.filter((x) => x.id !== n.id));
-    setToast(res ? { ok: res.ok, error: res.error } : null);
-  }
-  async function notePhoto(n: TwinNote, file: File) {
-    const fd = new FormData(); fd.set("noteId", String(n.id)); fd.set("photo", file);
-    setToast({ ok: "Uploading the photo…" });
-    const res = await addNotePhotoAction(null, fd);
-    if (res?.photo) setNotes((l) => l.map((x) => (x.id === n.id ? { ...x, photos: [...(x.photos ?? []), res.photo!] } : x)));
-    setToast(res ? { ok: res.ok, error: res.error } : null);
-  }
-  function focusNote(n: TwinNote) {
-    if (n.assetId && assetById.has(n.assetId)) { focus({ kind: "asset", id: n.assetId }); return; }
-    if (n.roomId && roomById.has(n.roomId)) { focus({ kind: "room", id: n.roomId }); return; }
-    const s = sceneRef.current; const f = floorById.get(n.floorId); if (!s || !f) return;
-    setFloorId(f.id); s.isolateFloor(f.id, false);
-    const k = 1 / (f.unitsPerMetre || 10); s.frameSpots([{ floorId: f.id, x: n.x * k, z: n.y * k }]);
-  }
-  useEffect(() => {
-    if (!pickingSpot) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") sceneRef.current?.cancelPickPoint(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [pickingSpot]);
-  // A work order's "Show the route in 3D" (…&assetId=<id>&routeFrom=<room>): the route from the workshop to the device.
-  const routeParamDone = useRef(false);
-  useEffect(() => {
-    if (!ready || routeParamDone.current) return;
-    routeParamDone.current = true;
-    const sp = new URLSearchParams(window.location.search);
-    const fromRoom = Number(sp.get("routeFrom")), assetId = Number(sp.get("assetId"));
-    const s = sceneRef.current; if (!s || !fromRoom || !assetId) return;
-    void (async () => {
-      const a = assetById.get(assetId); const sp2 = s.spotOfAsset(assetId); const start = await routes.roomPlace(fromRoom);
-      if (!a || !sp2 || !start) return;
-      const rt = await routes.route(start, { floorId: sp2.floorId, x: sp2.x, z: sp2.z, roomId: a.roomId }, "foot", new Date().getHours());
-      if (!rt) return;
-      if (rt.floorChanges) { setFloorId(null); s.isolateFloor(null, false); }
-      s.showRoute(routeSpots(rt)); s.frameRoute();
-      setToast({ ok: `From the workshop to ${a.tag}: ${Math.round(rt.metres)} m, about ${formatDuration(rt.seconds)} on foot.` });
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
-  }, [ready]);
-  // A link to a note (…&note=<id>, from a notification) opens it once the model is ready.
-  const noteParamDone = useRef(false);
-  useEffect(() => {
-    if (!ready || noteParamDone.current) return;
-    noteParamDone.current = true;
-    const n = notes.find((x) => x.id === Number(new URLSearchParams(window.location.search).get("note")));
-    if (!n) return;
-    const t = setTimeout(() => { focusNote(n); if (!panels.isOpen("notes")) panels.toggle("notes"); }, 0);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
-  }, [ready]);
-  useEffect(() => {
-    alertsRef.current = (prev, next) => {
-      const down = new Set(["UNDER_MAINTENANCE", "OUT_OF_SERVICE"]);
-      const fresh = [...next].filter(([id, m]) => {
-        const o = prev.get(id);
-        return o && (m.openJobs > o.openJobs || (down.has(m.status) && !down.has(o.status)));
-      }).map(([id]) => assetById.get(id)).filter((a): a is TwinAsset => !!a);
-      if (!fresh.length) return;
-      for (const a of fresh.slice(0, 10)) sceneRef.current?.flashAsset(a.id);
-      const a = fresh[0]; const room = a.roomId ? roomById.get(a.roomId) : undefined;
-      setToast({ ok: `New fault: ${a.deviceType} ${a.tag}${room ? ` in ${room.name}` : ""}${fresh.length > 1 ? ` (and ${fresh.length - 1} more)` : ""}.` });
-      setUndo({ label: "Go there", run: () => { focus({ kind: "asset", id: a.id }); setToast(null); setUndo(null); } });
-    };
+  /* ── Wave 7: dropping devices on the plan at real size (./use-twin-drop) ── */
+  const { turnOf, startDrop, sendDrop, applyDrop, saveDrop, placeParamDone } = useTwinDrop({
+    assetList, data, dropping, floorId, placeFloor, ready, roomById, sceneRef, setAssetList, setDropping, setFloorId, setToast, setUndo, setUnplaced, unplaced,
   });
-  useEffect(() => {
-    dragRef.current = {
-      canDrag: (id) => data.can.move && !dropping && assetById.has(id),
-      start: (id) => { const a = assetById.get(id); if (a) startDrop(a, null); },
-    };
+  /* ── Wave 7a: walking network layer and the early-look trauma route (./use-twin-network) ── */
+  const { startFix, saveFix, removeFix, setZone, showTrauma, clearTrauma } = useTwinNetwork({
+    data, fixes, floorById, floorId, navOn, navVersion, ready, routes, sceneRef, setFixMode, setFixes, setFloorId, setFlowRoutes, setNavInfo, setNavVersion, setToast, setTrauma, setUnreachable, setZones,
   });
-  /* ── Wave 7f: tours ── */
-  function addStop() {
-    const v = currentView(); if (!v) return;
-    setTourEdit((t) => ({ ...(t ?? { name: "", shared: false, stops: [] }), stops: [...(t?.stops ?? []), { state: encodeView(v), caption: "", seconds: 8 }] }));
-  }
-  async function saveTour() {
-    if (!tourEdit) return;
-    const fd = new FormData();
-    fd.set("facilityId", String(data.facility.id)); fd.set("tourId", tourEdit.id ? String(tourEdit.id) : ""); fd.set("name", tourEdit.name);
-    fd.set("shared", tourEdit.shared ? "true" : "false"); fd.set("stops", JSON.stringify(tourEdit.stops));
-    const res = await saveTourAction(null, fd);
-    if (res?.tour) { setTours((l) => [...l.filter((t) => t.id !== res.tour!.id), res.tour!].sort((a, b) => a.name.localeCompare(b.name))); setTourEdit(null); }
-    setToast(res ? { ok: res.ok, error: res.error } : null);
-  }
-  async function deleteTour(t: Tour) {
-    if (!(await confirmBox.ask(`Delete the tour “${t.name}”?`, "Delete the tour"))) return;
-    const fd = new FormData(); fd.set("tourId", String(t.id));
-    const res = await deleteTourAction(null, fd);
-    if (res?.deletedId) setTours((l) => l.filter((x) => x.id !== t.id));
-    setToast(res ? { ok: res.ok, error: res.error } : null);
-  }
-  function playTour(t: Tour, fullscreen = true) {
-    setTourPlay({ tour: t, i: 0, paused: false });
-    if (fullscreen) try { void root.current?.requestFullscreen?.(); } catch { /* not allowed: plays in the page */ }
-  }
-  // Flythrough video (wave 17, phase 9): play the tour in the page and record the 3D view with its captions.
-  const recorder = useRef<{ rec: MediaRecorder; chunks: Blob[]; name: string; type: string } | null>(null);
-  const [recording, setRecording] = useState(false);
-  function recordTour(t: Tour) {
-    const s = sceneRef.current;
-    if (!s || typeof MediaRecorder === "undefined") { setToast({ error: "This browser can't record video. Try Chrome, Edge or Firefox." }); return; }
-    const type = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
-    const stream = s.startRecording(`${data.facility.name} · ${t.name}`);
-    const rec = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: 8_000_000 });
-    const chunks: Blob[] = [];
-    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-    rec.onstop = () => {
-      s.stopRecording(); stream.getTracks().forEach((x) => x.stop());
-      const blob = new Blob(chunks, { type: rec.mimeType || "video/webm" });
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-      a.download = `${t.name.replace(/[^\w\- ]+/g, "_")}.${(rec.mimeType || "").includes("mp4") ? "mp4" : "webm"}`;
-      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-      setRecording(false); recorder.current = null;
-      setToast({ ok: "Video saved to your downloads." });
-    };
-    recorder.current = { rec, chunks, name: t.name, type };
-    rec.start(1000); setRecording(true);
-    playTour(t, false);
-  }
-  function stopTour() {
-    setTourPlay(null);
-    if (recorder.current?.rec.state === "recording") recorder.current.rec.stop();
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
-  }
-  const tourStop = tourPlay ? tourPlay.tour.stops[tourPlay.i] : null;
-  // The recording ends with the tour; each stop's caption goes on the video.
-  useEffect(() => { if (!tourPlay && recorder.current?.rec.state === "recording") setTimeout(() => recorder.current?.rec.stop(), 1500); }, [tourPlay]);
-  useEffect(() => { if (tourStop) sceneRef.current?.setRecordingCaption([tourStop.caption]); }, [tourStop]);
-  useEffect(() => {
-    if (!tourStop) return;
-    const v = decodeView(tourStop.state); if (v) applyView(v, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- show each stop once
-  }, [tourPlay?.tour.id, tourPlay?.i]);
-  useEffect(() => {
-    if (!tourPlay || tourPlay.paused || !tourStop) return;
-    const t = setTimeout(() => setTourPlay((p) => (!p ? p : p.i + 1 < p.tour.stops.length ? { ...p, i: p.i + 1 } : (stopTourSoon(), null))), tourStop.seconds * 1000);
-    return () => clearTimeout(t);
-  }, [tourPlay, tourStop]);
-  function stopTourSoon() { if (document.fullscreenElement) void document.exitFullscreen().catch(() => {}); }
-  // A shared link (…&tour=<id>) plays that tour once the model is ready.
-  const tourParamDone = useRef(false);
-  useEffect(() => {
-    if (!ready || tourParamDone.current) return;
-    tourParamDone.current = true;
-    const t = tours.find((x) => x.id === Number(new URLSearchParams(window.location.search).get("tour")));
-    if (!t) return;
-    const h = setTimeout(() => setTourPlay({ tour: t, i: 0, paused: false }), 0); // full screen needs a click, so it plays in the page
-    return () => clearTimeout(h);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the model is ready
-  }, [ready]);
-  /* ── Wave 7f: time slider ── */
-  async function loadHistory(days: number) {
-    setHistoryBusy(true);
-    try {
-      const res = await fetch(`/assets/3d/history?facilityId=${data.facility.id}&days=${days}`, { cache: "no-store" });
-      const j = await res.json() as { since: string; until: string; events: TimeEvent[]; status?: [number, string, string][]; snapshotsSince?: string | null; statusFrom?: string | null; error?: string };
-      if (!res.ok) throw new Error(j.error ?? String(res.status));
-      const until = Date.parse(j.until);
-      setHistory({ since: Date.parse(j.since), until, days, events: j.events, status: (j.status ?? []).map(([assetId, day, status]) => ({ assetId, day, status })), snapshotsSince: j.snapshotsSince ?? null, statusFrom: j.statusFrom ?? null }); setTimeAt(until);
-    } catch (e) { setToast({ error: `The history couldn't be loaded (${(e as Error).message}).` }); }
-    setHistoryBusy(false);
-  }
-  const shownEvents = useMemo(() => (history ? eventsAt(history.events, timeAt, timeWindow * 86400_000, timeKinds) : []), [history, timeAt, timeWindow, timeKinds]);
-  useEffect(() => {
-    const s = sceneRef.current; if (!s || !ready) return;
-    if (!history) { s.setEvents([]); return; }
-    s.setEvents(shownEvents.flatMap((e) => {
-      const sp = s.spotOfAsset(e.assetId) ?? (e.roomId ? s.spotOfRoom(e.roomId) : null);
-      return sp ? [{ floorId: sp.floorId, x: sp.x, z: sp.z, color: EVENT_COLORS[e.kind], strength: e.strength }] : [];
-    }));
-  }, [shownEvents, history, ready]);
-  useEffect(() => {
-    if (!timePlaying || !history) return;
-    // A day of history every half second.
-    const t = setInterval(() => setTimeAt((x) => { const n = x + 86400_000 / 4; if (n >= history.until) { setTimePlaying(false); return history.until; } return n; }), 125);
-    return () => clearInterval(t);
-  }, [timePlaying, history]);
+  /* ── Wave 7c: pathways in 3D (./use-twin-pathways) ── */
+  const { flowColor, flowParamDone, flowDraws, playSpeedRef, shownWithRoutes, liftRows, heat, cdFlows, cd, toggleFlow, frameFlow } = useTwinPathways({
+    bedIssues, bedOn, cardFlow, cdOn, data, floorById, floorId, flowRoutes, flowSel, flows, heatOn, history, panels, playSpeed, playing, ready, routes, sceneRef, setBedIssues, setCardFlow, setFloorId, setFlowBusy, setFlowRoutes, setFlowSel, setPlaying,
+  });
+  /* ── Wave 7e: notes, live alerts, drag to move (./use-twin-notes) ── */
+  // The selection (moved up from below the shortcuts in wave 41 so the notes can read it; same values).
+  const selAsset = selected?.kind === "asset" ? assetById.get(selected.id) : undefined;
+  const selRoom = selected?.kind === "room" ? roomById.get(selected.id) : selAsset ? roomById.get(selAsset.roomId!) : undefined;
+  const { noteWhere, noteOnSelection, noteOnSpot, saveNote, noteStatus, noteDelete, notePhoto, focusNote, routeParamDone, noteParamDone } = useTwinNotes({
+    alertsRef, assetById, composer, confirmBox, data, dragRef, dropping, floorById, floorId, focus, notes, panels, pickingSpot, ready, roomById, routes,
+    sceneRef, selAsset, selRoom, setComposer, setFloorId, setNoteBusy, setNotes, setPickingSpot, setToast, setUndo, showDone, startDrop,
+  });
+  /* ── Wave 7f: tours (./use-twin-tours) ── */
+  const { addStop, saveTour, deleteTour, playTour, recorder, recordTour, stopTour, tourStop, stopTourSoon, tourParamDone, recording, setRecording } =
+    useTwinTours({ applyView, confirmBox, currentView, data, ready, root, sceneRef, setToast, setTourEdit, setTourPlay, setTours, tourEdit, tourPlay, tours });
+  /* ── Wave 7f: time slider (./use-twin-time) ── */
+  const { loadHistory, shownEvents } = useTwinTime({ data, history, ready, sceneRef, setHistory, setHistoryBusy, setTimeAt, setTimePlaying, setToast, timeAt, timeKinds, timePlaying, timeWindow });
   /* ── Wave 7f: walk mode ── */
   async function startWalk() {
     const s = sceneRef.current; if (!s) return;
@@ -1233,8 +751,6 @@ export function useTwinView({ data, live: initialLive, views: initialViews, canM
   function clearRoute() { sceneRef.current?.showRoute(null); setRouteTo(null); setNearest(null); }
   const typeNames = useMemo(() => [...new Set(placed.map((a) => a.deviceType))].sort((a, b) => a.localeCompare(b)), [placed]);
   const toggle = (set: Set<string>, v: string, setter: (s: Set<string>) => void) => { const n = new Set(set); if (n.has(v)) n.delete(v); else n.add(v); setter(n); };
-  const selAsset = selected?.kind === "asset" ? assetById.get(selected.id) : undefined;
-  const selRoom = selected?.kind === "room" ? roomById.get(selected.id) : selAsset ? roomById.get(selAsset.roomId!) : undefined;
   // A selected room shows its template check: load the templates the first time one is selected (wave 19).
   const roomSelected = selected?.kind === "room";
   useEffect(() => { if (roomSelected && !checks.templates && checksBusy !== "templates") { const t = setTimeout(() => void loadCheck("templates"), 0); return () => clearTimeout(t); } }, [roomSelected, checks.templates, checksBusy, loadCheck]);
