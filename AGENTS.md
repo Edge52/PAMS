@@ -630,3 +630,25 @@ Run `DATABASE_URL=<yours> npx tsx scripts/migrate.ts` first (adds the 2.1 tables
   change is checked against; notes and parts don't change it). Phone storage `lib/offline/store.ts`; service worker
   `public/sw.js` (only `/assets/my-jobs` and `/_next/static/`; excluded from the sign-in check in `src/proxy.ts`).
   Table `offline_sync_log` makes a re-sent change apply once.
+
+## Wave 41 notes (help, saved filters, file layout)
+- **Help guides** are data in `src/lib/help.ts` (`HELP_GUIDES`: steps with `href`, `need` = every permission the task
+  needs). `help.test.ts` checks every link against the pages in `src/app`: when you move or rename a page, fix its
+  guide. A new guide needs no code, only an entry.
+- **Saved filters**: `<SavedFilters page="key" />` (server component, `src/components/saved-filters.tsx`) on a list
+  whose filters live in the address. Add the key to `SAVED_FILTER_PAGES` in `src/lib/saved-filters.ts` (label,
+  permission, paths it may open) and to the placement list in `saved-filters.test.ts`. Table `saved_filters`
+  (`src/db/schema-wave41-k.ts`); actions in `src/lib/saved-filters-actions.ts`.
+- **3D view hook** (`twin/use-twin-view.tsx`): the larger concerns are sub-hooks called at the same place, each with a
+  typed `…Deps` argument and returning what it defines: `use-twin-drop.tsx`, `use-twin-network.tsx`,
+  `use-twin-pathways.tsx`, `use-twin-notes.tsx`, `use-twin-tours.tsx`, `use-twin-time.tsx`. Change the code there;
+  a new name the panels need still goes in the main hook's return. Pass every value the code reads: `history` and
+  `focus` are also browser globals, so a missing one compiles but breaks.
+- **TwinScene** (`twin/scene.ts`): more `<method>Impl(scn, …)` files, same pattern as wave 31: `scene-loop.ts` (frame
+  loop, recording, slow-device check, dispose), `scene-devices.ts` (move, place, add, drop), `scene-layout.ts`
+  (device sizes in rooms, furniture, isolate floor, section; imports `TwinScene` at run time for its statics),
+  `scene-motion.ts` (flights, framing, flashes, walk, playback, statuses).
+- **Floor map**: `assets/floor-map.tsx` (the map) with `floor-map-types.ts` (types, filters, labels) and
+  `floor-map-panels.tsx` (overview, room panel, asset card, move confirmation). The types are re-exported from
+  `floor-map.tsx`.
+
