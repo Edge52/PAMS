@@ -896,3 +896,57 @@ on the job page. On **My jobs** the code is optional.
 
 **Administration › Settings › In-house labour cost per hour (EGP)**. Empty by default. When set, the hours your
 own team books on jobs count in the service cost and COSR, and the report says so.
+
+## Cyber, labels, guideline, API and imports (wave 41)
+
+### Device security extras (biomedical engineering, IT)
+
+On a device's **Network and security** panel (devices on the network):
+
+- **Connections and risks**: add one entry per system the device talks to (PACS, HIS, the supplier's remote
+  service). Say the data exchanged and what could go wrong, score likelihood and severity 1–5 before and after the
+  controls, name the owner and a review date. High risk after the controls, or a review date passed, shows as a
+  concern. This is the risk file IEC 80001-1 asks for.
+- **Supplier remote-access agreement**: when the supplier can connect from outside, attach the signed agreement with
+  its end date. No agreement, or an expired one, is a high concern.
+- **Software (SBOM)**: on the make and model's catalogue page (**Catalogue › Makes and models**), attach the maker's
+  software bill of materials and list the key components with their support end dates.
+- Old, unpatched networked devices rank higher on the **Replacement plan**: an operating system out of support adds
+  10 points, no security update for 12 months adds 3 (24 months: 5).
+
+### UDI on labels and forms
+
+- In **UDI (GS1)** on the asset form, scan the DataMatrix on the device label (or type the code under it). PAMS reads
+  the GTIN, lot, serial and dates, checks the GTIN's last digit, and fills the serial number if it is empty.
+- The asset page shows the UDI and what it holds. On the label sheet, **Add the GS1 UDI line** prints the code in
+  text under the details. The QR code stays the PAMS label; PAMS doesn't draw a DataMatrix.
+
+### National equipment guideline (planners)
+
+1. **BOQ › Standards & ratios › Import the national guideline**. Download the template.
+2. Copy the guideline's tables from GAHAR's app: one row per department type, room type and device, with the
+   quantity per room, per bed or per department, and the version.
+3. Upload and check: every row gets a result. Import the valid rows. They load as a standard set marked
+   **National guideline (imported)**; importing the same version again replaces it.
+4. On any BOQ, **Checks** shows **This BOQ vs the national guideline**: devices missing, and quantities lower or higher
+   than the guideline for the same departments.
+
+### Contract response and repair times
+
+When a contract has covered hours (e.g. Sunday–Thursday 08:00–16:00), the **contract statement** counts response and
+repair only in those hours, with the clock time beside them, so a fault reported on Thursday evening is not late on
+Saturday. The supplier scorecard's response time uses the same rule.
+
+### Data imports
+
+**Administration › Data imports** lists every import you may use: suppliers, service contracts (with the devices they
+cover), users (made without passwords: set one for each under **Users › Reset password**), PPM schedules (one row per
+planned visit) and spare parts (the count in stock is booked as the first receipt). For each: download the template,
+fill it in (Excel or CSV), upload and read the check report, then import the valid rows. Nothing is saved until you
+press **Import**.
+
+### API tokens (administrator)
+
+**Administration › API tokens** makes a token for another system to read PAMS: choose what it may read, the
+hospitals and how long it lasts. Copy the token when it is shown; it isn't shown again. Prices are included only with
+**prices:read**. Revoke a token to stop it at once. The last calls are listed on the page. Details: `docs/api.md`.

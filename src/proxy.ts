@@ -8,7 +8,9 @@ import { contentPolicy, fixedHeaders } from "@/lib/security-headers";
  * - Security headers (wave 25): a content policy with a one-time nonce, and the fixed headers.
  */
 // Wave 39: /api/health answers Docker's health check without a session (it shows nothing secret).
-const PUBLIC = ["/login", "/setup", "/auth/sso", "/auth/callback", "/api/health"];
+// Wave 41: /api/v1 is the read-only API: it never uses the session cookie; each route checks its bearer token
+// (lib/api/api-server.ts apiGet), so a signed-in browser can't read it by its cookie either.
+const PUBLIC = ["/login", "/setup", "/auth/sso", "/auth/callback", "/api/health", "/api/v1"];
 const HTTPS = (process.env.APP_URL ?? "").startsWith("https://");
 const DEV = process.env.NODE_ENV !== "production";
 

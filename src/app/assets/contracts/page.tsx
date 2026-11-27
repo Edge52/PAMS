@@ -48,7 +48,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader title="Service contracts" description="Vendor maintenance contracts and the devices they cover. A fault on a covered device shows the contract on its work order."
-        actions={canEdit && <LinkButton href="/assets/contracts/new" variant="primary">Add a contract</LinkButton>} />
+        actions={canEdit && <><LinkButton href="/admin/imports/contracts">Import from Excel</LinkButton><LinkButton href="/assets/contracts/new" variant="primary">Add a contract</LinkButton></>} />
       {capNote && <p role="note" className="mb-3 text-sm text-warn">{capNote}</p>}
       <Notice sp={sp} />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-3">

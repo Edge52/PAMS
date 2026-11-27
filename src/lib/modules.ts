@@ -99,6 +99,8 @@ export const MODULES: AppModule[] = [
     { href: "/admin/design", label: "Design parts", need: "settings.manage" },
     { href: "/admin/documents", label: "Deleted documents", need: "settings.manage" },
     { href: "/admin/errors", label: "System errors", need: "settings.manage" },
+    { href: "/admin/imports", label: "Data imports", need: "users.manage" },
+    { href: "/admin/api", label: "API tokens", need: "settings.manage" },
   ] },
 ];
 
