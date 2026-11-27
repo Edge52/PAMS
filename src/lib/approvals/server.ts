@@ -20,7 +20,7 @@ import {
   type ApprovalEntity, type CommitteeMemberInput, type Policy, type StepState, type Verdict,
 } from "./core";
 import { awardChairs, onRequestClosed } from "./effects";
-import { activeDelegations, recordDecidedFor, trackPending } from "./delegation-server";
+import { activeDelegations, recordDecidedFor, trackingFor, trackPending } from "./delegation-server";
 import { canDecideFor, principalsOf, withDeputies } from "./escalation";
 
 export type Actor = Pick<CurrentUser, "id" | "name" | "role" | "allFacilities">;
@@ -317,7 +317,7 @@ export async function cancelApproval(entity: ApprovalEntity, entityId: number, r
 
 export type ApprovalView = {
   request: RequestRow & { requestedByName: string | null };
-  steps: (StepRow & { approverName: string | null; decidedByName: string | null })[];
+  steps: (StepRow & { approverName: string | null; decidedByName: string | null; decidedForName?: string | null; pendingSince?: Date | null })[];
 };
 
 /** The latest request for a record with its steps and names (null when it was never submitted). */
@@ -333,9 +333,13 @@ async function viewOf(req: RequestRow): Promise<ApprovalView> {
   const steps = await db.select().from(approvalSteps).where(eq(approvalSteps.requestId, req.id)).orderBy(asc(approvalSteps.stepOrder), asc(approvalSteps.id));
   const ids = [...new Set([req.requestedById, ...steps.flatMap((s) => [s.approverUserId, s.decidedById])].filter((x): x is number => x != null))];
   const names = new Map(ids.length ? (await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids))).map((u) => [u.id, u.name]) : []);
+  const tracked = await trackingFor(steps.map((s) => s.id));
   return {
     request: { ...req, requestedByName: req.requestedById ? names.get(req.requestedById) ?? null : null },
-    steps: steps.map((s) => ({ ...s, approverName: s.approverUserId ? names.get(s.approverUserId) ?? null : null, decidedByName: s.decidedById ? names.get(s.decidedById) ?? null : null })),
+    steps: steps.map((s) => ({
+      ...s, approverName: s.approverUserId ? names.get(s.approverUserId) ?? null : null, decidedByName: s.decidedById ? names.get(s.decidedById) ?? null : null,
+      decidedForName: tracked.get(s.id)?.decidedForName ?? null, pendingSince: tracked.get(s.id)?.pendingSince ?? null,
+    })),
   };
 }
 

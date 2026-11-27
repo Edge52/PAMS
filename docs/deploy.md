@@ -237,6 +237,12 @@ on-premises data gateway on a PC that can reach the database.
    - Google Workspace: `SMTP_URL=smtps://pams%40laplaza-hospital.eg:APP-PASSWORD@smtp.gmail.com:465` (an app password)
    - The hospital's own mail server: ask IT for the host, port and a mailbox for the system.
    - `MAIL_FROM="Hospital PAMS <pams@laplaza-hospital.eg>"`. Write `@` in the user name as `%40`.
+   - **SMS / WhatsApp (optional)**: set `NOTIFY_WEBHOOK_URL` (and `NOTIFY_WEBHOOK_TOKEN`) to a gateway or a small relay
+     that takes an HTTP POST with JSON `{"to": "+2010…", "name": "…", "text": "PAMS: …", "kind": "fault_escalated",
+     "link": "https://…"}` and the header `Authorization: Bearer <token>`. No vendor is built in: most SMS and WhatsApp
+     Business providers accept a webhook like this, or IT can run a few lines of relay. Only safety notices (recalls,
+     no backup left, incidents, fault reports nobody picked up) are sent, to people with a phone number on their
+     account. A failed send is logged; the in-app notice stays.
 4. **People**: add each user under **Administration › Users** with their role and hospital. The biomedical engineer
    who assigns jobs needs the *Biomedical engineer* role.
 5. **Equipment**: register it with **Assets › Import** (Excel), **Bulk placement** or **Register asset**. Fill

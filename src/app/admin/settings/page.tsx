@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { DEPRECIATION_METHOD_LABELS, DEPRECIATION_METHODS } from "@/lib/assets/depreciation";
 import { asc } from "drizzle-orm";
 import { db } from "@/db";
@@ -42,6 +43,7 @@ export default async function SettingsPage() {
     <>
       <PageHeader title="Approval rules & settings"
         description="Who approves purchase orders, BOQs and awards, the Law 182/2018 thresholds the tender checks use, and system switches. Changes apply to requests submitted from now on; requests already in progress keep their steps." />
+      <p className="-mt-2 mb-4 text-sm"><Link href="/admin/notifications" className="font-semibold text-primary hover:underline">Notifications, deputies and escalation</Link>: defaults per role, how long approvals and fault reports may wait.</p>
 
       <div className="space-y-6">
         {(["PO", "BOQ", "AWARD", "DISPOSAL", "EQUIPMENT_PLAN"] as const).map((entity) => {

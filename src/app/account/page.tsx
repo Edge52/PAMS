@@ -57,6 +57,10 @@ export default async function AccountPage() {
             <SubmitButton variant="secondary">Save</SubmitButton>
           </ActionForm>
         </Panel>
+        <Panel title="Notifications and deputy" className="lg:col-span-2">
+          <p className="text-sm">Choose in app, email, both or off for each kind of notice, get one email a day instead, or name a deputy for your approvals while you are away.</p>
+          <p className="mt-2 text-sm"><Link href="/account/notifications" className="font-semibold text-primary underline">Notification settings</Link></p>
+        </Panel>
         <Panel title="On your phone" className="lg:col-span-2">
           <p className="text-sm">Open PAMS in your phone&apos;s browser and add it to the home screen: on Android, Chrome menu › <em>Add to home screen</em> (or <em>Install app</em>); on iPhone, Safari&apos;s share button › <em>Add to Home Screen</em>. It then opens full screen, with shortcuts to scan a label and report a fault.</p>
           <p className="mt-2 text-sm"><Link href="/scan" className="font-semibold text-primary underline">Scan a label</Link> opens a device&apos;s page from its QR label.</p>

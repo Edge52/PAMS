@@ -896,3 +896,21 @@ on the job page. On **My jobs** the code is optional.
 
 **Administration › Settings › In-house labour cost per hour (EGP)**. Empty by default. When set, the hours your
 own team books on jobs count in the service cost and COSR, and the report says so.
+
+## Notifications, deputies and escalation (wave 41)
+
+- **Your choices**: Your account › Notifications. For each kind of notice pick *In app*, *Email*, *In app and email*
+  or *Off*; *Usual* follows what the administrator set for your role. Safety notices (recalls, no backup left,
+  incidents, fault reports nobody picked up) always stay in your inbox.
+- **Daily digest**: tick *One email a day* and choose the hour (Cairo time). You get one email listing the day's
+  notices by kind, with links. Safety notices still come at once.
+- **Going away**: on the same page, name a deputy with the first and last day. Approvals for you go to them while you
+  are out, and the record says "approved by the deputy for you". *End now* takes it back early. Committee signatures
+  stay with the member.
+- **Approvals page**: each item shows since when it has waited. After 3 working days (Friday and Saturday off) the
+  approver is reminded (*Reminded*); after 6 the director is told (*Escalated*). Administrators change the days per
+  type under Administration › Notifications and escalation, where they also set role defaults and anyone's deputy.
+- **Faults not picked up**: if nobody assigns or starts a fault report in time (life support or urgent 30 minutes,
+  high 2 hours, normal 1 working day), the people on call are told again, then the biomedical lead. The biomedical lead
+  keeps the list under Work orders › On call. The work order shows *Picked up after …* and whether it was on target.
+

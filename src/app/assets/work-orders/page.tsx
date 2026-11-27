@@ -90,7 +90,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
   return (
     <>
       <PageHeader title="Work orders" description="Fault reports and maintenance jobs, from report to sign-off. Response targets: urgent 4 h, high 24 h, normal 3 days, low 7 days."
-        actions={<>{canWork && <LinkButton href="/assets/my-jobs">My jobs (phone)</LinkButton>}<LinkButton href="/assets/work-orders/new" variant="primary">Report a fault</LinkButton></>} />
+        actions={<>{canAssign && <LinkButton href="/assets/work-orders/on-call" variant="ghost">On call</LinkButton>}{canWork && <LinkButton href="/assets/my-jobs">My jobs (phone)</LinkButton>}<LinkButton href="/assets/work-orders/new" variant="primary">Report a fault</LinkButton></>} />
       <Notice sp={sp} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">

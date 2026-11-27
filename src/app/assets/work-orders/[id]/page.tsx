@@ -19,6 +19,8 @@ import { isAuthorised } from "@/lib/assets/competency";
 import { checklistSummary, isMeasurement, rangeLabel } from "@/lib/assets/checklists";
 import { CLAIM_STATUSES } from "@/lib/assets/contracts";
 import { allowedActions, downtimeHours, formatHours, isLate, WORK_ORDER_PRIORITIES } from "@/lib/assets/work-orders";
+import { formatMinutes, targetLabel } from "@/lib/assets/fault-escalation";
+import { faultResponse } from "@/lib/assets/fault-escalation-server";
 import { can, ROLE_LABELS } from "@/lib/auth/permissions";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
 import { CURRENCIES, formatDate, formatDateTime, formatMoney, todayISO } from "@/lib/format";
@@ -101,6 +103,8 @@ export default async function WorkOrderPage({ params, searchParams }: {
   const completeInMain = actions.has("complete") && hasChecklist;
   const sum = checklistSummary(wo.checklist);
   const down = downtimeHours(wo, now);
+  // Wave 41: time to pick up the fault report against its target.
+  const resp = wo.type === "CORRECTIVE" ? await faultResponse(wo, r.criticality, now) : null;
 
   return (
     <>
@@ -122,6 +126,11 @@ export default async function WorkOrderPage({ params, searchParams }: {
               { label: "Device out of use", value: wo.deviceDown ? <Badge tone="danger">Yes</Badge> : "No" },
               { label: "Reported", value: <>{formatDateTime(wo.reportedAt)}<div className="text-xs text-muted">by {wo.reportedByName ?? "—"}{wo.reporterContact && ` · ${wo.reporterContact}`}</div></> },
               { label: "Respond by", value: formatDateTime(wo.dueAt) },
+              ...(resp ? [{ label: "Picked up", value: <>
+                {resp.minutes != null ? `after ${formatMinutes(resp.minutes)}` : <span className="text-muted">Not yet</span>}{" "}
+                {resp.onTime === true ? <Badge tone="ok">On target</Badge> : resp.onTime === false ? <Badge tone="danger">Over target</Badge> : null}{" "}
+                {resp.level >= 2 ? <Badge tone="danger">Escalated to the lead</Badge> : resp.level === 1 ? <Badge tone="warn">Team reminded</Badge> : null}
+                <div className="text-xs text-muted">Target {targetLabel(resp.target)}</div></> }] : []),
               { label: "Assigned to", value: r.assigneeName ? <>{r.assigneeName}{r.assigneePhone && <div className="text-xs text-muted">{r.assigneePhone}</div>}</> : <span className="text-muted">Not assigned yet</span> },
               { label: "Started", value: formatDateTime(wo.startedAt) },
               { label: "Completed", value: formatDateTime(wo.completedAt) },

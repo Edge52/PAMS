@@ -1,5 +1,28 @@
 # Changelog
 
+## Wave 41 (not merged yet)
+
+### Notifications, delegation and escalation
+- **Your notification choices** (Your account › Notifications): for each kind of notice, in app, email, both or off.
+  Administrators set the defaults per role (Administration › Notifications and escalation). Safety notices (recalls,
+  no backup left, incidents, fault reports nobody picked up, MRI cold head) always stay in the inbox.
+- **Daily digest**: one email a day at the hour you choose (Cairo time) instead of each email, grouped by kind with
+  links. Safety notices are still emailed at once. Runs with the hourly alert job.
+- **Deputy for approvals (out of office)**: name a deputy for a date range; approvals for you go to them, and they
+  are recorded as "approved by X for Y". Administrators set it for anyone. Committee signatures are not delegated.
+- **Approval escalation**: a step waiting N working days (per type, default 3; Friday and Saturday off) reminds the
+  approver; at twice that the director is told (administrators for the director's own steps). The Approvals page
+  shows "waiting since", "Reminded" and "Escalated".
+- **Fault-report escalation**: a fault not picked up (assigned or started) within its target — life support or urgent
+  30 min, high 2 h, normal 1 working day, low 2 working days, all editable — tells the on-call team again, then the
+  biomedical lead. Checked every 5 minutes. On-call list under Work orders › On call. The work order shows how long
+  it took to pick up, against the target.
+- **SMS / WhatsApp (optional)**: `NOTIFY_WEBHOOK_URL` (+ `NOTIFY_WEBHOOK_TOKEN`) posts safety notices to any HTTP
+  gateway; no vendor built in (docs/deploy.md).
+- New tables in `src/db/schema-wave41-j.ts` (notification_prefs, notification_digests, approval_delegations,
+  approval_step_tracking, work_order_escalations, biomed_on_call); migration to be generated at merge. Until then the
+  app works on the defaults (no choices, no deputies).
+
 ## Wave 40 (not merged yet)
 
 ### GAHAR evidence and the equipment plan

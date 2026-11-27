@@ -73,7 +73,7 @@ export async function ApprovalPanel({ entity, entityId, returnPath, title = "App
                         </div>
                         {(s.decidedByName || s.comment) && (
                           <p className="mt-1 text-xs text-muted">
-                            {s.decidedByName && <>{s.status === "REJECTED" ? "Rejected" : memberWord(s)} by {s.decidedByName} · {when(s.decidedAt)}</>}
+                            {s.decidedByName && <>{s.status === "REJECTED" ? "Rejected" : memberWord(s)} by {s.decidedByName}{s.decidedForName ? ` for ${s.decidedForName}` : ""} · {when(s.decidedAt)}</>}
                             {s.comment && <span className="mt-0.5 block whitespace-pre-line text-ink">“{s.comment}”</span>}
                           </p>
                         )}

@@ -9,7 +9,7 @@ import { assets, biomedOnCall, users, workOrderEscalations, workOrders } from "@
 import { notifyUsers } from "@/lib/notifications";
 import { isMissingTable } from "@/lib/notifications/prefs-server";
 import { getSetting } from "@/lib/settings";
-import { ackTargets, faultClass, faultLevelDue, targetLabel } from "./fault-escalation";
+import { ackTargets, faultClass, faultLevelDue, responseMinutes, responseOnTime, targetLabel } from "./fault-escalation";
 import { assignableUsers, assignerIds } from "./work-order-server";
 
 const LOOKBACK_MS = 30 * 86_400_000;
@@ -75,4 +75,17 @@ export async function onCallList(facilityId: number, now = new Date()) {
     if (isMissingTable(e)) return [];
     throw e;
   }
+}
+
+/** Response to a fault report for its page: minutes to pick up, the target, on time or not, and the escalation level. */
+export async function faultResponse(wo: { id: number; type: string; priority: string; reportedAt: Date; assignedAt: Date | null; startedAt: Date | null }, criticality: string | null, now = new Date()) {
+  const target = ackTargets(await getSetting("faultAckMinutes"))[faultClass(wo.priority, criticality)];
+  let level = 0;
+  try {
+    const [e] = await db.select({ level: workOrderEscalations.level }).from(workOrderEscalations).where(eq(workOrderEscalations.workOrderId, wo.id));
+    level = e?.level ?? 0;
+  } catch (e) {
+    if (!isMissingTable(e)) throw e;
+  }
+  return { minutes: responseMinutes(wo), target, onTime: responseOnTime(wo, target, now), level };
 }

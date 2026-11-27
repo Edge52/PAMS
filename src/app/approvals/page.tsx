@@ -2,7 +2,9 @@ import Link from "next/link";
 import { Badge, EmptyState, PageHeader, Panel, Table, Td, Th, THead, type Tone } from "@/components/ui";
 import { requireUser } from "@/lib/auth/session";
 import { pendingForUser, recentDecisions, requestedBy } from "@/lib/approvals/server";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoney, todayISO } from "@/lib/format";
+import { trackingFor } from "@/lib/approvals/delegation-server";
+import { workingDaysBetween } from "@/lib/approvals/escalation";
 import { HIDDEN_PRICE, opensFor, seesPrices } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
@@ -16,10 +18,14 @@ export default async function ApprovalsPage() {
   // Everyone signed in can open this page; it only lists what the engine lets this user decide or see.
   const me = await requireUser();
   const [waiting, mine, recent] = await Promise.all([pendingForUser(me), requestedBy(me), recentDecisions(me)]);
+  // Wave 41: when each step started waiting, whether it was escalated, and whom a deputy decided for.
+  const tracked = await trackingFor([...waiting.map((w) => w.step.id), ...recent.map((r) => r.step.id)]);
+  const today = todayISO();
 
   return (
     <>
       <PageHeader title="Approvals" description="Purchase orders, BOQs and award recommendations waiting for a decision, and what happened to the ones you submitted." />
+      <p className="-mt-2 mb-4 text-sm text-muted">Going away? <Link href="/account/notifications" className="font-semibold text-primary hover:underline">Name a deputy</Link> to decide your approvals while you are out.</p>
 
       <section className="mb-6" aria-labelledby="waiting-h">
         <h2 id="waiting-h" className="mb-3 text-lg font-bold">Waiting for you {waiting.length > 0 && <Badge tone="warn">{waiting.length}</Badge>}</h2>
@@ -27,18 +33,26 @@ export default async function ApprovalsPage() {
           <EmptyState title="Nothing waits for your decision">When a request reaches a step you approve, it appears here and in your notifications.</EmptyState>
         ) : (
           <Table>
-            <THead><tr><Th>Request</Th><Th>Type</Th><Th>Your step</Th><Th align="right">Value</Th><Th>Submitted</Th><Th /></tr></THead>
+            <THead><tr><Th>Request</Th><Th>Type</Th><Th>Your step</Th><Th align="right">Value</Th><Th>Waiting since</Th><Th /></tr></THead>
             <tbody>
-              {waiting.map(({ request: r, step, mode }) => (
+              {waiting.map(({ request: r, step, mode, forName }) => {
+                const t = tracked.get(step.id);
+                const since = t?.pendingSince ?? r.requestedAt;
+                const days = workingDaysBetween(todayISO(since), today);
+                return (
                 <tr key={step.id}>
                   <Td className="min-w-56">{opensFor(me.role, r.href) ? <Link href={r.href} className="font-semibold text-primary hover:underline">{r.title}</Link> : <span className="font-semibold">{r.title}</span>}</Td>
                   <Td>{KIND[r.entity]}</Td>
-                  <Td>{step.label}{mode === "paper" && <span className="block text-xs text-muted">Record the signature from the signed minutes</span>}</Td>
+                  <Td>{step.label}{mode === "paper" && <span className="block text-xs text-muted">Record the signature from the signed minutes</span>}
+                    {forName && <span className="block text-xs text-muted">As deputy for {forName}</span>}</Td>
                   <Td align="right" className="whitespace-nowrap">{r.amountEgp == null ? "—" : seesPrices(me.role) ? formatMoney(r.amountEgp, "EGP") : HIDDEN_PRICE}</Td>
-                  <Td className="whitespace-nowrap">{formatDate(r.requestedAt)}</Td>
+                  <Td className="whitespace-nowrap">{formatDate(since)}
+                    <span className="block text-xs text-muted">{days === 0 ? "today" : `${days} working day${days === 1 ? "" : "s"}`}</span>
+                    {(t?.level ?? 0) >= 2 ? <Badge tone="danger">Escalated</Badge> : (t?.level ?? 0) === 1 ? <Badge tone="warn">Reminded</Badge> : null}</Td>
                   <Td>{opensFor(me.role, r.href) && <Link href={r.href} className="whitespace-nowrap text-sm font-semibold text-primary hover:underline">{mode === "paper" ? "Record signature" : "Review and decide"}</Link>}</Td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </Table>
         )}
@@ -67,7 +81,7 @@ export default async function ApprovalsPage() {
                     {opensFor(me.role, r.href) ? <Link href={r.href} className="font-semibold text-primary hover:underline">{r.title}</Link> : <span className="font-semibold">{r.title}</span>}
                     <Badge tone={step.status === "APPROVED" ? "ok" : "danger"}>{step.status === "APPROVED" ? "Approved" : "Rejected"}</Badge>
                   </div>
-                  <span className="block text-xs text-muted">{step.label} · {decidedByName ?? "—"} · {formatDate(step.decidedAt)}</span>
+                  <span className="block text-xs text-muted">{step.label} · {decidedByName ?? "—"}{tracked.get(step.id)?.decidedForName ? ` for ${tracked.get(step.id)?.decidedForName}` : ""} · {formatDate(step.decidedAt)}</span>
                   {step.comment && <span className="mt-0.5 block text-xs">“{step.comment}”</span>}
                 </li>
               ))}

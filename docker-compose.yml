@@ -35,6 +35,8 @@ services:
       BACKUP_DIR: /data/backups   # the same folder the nightly job writes to: Administration › Backups lists both
       SMTP_URL: ${SMTP_URL:-}
       MAIL_FROM: ${MAIL_FROM:-}
+      NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}       # SMS / WhatsApp relay for urgent notices (wave 41)
+      NOTIFY_WEBHOOK_TOKEN: ${NOTIFY_WEBHOOK_TOKEN:-}
       # Optional settings from .env (all listed in .env.example; empty = off or the built-in default). CO-05.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}        # the assistant (then switch it on in Administration › Settings)
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
