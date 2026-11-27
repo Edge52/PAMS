@@ -32,6 +32,7 @@ vi.mock("@/lib/procurement/budget-year-server", () => import("../procurement/bud
 vi.mock("@/lib/auth/departments", () => import("../auth/departments"));
 vi.mock("@/lib/auth/permissions", () => import("../auth/permissions"));
 vi.mock("@/lib/assets/request-rules", () => import("./request-rules"));
+vi.mock("@/lib/assets/request-rules-server", () => import("./request-rules-server"));
 vi.mock("@/lib/assets/checklists", () => import("./checklists"));
 vi.mock("@/lib/assets/dates", () => import("./dates"));
 vi.mock("@/lib/procurement/acceptance-server", () => import("../procurement/acceptance-server"));

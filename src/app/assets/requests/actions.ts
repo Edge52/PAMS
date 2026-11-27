@@ -10,7 +10,8 @@ import { db } from "@/db";
 import { assets, boqDepartments, boqLines, boqs, departments, deviceTypes, equipmentRequests } from "@/db/schema";
 import { myDepartments } from "@/lib/auth/departments";
 import { requireFacilityAccess, requirePermission } from "@/lib/auth/session";
-import { approvedOnSend, mayApproveForDepartment, mayRequestFor } from "@/lib/assets/request-rules";
+import { approvedOnSend, decisionNoteFor, decisionProblem, mayApproveForDepartment, mayRequestFor, waitsForDepartment } from "@/lib/assets/request-rules";
+import { departmentsWithHead } from "@/lib/assets/request-rules-server";
 import { budgetYear } from "@/lib/procurement/budget-year-server";
 import type { FormState } from "@/lib/assets/forms";
 import { replacementSetId } from "@/lib/boq/replacement-set";
@@ -62,8 +63,15 @@ export async function decideRequestAction(_: FormState, fd: FormData): Promise<F
   const by = await budgetYear();
   const planYear = Number(fd.get("planYear")) || by.current, yearLabel = by.label(planYear);
   if (decision === "reject" && !note) return { error: "Give the reason, so the department knows." };
-  await db.update(equipmentRequests).set({ status: decision === "reject" ? "REJECTED" : "APPROVED", decisionNote: note || null, decidedByName: me.name, decidedAt: new Date(), planYear: decision === "reject" ? null : planYear }).where(eq(equipmentRequests.id, id));
+  // Wave 42: the department head approves first. The director may decide before that only with a reason, kept with
+  // the decision and shown on the request.
+  const overrideReason = str(fd, "overrideReason", 1000);
+  const early = waitsForDepartment(r, (await departmentsWithHead([r.departmentId])).size > 0);
+  const problem = early ? decisionProblem(r, true, overrideReason) : null;
+  if (problem) return { error: problem, fields: { overrideReason: problem } };
+  await db.update(equipmentRequests).set({ status: decision === "reject" ? "REJECTED" : "APPROVED", decisionNote: decisionNoteFor(note, early ? overrideReason : null), decidedByName: me.name, decidedAt: new Date(), planYear: decision === "reject" ? null : planYear }).where(eq(equipmentRequests.id, id));
   await logActivity("request", id, decision === "reject" ? "rejected" : "approved", decision === "reject" ? note : `Approved for ${yearLabel}${note ? `: ${note}` : ""}`, me.name);
+  if (early) await logActivity("request", id, "department_override", `Decided before the department head approved: ${overrideReason}`, me.name);
   if (r.requestedById) await notifyUsers([r.requestedById], { kind: "equipment_request", title: `${r.number} ${decision === "reject" ? "not approved" : `approved for ${yearLabel}`}`, body: note || undefined, href: `/assets/requests?facilityId=${r.facilityId}`, dedupeKey: `req:${id}:decided` });
   revalidatePath("/assets/requests");
   return { ok: decision === "reject" ? `${r.number} rejected.` : `${r.number} approved for ${yearLabel}: it now shows in the capital plan.` };
