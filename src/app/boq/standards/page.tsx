@@ -35,7 +35,8 @@ export default async function StandardsPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader title="Standards & ratios"
-        description="Each standard set is a list of rules such as “1 ventilator per ICU bed” or “1 mobile X-ray per 100 hospital beds”. BOQs are generated from one set. Duplicate a set to build your own house standard." />
+        description="Each standard set is a list of rules such as “1 ventilator per ICU bed” or “1 mobile X-ray per 100 hospital beds”. BOQs are generated from one set. Duplicate a set to build your own house standard."
+        actions={mayEdit ? <LinkButton href="/boq/standards/guideline">Import the national guideline</LinkButton> : undefined} />
       <Notice notice={sp.notice} error={sp.error} />
       {sets.length === 0 ? (
         <EmptyState title="No standard sets loaded" action={<LinkButton href="/boq" variant="secondary">Back to BOQs</LinkButton>}>

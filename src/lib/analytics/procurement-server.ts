@@ -13,7 +13,7 @@ import {
 import { addDaysISO, num } from "@/lib/format";
 import { loadFx } from "@/lib/server-utils";
 import { contractStatement } from "@/lib/assets/planning";
-import { coveredResponseHours } from "@/lib/assets/coverage-server";
+import { coveredResponseHours } from "../assets/coverage-server";
 import type { Filters } from "./core";
 import { COMMITTED_PO, typeUnder } from "./cost-server";
 import { inScope } from "./scope-server";
