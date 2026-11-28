@@ -356,6 +356,9 @@ export async function createPpmWorkOrdersAction(_: FormState, fd: FormData): Pro
   revalidatePath("/assets/work-orders");
   const warnText = warnings.length ? ` Warning: ${warnings.slice(0, 3).join(" ")}${warnings.length > 3 ? ` and ${warnings.length - 3} more` : ""} The override is recorded.` : "";
   const heldText = held.size ? ` ${held.size} device${held.size === 1 ? " is" : "s are"} kept as found and got no job.` : "";
+  // Wave 43: callers that go back to the schedule themselves (bulk "Assign", My jobs "Start") send stay=1.
+  const stay = fd.get("stay") === "1";
+  if (created.length === 1 && stay) return { ok: `${created[0].number} created${assignee ? ` and assigned to ${assignee.name}` : ""}.${warnText}${heldText}` };
   if (created.length === 1 && !warnText && !heldText) return done(created[0].id, `${created[0].number} created from the schedule.`);
   if (created.length === 1) redirect(`${path(created[0].id)}?error=${encodeURIComponent(`${created[0].number} created from the schedule.${warnText}${heldText}`)}`);
   return { ok: `${created.length} work orders created${assignee ? ` and assigned to ${assignee.name}` : ""}. They are under Work orders.${warnText}${heldText}` };
