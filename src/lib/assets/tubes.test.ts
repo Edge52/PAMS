@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultCounter, isTubeType, tubeForecast, tubeReadingProblem, type Tube } from "./tubes";
+import { byReplacement, defaultCounter, isTubeType, replacementKey, tubeForecast, tubeReadingProblem, type Tube } from "./tubes";
 
 const ct: Tube = { installedOn: "2026-01-01", counterAtInstall: 100_000, warrantyMonths: 12, warrantyCounter: 150_000, expectedLife: 300_000 };
 
@@ -52,5 +52,14 @@ describe("tube life", () => {
     expect(tubeReadingProblem(ct, rs, { readOn: "2025-12-01", counter: 170_000 }, "2026-11-01")).toMatch(/before this tube/);
     expect(tubeReadingProblem(ct, [], { readOn: "2026-02-01", counter: 90_000 }, "2026-11-01")).toMatch(/fitted/);
     expect(tubeReadingProblem(ct, rs, { readOn: "2026-06-01", counter: 170_000 }, "2026-11-01")).toBeNull();
+  });
+});
+
+describe("tube list order (wave 43)", () => {
+  const row = (id: number, state: string, replaceBy: string | null, warrantyEnd: string | null) => ({ id, forecast: { state, replaceBy, warrantyEnd } as never });
+  it("puts tubes past their life first, then the soonest replacement, then no forecast", () => {
+    const rows = [row(1, "ok", null, null), row(2, "ok", "2027-05-01", null), row(3, "over_life", "2026-01-01", null), row(4, "ok", null, "2027-01-01"), row(5, "replace_soon", "2026-12-20", null)];
+    expect(byReplacement(rows).map((r) => r.id)).toEqual([3, 5, 4, 2, 1]);
+    expect(replacementKey({ replaceBy: null, warrantyEnd: "2027-01-01" })).toBe("2027-01-01");
   });
 });

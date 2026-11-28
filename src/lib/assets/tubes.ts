@@ -114,3 +114,12 @@ export const TUBE_STATE_TONE = { removed: "neutral", over_life: "danger", replac
 
 /** Days the tube was in use (fitted to removed, or to today). */
 export const tubeDays = (t: Pick<Tube, "installedOn" | "removedOn">, today: string) => Math.max(0, daysBetween(t.installedOn, t.removedOn ?? today));
+
+/** The date a tube list sorts by (wave 43): the forecast replacement, else the warranty end; null = no forecast. */
+export const replacementKey = (f: Pick<TubeForecast, "replaceBy" | "warrantyEnd">): string | null => f.replaceBy ?? f.warrantyEnd ?? null;
+
+/** Soonest replacement first; tubes past their expected life lead, tubes with no forecast go last. */
+export function byReplacement<T extends { forecast: Pick<TubeForecast, "replaceBy" | "warrantyEnd" | "state"> }>(rows: T[]): T[] {
+  const rank = (r: T) => (r.forecast.state === "over_life" ? 0 : replacementKey(r.forecast) ? 1 : 2);
+  return [...rows].sort((a, b) => rank(a) - rank(b) || (replacementKey(a.forecast) ?? "").localeCompare(replacementKey(b.forecast) ?? ""));
+}

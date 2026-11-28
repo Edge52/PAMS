@@ -1,8 +1,8 @@
 import "server-only";
 /** Database side of X-ray and CT tube life (wave 38). Rules are pure in ./tubes. */
-import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { assets, deviceTypes, tubeReadings, xrayTubes } from "@/db/schema";
+import { assets, deviceTypes, facilities, tubeReadings, xrayTubes } from "@/db/schema";
 import { tubeForecast, type TubeForecast } from "./tubes";
 
 export type TubeRow = typeof xrayTubes.$inferSelect & { readings: (typeof tubeReadings.$inferSelect)[]; forecast: TubeForecast };
@@ -33,4 +33,25 @@ export async function tubesInUse(today: string) {
     .where(and(isNull(xrayTubes.removedOn), ne(assets.status, "DISPOSED")));
   const full = await withReadings(rows.map((r) => r.t), today);
   return full.map((t) => ({ ...t, tag: rows.find((r) => r.t.id === t.id)!.tag, typeName: rows.find((r) => r.t.id === t.id)!.typeName }));
+}
+
+export type TubeListRow = TubeRow & { tag: string; typeName: string; typeCode: string; facilityName: string; assetStatus: string };
+
+/**
+ * Wave 43: every tube in the hospitals in scope, for /assets/tubes (in use by default; `removed` lists the replaced
+ * ones). Each carries its forecast from the readings, as on the device page.
+ */
+export async function tubeList(scope: number[] | null, today: string, o: { facilityId?: number; removed?: boolean } = {}): Promise<TubeListRow[]> {
+  if (scope !== null && scope.length === 0) return [];
+  const rows = await db.select({ t: xrayTubes, tag: assets.assetTag, typeName: deviceTypes.name, typeCode: deviceTypes.code, facilityName: facilities.name, assetStatus: assets.status })
+    .from(xrayTubes).innerJoin(assets, eq(assets.id, xrayTubes.assetId)).innerJoin(deviceTypes, eq(deviceTypes.id, assets.deviceTypeId))
+    .innerJoin(facilities, eq(facilities.id, xrayTubes.facilityId))
+    .where(and(
+      o.removed ? isNotNull(xrayTubes.removedOn) : and(isNull(xrayTubes.removedOn), ne(assets.status, "DISPOSED")),
+      scope === null ? undefined : inArray(xrayTubes.facilityId, scope),
+      o.facilityId ? eq(xrayTubes.facilityId, o.facilityId) : undefined,
+    )).limit(5000);
+  const full = await withReadings(rows.map((r) => r.t), today);
+  const by = new Map(rows.map((r) => [r.t.id, r]));
+  return full.map((t) => { const r = by.get(t.id)!; return { ...t, tag: r.tag, typeName: r.typeName, typeCode: r.typeCode, facilityName: r.facilityName, assetStatus: r.assetStatus }; });
 }
