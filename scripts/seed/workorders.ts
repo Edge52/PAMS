@@ -45,8 +45,11 @@ const H = 3_600_000;
 export default async function seed(db: DB) {
   // The CAD fit-out (La Plaza, a new hospital) has no maintenance schedule yet: plan each device's first PPM visit,
   // some already overdue, so the 3D "overdue maintenance" layer and the planner have something to show (demo data).
+  // Only in a hospital with no maintenance events at all (wave 43): devices added later by other seeds (utility
+  // systems, water plants) are left alone, so a second run doesn't plan them again.
   const unplanned = await db.select({ id: assets.id }).from(assets)
-    .where(and(sql`${assets.status} in ('IN_SERVICE', 'INSTALLED')`, sql`not exists (select 1 from maintenance_events m where m.asset_id = ${assets.id})`));
+    .where(and(sql`${assets.status} in ('IN_SERVICE', 'INSTALLED')`, sql`not exists (select 1 from maintenance_events m where m.asset_id = ${assets.id})`,
+      sql`not exists (select 1 from maintenance_events m join assets x on x.id = m.asset_id where x.facility_id = ${assets.facilityId})`));
   if (unplanned.length) {
     const rnd = rng(7);
     const visits = unplanned.map((b) => ({
