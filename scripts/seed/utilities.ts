@@ -1,10 +1,12 @@
 /**
- * Demo utilities and water (wave 41): in the demo general hospital, utility systems registered as devices (two
+ * Demo utilities and water (wave 41; La Plaza added in wave 43): in the demo general hospital, utility systems registered as devices (two
  * generators, UPS, transfer switch, medical gas plant and alarms, theatre and isolation air handling, chiller, water
  * tank, bed lift, fire pump, cold-chain fridges), a few months of tests with a slow generator transfer and a fridge
  * excursion (each with its work order), a generator backup setting, and water sampling points for dialysis, the
- * sterilizer feed and the roof tank with results (one at the action level, one over the limit). Demo figures.
- * Idempotent: skipped when the hospital already has utility systems, or the wave 41 tables don't exist yet.
+ * sterilizer feed and the roof tank with results (one at the action level, one over the limit). La Plaza gets a
+ * smaller set: generator (one failed load test), transfer switch, gas alarms, two cold-chain fridges (one excursion)
+ * and water points for its RO plant, the sterilizer feed and the roof tank. Demo figures.
+ * Idempotent per hospital: skipped when it already has utility systems, or the wave 41 tables don't exist yet.
  */
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { DB } from "../../src/db";
@@ -38,13 +40,76 @@ const SYSTEMS: Spec[] = [
   { key: "bbr", code: "BBK-STO-REF", dept: "LAB", serves: "Blood units", make: ["Helmer", "iB111"] },
 ];
 
+/** La Plaza (wave 43): a smaller set in its own departments. */
+const LPH_SYSTEMS: Spec[] = [
+  { key: "gen1", code: "UTL-PWR-GEN", dept: "GEN", serves: "Whole hospital, essential circuits", make: ["Caterpillar", "C32 1000 kVA"], extra: { ratedKw: 800, minFuelPct: 60 } },
+  { key: "ats", code: "UTL-PWR-ATS", dept: "GEN", serves: "Essential board", make: ["ASCO", "7000 series"] },
+  { key: "alm", code: "GAS-DIS-ALM", dept: "SS", serves: "Surgical suite corridor", make: ["BeaconMedaes", "TotalAlert Infinity"] },
+  { key: "alm2", code: "GAS-DIS-ALM", dept: "ICU", serves: "Intensive care", make: ["BeaconMedaes", "TotalAlert Infinity"] },
+  { key: "tank", code: "UTL-WTR-TNK", dept: "GEN", serves: "Roof tank, drinking water", make: ["Local", "GRP 80 m³"] },
+  { key: "vax", code: "PHA-CLD-VAC", dept: "PHA", serves: "Vaccines", make: ["Liebherr", "LKUv 1613"] },
+  { key: "phf", code: "PHA-CLD-REF", dept: "PHA", serves: "Insulin and biologics", make: ["Helmer", "HPR120"] },
+];
+
+type Hospital = {
+  code: string; systems: Spec[]; tests: () => [string, TestKind, number, Readings][]; backupDept: string;
+  water: { roDept: string; cssdDept: string };
+};
+
+function dghTests(): [string, TestKind, number, Readings][] {
+  // Tests: [system, kind, days ago, readings]
+  const tests: [string, TestKind, number, Readings][] = [];
+  for (const g of ["gen1", "gen2"]) {
+    for (let w = 1; w <= 8; w++) tests.push([g, "GEN_NO_LOAD", w * 7 - (g === "gen2" ? 3 : 1), { durationMin: 15, checksOk: true }]);
+    for (let w = 1; w <= 8; w++) tests.push([g, "FUEL", w * 7 - 1, { fuelPct: 92 - w * 3 }]);
+  }
+  tests.push(["gen1", "GEN_LOAD", 88, { loadKw: 160, durationMin: 30, transferSec: 8, checksOk: true }], ["gen1", "GEN_LOAD", 58, { loadKw: 170, durationMin: 35, transferSec: 9, checksOk: true }],
+    ["gen1", "GEN_LOAD", 26, { loadKw: 150, durationMin: 30, transferSec: 12.5, checksOk: true }],
+    ["gen2", "GEN_LOAD", 60, { loadKw: 140, durationMin: 30, transferSec: 9, checksOk: true }], ["gen2", "GEN_LOAD", 31, { loadKw: 145, durationMin: 32, transferSec: 8.5, checksOk: true }],
+    ["ats", "TRANSFER", 26, { transferSec: 7, checksOk: true }], ["ups", "UPS_AUTONOMY", 70, { autonomyMin: 18, checksOk: true }],
+    ["man", "GAS_ALARM", 60, { checksOk: true }], ["man", "INSPECTION", 20, { checksOk: true }], ["vac", "GAS_ALARM", 100, { checksOk: true }], ["vac", "INSPECTION", 25, { checksOk: true }],
+    ["psa", "GAS_ALARM", 45, { checksOk: true }], ["psa", "INSPECTION", 12, { checksOk: true }], ["alm", "GAS_ALARM", 80, { checksOk: true }], ["zvb", "INSPECTION", 90, { checksOk: true }],
+    ["ahu", "HVAC_CHECK", 40, { airChanges: 22, pressurePa: 8 }], ["iso", "HVAC_CHECK", 36, { airChanges: 13, pressurePa: -4 }],
+    ["chl", "INSPECTION", 50, { checksOk: true }], ["tank", "TANK_CLEAN", 150, { checksOk: true }], ["lift", "INSPECTION", 18, { checksOk: true }], ["fire", "INSPECTION", 5, { checksOk: true }]);
+  for (const f of ["vax", "phf", "bbr"]) for (let day = 1; day <= 14; day++) {
+    const exc = f === "vax" && day === 4;
+    tests.push([f, "COLD_CHAIN", day, exc ? { tempMin: 3.1, tempMax: 10.4, excursionMin: 40 } : { tempMin: f === "bbr" ? 2.8 : 3.4, tempMax: f === "bbr" ? 5.1 : 6.6, excursionMin: 0 }]);
+  }
+  return tests;
+}
+
+function lphTests(): [string, TestKind, number, Readings][] {
+  const tests: [string, TestKind, number, Readings][] = [];
+  for (let w = 1; w <= 8; w++) tests.push(["gen1", "GEN_NO_LOAD", w * 7 - 2, { durationMin: 15, checksOk: true }], ["gen1", "FUEL", w * 7 - 2, { fuelPct: 90 - w * 2 }]);
+  tests.push(["gen1", "GEN_LOAD", 95, { loadKw: 330, durationMin: 30, transferSec: 8, checksOk: true }], ["gen1", "GEN_LOAD", 64, { loadKw: 310, durationMin: 18, transferSec: 9, checksOk: true }],
+    ["gen1", "GEN_LOAD", 34, { loadKw: 340, durationMin: 32, transferSec: 8.5, checksOk: true }], ["gen1", "GEN_LOAD", 4, { loadKw: 325, durationMin: 30, transferSec: 7.5, checksOk: true }],
+    ["ats", "TRANSFER", 34, { transferSec: 6.5, checksOk: true }], ["alm", "GAS_ALARM", 70, { checksOk: true }], ["alm", "GAS_ALARM", 10, { checksOk: true }],
+    ["alm2", "GAS_ALARM", 75, { checksOk: true }], ["alm2", "GAS_ALARM", 15, { checksOk: true }], ["tank", "TANK_CLEAN", 120, { checksOk: true }]);
+  for (const f of ["vax", "phf"]) for (let day = 1; day <= 21; day++) {
+    const exc = f === "phf" && day === 9;
+    tests.push([f, "COLD_CHAIN", day, exc ? { tempMin: 4.2, tempMax: 11.8, excursionMin: 95 } : { tempMin: 3.2 + (day % 3) * 0.2, tempMax: 6.1 + (day % 4) * 0.3, excursionMin: 0 }]);
+  }
+  return tests;
+}
+
+const HOSPITALS: Hospital[] = [
+  { code: "DGH", systems: SYSTEMS, tests: dghTests, backupDept: "BME", water: { roDept: "MED", cssdDept: "CSSD" } },
+  { code: "LPH", systems: LPH_SYSTEMS, tests: lphTests, backupDept: "GEN", water: { roDept: "MS1", cssdDept: "SS" } },
+];
+
 export default async function seed(db: DB) {
   const ready = await db.execute<{ t: string | null }>(sql`select to_regclass('public.water_samples')::text as t`);
   if (!ready.rows[0]?.t) { console.log("  utilities: wave 41 tables not there yet, skipped"); return; }
-  const [fac] = await db.select().from(facilities).where(eq(facilities.code, "DGH"));
-  if (!fac) { console.log("  utilities: facility DGH missing, skipped"); return; }
+  for (const h of HOSPITALS) await seedHospital(db, h);
+}
+
+async function seedHospital(db: DB, h: Hospital) {
+  const SYSTEMS = h.systems;
+  const [fac] = await db.select().from(facilities).where(eq(facilities.code, h.code));
+  if (!fac) { console.log(`  utilities: facility ${h.code} missing, skipped`); return; }
   const [have] = await db.select({ n: sql<number>`count(*)::int` }).from(utilitySystems).where(eq(utilitySystems.facilityId, fac.id));
-  if (have.n > 0) { console.log("  utilities: demo systems already there, skipped"); return; }
+  if (have.n > 0) { console.log(`  utilities: ${h.code} demo systems already there, skipped`); return; }
+  const tests = h.tests();
   const { createAsset } = await import("../../src/lib/asset-factory");
   const { nextNumber } = await import("../../src/lib/server-utils");
 
@@ -73,24 +138,6 @@ export default async function seed(db: DB) {
     sys.set(sp.key, { id: s.id, assetId: a.id, tag: a.assetTag, s });
   }
 
-  // Tests: [system, kind, days ago, readings]
-  const tests: [string, TestKind, number, Readings][] = [];
-  for (const g of ["gen1", "gen2"]) {
-    for (let w = 1; w <= 8; w++) tests.push([g, "GEN_NO_LOAD", w * 7 - (g === "gen2" ? 3 : 1), { durationMin: 15, checksOk: true }]);
-    for (let w = 1; w <= 8; w++) tests.push([g, "FUEL", w * 7 - 1, { fuelPct: 92 - w * 3 }]);
-  }
-  tests.push(["gen1", "GEN_LOAD", 88, { loadKw: 160, durationMin: 30, transferSec: 8, checksOk: true }], ["gen1", "GEN_LOAD", 58, { loadKw: 170, durationMin: 35, transferSec: 9, checksOk: true }],
-    ["gen1", "GEN_LOAD", 26, { loadKw: 150, durationMin: 30, transferSec: 12.5, checksOk: true }],
-    ["gen2", "GEN_LOAD", 60, { loadKw: 140, durationMin: 30, transferSec: 9, checksOk: true }], ["gen2", "GEN_LOAD", 31, { loadKw: 145, durationMin: 32, transferSec: 8.5, checksOk: true }],
-    ["ats", "TRANSFER", 26, { transferSec: 7, checksOk: true }], ["ups", "UPS_AUTONOMY", 70, { autonomyMin: 18, checksOk: true }],
-    ["man", "GAS_ALARM", 60, { checksOk: true }], ["man", "INSPECTION", 20, { checksOk: true }], ["vac", "GAS_ALARM", 100, { checksOk: true }], ["vac", "INSPECTION", 25, { checksOk: true }],
-    ["psa", "GAS_ALARM", 45, { checksOk: true }], ["psa", "INSPECTION", 12, { checksOk: true }], ["alm", "GAS_ALARM", 80, { checksOk: true }], ["zvb", "INSPECTION", 90, { checksOk: true }],
-    ["ahu", "HVAC_CHECK", 40, { airChanges: 22, pressurePa: 8 }], ["iso", "HVAC_CHECK", 36, { airChanges: 13, pressurePa: -4 }],
-    ["chl", "INSPECTION", 50, { checksOk: true }], ["tank", "TANK_CLEAN", 150, { checksOk: true }], ["lift", "INSPECTION", 18, { checksOk: true }], ["fire", "INSPECTION", 5, { checksOk: true }]);
-  for (const f of ["vax", "phf", "bbr"]) for (let day = 1; day <= 14; day++) {
-    const exc = f === "vax" && day === 4;
-    tests.push([f, "COLD_CHAIN", day, exc ? { tempMin: 3.1, tempMax: 10.4, excursionMin: 40 } : { tempMin: f === "bbr" ? 2.8 : 3.4, tempMax: f === "bbr" ? 5.1 : 6.6, excursionMin: 0 }]);
-  }
 
   let jobs = 0, saved = 0;
   for (const [key, kind, days, r] of tests) {
@@ -111,7 +158,7 @@ export default async function seed(db: DB) {
         status: done ? "CLOSED" : "OPEN", title: `${TEST_LABELS[kind]} failed on ${s.tag}: ${j.problems[0] ?? ""}`.slice(0, 200), description: j.problems.join("\n"),
         reportedByName: "Demo engineer", reportedAt: at, dueAt: new Date(at.getTime() + 4 * 3_600_000),
         completedAt: done ? new Date(at.getTime() + 26 * 3_600_000) : null, closedAt: done ? new Date(at.getTime() + 30 * 3_600_000) : null,
-        resolution: done ? (kind === "COLD_CHAIN" ? "Door seal replaced; stock checked with pharmacy, none lost." : "Transfer switch timer reset and contacts cleaned; retest passed.") : null,
+        resolution: done ? (kind === "COLD_CHAIN" ? "Door seal replaced; stock checked with pharmacy, none lost." : j.problems.some((x) => x.includes("minutes")) ? "Run stopped early by a false fuel alarm; sensor replaced and a full 30-minute load run passed." : "Transfer switch timer reset and contacts cleaned; retest passed.") : null,
       }).returning({ id: workOrders.id });
       await db.update(utilityTests).set({ workOrderId: w.id }).where(eq(utilityTests.id, t.id));
       jobs++;
@@ -119,7 +166,7 @@ export default async function seed(db: DB) {
   }
 
   // Generator backup: one in use, one standby, kept on Critical backups.
-  const gen = sys.get("gen1"), bme = depts.get("BME");
+  const gen = sys.get("gen2"), bme = depts.get(h.backupDept);
   if (gen && bme && types.get("UTL-PWR-GEN")) {
     await db.insert(criticalBackups).values({ facilityId: fac.id, departmentId: bme, deviceTypeId: types.get("UTL-PWR-GEN")!, inUseCount: 1, backupCount: 1, notes: "Demo: two sets, one standby" }).onConflictDoNothing();
   }
@@ -134,8 +181,8 @@ export default async function seed(db: DB) {
     return createAsset({ deviceTypeId: typeId, facilityId: fac.id, departmentId: deptId ?? null, roomId: code === "THR-HD-RO" && hd?.roomId ? hd.roomId : await roomOf(deptId),
       manufacturer: model[0], model: model[1], serialNumber: `UT${String(410000 + ++n)}`, status: "IN_SERVICE", condition: "GOOD", installDate: "2022-03-01", notes: "Demo water plant" }, "Seed");
   };
-  const ro = await plant("THR-HD-RO", "MED", ["Fresenius", "AQUAboss"]);
-  const cssd = await plant("STR-WSH-WTR", "CSSD", ["Steris", "RO feed system"]);
+  const ro = await plant("THR-HD-RO", h.water.roDept, ["Fresenius", "AQUAboss"]);
+  const cssd = await plant("STR-WSH-WTR", h.water.cssdDept, ["Steris", "RO feed system"]);
   const pts: { key: string; name: string; kind: PointKind; assetId: number | null; extra?: Partial<typeof waterPoints.$inferInsert> }[] = [
     { key: "ro", name: "RO outlet, dialysis", kind: "DIALYSIS_RO", assetId: ro?.id ?? null },
     { key: "loop", name: "Dialysis loop, return", kind: "DIALYSIS_LOOP", assetId: ro?.id ?? null },
@@ -169,7 +216,7 @@ export default async function seed(db: DB) {
       }
     }
   }
-  console.log(`  utilities: ${sys.size} systems, ${saved} tests, ${pts.length} water points, ${samples} samples, ${jobs} work orders`);
+  console.log(`  utilities: ${h.code} ${sys.size} systems, ${saved} tests, ${pts.length} water points, ${samples} samples, ${jobs} work orders`);
 }
 
 function limitsOfRow(p: typeof waterPoints.$inferSelect) {
