@@ -28,6 +28,30 @@
   and starts it (needs signal). Rule in `src/lib/assets/my-visits.ts`.
 - PPM schedule bulk **Assign**: with a single new job it now returns to the schedule with a message, not the job.
 
+### Fuller demo data
+- **Two years of history at both demo hospitals** (`scripts/seed/history.ts`): tenders with RFQs and bids (one with a
+  single bid, one with none), awards, purchase orders with deliveries (some late, one invoice with a delay penalty)
+  and invoices, budget lines for three budget years (committed and spent; one heading over, some under 70 %), older
+  exchange rates, closed repair jobs with failure codes, downtime and labour (one pump with repeat failures per
+  hospital), a year of planned maintenance done at La Plaza, and a year of daily exam counts. Every Analytics tab
+  now shows figures; prices paid, the supplier scorecard and the comparisons reach n ≥ 5.
+- **One price outlier**: a single-source quote for the CCU monitors at about twice the earlier prices of the model
+  (Analytics › Procurement and the tender's comparison flag it).
+- **Waves 39–42 features in use** (`scripts/seed/showcase.ts`): this year's equipment management plan approved through
+  Approvals with a yearly evaluation, and next year's draft; critical backup settings with one shortfall; equipment ID
+  card details; technician competency (expiring soon, expired, one override); imaging QC templates in use with
+  records since the start of last month (three fails, one work order) and a signed review of last month; safety
+  contact officers; the La Plaza pump kept as found after its incident; an openFDA import with candidates; a recall
+  acknowledgement; notification choices and digests; an approval deputy (director's leave next week); an escalated
+  PO approval and an escalated fault report; the on-call technician; saved filters (one shared); MRI cybersecurity
+  (SBOM, components, network risks, remote access agreement); GS1 UDI on four monitors; an API token (name and
+  prefix only, the secret is not kept); a capital what-if per hospital.
+- **Utilities at La Plaza** too: generator (one failed load run), transfer switch, gas alarms, two cold-chain fridges
+  (one excursion), and water points for the RO plant, the sterilizer feed and the roof tank (one result at the action
+  level, one over the limit).
+- All of it is idempotent: running `npm run demo` again adds nothing twice; existing demo databases get it on the next
+  start.
+
 ## Wave 42
 
 ### Simpler menu

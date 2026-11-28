@@ -4,7 +4,7 @@
  *               npm run db:reset -- --only=facility,boq → reset, reference data, then only the listed module seeds
  *               npm run db:seed -- --refresh-reference → overwrite existing reference rows from seed-data/ (never on start-up)
  *
- * Order: reference → users (demo accounts) → facility → boq → procurement → assets → cad → lifts → approvals → workorders → plan → models → site → planning → money → commissioning → safety → security → maintenance → finance → north → radiation → imaging-logs → legal-names → utilities.
+ * Order: reference → users (demo accounts) → facility → boq → procurement → assets → cad → lifts → approvals → workorders → plan → models → site → planning → money → commissioning → safety → security → maintenance → finance → north → radiation → imaging-logs → legal-names → utilities → history → showcase.
  * Each module seed lives in scripts/seed/<name>.ts and exports `default async function seed(db: DB): Promise<void>`.
  * Missing module files are skipped, so the runner works while modules are still being built.
  */
@@ -187,7 +187,7 @@ export async function runSeed(opts: { reset?: boolean; only?: string[] | null; r
     const m = (await import(policies)) as { ensureDefaultPolicies: (d: DB) => Promise<void> };
     await m.ensureDefaultPolicies(db);
   }
-  for (const name of ["users", "facility", "boq", "procurement", "assets", "cad", "lifts", "approvals", "workorders", "plan", "models", "site", "planning", "money", "commissioning", "safety", "security", "maintenance", "finance", "north", "radiation", "imaging-logs", "legal-names", "utilities"]) {
+  for (const name of ["users", "facility", "boq", "procurement", "assets", "cad", "lifts", "approvals", "workorders", "plan", "models", "site", "planning", "money", "commissioning", "safety", "security", "maintenance", "finance", "north", "radiation", "imaging-logs", "legal-names", "utilities", "history", "showcase"]) {
     if (opts.only && !opts.only.includes(name)) continue;
     const file = path.join(__dirname, "seed", `${name}.ts`);
     if (!existsSync(file)) { console.log(`${name}: no seed file yet, skipped`); continue; }
