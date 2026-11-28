@@ -3,8 +3,7 @@
 The starting point for anyone (or any new Claude session) picking up the project. It says what the app is, how it's
 built and run, how work is done here, what's finished and what's left. Last updated 28 Nov 2026: `main` has waves 1–38
 (wave 16 = 3D roadmap phases 0–4, wave 17 = phases 5–9; 10 MEP and 11 Campus/BIM on hold; waves 32–36 = fixes from the
-wave 30 audit, waves 37–38 = its missing features). **Waves 39–42 are on branch `wave-42`, waiting for Hisham's OK to
-merge** (39 Law 182 rules, data quality, offline My jobs; 40 GAHAR readiness and Analytics; 41 notifications,
+wave 30 audit, waves 37–38 = its missing features). **Waves 39–42 were merged into `main` on 28 Nov 2026** (39 Law 182 rules, data quality, offline My jobs; 40 GAHAR readiness and Analytics; 41 notifications,
 utilities and water, cyber, API, imports, lists and bulk actions, help; 42 the nine-hub menu). See CHANGELOG.
 
 Read next: `AGENTS.md` (coding conventions; they're strict), `docs/system-documentation.md` (modules in depth),
@@ -94,7 +93,7 @@ Administration › Settings); `NOTIFY_WEBHOOK_URL`/`NOTIFY_WEBHOOK_TOKEN` for an
 ## 4. Where the code lives
 
 - GitHub: **Edge52/PAMS**, branch `main` has everything up to wave 38 (waves 32–38: the wave 30 audit's fixes and
-  missing features, merged 21–26 Nov 2026). Branch `wave-42` has waves 39–42, not merged yet. Open items: section 7. Set `APP_SECRET` on servers (encrypts two-step secrets). Supplier prices are for Admin, Director,
+  missing features, merged 21–26 Nov 2026). Waves 39–42 merged 28 Nov 2026. Open items: section 7. Set `APP_SECRET` on servers (encrypts two-step secrets). Supplier prices are for Admin, Director,
   Procurement and Finance only (`prices.view`, R9).
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
@@ -116,7 +115,7 @@ Administration › Settings); `NOTIFY_WEBHOOK_URL`/`NOTIFY_WEBHOOK_TOKEN` for an
 
 ## 6. What's done
 
-Waves 1–38 are merged; 39–42 wait on `wave-42`. Highlights of the early waves (details in `CHANGELOG.md`):
+Waves 1–42 are merged. Highlights of the early waves (details in `CHANGELOG.md`):
 
 | Wave | Contents |
 | --- | --- |
@@ -152,7 +151,6 @@ the error log and off-site backup.
 
 | Item | What's needed |
 | --- | --- |
-| Merge waves 39–42 | Hisham's OK; then merge `wave-42` into `main` and update the Mac. |
 | Go-live | The real server and domain, the hospital mail server, the user list with roles; a full Docker build and a load test there. |
 | Real data | La Plaza's equipment register; site planning figures from the makers' guides (Catalogue › model › site data); agreed reference figures (`docs/reference-figures-review.xlsx`); real imaging volumes. |
 | Move the database to Supabase | The project's session pooler connection string; then `npm run db:migrate` and `/setup` (steps in `docs/deploy.md`). |
@@ -191,8 +189,8 @@ the error log and off-site backup.
 ### Housekeeping
 
 - Delete old branches on GitHub (the session's connection can't): merged ones such as `wave-31`, `wave-38`,
-  `audit-fixes-32-35`, `wave-32-data-safety`, `wave-33-money` and `wave-34-35-agent-d`; after `wave-42` is merged,
-  also `wave-39`, `wave-40`, `wave-41` and any `wave-3x`/`wave-4x` agent branches.
+  `audit-fixes-32-35`, `wave-32-data-safety`, `wave-33-money` and `wave-34-35-agent-d`; now that waves 39–42 are merged,
+  also `wave-39` to `wave-42` and any `wave-3x`/`wave-4x` agent branches.
 - `docs/system-documentation.md` describes the app at release 3.0; README and this file are current.
 
 ---

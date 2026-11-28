@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 42 (not merged yet)
+## Wave 42
 
 ### Simpler menu
 - The menu is regrouped into nine modules: **Plan, Buy, Pay, Equipment, Maintain, Safety & compliance, Buildings & 3D,
@@ -29,7 +29,7 @@
   approved, the director can decide only with a reason for not waiting. The reason is kept at the start of the
   decision note (shown on the request) and in the activity log.
 
-## Wave 41 (not merged yet)
+## Wave 41
 
 ### Notifications, delegation and escalation
 - **Your notification choices** (Your account › Notifications): for each kind of notice, in app, email, both or off.
@@ -135,7 +135,7 @@
   (1,251 → ~870, four more `*Impl` files), `floor-map.tsx` (945 → ~600, types and panels). See AGENTS.md.
 - Schema (migration to come from the lead): table `saved_filters`.
 
-## Wave 40 (not merged yet)
+## Wave 40
 
 ### GAHAR evidence and the equipment plan
 - **New reports** (print or PDF, and Excel like the others): Calibration (in date, due, overdue, failed, never; done in
@@ -233,7 +233,7 @@
   on jobs count in the service cost and COSR; the report says whether labour is in.
 - Schema: `work_orders.failure_code` (text, nullable). Migration to come from the lead.
 
-## Wave 39 (not merged yet)
+## Wave 39
 
 ### Law 182 and maintenance rules
 - **Delay penalties (Law 182 art. 48, Reg. art. 98).** Supply and services orders: steps by the delay as a share of
