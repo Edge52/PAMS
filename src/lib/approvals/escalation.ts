@@ -1,7 +1,7 @@
 /**
  * Wave 41: approval deputies (out of office) and escalation. Pure — tested in escalation.test.ts.
  *
- *  - Working days: Egypt's weekend is Friday and Saturday; optional public holidays are skipped too.
+ *  - Working days: lib/working-days.ts (Friday and Saturday off, and the hospital's public holidays).
  *  - A step waiting `days` working days (per entity, default 3) reminds its approvers (level 1); at twice that it is
  *    escalated to the director, or to the administrators when the step is the director's (level 2).
  *  - Delegation: from startsOn to endsOn (both included) approvals for a person go to their deputy. When the deputy
@@ -13,32 +13,6 @@ import { canDecide, isMemberStep, type DecideContext, type StepState, type Verdi
 
 export const DEFAULT_ESCALATION_DAYS = 3;
 export const ESCALATION_ENTITIES = ["PO", "BOQ", "AWARD", "DISPOSAL", "EQUIPMENT_PLAN"] as const;
-
-/** 0 = Sunday … 6 = Saturday, for an ISO date. */
-const weekday = (iso: string) => new Date(`${iso}T00:00:00Z`).getUTCDay();
-
-export function isWorkingDay(iso: string, holidays: readonly string[] = []): boolean {
-  const d = weekday(iso);
-  return d !== 5 && d !== 6 && !holidays.includes(iso);
-}
-
-const nextDay = (iso: string) => new Date(Date.parse(`${iso}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-
-/** Working days after `fromISO` up to and including `toISO` (0 when toISO is not later). */
-export function workingDaysBetween(fromISO: string, toISO: string, holidays: readonly string[] = []): number {
-  if (toISO <= fromISO) return 0;
-  let n = 0;
-  // Bounded: at most ten years of days.
-  for (let d = nextDay(fromISO), i = 0; d <= toISO && i < 3660; d = nextDay(d), i++) if (isWorkingDay(d, holidays)) n++;
-  return n;
-}
-
-/** The date `n` working days after `fromISO`. */
-export function addWorkingDays(fromISO: string, n: number, holidays: readonly string[] = []): string {
-  let d = fromISO;
-  for (let left = Math.max(0, Math.floor(n)), i = 0; left > 0 && i < 3660; i++) { d = nextDay(d); if (isWorkingDay(d, holidays)) left--; }
-  return d;
-}
 
 /** Days for an entity from the setting (missing or bad = the default; 1–60). */
 export function escalationDays(entity: string, setting: Record<string, unknown> | null | undefined): number {

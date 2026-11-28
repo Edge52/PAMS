@@ -181,12 +181,13 @@ const HUBS: Hub<ModuleId>[] = [
       { href: "/analytics/export", label: "Export data", need: "reports.view", about: "Download the figures behind the charts." },
     ] },
   ] },
-  { id: "setup", name: "Setup", icon: "admin", description: "Users and roles, approval rules, notifications, settings, documents, imports and the audit log.", sections: [
+  { id: "setup", name: "Setup", icon: "admin", description: "Users and roles, approval rules, notifications, public holidays, settings, documents, imports and the audit log.", sections: [
     { title: "People and rules", pages: [
       { href: "/admin/users", label: "Users", need: "users.manage", about: "Accounts, roles and hospitals.", menu: true },
       { href: "/admin/settings", label: "Approval rules & settings", need: "settings.manage", about: "Who approves what, and app settings.", menu: true },
       { href: "/admin/notifications", label: "Notifications and escalation", need: "settings.manage", about: "Defaults per role, waiting times and deputies.", menu: true },
       { href: "/notifications/settings", label: "Email and alert settings", need: "settings.manage", about: "Email delivery and alert timing." },
+      { href: "/admin/holidays", label: "Public holidays", need: "settings.manage", about: "Days off that every working-day count skips." },
     ] },
     { title: "Data", pages: [
       { href: "/admin/documents", label: "Documents", need: "settings.manage", about: "All files, with versions and the bin.", menu: true },

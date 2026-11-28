@@ -4,7 +4,8 @@ import { requireUser } from "@/lib/auth/session";
 import { pendingForUser, recentDecisions, requestedBy } from "@/lib/approvals/server";
 import { formatDate, formatMoney, todayISO } from "@/lib/format";
 import { trackingFor } from "@/lib/approvals/delegation-server";
-import { workingDaysBetween } from "@/lib/approvals/escalation";
+import { holidayDatesBy } from "@/lib/holidays-server";
+import { workingDaysBetween } from "@/lib/working-days";
 import { HIDDEN_PRICE, opensFor, seesPrices } from "@/lib/auth/prices";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,10 @@ export default async function ApprovalsPage() {
   // Wave 41: when each step started waiting, whether it was escalated, and whom a deputy decided for.
   const tracked = await trackingFor([...waiting.map((w) => w.step.id), ...recent.map((r) => r.step.id)]);
   const today = todayISO();
+  // Wave 43: public holidays don't count as days waited.
+  const sinceOf = (stepId: number, requestedAt: Date) => tracked.get(stepId)?.pendingSince ?? requestedAt;
+  const earliest = waiting.map((w) => todayISO(sinceOf(w.step.id, w.request.requestedAt))).sort()[0] ?? today;
+  const hols = await holidayDatesBy(waiting.map((w) => w.request.facilityId), earliest, today);
 
   return (
     <>
@@ -38,7 +43,7 @@ export default async function ApprovalsPage() {
               {waiting.map(({ request: r, step, mode, forName }) => {
                 const t = tracked.get(step.id);
                 const since = t?.pendingSince ?? r.requestedAt;
-                const days = workingDaysBetween(todayISO(since), today);
+                const days = workingDaysBetween(todayISO(since), today, hols(r.facilityId));
                 return (
                 <tr key={step.id}>
                   <Td className="min-w-56">{opensFor(me.role, r.href) ? <Link href={r.href} className="font-semibold text-primary hover:underline">{r.title}</Link> : <span className="font-semibold">{r.title}</span>}</Td>

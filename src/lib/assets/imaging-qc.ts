@@ -7,6 +7,7 @@
  * the maker's: each hospital adapts them to its scanners and phantoms, and they stay marked as examples until edited.
  */
 import { addDays, parseISO, toISO } from "./dates";
+import { isHoliday, type HolidayDates } from "../working-days";
 import type { QcAnswer, QcItem } from "../../db/schema-wave40-i";
 
 export type { QcAnswer, QcItem };
@@ -218,8 +219,8 @@ export function dueState(freq: Frequency, lastOn: string | null, today: string):
   return lastOn >= prev ? "due" : "overdue";
 }
 
-/** Expected runs of a frequency in a month (weekdays for daily, weeks touching the month for weekly). */
-export function expectedRuns(freq: Frequency, month: string, upTo?: string): number {
+/** Expected runs of a frequency in a month (days but Fridays and public holidays for daily, weeks touching the month for weekly). */
+export function expectedRuns(freq: Frequency, month: string, upTo?: string, holidays: HolidayDates = []): number {
   const first = `${month}-01`;
   const last = toISO(new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)));
   const end = upTo && upTo < last ? upTo : last;
@@ -231,16 +232,16 @@ export function expectedRuns(freq: Frequency, month: string, upTo?: string): num
     return weeks.size;
   }
   let n = 0;
-  for (let d = first; d <= end; d = addDays(d, 1)) { const w = parseISO(d).getUTCDay(); if (w !== 5) n++; } // Friday off (Egypt)
+  for (let d = first; d <= end; d = addDays(d, 1)) { const w = parseISO(d).getUTCDay(); if (w !== 5 && !isHoliday(holidays, d)) n++; } // Friday off (Egypt) and public holidays
   return n;
 }
 
 export type MonthRun = { performedOn: string; passed: boolean };
 /** A month's figures for one scanner and template: runs, failed runs and periods with no run. */
-export function monthFigures(freq: Frequency, month: string, runs: MonthRun[], today: string): { runs: number; failed: number; missed: number } {
+export function monthFigures(freq: Frequency, month: string, runs: MonthRun[], today: string, holidays: HolidayDates = []): { runs: number; failed: number; missed: number } {
   const inMonth = runs.filter((r) => r.performedOn.slice(0, 7) === month);
   const periods = new Set(inMonth.map((r) => periodStart(freq, r.performedOn)));
-  const expected = expectedRuns(freq, month, month === today.slice(0, 7) ? today : undefined);
+  const expected = expectedRuns(freq, month, month === today.slice(0, 7) ? today : undefined, holidays);
   return { runs: inMonth.length, failed: inMonth.filter((r) => !r.passed).length, missed: Math.max(0, expected - periods.size) };
 }
 

@@ -15,11 +15,12 @@ import { isMeasurement, rangeLabel, type Answer } from "@/lib/assets/checklists"
 import { FAILURE_CODE_OPTIONS } from "@/lib/assets/failure-codes";
 import {
   applyResults, changeLabel, dropChange, jobForScan, keepMine, makeChange, newerData, pendingOn, prune, queueSummary, toSend, withVersions,
-  type JobChange, type MyJobsData, type NewChange, type OfflineJob, type OfflinePart,
+  type JobChange, type MyJobsData, type NewChange, type OfflineJob, type OfflinePart, type OfflineVisit,
 } from "@/lib/assets/offline-jobs";
 import { newKey, storeGet, storeSet } from "@/lib/offline/store";
 import { findScanned } from "@/app/scan/actions";
 import { syncMyJobsAction } from "./actions";
+import { startVisitAction } from "./visit-actions";
 
 const SYNC_EVERY_MS = 10_000;
 const subscribeOnline = (cb: () => void) => {
@@ -38,6 +39,8 @@ export function MyJobs({ initial }: { initial: MyJobsData }) {
   const [loaded, setLoaded] = useState(false);
   const [openId, setOpenId] = useState<number | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [starting, setStarting] = useState<number | null>(null);
   const [camera, setCamera] = useState(false);
   const [tagText, setTagText] = useState("");
   const keys = { data: `myjobs:${initial.userId}:data`, queue: `myjobs:${initial.userId}:queue` };
@@ -111,6 +114,20 @@ export function MyJobs({ initial }: { initial: MyJobsData }) {
     if (!navigator.onLine) { setMsg(`No job of yours on ${s.tag ?? "this device"}. Its page opens when you have signal.`); return; }
     findScanned(raw).then((r) => ("href" in r ? router.push(r.href) : setMsg(r.error))).catch(() => setMsg("No signal: try again later."));
   };
+  // Wave 43: "Start" on a planned visit raises its job for me and starts it (needs signal).
+  const startVisit = async (v: OfflineVisit) => {
+    if (!navigator.onLine) { setMsg("Starting a visit needs signal: the job number comes from the server."); return; }
+    setStarting(v.eventId); setMsg(null); setNotice(null);
+    try {
+      const r = await startVisitAction(v.eventId);
+      if ("error" in r) { setMsg(r.error); return; }
+      setNotice(r.ok);
+      setData((d) => ({ ...d, visits: (d.visits ?? []).filter((x) => x.eventId !== v.eventId) }));
+      setOpenId(r.jobId);
+      router.refresh();
+    } catch { setMsg("No signal: try again later."); } finally { setStarting(null); }
+  };
+
   const video = useQrCamera(camera, scanned, (m) => { setMsg(m); setCamera(false); });
 
   const sum = queueSummary(queue);
@@ -145,6 +162,7 @@ export function MyJobs({ initial }: { initial: MyJobsData }) {
         </form>
       </div>
       {msg && <p role="alert" className="text-sm font-semibold text-danger">{msg}</p>}
+      {notice && !msg && <p role="status" className="text-sm font-semibold text-ok">{notice}</p>}
 
       {job ? (
         <JobPanel key={job.id} job={job} parts={data.parts.filter((p) => p.facilityId === job.facilityId)} queue={queue} online={online}
@@ -163,7 +181,8 @@ export function MyJobs({ initial }: { initial: MyJobsData }) {
           )}
           <JobList title="Repairs and other jobs" jobs={repairs} queue={queue} onOpen={setOpenId} />
           <JobList title="Planned maintenance" jobs={ppm} queue={queue} onOpen={setOpenId} />
-          {!data.jobs.length && <p className="rounded-[var(--radius-panel)] border border-line bg-surface p-4 text-sm text-muted">Nothing assigned to you. Jobs the biomedical lead gives you appear here; open this page once with signal to keep them for offline use.</p>}
+          <VisitList visits={data.visits ?? []} online={online} starting={starting} onStart={(v) => void startVisit(v)} />
+          {!data.jobs.length && !(data.visits ?? []).length && <p className="rounded-[var(--radius-panel)] border border-line bg-surface p-4 text-sm text-muted">Nothing assigned to you. Jobs the biomedical lead gives you appear here; open this page once with signal to keep them for offline use.</p>}
         </>
       )}
     </div>
@@ -191,6 +210,30 @@ function JobList({ title, jobs, queue, onOpen }: { title: string; jobs: OfflineJ
           </li>
         );
       })}</ul>
+    </section>
+  );
+}
+
+/** Wave 43: planned visits due within a week or overdue that have no job yet: the device's usual technician's, or the team's. */
+function VisitList({ visits, online, starting, onStart }: { visits: OfflineVisit[]; online: boolean; starting: number | null; onStart: (v: OfflineVisit) => void }) {
+  if (!visits.length) return null;
+  return (
+    <section>
+      <h2 className="mb-1 text-base font-semibold">Planned visits to start ({visits.length})</h2>
+      <p className="mb-2 text-sm text-muted">Due this week or overdue, with no job yet. Start makes the job yours.{online ? "" : " Needs signal."}</p>
+      <ul className="space-y-2">{visits.map((v) => (
+        <li key={v.eventId} className="flex flex-wrap items-center gap-3 rounded-[var(--radius-panel)] border border-line bg-surface p-3">
+          <div className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-1.5"><span className="font-mono font-semibold">{v.tag}</span>
+              {v.overdue ? <Badge tone="danger">Overdue</Badge> : <Badge tone="warn">Due</Badge>}
+              <Badge tone={v.mine ? "info" : "neutral"}>{v.mine ? "Your device" : "Team"}</Badge></span>
+            <span className="mt-1 block text-base">{v.type === "PPM" ? "Planned maintenance" : v.type.replace(/_/g, " ").toLowerCase().replace(/^./, (c) => c.toUpperCase())} · {v.typeName}</span>
+            <span className="block text-sm text-muted">{v.place ? `${v.place} · ` : ""}{v.scheduledDate ? `due ${formatDate(v.scheduledDate)}` : ""}</span>
+          </div>
+          <button type="button" disabled={!online || starting !== null} onClick={() => onStart(v)}
+            className={`${big} bg-primary text-on-primary disabled:opacity-50`} aria-label={`Start the visit on ${v.tag}`}>{starting === v.eventId ? "Starting…" : "Start"}</button>
+        </li>
+      ))}</ul>
     </section>
   );
 }

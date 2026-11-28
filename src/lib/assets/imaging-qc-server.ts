@@ -4,6 +4,7 @@ import { and, asc, desc, eq, gte, inArray, like, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { assets, departments, deviceTypes, imagingQcRecords, imagingQcReviews, imagingQcTemplates } from "@/db/schema";
 import { addDays } from "./dates";
+import { holidayDates } from "../holidays-server";
 import { dueState, monthFigures, modalityOf, QC_CODE_PATTERNS, type DueState, type Frequency, type Modality } from "./imaging-qc";
 
 /** Scanners of a hospital that have a routine QC modality, not disposed. */
@@ -48,10 +49,12 @@ export async function qcMonth(facilityId: number, month: string, today: string) 
     .from(imagingQcRecords).where(and(inArray(imagingQcRecords.assetId, ids), gte(imagingQcRecords.performedOn, `${month}-01`)))
     .limit(20000) : [];
   const reviews = await db.select().from(imagingQcReviews).where(and(eq(imagingQcReviews.facilityId, facilityId), eq(imagingQcReviews.month, month)));
+  // Wave 43: daily QC isn't expected on the hospital's public holidays.
+  const hols = await holidayDates(facilityId, `${month}-01`, `${month}-31`);
   const depts = new Map<number | null, { id: number | null; name: string; lines: { tag: string; template: string; runs: number; failed: number; missed: number }[] }>();
   for (const s of scanners) {
     for (const t of templates.filter((x) => x.modality === s.modality)) {
-      const f = monthFigures(t.frequency as Frequency, month, runs.filter((r) => r.assetId === s.id && r.templateId === t.id), today);
+      const f = monthFigures(t.frequency as Frequency, month, runs.filter((r) => r.assetId === s.id && r.templateId === t.id), today, hols);
       const d = depts.get(s.departmentId) ?? { id: s.departmentId, name: s.departmentName ?? "No department", lines: [] };
       d.lines.push({ tag: s.tag, template: t.name, ...f });
       depts.set(s.departmentId, d);

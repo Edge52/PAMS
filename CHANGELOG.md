@@ -14,6 +14,20 @@
   "Not recorded in PAMS".
 - New tables `dose_reference_levels`, `dose_records`, `dose_reviews` (`src/db/schema-wave43-r.ts`; migration at merge).
 
+### Holidays and My jobs
+- **Public holidays** in Setup (`/admin/holidays`): date, name, every hospital or one, "moves each year". Import from
+  Excel or CSV (template with hospital codes) and **copy last year's fixed-date holidays**. No built-in Egyptian
+  dates (the wave 38 list is now demo seed data only); the page notes that Islamic holidays move each year. Table
+  `holidays` (`src/db/schema-wave43-q.ts`); the older `public_holidays` rows still count and can be moved in.
+- One working-day helper, `src/lib/working-days.ts` (Friday–Saturday weekend plus holidays, tested), read through
+  `src/lib/holidays-server.ts`. Used by approval reminders and escalation (and the days shown on Approvals), fault
+  report targets of a day or more, contract covered hours and the daily imaging QC count. Tender timetable and award
+  periods are calendar days under Law 182 and stay so; no performance bond working-day rule was found in the code.
+- **My jobs**: planned visits due within a week or overdue with no job yet show under *Planned visits to start*: to
+  the device's usual technician (last planned job), else to the hospital's team. **Start** raises the job for you
+  and starts it (needs signal). Rule in `src/lib/assets/my-visits.ts`.
+- PPM schedule bulk **Assign**: with a single new job it now returns to the schedule with a message, not the job.
+
 ## Wave 42
 
 ### Simpler menu

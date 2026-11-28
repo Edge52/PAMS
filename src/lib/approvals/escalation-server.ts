@@ -1,6 +1,6 @@
 import "server-only";
 /**
- * Wave 41: approval steps waiting too long. Runs with the hourly alert job. A step waiting the set number of working
+ * Wave 41: approval steps waiting too long (working days skip weekends and public holidays, wave 43). Runs with the hourly alert job. A step waiting the set number of working
  * days (per entity, default 3) reminds its approvers again; at twice that it goes to the director (the
  * administrators when the step is the director's). Rules in ./escalation.
  */
@@ -12,7 +12,9 @@ import { notifyUsers, usersWithRole } from "@/lib/notifications";
 import { isMissingTable } from "@/lib/notifications/prefs-server";
 import { getSetting } from "@/lib/settings";
 import { activeDelegations, saveEscalation, trackingFor } from "./delegation-server";
-import { escalationDays, escalationLevelDue, escalationRole, withDeputies, workingDaysBetween } from "./escalation";
+import { holidayDatesBy } from "../holidays-server";
+import { workingDaysBetween } from "../working-days";
+import { escalationDays, escalationLevelDue, escalationRole, withDeputies } from "./escalation";
 import { awardExcluded, stepRecipients } from "./server";
 
 export async function runApprovalEscalations(now = new Date()): Promise<number> {
@@ -26,11 +28,14 @@ export async function runApprovalEscalations(now = new Date()): Promise<number> 
     const tracking = await trackingFor(rows.map((r) => r.step.id));
     const today = todayISO(now);
     const dels = await activeDelegations(today);
+    const sinceOf = (r: (typeof rows)[number]) => tracking.get(r.step.id)?.pendingSince ?? r.request.requestedAt;
+    // Wave 43: public holidays don't count as days waited.
+    const hols = await holidayDatesBy(rows.map((r) => r.request.facilityId), rows.map((r) => todayISO(sinceOf(r))).sort()[0] ?? today, today);
     let created = 0;
     for (const { step, request } of rows) {
       const t = tracking.get(step.id);
       const since = t?.pendingSince ?? request.requestedAt;
-      const due = escalationLevelDue(workingDaysBetween(todayISO(since), today), escalationDays(request.entity, setting));
+      const due = escalationLevelDue(workingDaysBetween(todayISO(since), today, hols(request.facilityId)), escalationDays(request.entity, setting));
       const level = t?.level ?? 0;
       if (due <= level) continue;
       const waited = `Waiting since ${todayISO(since)}`;

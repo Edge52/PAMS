@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { coverageLabel, coverageProblem, coveredDowntimeMs, coveredIntervals, DEFAULT_COVERAGE, intersectIntervals, localDate, shiftHours, totalMs, type Coverage } from "./coverage";
 import { downtimeMs } from "./downtime";
 import { contractStatement } from "./planning";
-import { EGYPT_HOLIDAYS_2026_2027 } from "./holidays";
+import { EGYPT_HOLIDAYS_2026_2027 } from "../../../scripts/seed/demo-holidays";
 
 const H = 3_600_000;
 const d = (s: string) => new Date(s);
@@ -115,7 +115,7 @@ describe("downtime inside covered hours", () => {
   });
 });
 
-describe("Egyptian holidays list", () => {
+describe("demo holidays list (seed data)", () => {
   it("has unique, ordered dates in 2026–2027", () => {
     const days = EGYPT_HOLIDAYS_2026_2027.map((h) => h.day);
     expect(new Set(days).size).toBe(days.length);

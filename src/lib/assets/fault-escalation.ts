@@ -4,11 +4,11 @@
  *  - Acknowledged = assigned to someone or started (the first of the two).
  *  - Target by class: life-support (the device is life support, or the job is urgent) 30 minutes, high 2 hours,
  *    normal 1 working day, low 2 working days. Administrators change them (minutes; 1,440 or more counts in working
- *    days, skipping Friday and Saturday).
+ *    days, skipping Friday, Saturday and the hospital's public holidays).
  *  - Past the target the on-duty team is told again (level 1); at twice the target the biomedical lead (level 2).
  */
-import { addWorkingDays } from "../approvals/escalation";
 import { todayISO } from "../format";
+import { addWorkingDays, type HolidayDates } from "../working-days";
 
 export const FAULT_CLASSES = ["LIFE_SUPPORT", "HIGH", "NORMAL", "LOW"] as const;
 export type FaultClass = (typeof FAULT_CLASSES)[number];
@@ -41,10 +41,10 @@ export function targetLabel(minutes: number): string {
 }
 
 /** When the report must be acknowledged by. Whole days are working days counted from the report's Cairo date. */
-export function ackDeadline(reportedAt: Date, minutes: number): Date {
+export function ackDeadline(reportedAt: Date, minutes: number, holidays: HolidayDates = []): Date {
   if (minutes < DAY_MIN) return new Date(reportedAt.getTime() + minutes * 60_000);
   const from = todayISO(reportedAt);
-  const to = addWorkingDays(from, Math.floor(minutes / DAY_MIN));
+  const to = addWorkingDays(from, Math.floor(minutes / DAY_MIN), holidays);
   const days = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
   return new Date(reportedAt.getTime() + days * 86_400_000 + (minutes % DAY_MIN) * 60_000);
 }
@@ -57,9 +57,9 @@ export function acknowledgedAt(wo: Pick<FaultLike, "assignedAt" | "startedAt">):
 }
 
 /** The escalation level a fault report should have reached now (0 when acknowledged, closed or not a fault). */
-export function faultLevelDue(wo: FaultLike, minutes: number, now: Date): 0 | 1 | 2 {
+export function faultLevelDue(wo: FaultLike, minutes: number, now: Date, holidays: HolidayDates = []): 0 | 1 | 2 {
   if (wo.type !== "CORRECTIVE" || wo.status !== "OPEN" || acknowledgedAt(wo)) return 0;
-  const deadline = ackDeadline(wo.reportedAt, minutes);
+  const deadline = ackDeadline(wo.reportedAt, minutes, holidays);
   if (now < deadline) return 0;
   const second = new Date(deadline.getTime() + (deadline.getTime() - wo.reportedAt.getTime()));
   return now >= second ? 2 : 1;
@@ -80,8 +80,8 @@ export function formatMinutes(m: number): string {
 }
 
 /** Whether the response met the target (null while waiting and not yet late). */
-export function responseOnTime(wo: Pick<FaultLike, "reportedAt" | "assignedAt" | "startedAt">, minutes: number, now: Date): boolean | null {
-  const deadline = ackDeadline(wo.reportedAt, minutes);
+export function responseOnTime(wo: Pick<FaultLike, "reportedAt" | "assignedAt" | "startedAt">, minutes: number, now: Date, holidays: HolidayDates = []): boolean | null {
+  const deadline = ackDeadline(wo.reportedAt, minutes, holidays);
   const a = acknowledgedAt(wo);
   if (a) return a <= deadline;
   return now > deadline ? false : null;

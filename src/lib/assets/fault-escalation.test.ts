@@ -23,6 +23,11 @@ describe("fault report escalation (wave 41)", () => {
     expect(ackDeadline(new Date("2026-11-26T08:00:00Z"), 1440).toISOString()).toBe("2026-11-29T08:00:00.000Z");
     expect(ackDeadline(new Date("2026-11-26T08:00:00Z"), 30).toISOString()).toBe("2026-11-26T08:30:00.000Z");
   });
+  it("skips the hospital's public holidays (wave 43)", () => {
+    // Sunday 29 Nov a holiday: Thursday + 1 working day = Monday.
+    expect(ackDeadline(new Date("2026-11-26T08:00:00Z"), 1440, ["2026-11-29"]).toISOString()).toBe("2026-11-30T08:00:00.000Z");
+    expect(ackDeadline(new Date("2026-11-26T08:00:00Z"), 30, ["2026-11-26"]).toISOString()).toBe("2026-11-26T08:30:00.000Z");
+  });
   it("re-notifies past the target and escalates at twice it", () => {
     const w = wo("2026-11-26T08:00:00Z");
     expect(faultLevelDue(w, 30, new Date("2026-11-26T08:20:00Z"))).toBe(0);

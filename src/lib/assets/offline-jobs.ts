@@ -237,7 +237,13 @@ export type OfflineJob = {
   deviceDown: boolean; laborHours: number | null; checklist: ChecklistResult[] | null; version: string; isPpm: boolean;
 };
 export type OfflinePart = { id: number; facilityId: number; label: string; stock: number };
-export type MyJobsData = { userId: number; loadedAt: string; jobs: OfflineJob[]; parts: OfflinePart[] };
+/** Wave 43: a planned visit with no job yet, for this person or their team ("Start" raises the job; needs signal). */
+export type OfflineVisit = {
+  eventId: number; type: string; scheduledDate: string | null; overdue: boolean; mine: boolean;
+  assetId: number; tag: string; typeName: string; place: string | null; facilityId: number;
+};
+/** `visits` is missing in copies saved on a phone before wave 43. */
+export type MyJobsData = { userId: number; loadedAt: string; jobs: OfflineJob[]; parts: OfflinePart[]; visits?: OfflineVisit[] };
 
 /** The newer of two copies (the page as the phone cached it, or the copy saved on the phone). */
 export function newerData(a: MyJobsData, b: MyJobsData | null | undefined): MyJobsData {

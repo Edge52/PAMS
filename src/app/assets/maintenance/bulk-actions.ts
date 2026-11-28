@@ -74,7 +74,7 @@ export async function bulkAssignPpmAction(fd: FormData): Promise<void> {
   const fresh = open.filter((r) => !r.woId);
   if (fresh.length) {
     const f = new FormData();
-    f.set("eventIds", fresh.map((r) => r.id).join(",")); f.set("assigneeId", String(assigneeId)); f.set("from", ""); f.set("to", ""); f.set("returnPath", PAGE);
+    f.set("eventIds", fresh.map((r) => r.id).join(",")); f.set("assigneeId", String(assigneeId)); f.set("from", ""); f.set("to", ""); f.set("returnPath", PAGE); f.set("stay", "1");
     const res = await createPpmWorkOrdersAction({}, f);
     if (res?.error) skipped.push(res.error.replace(/\.$/, ""));
     else messages += `${res?.ok ?? `${fresh.length} jobs created.`} `;
