@@ -85,7 +85,7 @@ export default async function LifecycleAnalyticsPage({ searchParams }: { searchP
                     {can(me.role, "boq.edit") && (
                       <ActionForm action={deleteScenarioAction} confirm={`Delete the scenario "${s.name}"?`} tone="danger" confirmLabel="Delete scenario" className="inline">
                         <input type="hidden" name="id" value={s.id} />
-                        <button type="submit" className="text-xs text-muted hover:text-danger" aria-label={`Delete ${s.name}`}>×</button>
+                        <button type="submit" className="inline-flex size-6 items-center justify-center text-xs text-muted hover:text-danger" aria-label={`Delete ${s.name}`}>×</button>
                       </ActionForm>
                     )}
                   </span>

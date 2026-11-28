@@ -91,7 +91,7 @@ export default async function HolidaysPage({ searchParams }: { searchParams: Pro
             </ActionForm>
           </Panel>
           <Panel title="Import from Excel or CSV">
-            <p className="mb-3 text-sm text-muted">Columns: Date, Holiday, Hospital (code or name; blank for every hospital), Moves each year. <Link href="/admin/holidays/template" className="font-semibold text-primary hover:underline">Download the template</Link>.</p>
+            <p className="mb-3 text-sm text-muted">Columns: Date, Holiday, Hospital (code or name; blank for every hospital), Moves each year. <Link href="/admin/holidays/template" prefetch={false} className="font-semibold text-primary hover:underline">Download the template</Link>.</p>
             <ActionForm action={importHolidaysAction} className="space-y-3">
               <Field label="File (.xlsx or .csv)"><input type="file" name="file" accept=".xlsx,.csv" required className="block w-full text-sm" /></Field>
               <SubmitButton variant="secondary">Import</SubmitButton>

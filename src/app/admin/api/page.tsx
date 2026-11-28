@@ -28,7 +28,7 @@ export default async function ApiTokensPage() {
     <>
       <PageHeader title="API tokens" back={{ href: "/admin/settings", label: "Settings" }}
         description={`Tokens let another system (a BI tool, the ministry's dashboard) read PAMS data. They can only read. Each call is logged; at most ${RATE_PER_MINUTE} calls a minute per token. How to call it: docs/api.md in the code.`} />
-      <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Panel title="Tokens" padded={false}>
           {tokens.length === 0 ? <p className="p-4 text-sm text-muted">No tokens yet. Make one with the form.</p> : (
             <Table>

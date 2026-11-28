@@ -18,7 +18,7 @@ import { checkAccounts, pageState, STATE_PROBLEMS } from "./page-state";
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
 const ACCOUNTS = checkAccounts(process.env);
 const CHECK_ALL = process.env.CHECK_ALL === "1";
-const LIMIT = Number(process.env.CHECK_LIMIT ?? 200);
+const LIMIT = Number(process.env.CHECK_LIMIT ?? 400);
 const PHONE_WIDTH = 390;
 
 const axeSource = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
@@ -53,7 +53,7 @@ async function crawl(browser: Browser, email: string, password: string, full: bo
     if (seen.has(kind) || SKIP.test(url)) continue;
     seen.add(kind);
     scriptErrors = [];
-    const res = await page.goto(BASE + url, { waitUntil: "networkidle", timeout: 90_000 }).catch(() => null);
+    const res = await page.goto(BASE + url, { waitUntil: "networkidle", timeout: 90_000 }).catch((e) => { console.error(`  ${url}: ${String(e).split("\n")[0].slice(0, 200)}`); return null; });
     const status = res?.status() ?? 0;
     opened.push(url);
     if (status === 0 || status >= 500) { findings.push({ url, problem: status ? `server error ${status}` : "did not load" }); continue; }

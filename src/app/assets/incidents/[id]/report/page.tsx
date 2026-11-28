@@ -40,7 +40,7 @@ export default async function IncidentReportSheet({ params }: { params: Promise<
     <tr className="border-b border-line align-top"><th scope="row" className="w-1/3 py-1.5 pr-3 text-left font-semibold">{label}</th><td className="py-1.5">{value || <span className="text-muted">Not recorded</span>}</td></tr>
   );
   const section = (title: string, rows: React.ReactNode) => (
-    <section className="mt-5"><h2 className="border-b-2 border-ink pb-1 text-sm font-bold">{title}</h2><table className="w-full border-collapse text-[13px]"><tbody>{rows}</tbody></table></section>
+    <section className="mt-5"><h2 className="border-b-2 border-ink pb-1 text-sm font-bold">{title}</h2><div className="overflow-x-auto"><table className="w-full border-collapse text-[13px]"><tbody>{rows}</tbody></table></div></section>
   );
   return (
     <div className="mx-auto max-w-3xl">
@@ -77,7 +77,7 @@ export default async function IncidentReportSheet({ params }: { params: Promise<
           {row("Maker or agent told on", i.manufacturerNotifiedOn ? formatDate(i.manufacturerNotifiedOn) : null)}{row("Maker's report reference", v?.makerReference)}
           {row("EDA told on", i.edaNotifiedOn ? formatDate(i.edaNotifiedOn) : null)}{row("EDA reference", i.edaReference)}
         </>)}
-        <div className="mt-8 grid grid-cols-2 gap-8 text-xs">
+        <div className="mt-8 grid grid-cols-1 gap-8 text-xs sm:grid-cols-2">
           {["Reporter", "Safety contact officer"].map((w) => <div key={w} className="border-t border-ink pt-1">{w}: name, signature, date</div>)}
         </div>
       </article>
