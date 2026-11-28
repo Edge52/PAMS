@@ -3,12 +3,12 @@
 The starting point for anyone (or any new Claude session) picking up the project. It says what the app is, how it's
 built and run, how work is done here, what's finished and what's left. Last updated 28 Nov 2026: `main` has waves 1–38
 (wave 16 = 3D roadmap phases 0–4, wave 17 = phases 5–9; 10 MEP and 11 Campus/BIM on hold; waves 32–36 = fixes from the
-wave 30 audit, waves 37–38 = its missing features). **Waves 39–42 were merged into `main` on 28 Nov 2026** (39 Law 182 rules, data quality, offline My jobs; 40 GAHAR readiness and Analytics; 41 notifications,
-utilities and water, cyber, API, imports, lists and bulk actions, help; 42 the nine-hub menu). See CHANGELOG.
+wave 30 audit, waves 37–38 = its missing features). **Waves 39–43 were merged into `main` on 28 Nov 2026** (39 Law 182 rules, data quality, offline My jobs; 40 GAHAR readiness and Analytics; 41 notifications,
+utilities and water, cyber, API, imports, lists and bulk actions, help; 42 the nine-hub menu; 43 public holidays, patient dose, tube list, fuller demo data). See CHANGELOG.
 
 Read next: `AGENTS.md` (coding conventions; they're strict), `docs/system-documentation.md` (modules in depth),
 `docs/user-guide.md` (by role), `docs/deploy.md` (servers, Supabase), `CHANGELOG.md` (what each wave added),
-`docs/plans/wave-8-onwards.md` (the full plan the remaining items come from).
+`docs/api.md` (the read-only API).
 
 ---
 
@@ -115,7 +115,7 @@ Administration › Settings); `NOTIFY_WEBHOOK_URL`/`NOTIFY_WEBHOOK_TOKEN` for an
 
 ## 6. What's done
 
-Waves 1–42 are merged. Highlights of the early waves (details in `CHANGELOG.md`):
+Waves 1–43 are merged. Highlights of the early waves (details in `CHANGELOG.md`):
 
 | Wave | Contents |
 | --- | --- |

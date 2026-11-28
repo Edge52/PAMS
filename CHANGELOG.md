@@ -1,6 +1,6 @@
 # Changelog
 
-## Wave 43 (not merged yet)
+## Wave 43
 
 ### X-ray tubes and patient dose
 - **X-ray tube list** (`/assets/tubes`, Equipment): every CT and X-ray tube in scope with use against the expected

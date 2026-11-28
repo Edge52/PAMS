@@ -504,10 +504,11 @@ Read [AGENTS.md](AGENTS.md) (strict conventions) and [docs/HANDOVER.md](docs/HAN
 
 ## Status and what's left
 
-Waves 1–42 are in `main`. **Waves 39–42 (merged 28 Nov 2026) added:** Law 182 rules,
+Waves 1–43 are in `main`. **Waves 39–43 (merged 28 Nov 2026) added:** Law 182 rules,
 data quality, offline My jobs and phone scanning (39); GAHAR readiness and Analytics (40); notifications, delegation
 and escalation, utilities and water, cyber, API, imports, paged lists, bulk actions, help and saved filters (41); the
-nine-hub menu (42). What's left needs input from the hospital or a partner, not more building:
+nine-hub menu (42); public holidays, planned visits in My jobs, the X-ray tube list, patient dose against reference
+levels and fuller demo data (43). What's left needs input from the hospital or a partner, not more building:
 
 | Item | Needs |
 |---|---|
