@@ -9,6 +9,8 @@ import { assets, biomedOnCall, users, workOrderEscalations, workOrders } from "@
 import { notifyUsers } from "@/lib/notifications";
 import { isMissingTable } from "@/lib/notifications/prefs-server";
 import { getSetting } from "@/lib/settings";
+import { holidayDates, holidayDatesBy } from "../holidays-server";
+import { addDaysISO, todayISO } from "@/lib/format";
 import { ackTargets, faultClass, faultLevelDue, responseMinutes, responseOnTime, targetLabel } from "./fault-escalation";
 import { assignableUsers, assignerIds } from "./work-order-server";
 
@@ -41,10 +43,12 @@ export async function runFaultEscalations(now = new Date()): Promise<number> {
     const targets = ackTargets(await getSetting("faultAckMinutes"));
     const done = new Map((await db.select().from(workOrderEscalations).where(inArray(workOrderEscalations.workOrderId, rows.map((r) => r.id))))
       .map((e) => [e.workOrderId, e.level]));
+    // Wave 43: whole-day targets skip the hospital's public holidays (targets are at most 10 working days).
+    const hols = await holidayDatesBy(rows.map((r) => r.facilityId), todayISO(new Date(now.getTime() - LOOKBACK_MS)), addDaysISO(todayISO(now), 40));
     let created = 0;
     for (const wo of rows) {
       const cls = faultClass(wo.priority, wo.criticality);
-      const due = faultLevelDue(wo, targets[cls], now);
+      const due = faultLevelDue(wo, targets[cls], now, hols(wo.facilityId));
       const level = done.get(wo.id) ?? 0;
       if (due <= level) continue;
       const href = `/assets/work-orders/${wo.id}`;
@@ -78,8 +82,10 @@ export async function onCallList(facilityId: number, now = new Date()) {
 }
 
 /** Response to a fault report for its page: minutes to pick up, the target, on time or not, and the escalation level. */
-export async function faultResponse(wo: { id: number; type: string; priority: string; reportedAt: Date; assignedAt: Date | null; startedAt: Date | null }, criticality: string | null, now = new Date()) {
+export async function faultResponse(wo: { id: number; facilityId: number; type: string; priority: string; reportedAt: Date; assignedAt: Date | null; startedAt: Date | null }, criticality: string | null, now = new Date()) {
   const target = ackTargets(await getSetting("faultAckMinutes"))[faultClass(wo.priority, criticality)];
+  const from = todayISO(wo.reportedAt);
+  const hols = target >= 1440 ? await holidayDates(wo.facilityId, from, addDaysISO(from, 40)) : new Set<string>();
   let level = 0;
   try {
     const [e] = await db.select({ level: workOrderEscalations.level }).from(workOrderEscalations).where(eq(workOrderEscalations.workOrderId, wo.id));
@@ -87,5 +93,5 @@ export async function faultResponse(wo: { id: number; type: string; priority: st
   } catch (e) {
     if (!isMissingTable(e)) throw e;
   }
-  return { minutes: responseMinutes(wo), target, onTime: responseOnTime(wo, target, now), level };
+  return { minutes: responseMinutes(wo), target, onTime: responseOnTime(wo, target, now, hols), level };
 }

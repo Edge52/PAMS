@@ -49,7 +49,7 @@ export default async function AdminNotificationsPage({ searchParams }: { searchP
           <ActionForm action={saveEscalationAction} className="space-y-6">
             <fieldset>
               <legend className="mb-1 text-sm font-bold">Approvals</legend>
-              <p className="mb-3 text-sm text-muted">After this many working days (Friday and Saturday off) the approver is reminded; at twice that the director is told (the administrators, when the step is the director&apos;s).</p>
+              <p className="mb-3 text-sm text-muted">After this many working days (Friday, Saturday and public holidays off) the approver is reminded; at twice that the director is told (the administrators, when the step is the director&apos;s). <Link href="/admin/holidays" className="font-semibold text-primary hover:underline">Public holidays</Link></p>
               <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
                 {ESCALATION_ENTITIES.map((e) => (
                   <Field key={e} label={ENTITY_LABEL[e]}><Input type="number" name={`days_${e}`} min={1} max={60} required defaultValue={escalationDays(e, s.approvalEscalationDays)} /></Field>

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { StepState } from "./core";
 import {
-  addWorkingDays, canDecideFor, delegationProblem, deputyOf, escalationDays, escalationLevelDue, escalationRole,
-  isWorkingDay, principalsOf, withDeputies, workingDaysBetween, type Delegation,
+  canDecideFor, delegationProblem, deputyOf, escalationDays, escalationLevelDue, escalationRole,
+  principalsOf, withDeputies, type Delegation,
 } from "./escalation";
+import { addWorkingDays, isWorkingDay, workingDaysBetween } from "../working-days";
 
 describe("working days (Egypt: Friday and Saturday off)", () => {
   it("knows the weekend", () => {

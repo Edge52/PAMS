@@ -1,5 +1,6 @@
 /**
- * Egyptian public holidays for 2026–2027 (wave 38), a starting list the hospital edits. Pure.
+ * Demo data only (wave 43): Egyptian public holidays for 2026–2027, seeded into the demo so working-day counts have
+ * something to skip. The app has no built-in list; a hospital enters its own under Setup › Public holidays.
  *
  * Fixed holidays are by law; the government often moves a mid-week one to a Thursday or Sunday by decree, so the
  * dates below are the ones announced or expected (marked "in lieu" where moved). Islamic holidays follow the moon

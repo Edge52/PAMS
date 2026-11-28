@@ -14,10 +14,10 @@ import { and, asc, eq, like, ne, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import type { DB } from "../../src/db";
 import {
-  assetAeTitles, assets, contractCoverage, cryogenReadings, deviceTypes, examCounts, facilities, imagingUsage, publicHolidays, serviceContractAssets, tubeReadings, xrayTubes,
+  assetAeTitles, assets, contractCoverage, cryogenReadings, deviceTypes, examCounts, facilities, holidays, imagingUsage, serviceContractAssets, tubeReadings, xrayTubes,
 } from "../../src/db/schema";
 import { addDays, addMonths, daysBetween, parseISO } from "../../src/lib/assets/dates";
-import { EGYPT_HOLIDAYS_2026_2027 } from "../../src/lib/assets/holidays";
+import { EGYPT_HOLIDAYS_2026_2027 } from "./demo-holidays";
 import { magnetSettings } from "../../src/lib/assets/cryogen";
 import { defaultCounter, isTubeType } from "../../src/lib/assets/tubes";
 import { monthTotals } from "../../src/lib/assets/exam-import";
@@ -37,12 +37,14 @@ export default async function seed(db: DB) {
   const facs = await db.select({ id: facilities.id }).from(facilities).orderBy(asc(facilities.id));
   if (!facs.length) { console.log("  imaging-logs: no hospital, nothing to do"); return; }
 
-  // 1. Public holidays (added where missing; edited dates stay).
+  // 1. Demo public holidays for every hospital (added where missing; edited dates stay). Wave 43: the Setup list.
   let hols = 0;
-  for (const f of facs) {
-    const r = await db.insert(publicHolidays).values(EGYPT_HOLIDAYS_2026_2027.map((h) => ({ facilityId: f.id, day: h.day, name: h.name, approximate: !!h.approximate })))
-      .onConflictDoNothing().returning({ id: publicHolidays.id });
-    hols += r.length;
+  try {
+    const r = await db.insert(holidays).values(EGYPT_HOLIDAYS_2026_2027.map((h) => ({ facilityId: null, day: h.day, name: `${h.name} (demo)`, moves: !!h.approximate })))
+      .onConflictDoNothing().returning({ id: holidays.id });
+    hols = r.length;
+  } catch (e) {
+    if ((e as { code?: string; cause?: { code?: string } })?.code !== "42P01" && (e as { cause?: { code?: string } })?.cause?.code !== "42P01") throw e;
   }
 
   // 2. Covered hours on contracts that cover imaging devices.
