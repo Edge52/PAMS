@@ -102,6 +102,7 @@ const HUBS: Hub<ModuleId>[] = [
       { href: "/assets/fleet", label: "Fleet & standardisation", need: "assets.view", about: "Makes and models per device type, to standardise." },
       { href: "/assets/imaging", label: "Imaging use", need: "assets.view", about: "Exams per scanner and how busy each is." },
       { href: "/assets/imaging/import", label: "Import exam counts", need: "assets.view", about: "Load exam counts from the RIS or a sheet." },
+      { href: "/assets/tubes", label: "X-ray tubes", need: "assets.view", about: "CT and X-ray tubes: use, warranty and forecast replacement." },
     ] },
   ] },
   { id: "maintain", name: "Maintain", icon: "maintenance", description: "Fault reports, work orders, planned maintenance, contracts and parts.", sections: [
@@ -134,6 +135,7 @@ const HUBS: Hub<ModuleId>[] = [
       { href: "/assets/safety-tests", label: "Safety tests", need: "assets.view", about: "Electrical safety tests per device.", menu: true },
       { href: "/assets/radiation", label: "Radiation safety", need: "assets.view", about: "Licences, shielding and staff dose.", menu: true },
       { href: "/assets/imaging-qc", label: "Imaging QC", need: "assets.view", about: "Quality checks on imaging devices.", menu: true },
+      { href: "/assets/patient-dose", label: "Patient dose", need: "assets.view", about: "Patient dose per exam against reference levels (DRLs)." },
       { href: "/assets/cryogen", label: "MRI cryogen log", need: "assets.view", about: "Helium level and cold head checks.", menu: true },
       { href: "/assets/security", label: "Device security", need: "assets.view", about: "Networked devices, software and patches." },
     ] },

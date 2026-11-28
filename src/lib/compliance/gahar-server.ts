@@ -26,9 +26,10 @@ import { DEFAULT_PPM_GRACE_DAYS } from "@/lib/reports/calc";
 import type { ReportContext, ReportFilters, ReportResult } from "@/lib/reports/types";
 import { addDaysISO } from "@/lib/format";
 import { utilityEvidence } from "@/lib/utilities/utilities-server";
+import { patientDoseEvidence } from "@/lib/assets/patient-dose-server";
 import { UTILITY_TYPE_CODES } from "@/lib/utilities/utilities";
 import { backupRows } from "./critical-backup-server";
-import { pctOf, type EvidenceKey, type Figure } from "./gahar";
+import { patientDoseFigure, pctOf, type EvidenceKey, type Figure } from "./gahar";
 import type { KpiKey } from "./equipment-plan";
 
 const IN_USE = ["INSTALLED", "IN_SERVICE", "UNDER_MAINTENANCE", "OUT_OF_SERVICE", "ON_LOAN"] as const;
@@ -101,9 +102,10 @@ export async function gaharFigures(ctx: ReportContext): Promise<Partial<Record<E
     db.select({ n: sql<number>`count(*)::int` }).from(dosimetryPeriods).where(and(facilityCond(dosimetryPeriods.facilityId, f, scope), gte(dosimetryPeriods.periodEnd, yearAgo))),
   ]);
 
-  const [util, backups] = await Promise.all([
+  const [util, backups, dose] = await Promise.all([
     utilityEvidence(scope, f.facilityId, from, to, today),
     backupRows(scope, f.facilityId ?? undefined).then((rows) => rows.filter((r) => UTILITY_TYPE_CODES.includes(r.typeCode) || r.typeCode.startsWith("UTL-"))),
+    patientDoseEvidence(ids, today),
   ]);
   const facCount = ids === null ? null : ids.length;
   const planFacs = new Set(plans.map((p) => p.facilityId)), reviewFacs = new Set(reviews.map((p) => p.facilityId));
@@ -156,6 +158,8 @@ export async function gaharFigures(ctx: ReportContext): Promise<Partial<Record<E
     dosimetry: noRad ? null : { count: doses[0]?.n ?? 0 },
     ppe: items.length ? { pct: pctOf(ppeOk, items.length), detail: `${ppeOk} of ${items.length} items` } : noRad ? null : { pct: 0, detail: "No protective items on record" },
     radiation_equipment: noRad ? null : { pct: pctOf(radEquipOk, radDevices.length), detail: `${radEquipOk} of ${radDevices.length} radiation devices` },
+    // Wave 43: DAS.09 patient dose from /assets/patient-dose (monthly medians against the DRLs, last 12 months).
+    patient_dose: patientDoseFigure(dose, noRad),
     radiation_licences: licences.length ? { pct: pctOf(licences.filter((l) => l.expiresOn >= today).length, licences.length) } : noRad ? null : { pct: 0, detail: "No licence on record" },
   };
 }

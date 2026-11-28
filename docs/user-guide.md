@@ -1049,3 +1049,22 @@ For GAHAR EFS.12 and ECRI's sterilisation water hazard.
   your own filters (the cross on the chip). Up to 20 per list.
 - Filters saved in the browser before wave 41 are not carried over: save them again.
 - The RFQ list now has a search box and a status filter.
+
+## X-ray tubes and patient dose (wave 43)
+
+### X-ray tubes (Equipment › X-ray tubes)
+- One list of every CT and X-ray tube in your hospitals: scanner, tube serial, fitted on, use against the expected
+  life, forecast replacement date and warranty. Soonest replacement first; tubes past their life lead the list.
+- The cost column shows only for roles that may see prices. **Replaced** lists the old tubes.
+- Fit a tube or enter a counter reading on the device's page, as before.
+
+### Patient dose (Safety & compliance › Patient dose)
+- **Reference levels**: enter the DRL per exam type, age group and dose quantity (CT: CTDIvol and DLP; radiography:
+  DAP or ESD; fluoroscopy: DAP and time; mammography: AGD), with its source and year. **Add example levels** gives
+  rounded starting rows marked "Example — replace with national or local DRLs"; replace each before use.
+- **Enter or import**: enter one exam, or upload the CSV export of the RIS or dose system (date, scanner, exam type,
+  protocol, age, dose values). PAMS keeps **no patient names or IDs**: a file with a name, ID, MRN, accession or
+  birth date column is refused. If any row can't be read, nothing is saved.
+- **Monthly check**: the median dose of each exam type on each scanner, per month, against the DRL. A median above
+  the DRL is flagged; the medical physicist (biomedical account) records what was found and the action.
+- The GAHAR evidence pack (DAS.09) now reads patient dose from these records.

@@ -85,7 +85,7 @@ export const GAHAR_MAP: GaharStandard[] = [
     { key: "ppe", text: "Lead aprons and shields checked and in date", kind: "pct", link: "/assets/radiation?facilityId={f}" },
     { key: "radiation_equipment", text: "Radiation devices with calibration or QC in date", kind: "pct", link: "/assets/radiation?facilityId={f}" },
     { key: "radiation_licences", text: "Radiation licences valid", kind: "pct", have: 100, link: "/assets/radiation?tab=licences&facilityId={f}" },
-    { key: "patient_dose", text: "Patient dose records", kind: "none" },
+    { key: "patient_dose", text: "Patient dose checked against DRLs each month; medians above the DRL reviewed by the physicist", kind: "pct", link: "/assets/patient-dose?facilityId={f}" },
   ] },
 ];
 
@@ -145,4 +145,23 @@ export function packTotals(rows: PackRow[]): Record<EvidenceStatus, number> {
 /** Share as a percentage with one decimal, null when nothing counts. */
 export function pctOf(part: number, whole: number): number | null {
   return whole > 0 ? Math.round((part / whole) * 1000) / 10 : null;
+}
+
+/** Patient dose summary from the dose records (wave 43); null = the tables are not there yet. */
+export type DoseSummary = { compared: number; ok: number; above: number; aboveReviewed: number; noDrl: number; drls: number; exampleDrls: number; anyRecords: boolean } | null;
+
+/**
+ * DAS.09 patient dose: the share of monthly exam groups (last 12 months) within the DRL, or above it with the
+ * physicist's review. No DRLs or no records = missing (0 %); example DRLs only = partly at most.
+ */
+export function patientDoseFigure(d: DoseSummary, noRadiationDevices: boolean): Figure {
+  if (!d) return null;
+  if (noRadiationDevices && !d.anyRecords && !d.drls) return null;
+  if (!d.drls) return { pct: 0, detail: "No diagnostic reference levels entered" };
+  if (!d.anyRecords) return { pct: 0, detail: "No patient dose records in the last 12 months" };
+  if (!d.compared) return { pct: 0, detail: `No exam type with records has a DRL (${d.noDrl} groups without one)` };
+  const pct = pctOf(d.ok, d.compared)!;
+  const examples = d.exampleDrls ? `; ${d.exampleDrls} DRLs are examples to replace` : "";
+  const detail = `${d.ok} of ${d.compared} monthly exam groups within the DRL or reviewed (${d.above} above, ${d.aboveReviewed} reviewed)${examples}`;
+  return { pct: d.exampleDrls === d.drls ? Math.min(pct, 50) : pct, detail };
 }

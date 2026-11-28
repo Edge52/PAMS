@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evidenceStatus, figureText, GAHAR_EDITION, GAHAR_MAP, GAHAR_NOTE, linkFor, packRows, packTotals, pctOf, type EvidenceItem } from "./gahar";
+import { evidenceStatus, figureText, GAHAR_EDITION, GAHAR_MAP, GAHAR_NOTE, linkFor, packRows, packTotals, patientDoseFigure, pctOf, type EvidenceItem } from "./gahar";
 
 const pct: EvidenceItem = { key: "ppm", text: "PPM", kind: "pct" };
 
@@ -42,7 +42,7 @@ describe("evidenceStatus", () => {
     expect(evidenceStatus(pct, null)).toBe("not_recorded");
     expect(evidenceStatus(pct, undefined)).toBe("not_recorded");
     expect(evidenceStatus(pct, { pct: null })).toBe("not_recorded");
-    expect(evidenceStatus({ key: "patient_dose", text: "", kind: "none" }, { pct: 100 })).toBe("not_recorded");
+    expect(evidenceStatus({ key: "imaging_qc_routine", text: "", kind: "none" }, { pct: 100 })).toBe("not_recorded");
   });
   it("counts and yes/no", () => {
     const c: EvidenceItem = { key: "dosimetry", text: "", kind: "count" };
@@ -75,5 +75,28 @@ describe("pack rows", () => {
     expect(figureText(pct, null)).toBe("—");
     expect(pctOf(1, 3)).toBe(33.3);
     expect(pctOf(1, 0)).toBeNull();
+  });
+});
+
+describe("DAS.09 patient dose (wave 43)", () => {
+  const base = { compared: 10, ok: 9, above: 2, aboveReviewed: 1, noDrl: 3, drls: 12, exampleDrls: 0, anyRecords: true };
+  it("is read from PAMS records, no longer 'Not recorded in PAMS'", () => {
+    const item = GAHAR_MAP.find((s) => s.code === "DAS.09")!.items.find((i) => i.key === "patient_dose")!;
+    expect(item.kind).toBe("pct");
+    expect(item.link).toBe("/assets/patient-dose?facilityId={f}");
+    const row = packRows({ patient_dose: patientDoseFigure(base, false) }, 2).find((r) => r.key === "patient_dose")!;
+    expect(row).toMatchObject({ status: "have", figure: "90 %", href: "/assets/patient-dose?facilityId=2" });
+    expect(row.detail).toMatch(/9 of 10 monthly exam groups/);
+  });
+  it("is missing without DRLs or records, and capped while the DRLs are only examples", () => {
+    expect(patientDoseFigure({ ...base, drls: 0 }, false)).toMatchObject({ pct: 0, detail: expect.stringMatching(/No diagnostic reference levels/) });
+    expect(patientDoseFigure({ ...base, anyRecords: false }, false)).toMatchObject({ pct: 0 });
+    expect(patientDoseFigure({ ...base, compared: 0, ok: 0 }, false)?.pct).toBe(0);
+    expect(patientDoseFigure({ ...base, exampleDrls: 12 }, false)?.pct).toBe(50);
+    expect(patientDoseFigure({ ...base, exampleDrls: 12 }, false)?.detail).toMatch(/examples to replace/);
+  });
+  it("has no figure before the tables exist or with no X-ray devices and nothing recorded", () => {
+    expect(patientDoseFigure(null, false)).toBeNull();
+    expect(patientDoseFigure({ ...base, drls: 0, anyRecords: false }, true)).toBeNull();
   });
 });

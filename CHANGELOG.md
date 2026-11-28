@@ -1,5 +1,19 @@
 # Changelog
 
+## Wave 43 (not merged yet)
+
+### X-ray tubes and patient dose
+- **X-ray tube list** (`/assets/tubes`, Equipment): every CT and X-ray tube in scope with use against the expected
+  life, forecast replacement and warranty (same forecast as the device page), soonest replacement first; cost for
+  `prices.view`; replaced tubes on their own tab.
+- **Patient dose and DRLs** (`/assets/patient-dose`, Safety & compliance; GAHAR DAS.09, ICRP 135): DRL table per
+  hospital, modality, exam type and age group with source and year (example rows marked to replace); dose records
+  entered or imported from a RIS/dose CSV (no patient names or IDs: such columns refuse the file); monthly median per
+  exam type and scanner against the DRL, flagged above it, with the physicist's review and action.
+- GAHAR evidence pack: DAS.09 "patient dose" is now a figure from PAMS (groups within the DRL or reviewed), no longer
+  "Not recorded in PAMS".
+- New tables `dose_reference_levels`, `dose_records`, `dose_reviews` (`src/db/schema-wave43-r.ts`; migration at merge).
+
 ## Wave 42
 
 ### Simpler menu
