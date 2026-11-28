@@ -17,7 +17,6 @@ export const PLAN_KPIS: { key: KpiKey; label: string; unit: "%" | "count"; targe
   { key: "uptime", label: "Equipment available today", unit: "%", target: 95, better: "higher", help: "Devices in use that are working (not under maintenance or out of service)." },
 ];
 
-export const KPI_KEYS = PLAN_KPIS.map((k) => k.key);
 const byKey = new Map(PLAN_KPIS.map((k) => [k.key as string, k]));
 
 export function defaultKpis(): PlanKpi[] {

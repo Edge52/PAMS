@@ -81,8 +81,6 @@ export type RenderOptions = {
   brandColor?: string | null;
 };
 
-export const RENDER_SIZES = { "1080p": [1920, 1080], "4K": [3840, 2160], "8K": [7680, 4320] } as const;
-
 const LOOKS: Record<RenderLook, { sky: string; ground: string; hemi: number; sun: string; sunI: number; exposure: number; bg: string }> = {
   daylight: { sky: "#ffffff", ground: "#e4e1da", hemi: 2.3, sun: "#fff6e8", sunI: 2.2, exposure: 1.3, bg: "#f5f6f7" },
   warm: { sky: "#fff3df", ground: "#d8cbb5", hemi: 2.1, sun: "#ffd9a8", sunI: 2.5, exposure: 1.25, bg: "#f6f3ee" },

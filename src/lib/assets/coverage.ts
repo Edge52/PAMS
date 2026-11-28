@@ -127,11 +127,6 @@ export function coveredDowntimeByDevice<K>(periods: (DownPeriod & { device: K })
   return new Map([...by].map(([k, ps]) => [k, coveredDowntimeMs(ps, covered, from, to)]));
 }
 
-/** Holidays inside a date range (inclusive), for showing on a statement. */
-export function holidaysIn<T extends { day: string }>(list: T[], fromISO: string, toISO: string): T[] {
-  return list.filter((h) => h.day >= fromISO && h.day <= toISO).sort((a, b) => a.day.localeCompare(b.day));
-}
-
 
 /**
  * Wave 41: hours between two instants that fall inside the covered intervals (response and repair times "in

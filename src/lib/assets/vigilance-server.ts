@@ -1,6 +1,6 @@
 import "server-only";
 /** Database side of EDA vigilance (wave 40): devices kept as found, the hospital's safety contacts. Rules in ./vigilance. */
-import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assetQuarantines, deviceTypes, assets, facilitySafetyContacts, safetyTests } from "@/db/schema";
 import { safetyGateWarning } from "./safety-tests";
@@ -9,13 +9,6 @@ import { safetyGateWarning } from "./safety-tests";
 export async function quarantineFor(assetId: number) {
   const [h] = await db.select().from(assetQuarantines).where(and(eq(assetQuarantines.assetId, assetId), isNull(assetQuarantines.releasedAt))).limit(1);
   return h ?? null;
-}
-
-/** Open holds of many devices, by asset id. */
-export async function quarantinesFor(assetIds: number[]) {
-  if (!assetIds.length) return new Map<number, typeof assetQuarantines.$inferSelect>();
-  const rows = await db.select().from(assetQuarantines).where(and(inArray(assetQuarantines.assetId, assetIds.slice(0, 5000)), isNull(assetQuarantines.releasedAt)));
-  return new Map(rows.map((r) => [r.assetId, r]));
 }
 
 export async function safetyContacts(facilityId: number) {

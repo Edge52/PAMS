@@ -62,13 +62,3 @@ export function startOfMonth(iso: string): string {
 export function endOfMonth(iso: string): string {
   return addDays(addMonths(startOfMonth(iso), 1), -1);
 }
-
-export function minISO(...d: (string | null | undefined)[]): string | null {
-  const v = d.filter((x): x is string => !!x).sort();
-  return v[0] ?? null;
-}
-
-export function maxISO(...d: (string | null | undefined)[]): string | null {
-  const v = d.filter((x): x is string => !!x).sort();
-  return v[v.length - 1] ?? null;
-}

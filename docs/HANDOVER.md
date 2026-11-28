@@ -6,7 +6,7 @@ built and run, how work is done here, what's finished and what's left. Last upda
 wave 30 audit, waves 37–38 = its missing features). **Waves 39–43 were merged into `main` on 28 Nov 2026** (39 Law 182 rules, data quality, offline My jobs; 40 GAHAR readiness and Analytics; 41 notifications,
 utilities and water, cyber, API, imports, lists and bulk actions, help; 42 the nine-hub menu; 43 public holidays, patient dose, tube list, fuller demo data). See CHANGELOG.
 
-Read next: `AGENTS.md` (coding conventions; they're strict), `docs/system-documentation.md` (modules in depth),
+Read next: `AGENTS.md` (coding conventions; they're strict), `README.md` (modules in depth),
 `docs/user-guide.md` (by role), `docs/deploy.md` (servers, Supabase), `CHANGELOG.md` (what each wave added),
 `docs/api.md` (the read-only API).
 
@@ -51,7 +51,7 @@ Demo figures (site planning values, imaging volumes, budgets) are labelled as de
   about 1,400 tests.
 - **Database**: `npm run demo` and `npm run local` use embedded PGlite (`.pglite` for the demo, `.pglite-data` for
   your own data). A server uses PostgreSQL via `DATABASE_URL`; Supabase works too (`DATABASE_SSL`, see deploy guide).
-- **Layout** (more in `docs/system-documentation.md` › Codebase map):
+- **Layout** (more in `README.md` › Where the code lives):
   - `src/app/<module>/` pages and colocated `actions.ts` (`"use server"`, exports only async actions)
   - `src/lib/<module>/` logic: pure files (`*.ts`, unit tested) and server files (`*-server.ts`, `import "server-only"`)
   - `src/components/` UI; `src/components/ui` shared pieces; `src/components/assets/twin/` the 3D view
@@ -98,9 +98,8 @@ Administration › Settings); `NOTIFY_WEBHOOK_URL`/`NOTIFY_WEBHOOK_TOKEN` for an
 - The 3D roadmap lives in the Claude doc "PAMS 3D view — features, options and room to grow" (Roadmap section, a
   checklist): tick items there as they reach `main`.
 - Hisham's Mac: `/Users/edge/Desktop/Z/PAMS` (kept on `main`; update with `git pull`, then restart the launcher).
-- Old branches: see section 7 › Housekeeping. Merged branches can be deleted from GitHub's branch page (the session's
-  connection can't delete branches). The Mac still has two old local branches (`claude/vigilant-noether-2l33kc`,
-  `fix/demo-restart`); `git branch -D` them when convenient.
+- Branches: GitHub and the Mac have only `main` (old branches deleted 28 Nov 2026). Work on a `wave-N` branch and
+  delete it once merged.
 
 ## 5. How we work
 
@@ -188,10 +187,8 @@ the error log and off-site backup.
 
 ### Housekeeping
 
-- Delete old branches on GitHub (the session's connection can't): merged ones such as `wave-31`, `wave-38`,
-  `audit-fixes-32-35`, `wave-32-data-safety`, `wave-33-money` and `wave-34-35-agent-d`; now that waves 39–42 are merged,
-  also `wave-39` to `wave-42` and any `wave-3x`/`wave-4x` agent branches.
-- `docs/system-documentation.md` describes the app at release 3.0; README and this file are current.
+- Done 28 Nov 2026: old branches deleted (GitHub has only `main`); unused code and the old release 3.0 system
+  document and wave 7–8 plans removed (git history keeps them).
 
 ---
 

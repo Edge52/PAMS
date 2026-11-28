@@ -54,26 +54,6 @@ export function usePanelPrefs(mode: HudMode) {
 
 /* ── collapsible HUD card ── */
 
-export function HudPanel({ title, summary, open, onToggle, children, className = "", bodyClassName = "" }: {
-  title: string; summary?: ReactNode; open: boolean; onToggle: () => void; children: ReactNode;
-  className?: string; bodyClassName?: string;
-}) {
-  const bodyId = useId();
-  return (
-    <section className={`twin-card pointer-events-auto p-0! ${className}`}>
-      <h2 className="m-0">
-        <button type="button" aria-expanded={open} aria-controls={bodyId} onClick={onToggle}
-          className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left hover:bg-[#0c2a40]">
-          <span aria-hidden className={`inline-block text-[10px] text-[#5fd6ff] transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}>▶</span>
-          <span className="text-[12px] font-semibold tracking-[0.06em] text-[#5fd6ff]">{title}</span>
-          {summary != null && <span className="ml-auto min-w-0 truncate text-xs text-[#8fb6cc]">{summary}</span>}
-        </button>
-      </h2>
-      <div id={bodyId} hidden={!open} className={`px-3 pb-3 ${bodyClassName}`}>{children}</div>
-    </section>
-  );
-}
-
 /* ── Tool rail (wave 22b): a narrow strip of tool names; the one open tool shows beside it ── */
 
 export type RailTool = { id: PanelId; label: string; title: string; summary?: ReactNode; body: ReactNode; bodyClassName?: string; forceOpen?: boolean };

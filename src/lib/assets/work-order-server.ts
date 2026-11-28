@@ -89,15 +89,6 @@ export async function applyAssetEffect(
   return next;
 }
 
-/** Open work orders per asset id (for the asset page, register and 3D view). */
-export async function openWorkOrderCounts(assetIds?: number[]): Promise<Map<number, number>> {
-  if (assetIds && !assetIds.length) return new Map();
-  const rows = await db.select({ assetId: workOrders.assetId, n: sql<number>`count(*)::int` }).from(workOrders)
-    .where(and(inArray(workOrders.status, ["OPEN", "ASSIGNED", "IN_PROGRESS", "ON_HOLD"]), assetIds ? inArray(workOrders.assetId, assetIds) : undefined))
-    .groupBy(workOrders.assetId);
-  return new Map(rows.map((r) => [r.assetId, Number(r.n)]));
-}
-
 export { isActive };
 
 const grpT = alias(deviceTypes, "ck_grp");

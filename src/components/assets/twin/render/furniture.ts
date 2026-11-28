@@ -300,5 +300,3 @@ export function modelGeometry(m: Model): THREE.BufferGeometry {
   cache.set(m, merged);
   return merged;
 }
-
-export function disposeModels() { for (const g of cache.values()) g.dispose(); cache.clear(); }

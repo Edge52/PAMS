@@ -3,7 +3,6 @@
 | Document | For | What's in it |
 |---|---|---|
 | [Handover](HANDOVER.md) | Whoever picks up the project next | What the app is, how it is built and run, how we work, what is done and what is left |
-| [System documentation](system-documentation.md) | Management, project team, developers | Older in-depth description (release 3.0; the handover and the main README are current): modules, roles, architecture, running, codebase, limitations, backlog and open decisions |
 | [User guide](user-guide.md) | Everyone who uses it | Everyday jobs by role: report a fault, run work orders, plan a BOQ, buy, approve, use the 3D view |
 | [Deployment and going live](deploy.md) | IT, whoever installs it | Laptop and server installation, backups, restore, security checklist, going live at a hospital, hospital email |
 | [Read-only API](api.md) and [BI views](bi-views.sql) | IT, analysts | The API for other systems, and the read-only views for Power BI |

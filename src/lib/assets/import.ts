@@ -3,7 +3,7 @@
  * Pure — the server parses the workbook with exceljs, then hands plain cell values and lookups to these functions.
  */
 import { ASSET_CONDITIONS, ASSET_STATUSES, type AssetCondition, type AssetStatus } from "./filters";
-import { addMonths, isISODate, toISO } from "./dates";
+import { isISODate, toISO } from "./dates";
 
 export type ImportColumn = { key: ImportKey; header: string; required?: boolean; hint: string; example: string | number };
 export type ImportKey =
@@ -231,11 +231,4 @@ export function validateRows(raw: RawRow[], lk: Lookups): { rows: RowResult[]; v
     rows.push({ rowNumber: r.rowNumber, values, errors, valid });
   }
   return { rows, valid: rows.flatMap((r) => (r.valid ? [r.valid] : [])) };
-}
-
-/** Effective warranty end for a valid row (same rule as the asset factory), for previews. */
-export function previewWarrantyEnd(r: Pick<ValidRow, "warrantyEnd" | "warrantyMonths" | "installDate" | "purchaseDate">): string | null {
-  if (r.warrantyEnd) return r.warrantyEnd;
-  const start = r.installDate ?? r.purchaseDate;
-  return start && r.warrantyMonths ? addMonths(start, r.warrantyMonths) : null;
 }

@@ -187,12 +187,6 @@ export function ppmYield(visits: PpmVisit[], p: Period): { share: number | null;
   return { share: done.length ? faults / done.length : null, n: done.length, faults };
 }
 
-/**
- * PPM on time = visits scheduled in the period and due by today that were done by their date plus `grace` days
- * (7 by default) ÷ visits due. Same rule and default as the PPM compliance report.
- */
-export const PPM_GRACE_DAYS = DEFAULT_PPM_GRACE_DAYS;
-
 export function ppmOnTime(visits: PpmVisit[], p: Period, today: string, grace = DEFAULT_PPM_GRACE_DAYS): { share: number | null; n: number; onTime: number } {
   const t = emptyTally();
   for (const v of visits) {

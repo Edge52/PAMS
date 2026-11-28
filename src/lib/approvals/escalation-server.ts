@@ -56,9 +56,3 @@ export async function runApprovalEscalations(now = new Date()): Promise<number> 
     return 0;
   }
 }
-
-/** Waiting-since and escalation level for steps shown on the Approvals page. */
-export async function waitingInfo(steps: { id: number; requestedAt: Date }[]): Promise<Map<number, { since: Date; level: number }>> {
-  const t = await trackingFor(steps.map((s) => s.id));
-  return new Map(steps.map((s) => [s.id, { since: t.get(s.id)?.pendingSince ?? s.requestedAt, level: t.get(s.id)?.level ?? 0 }]));
-}

@@ -26,11 +26,6 @@ export function isRadiationType(code: string | null | undefined): boolean {
   return RADIATION_PREFIXES.some((p) => under(c, p));
 }
 
-/** SQL LIKE patterns for the same set (for queries): `code like ANY(...)`, minus NOT_RADIATION. */
-export function radiationCodePatterns(): string[] {
-  return RADIATION_PREFIXES.flatMap((p) => [p, `${p}-%`]);
-}
-
 /** Licences: renewal takes time, so warn 90 days ahead. QC tests and protective checks: 30 days. */
 export const LICENCE_WARN_DAYS = 90;
 export const CHECK_WARN_DAYS = 30;

@@ -174,11 +174,3 @@ export function canRecordPaper(step: StepState, user: Decider, requestStatus: Re
   if (user.role !== "PROCUREMENT") return { ok: false, reason: "Only a procurement officer records paper signatures." };
   return { ok: true };
 }
-
-/** Short, human description of who decides a step. */
-export function whoDecides(s: Pick<StepState, "approverRole" | "approverUserId" | "memberName">, names: { users: Map<number, string>; roles: Record<string, string> }): string {
-  if (s.approverUserId != null) return names.users.get(s.approverUserId) ?? "Named user";
-  if (s.memberName) return `${s.memberName} (signs on paper)`;
-  if (s.approverRole) return `Any ${names.roles[s.approverRole]?.toLowerCase() ?? s.approverRole.toLowerCase()}`;
-  return "—";
-}

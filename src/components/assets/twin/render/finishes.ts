@@ -66,7 +66,6 @@ export function finishTexture(f: Finish): THREE.DataTexture {
   cache.set(f, t);
   return t;
 }
-export function disposeFinishTextures() { for (const t of cache.values()) t.dispose(); cache.clear(); }
 
 /**
  * Ceiling light fittings of a room (metres): a grid about `spacing` apart, kept `margin` off the walls; one in the

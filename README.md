@@ -496,7 +496,6 @@ Read [AGENTS.md](AGENTS.md) (strict conventions) and [docs/HANDOVER.md](docs/HAN
 | [docs/api.md](docs/api.md) | The read-only API |
 | [docs/bi-views.sql](docs/bi-views.sql) | Read-only views for Power BI |
 | [docs/HANDOVER.md](docs/HANDOVER.md) | The current state and what's left (the working list) |
-| [docs/system-documentation.md](docs/system-documentation.md) | In-depth description at release 3.0 (older; this file and the handover are current) |
 | [docs/boq-standards.md](docs/boq-standards.md), [docs/taxonomy.md](docs/taxonomy.md) | BOQ standards and the device classification, with sources |
 | [docs/reference-figures.md](docs/reference-figures.md) | Planning reference figures awaiting review |
 | [CHANGELOG.md](CHANGELOG.md) | What each wave added |

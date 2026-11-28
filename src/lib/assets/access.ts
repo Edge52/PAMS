@@ -6,7 +6,7 @@ import "server-only";
 import { eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { assets, buildings, departments, floors, maintenanceEvents, rooms } from "@/db/schema";
+import { assets, buildings, floors, maintenanceEvents, rooms } from "@/db/schema";
 
 export type Scope = number[] | null;
 
@@ -39,11 +39,6 @@ export async function facilityOfRoom(roomId: number): Promise<number | null> {
 
 export async function facilityOfFloor(floorId: number): Promise<number | null> {
   const [r] = await db.select({ f: buildings.facilityId }).from(floors).innerJoin(buildings, eq(buildings.id, floors.buildingId)).where(eq(floors.id, floorId));
-  return r?.f ?? null;
-}
-
-export async function facilityOfDepartment(departmentId: number): Promise<number | null> {
-  const [r] = await db.select({ f: departments.facilityId }).from(departments).where(eq(departments.id, departmentId));
   return r?.f ?? null;
 }
 
