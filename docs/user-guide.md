@@ -608,9 +608,8 @@ three of one kind in a hospital come as one summary.
 - With covered hours set, the **monthly statement** counts uptime and downtime only inside them: two jobs on the same
   outage count once, and an outage at night or at the weekend costs nothing. Response and repair times stay in clock
   hours. A contract with no covered hours works as before (24/7).
-- **Public holidays** (*Maintenance › Public holidays*) are kept per hospital. *Add the Egyptian holidays* fills in
-  2026–2027, with dates the government moved to a Thursday. Eid and other Islamic holidays are marked
-  **approximate**: correct them when the dates are announced. Coptic Easter Sunday is not on the list.
+- **Public holidays**: since wave 43 they are kept under *Setup › Public holidays* (see *Public holidays* under
+  wave 43). The contract page *Public holidays* only shows them.
 
 ### MRI cryogen log
 - *Maintenance › MRI cryogen log* lists every MRI scanner with its helium level, a trend line, the last reading and
@@ -720,6 +719,9 @@ https for the camera).
   mine**.
 - Test equipment and meter readings are recorded on the full job page (needs signal).
 - Signing out removes the kept jobs from the phone. Changes not yet sent stay and go out when you sign in again.
+- **Planned visits to start** (wave 43): planned visits due this week or overdue that have no job yet. A device's
+  visit shows to the technician who did its last planned job (*Your device*); other visits show to everyone in the
+  hospital's team (*Team*). **Start** makes the job yours and starts it. It needs signal.
 
 ## GAHAR readiness (wave 40)
 
@@ -1049,3 +1051,17 @@ For GAHAR EFS.12 and ECRI's sterilisation water hazard.
   your own filters (the cross on the chip). Up to 20 per list.
 - Filters saved in the browser before wave 41 are not carried over: save them again.
 - The RFQ list now has a search box and a status filter.
+
+## Wave 43: public holidays
+
+*Setup › Public holidays* (administrators) keeps the days off besides Friday and Saturday. Every working-day count
+uses them: approval reminders and escalation, fault report targets of a day or more, contract covered hours and the
+daily imaging QC count.
+
+- A holiday is for **every hospital** or for one. Mark **Date moves each year** for Islamic holidays.
+- There is **no built-in list**. Enter the dates one by one, **Import** the Excel or CSV template (Date, Holiday,
+  Hospital, Moves each year), or **Copy last year's fixed-date holidays**. Islamic holidays (Eid al-Fitr, Eid al-Adha,
+  Islamic New Year, the Prophet's Birthday) move about 11 days earlier each year: add them when the dates are
+  announced. The government often moves a fixed holiday to a Thursday or Sunday; correct those too.
+- Holidays from the older contract list still count. **Move them here** keeps one list.
+- PPM schedule: bulk **Assign** now always comes back to the schedule with a message, also for a single visit.
